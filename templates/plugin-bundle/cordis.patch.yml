@@ -1,0 +1,3 @@
+- insert:
+    - id: your-scope-example
+      name: '@your-scope/dsh-example'

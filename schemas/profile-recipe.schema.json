@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:dsh-customizations:profile-recipe",
+  "title": "DSH profile recipe",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["profile", "bundles", "patch"],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "profile": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]*$"
+    },
+    "bundles": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "source"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "source": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "patch": {
+      "type": "string",
+      "minLength": 1
+    }
+  }
+}

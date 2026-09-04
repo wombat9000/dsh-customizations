@@ -1,0 +1,14 @@
+{
+  "name": "dsh-customizations",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.9.0",
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0"
+  },
+  "scripts": {
+    "apply": "node scripts/apply-profile.mjs",
+    "check": "node scripts/check.mjs"
+  }
+}

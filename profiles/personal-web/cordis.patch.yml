@@ -1,0 +1,3 @@
+# Add machine-independent overrides for the personal-web profile here.
+# DSH rejects an empty or comments-only patch, so keep [] until overrides exist.
+[]

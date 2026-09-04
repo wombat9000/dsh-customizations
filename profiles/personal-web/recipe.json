@@ -1,0 +1,15 @@
+{
+  "$schema": "../../schemas/profile-recipe.schema.json",
+  "profile": "personal-web",
+  "bundles": [
+    {
+      "name": "@deepseek-ai/dsh-base",
+      "source": "@deepseek-ai/dsh-base"
+    },
+    {
+      "name": "@deepseek-ai/dsh-web-app",
+      "source": "@deepseek-ai/dsh-web-app"
+    }
+  ],
+  "patch": "cordis.patch.yml"
+}

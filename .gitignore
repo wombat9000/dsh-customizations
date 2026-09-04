@@ -1,0 +1,16 @@
+node_modules/
+.pnpm-store/
+*.log
+.DS_Store
+
+# Local environment and credentials
+.env
+.env.*
+!.env.example
+
+# Build and test output
+lib/
+coverage/
+
+# Backups created by the profile apply script
+*.bak
