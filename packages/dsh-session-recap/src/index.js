@@ -47,7 +47,7 @@ export function apply(ctx, config = {}) {
       } else throw new RecapError('unknown-endpoint', 'Unknown Session Recap endpoint.')
       return { ok: true, value }
     } catch (error) {
-      return { ok: false, error: { code: error instanceof RecapError ? error.code : 'recap-error', message: error instanceof RecapError ? error.message : 'Session Recap could not complete this request. Check the provider configuration.' } }
+      return { ok: false, error: { code: error instanceof RecapError ? error.code : 'recap-error', message: error instanceof RecapError ? error.message : 'Session Recap could not complete this request. Check the provider configuration.', details: {} } }
     }
   }))
 }

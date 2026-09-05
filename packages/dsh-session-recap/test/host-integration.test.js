@@ -56,11 +56,22 @@ test('configure rejects unknown fields and invalid values without writing', asyn
   for (const payload of [null, [], { apiKey: 'SECRET' }, { inactivityMinutes: 0 }, { provider: 'alone' }, { autoRecap: 0 }]) assert.equal((await rpc('configure', payload)).ok, false)
   assert.equal((await rpc('settings')).value.provider, '')
 })
+test('unconfigured recap returns a complete DSH RPC failure envelope', async () => {
+  const { rpc } = host()
+  const result = await rpc('recap', { sessionId: 'fixture-session' })
+  assert.equal(result.ok, false)
+  assert.equal(typeof result.error.code, 'string')
+  assert.equal(result.error.message, 'Choose a provider and model in Settings → Plugins → Session Recap.')
+  assert.deepEqual(result.error.details, {})
+})
 test('RPC sanitizes provider exceptions and unknown endpoints', async () => {
   const { rpc, ctx } = host()
   ctx.llm.prepareCall = async () => { throw new Error('credential SECRET') }
   const result = await rpc('configure', { provider: 'configured', model: 'model' })
   assert.equal(result.ok, false)
   assert.ok(!JSON.stringify(result).includes('SECRET'))
-  assert.equal((await rpc('unknown')).error.code, 'unknown-endpoint')
+  assert.deepEqual(result.error.details, {})
+  const unknown = await rpc('unknown')
+  assert.equal(unknown.error.code, 'unknown-endpoint')
+  assert.deepEqual(unknown.error.details, {})
 })
