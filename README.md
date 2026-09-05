@@ -14,7 +14,7 @@ Set `DSH_HOME` before applying a profile if your Harness home is not `~/.dsh`.
 
 ## Apply the starter profile
 
-The `personal-web` recipe selects the standard DSH base and Web bundles plus [Session Environment](packages/dsh-session-environment/README.md), [Session Recap](packages/dsh-session-recap/README.md), and [Firecrawl](packages/dsh-web-firecrawl/README.md), targeting DSH `0.1.2-rc.1`. Configure the recap summary model in **Settings → Plugins → Plugin configuration → Session recap** and save your Firecrawl key in the collapsible **Firecrawl** card in that same list. Firecrawl replaces the profile's search/fetch providers; it requires a key before either web tool can run.
+The `personal-web` recipe selects the standard DSH base and Web bundles plus [Session Environment](packages/dsh-session-environment/README.md), [Session Recap](packages/dsh-session-recap/README.md), [Worktree workers](packages/dsh-worktree/README.md), and [Firecrawl](packages/dsh-web-firecrawl/README.md), targeting DSH `0.1.2-rc.1`. Configure the recap summary model in **Settings → Plugins → Plugin configuration → Session recap** and save your Firecrawl key in the collapsible **Firecrawl** card in that same list. Firecrawl replaces the profile's search/fetch providers; it requires a key before either web tool can run.
 
 Existing installations require **one DSH Web restart** after applying this update so the host-side `web-firecrawl` settings registration discovers the card. Refresh the page afterward. Subsequent key changes take effect on the next request without a restart. Keys stay in DSH's credential store (or the launching environment), never in this repository.
 
@@ -45,6 +45,8 @@ Existing installations require **one DSH Web restart** after applying this updat
    ```
 
 The apply command adds every selected bundle in order. It does not remove bundles that are already installed but absent from the recipe.
+
+Worktree workers adds a host service only. To grant `worktree_create`, `worktree_list`, and background `worktree_dispatch` to a coordinating session, follow the [user-authored preset setup](packages/dsh-worktree/README.md#install-and-grant-tools). Keep DSH's standard job controls; no shipped preset or running session is modified automatically.
 
 ## Repository structure
 

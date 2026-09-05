@@ -12,7 +12,7 @@
     "check": "node scripts/check.mjs",
     "build": "pnpm --filter @local/dsh-session-environment run build",
     "pretest": "pnpm run build",
-    "test": "node --test packages/dsh-session-environment/test/*.test.js packages/dsh-session-recap/test/*.test.* packages/dsh-web-firecrawl/test/index.test.js packages/dsh-web-firecrawl/test/client.test.js packages/dsh-web-firecrawl/test/profile.integration.test.js tests/real-ui/*.test.mjs",
+    "test": "node --test packages/dsh-worktree/test/*.test.js packages/dsh-session-environment/test/*.test.js packages/dsh-session-recap/test/*.test.* packages/dsh-web-firecrawl/test/index.test.js packages/dsh-web-firecrawl/test/client.test.js packages/dsh-web-firecrawl/test/profile.integration.test.js tests/real-ui/*.test.mjs",
     "test:browser": "vitest run --config vitest.browser.config.mjs",
     "test:visual": "playwright test",
     "test:visual:update": "playwright test --update-snapshots"
