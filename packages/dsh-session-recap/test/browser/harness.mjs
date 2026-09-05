@@ -19,7 +19,9 @@ delete window.__ModuleLoader__
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 
 const h = React.createElement
-export async function mountSlot(name, { blank = false, narrow = false, dark = false, recapError = false } = {}) {
+export async function mountSlot(name, { blank = false, narrow = false, dark = false, recapError = false, deferRecap = false, recapGoal = 'Add reliable screenshot coverage for Session recap.' } = {}) {
+  const pending = new Map()
+  let sessionId = 'fixture-session'
   localStorage.clear()
   const config = {
     autoRecap: false, inactivityMinutes: 30, provider: 'fixture-provider',
@@ -33,11 +35,12 @@ export async function mountSlot(name, { blank = false, narrow = false, dark = fa
         id: 'fixture-provider', name: 'Fixture provider',
         models: [{ id: 'fixture-model', name: 'Fixture model' }],
       }] } }
-      case 'recap': if (recapError) return { ok: false, error: { code: 'fixture-error', details: {}, message: 'The fixture provider is unavailable. Try again.' } }
+      case 'recap': if (deferRecap) await new Promise(resolve => pending.set(payload.sessionId, resolve))
+        if (recapError) return { ok: false, error: { code: 'fixture-error', details: {}, message: 'The fixture provider is unavailable. Try again.' } }
         return { ok: true, value: {
         sessionId: payload.sessionId, generatedAt: '2026-01-02T03:04:05.000Z',
         recap: {
-          goal: 'Add reliable screenshot coverage for Session recap.',
+          goal: typeof recapGoal === 'function' ? recapGoal(payload.sessionId) : recapGoal,
           outcome: 'The plugin renders through the registered React slots.',
           nextStep: 'Review the screenshots and run the pull request checks.',
         },
@@ -51,7 +54,7 @@ export async function mountSlot(name, { blank = false, narrow = false, dark = fa
     get(service) { expect(service).toBe('connection'); return { rpc } },
     slots: {
       inject(slot, register) {
-        expect(['conversation.input.dock', 'settings.plugin.item']).toContain(slot)
+        expect(['conversation.input.dock', 'conversation.session.header.utilities', 'settings.plugin.item']).toContain(slot)
         register()
       },
       register(options, Component) {
@@ -60,7 +63,7 @@ export async function mountSlot(name, { blank = false, narrow = false, dark = fa
       },
     },
   })
-  expect([...registrations.keys()]).toEqual(['conversation.input.dock', 'settings.plugin.item'])
+  expect([...registrations.keys()]).toEqual(['conversation.input.dock', 'conversation.session.header.utilities', 'settings.plugin.item'])
   const { options, Component } = registrations.get(name)
   const container = document.createElement('main')
   container.className = `fixture${dark ? ' dark' : ''}`
@@ -68,17 +71,27 @@ export async function mountSlot(name, { blank = false, narrow = false, dark = fa
   container.dataset.testid = 'fixture'
   document.body.append(container)
   const root = createRoot(container)
-  await act(async () => {
+  const header = registrations.get('conversation.session.header.utilities')
+  const render = () => act(async () => {
     root.render(name === 'conversation.input.dock'
       ? h(React.Fragment, null,
-        h('h1', null, blank ? 'New conversation' : 'Screenshot coverage'),
+        h('header', { 'data-testid': 'session-header' },
+          h('h1', null, blank ? 'New conversation' : 'Screenshot coverage'),
+          h(header.Component, { ...header.options.inject(sessionId), useSession: (select) => select({ blank }) })),
         h('div', { className: 'conversation' }, blank ? 'Start a conversation.' : 'The implementation is ready for review.'),
-        h(Component, { ...options.inject('fixture-session'), session: { blank } }),
+        h('div', { 'data-testid': 'session-dock' }, h(Component, { ...options.inject(sessionId), session: { blank } })),
         h('textarea', { 'aria-label': 'Message', placeholder: 'Send a message', readOnly: true }))
       : h(React.Fragment, null, h('h1', null, 'Plugin configuration'), h(Component, options.inject())))
   })
+  await render()
   await document.fonts.ready
-  return { rpc, async unmount() {
+  return { rpc,
+    async switchSession(id, isBlank = false) { sessionId = id; blank = isBlank; await render() },
+    async resolveRecap(id = sessionId) {
+      expect(pending.has(id)).toBe(true)
+      await act(async () => { pending.get(id)(); pending.delete(id) })
+    },
+    async unmount() {
     await act(async () => root.unmount())
     container.remove()
     localStorage.clear()

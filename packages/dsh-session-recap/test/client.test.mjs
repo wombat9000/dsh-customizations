@@ -145,13 +145,20 @@ test('unmount removes all listeners and settings completion cannot trigger a dep
   f.advance(31); f.show(); await flush(); assert.equal(recaps(f).length, 0)
   for (const target of [f.document, f.window]) for (const handlers of target.handlers.values()) assert.equal(handlers.size, 0)
 })
-test('registers only verified external composer and Plugins slots', () => {
+test('registers dock, header utility, and Plugins slots with one controller', () => {
   const { exports } = load()
   const entries = []
   exports.apply({ get: () => ({ rpc: {} }), slots: { inject: (_name, register) => register(), register: (entry, component) => entries.push({ entry, component }) } })
-  assert.deepEqual(entries.map(({ entry }) => entry.name), ['conversation.input.dock', 'settings.plugin.item'])
-  assert.equal(entries[1].entry.key, 'wombat9000-session-recap')
-  assert.equal(entries[0].entry.inject('session-1').sessionId, 'session-1')
+  assert.deepEqual(entries.map(({ entry }) => entry.name), ['conversation.input.dock', 'conversation.session.header.utilities', 'settings.plugin.item'])
+  assert.equal(entries[2].entry.key, 'wombat9000-session-recap')
+  const dock = entries[0].entry.inject('session-1')
+  const header = entries[1].entry.inject('session-1')
+  assert.equal(dock.sessionId, 'session-1')
+  assert.equal(header.sessionId, 'session-1')
+  assert.equal(header.controller, dock.controller)
+  assert.equal(entries[2].entry.inject().controller, dock.controller)
+  assert.equal(entries[0].component, exports.RecapCard)
+  assert.equal(entries[1].component, exports.RecapAction)
   assert.doesNotMatch(source, /setInterval|dangerouslySetInnerHTML|conversation\.submit|session\.append/)
 })
 test('Plugins card loads advisory models and saves an exact route without recap', async () => {
@@ -192,22 +199,92 @@ test('Plugins card loads advisory models and saves an exact route without recap'
   assert.equal(closed.children[0].props['aria-expanded'], false)
   assert.equal(closed.children[1], null)
 })
-test('blank or unavailable sessions hide the card and do not mount recap activity', () => {
-  const effects = []
-  const react = { createElement: () => { throw new Error('Blank card rendered') }, useState: () => [{}, () => {}], useEffect: (effect) => effects.push(effect) }
-  const { RecapCard } = load(react).exports
-  const controller = { mount() { throw new Error('Blank session mounted') } }
-  for (const session of [undefined, { blank: true }]) {
-    assert.equal(RecapCard({ sessionId: 'new', session, controller }), null)
+function componentFixture(state = {}) {
+  const effects = []; const subscriptions = []; const calls = []
+  const react = {
+    createElement: (type, props, ...children) => ({ type, props, children }),
+    useEffect: (effect) => effects.push(effect),
+    useCallback: (callback) => callback,
+    useSyncExternalStore(subscribe, getSnapshot) {
+      const listener = () => {}; subscriptions.push(subscribe(listener))
+      return getSnapshot()
+    },
   }
-  for (const effect of effects) assert.equal(effect(), undefined)
+  const controller = {
+    getSnapshot(id) { assert.equal(id, 'a'); return state },
+    subscribe(id, listener) { assert.equal(id, 'a'); assert.equal(typeof listener, 'function'); return () => {} },
+    mount(...args) { calls.push(['mount', ...args]); return () => {} },
+    recap(id) { calls.push(['recap', id]) },
+    dismiss(id) { calls.push(['dismiss', id]) },
+  }
+  return { ...load(react).exports, controller, effects, subscriptions, calls }
+}
+const nodes = (tree) => !tree || typeof tree !== 'object' ? [] : [tree, ...(tree.children || []).flatMap(nodes)]
+test('blank or unavailable sessions hide both surfaces without activity mounts', () => {
+  const f = componentFixture()
+  for (const session of [undefined, { blank: true }]) {
+    assert.equal(f.RecapCard({ sessionId: 'a', session, controller: f.controller }), null)
+    assert.equal(f.RecapAction({ sessionId: 'a', useSession: (select) => select(session || { blank: true }), controller: f.controller }), null)
+  }
+  for (const effect of f.effects) effect()
+  assert.deepEqual(f.calls, [])
 })
-test('card renders recap as escaped React text with manual and dismiss controls', () => {
-  const state = { recap: { goal: '<script>bad()</script>', outcome: 'Done', nextStep: 'Test' } }
-  const react = { createElement: (type, props, ...children) => ({ type, props, children }), useState: () => [state, () => {}], useEffect: () => {} }
-  const tree = load(react).exports.RecapCard({ sessionId: 'a', session: { blank: false }, controller: {} })
+test('empty and dismissed cards leave no panel', () => {
+  for (const state of [{}, { dismissed: true, recap: { goal: 'Hidden' } }, { dismissed: true, error: 'Hidden' }]) {
+    const f = componentFixture(state)
+    assert.equal(f.RecapCard({ sessionId: 'a', session: { blank: false }, controller: f.controller }), null)
+  }
+})
+test('card renders escaped recap text and dismissal but no generation button', () => {
+  const f = componentFixture({ recap: { goal: '<script>bad()</script>', outcome: 'Done', nextStep: 'Test' } })
+  const tree = f.RecapCard({ sessionId: 'a', session: { blank: false }, controller: f.controller })
   assert.equal(tree.type, 'aside'); assert.equal(tree.props['aria-label'], 'Session recap')
-  const text = JSON.stringify(tree)
-  assert.match(text, /<script>bad\(\)<\/script>/); assert.match(text, /Dismiss session recap/)
-  assert.doesNotMatch(text, /dangerouslySetInnerHTML/)
+  assert.ok(nodes(tree).some(node => node.props?.role === 'status'))
+  assert.match(JSON.stringify(tree), /<script>bad\(\)<\/script>/)
+  assert.doesNotMatch(JSON.stringify(tree), /dangerouslySetInnerHTML/)
+  const buttons = nodes(tree).filter(node => node.type === 'button')
+  assert.equal(buttons.length, 1)
+  assert.equal(buttons[0].props['aria-label'], 'Dismiss session recap')
+  buttons[0].props.onClick(); assert.deepEqual(f.calls, [['dismiss', 'a']])
+})
+test('busy and error cards expose accessible feedback', () => {
+  for (const [state, role, text] of [[{ busy: true }, 'status', 'Generating recap…'], [{ error: 'Provider failed' }, 'alert', 'Provider failed']]) {
+    const f = componentFixture(state)
+    const tree = f.RecapCard({ sessionId: 'a', session: { blank: false }, controller: f.controller })
+    const feedback = nodes(tree).find(node => node.props?.role === role)
+    assert.ok(feedback); assert.ok(JSON.stringify(feedback).includes(text))
+    if (state.error) assert.ok(nodes(tree).some(node => node.props?.['aria-label'] === 'Dismiss session recap'))
+  }
+})
+test('header selects blank state, subscribes without activity mounting, and generates', () => {
+  for (const busy of [false, true]) {
+    const f = componentFixture({ busy })
+    const tree = f.RecapAction({ sessionId: 'a', controller: f.controller, useSession(select) { assert.equal(select({ blank: true }), true); return select({ blank: false }) } })
+    const button = nodes(tree).find(node => node.type === 'button')
+    assert.equal(button.props.disabled, busy)
+    assert.ok(button.children.includes(busy ? 'Recapping…' : 'Recap'))
+    assert.equal(f.subscriptions.length, 1)
+    for (const effect of f.effects) effect()
+    assert.deepEqual(f.calls, [])
+    if (!busy) { button.props.onClick(); assert.deepEqual(f.calls, [['recap', 'a']]) }
+  }
+})
+test('controller snapshots and independent subscriptions isolate sessions', async () => {
+  const f = setup({ autoRecap: false }); const a = []; const b = []
+  const initial = f.controller.getSnapshot('a')
+  assert.equal(f.controller.getSnapshot('a'), initial)
+  const stopA = f.controller.subscribe('a', () => a.push(f.controller.getSnapshot('a')))
+  const stopB = f.controller.subscribe('b', () => b.push(f.controller.getSnapshot('b')))
+  assert.equal(f.calls.length, 0)
+  const pending = f.controller.recap('a')
+  assert.equal(f.controller.getSnapshot('a').busy, true)
+  assert.notEqual(f.controller.getSnapshot('a'), initial)
+  assert.deepEqual(b, [])
+  await pending
+  assert.equal(a.at(-1).recap.goal, 'Goal')
+  stopA(); const count = a.length; f.controller.dismiss('a')
+  assert.equal(a.length, count)
+  assert.equal(f.controller.getSnapshot('a').dismissed, true)
+  assert.equal(f.controller.getSnapshot('b').recap, undefined)
+  stopB()
 })
