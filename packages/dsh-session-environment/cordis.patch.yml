@@ -1,0 +1,5 @@
+# Add selected-session CWD and Git status to the Web shell.
+
+- insert:
+    - id: local-session-environment
+      name: '@local/dsh-session-environment'
