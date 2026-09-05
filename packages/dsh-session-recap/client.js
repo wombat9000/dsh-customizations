@@ -127,27 +127,89 @@ window.__ModuleLoader__.load({
           for (const [target, event, handler] of handlers) target.removeEventListener(event, handler)
         }
       }
-      return { mount, recap, invalidateSettings() { settingsPromise = undefined }, dismiss(sessionId) { const s = state(sessionId); publish(s, { ...s.value, dismissed: true }) } }
+      return {
+        mount, recap,
+        getSnapshot(sessionId) { return state(sessionId).value },
+        subscribe(sessionId, listener) {
+          const s = state(sessionId)
+          s.listeners.add(listener)
+          return () => s.listeners.delete(listener)
+        },
+        invalidateSettings() { settingsPromise = undefined },
+        dismiss(sessionId) { const s = state(sessionId); publish(s, { ...s.value, dismissed: true }) },
+      }
     }
-    const buttonStyle = { font: 'inherit', color: 'inherit', background: 'transparent', border: '1px solid currentColor', borderRadius: 6, padding: '3px 9px', cursor: 'pointer' }
-    function RecapCard({ sessionId, session, controller }) {
-      const [state, setState] = React.useState({})
-      const blank = session?.blank !== false
+    const recapStyles = `
+      .dsh-session-recap-action, .dsh-session-recap-card__dismiss { appearance: none; display: inline-flex; align-items: center; justify-content: center; gap: 6px; flex: none; font: inherit; font-size: 13px; line-height: 20px; color: var(--dsw-alias-label-secondary, inherit); background: transparent; border: 0; border-radius: 8px; padding: 5px 8px; cursor: pointer; }
+      .dsh-session-recap-action:hover:not(:disabled), .dsh-session-recap-card__dismiss:hover { background: var(--dsw-alias-interactive-bg-hover, #8882); color: var(--dsw-alias-label-primary, inherit); }
+      .dsh-session-recap-action:focus-visible, .dsh-session-recap-card__dismiss:focus-visible, .dsh-session-recap-card__body:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary, #6b9cff); outline-offset: 2px; }
+      .dsh-session-recap-action:disabled { color: var(--dsw-alias-label-tertiary, #888); cursor: default; }
+      .dsh-session-recap-card { box-sizing: border-box; width: calc(100% - 2 * var(--dsh-composer-side-clearance, 16px) - 32px); max-width: var(--dsh-chat-content-width, 680px); min-width: 0; margin: 0 auto 8px; padding: 12px 16px; border: .5px solid var(--dsw-alias-border-l2, #8883); border-radius: 16px; background: var(--dsw-alias-bg-layer-2, #8881); color: var(--dsw-alias-label-primary, inherit); font-size: 13px; line-height: 1.6; }
+      .dsh-session-recap-card__header { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+      .dsh-session-recap-card__title { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; font-weight: 600; }
+      .dsh-session-recap-card__icon { flex: none; color: var(--dsw-alias-label-tertiary, #888); }
+      .dsh-session-recap-card__dismiss { padding: 4px; }
+      .dsh-session-recap-card__body { max-height: min(240px, 30vh); overflow-y: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+      .dsh-session-recap-card__meta { display: block; color: var(--dsw-alias-label-tertiary, #888); font-size: 12px; }
+      .dsh-session-recap-card__row { margin: 8px 0 0; }
+      .dsh-session-recap-card__label { font-weight: 500; color: var(--dsw-alias-label-secondary, inherit); }
+      .dsh-session-recap-card__loading { margin: 0; color: var(--dsw-alias-label-secondary, inherit); }
+      .dsh-session-recap-card__error { margin: 4px 0; color: var(--dsw-alias-label-error, #d55); overflow-wrap: anywhere; }
+      @media (max-width: 600px) { .dsh-session-recap-card { padding: 10px 12px; border-radius: 12px; } }
+    `
+    function useRecapStyles() {
       React.useEffect(() => {
-        if (!blank) return controller.mount(sessionId, { document, window }, setState)
-      }, [controller, sessionId, blank])
-      if (blank) return null
+        if (typeof document === 'undefined') return
+        const style = document.createElement('style')
+        style.dataset.pluginCss = `${ID}/recap`
+        style.textContent = recapStyles
+        document.head.appendChild(style)
+        return () => style.remove()
+      }, [])
+    }
+    function useRecapState(controller, sessionId) {
+      return React.useSyncExternalStore(
+        React.useCallback((listener) => controller.subscribe(sessionId, listener), [controller, sessionId]),
+        React.useCallback(() => controller.getSnapshot(sessionId), [controller, sessionId]),
+      )
+    }
+    function recapIcon(className) {
       const h = React.createElement
-      const show = !state.dismissed
-      return h('aside', { 'aria-label': 'Session recap', style: { width: '100%', boxSizing: 'border-box', padding: '8px 12px', border: '1px solid color-mix(in srgb, currentColor 18%, transparent)', borderRadius: 10, fontSize: 13 } },
-        h('div', { style: { display: 'flex', alignItems: 'center', gap: 8 } },
-          h('strong', { style: { flex: 1 } }, 'Session recap'),
-          h('button', { type: 'button', style: buttonStyle, disabled: state.busy, onClick: () => { void controller.recap(sessionId) } }, state.busy ? 'Recapping…' : 'Recap'),
-          show && (state.recap || state.error) ? h('button', { type: 'button', style: buttonStyle, onClick: () => controller.dismiss(sessionId), 'aria-label': 'Dismiss session recap' }, 'Dismiss') : null),
-        show && state.error ? h('p', { role: 'alert', style: { margin: '6px 0 0' } }, state.error) : null,
-        show && state.recap ? h('div', { role: 'status', style: { maxHeight: 190, overflowY: 'auto', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' } },
-          h('small', null, `Earlier recap${state.generatedAt ? ` · ${new Date(state.generatedAt).toLocaleString()}` : ''}. Select Recap to check the latest conversation.`),
-          ...[['goal', 'Goal'], ['outcome', 'Latest outcome'], ['nextStep', 'Next step']].map(([key, label]) => h('p', { key, style: { margin: '6px 0 0' } }, h('strong', null, `${label}: `), state.recap[key] || 'Not established.'))) : null)
+      return h('svg', { className, 'aria-hidden': true, focusable: 'false', width: 16, height: 16, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.5, strokeLinecap: 'round', strokeLinejoin: 'round' },
+        h('rect', { x: 5, y: 3, width: 14, height: 18, rx: 3 }),
+        h('path', { d: 'M9 8h6M9 12h6M9 16h3' }))
+    }
+    function RecapAction({ sessionId, useSession, controller }) {
+      const blank = useSession((session) => session.blank) !== false
+      const state = useRecapState(controller, sessionId)
+      useRecapStyles()
+      if (blank) return null
+      return React.createElement('button', {
+        type: 'button', className: 'dsh-session-recap-action', disabled: state.busy,
+        title: 'Generate a recap of this session',
+        onClick: () => { void controller.recap(sessionId) },
+      }, recapIcon(), state.busy ? 'Recapping…' : 'Recap')
+    }
+    function RecapCard({ sessionId, session, controller }) {
+      const state = useRecapState(controller, sessionId)
+      const blank = session?.blank !== false
+      useRecapStyles()
+      // Only the dock owns activity tracking. The header is a passive subscriber.
+      React.useEffect(() => {
+        if (!blank) return controller.mount(sessionId, { document, window }, () => {})
+      }, [controller, sessionId, blank])
+      if (blank || state.dismissed || !(state.busy || state.error || state.recap)) return null
+      const h = React.createElement
+      return h('aside', { 'aria-label': 'Session recap', className: 'dsh-session-recap-card' },
+        h('div', { className: 'dsh-session-recap-card__header' },
+          h('strong', { className: 'dsh-session-recap-card__title' }, recapIcon('dsh-session-recap-card__icon'), 'Session recap'),
+          h('button', { type: 'button', className: 'dsh-session-recap-card__dismiss', onClick: () => controller.dismiss(sessionId), 'aria-label': 'Dismiss session recap', title: 'Dismiss session recap' },
+            h('svg', { 'aria-hidden': true, focusable: 'false', width: 16, height: 16, viewBox: '0 0 16 16', fill: 'none' }, h('path', { d: 'm4 4 8 8m0-8-8 8', stroke: 'currentColor', strokeWidth: 1.5, strokeLinecap: 'round' })))),
+        state.busy ? h('p', { role: 'status', className: 'dsh-session-recap-card__loading' }, 'Generating recap…') : null,
+        state.error ? h('p', { role: 'alert', className: 'dsh-session-recap-card__error' }, state.error) : null,
+        state.recap ? h('div', { role: state.busy ? undefined : 'status', tabIndex: 0, 'aria-label': 'Recap content', className: 'dsh-session-recap-card__body' },
+          h('small', { className: 'dsh-session-recap-card__meta' }, `Earlier recap${state.generatedAt ? ` · ${new Date(state.generatedAt).toLocaleString()}` : ''}. Use Recap in the session header to refresh.`),
+          ...[['goal', 'Goal'], ['outcome', 'Latest outcome'], ['nextStep', 'Next step']].map(([key, label]) => h('p', { key, className: 'dsh-session-recap-card__row' }, h('strong', { className: 'dsh-session-recap-card__label' }, `${label}: `), state.recap[key] || 'Not established.'))) : null)
     }
     // Match DSH's settings-card metrics using public theme tokens, not private CSS-module names.
     const settingsStyles = `
@@ -256,10 +318,14 @@ window.__ModuleLoader__.load({
         name: 'conversation.input.dock', id: ID, order: 10,
         inject: (sessionId) => ({ sessionId, controller }),
       }, RecapCard))
+      ctx.slots.inject('conversation.session.header.utilities', () => ctx.slots.register({
+        name: 'conversation.session.header.utilities', id: `${ID}-action`, order: 10,
+        inject: (sessionId) => ({ sessionId, controller }),
+      }, RecapAction))
       ctx.slots.inject('settings.plugin.item', () => ctx.slots.register({
         name: 'settings.plugin.item', key: ID, inject: () => ({ rpc: ctx.get('connection').rpc, controller }),
       }, SettingsCard))
     }
-    return { inject: ['slots', 'connection'], apply, createController, RecapCard, SettingsCard, CHANNEL }
+    return { inject: ['slots', 'connection'], apply, createController, RecapCard, RecapAction, SettingsCard, CHANNEL }
   },
 })
