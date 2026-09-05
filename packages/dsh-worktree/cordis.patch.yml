@@ -1,5 +1,16 @@
 # Shared cross-session coordination belongs in the host composition.
-# Grant the tools separately in a user-authored agent preset; see README.md.
 - insert:
     - id: local-worktree-workers
       name: '@local/dsh-worktree'
+
+# Apply after the standard Web bundle, which supplies this roster row.
+# Cordis shallow-replaces config: custom profiles must retain their complete
+# roster config in a later override. Shipped/user roots remain enabled by default.
+# Resolve from the installed profile, never from the source checkout or CWD.
+- id: agent-presets
+  name: '@deepseek-ai/dsh-agent-presets'
+  config:
+    default: standard
+    roots:
+      - path: !!js process.getBuiltinModule('node:path').join(process.getBuiltinModule('node:path').dirname(process.getBuiltinModule('node:module').createRequire(baseUrl).resolve('@local/dsh-worktree/package.json')), 'presets')
+        trust: system

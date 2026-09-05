@@ -46,7 +46,7 @@ Existing installations require **one DSH Web restart** after applying this updat
 
 The apply command adds every selected bundle in order. It does not remove bundles that are already installed but absent from the recipe.
 
-Worktree workers adds a host service only. To grant `worktree_create`, `worktree_list`, and background `worktree_dispatch` to a coordinating session, follow the [user-authored preset setup](packages/dsh-worktree/README.md#install-and-grant-tools). Keep DSH's standard job controls; no shipped preset or running session is modified automatically.
+Worktree workers bundles the **Worktree coordinator** agent preset with its host service. After updating and restarting the profile, select it for a new session to use worktree tools alongside Standard's coding and job tools. For the stock Web profile, installation keeps Standard as the default and preserves saved default IDs. Before installing, check the [preset-ID collision and custom-roster prerequisites](packages/dsh-worktree/README.md#install-and-select-the-preset): these can affect which preset a saved ID resolves to. No shipped preset files or running sessions are modified.
 
 ## Repository structure
 
