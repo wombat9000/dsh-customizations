@@ -14,7 +14,7 @@ Set `DSH_HOME` before applying a profile if your Harness home is not `~/.dsh`.
 
 ## Apply the starter profile
 
-The `personal-web` recipe selects the standard DSH base and Web bundles.
+The `personal-web` recipe selects the standard DSH base and Web bundles plus [Session Recap](packages/dsh-session-recap/README.md). Configure its summary model in **Settings → Plugins → Plugin configuration → Session recap** before use.
 
 1. Validate the repository:
 

@@ -1,0 +1,3 @@
+- insert:
+    - id: wombat9000-session-recap
+      name: '@wombat9000/dsh-session-recap'

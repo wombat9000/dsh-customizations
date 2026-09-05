@@ -31,6 +31,8 @@ Environment:
 }
 
 function parseArguments(argv) {
+  // pnpm forwards the documented script-argument separator.
+  if (argv[0] === '--') argv = argv.slice(1)
   const result = {
     recipe: undefined,
     profile: undefined,

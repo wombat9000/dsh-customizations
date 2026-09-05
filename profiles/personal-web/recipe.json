@@ -9,6 +9,10 @@
     {
       "name": "@deepseek-ai/dsh-web-app",
       "source": "@deepseek-ai/dsh-web-app"
+    },
+    {
+      "name": "@wombat9000/dsh-session-recap",
+      "source": "../../packages/dsh-session-recap"
     }
   ],
   "patch": "cordis.patch.yml"

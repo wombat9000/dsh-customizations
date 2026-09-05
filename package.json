@@ -9,6 +9,7 @@
   },
   "scripts": {
     "apply": "node scripts/apply-profile.mjs",
-    "check": "node scripts/check.mjs"
+    "check": "node scripts/check.mjs",
+    "test": "node --test packages/dsh-session-recap/test/*.test.*"
   }
 }
