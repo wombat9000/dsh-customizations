@@ -19,6 +19,10 @@
       "source": "../../packages/dsh-session-recap"
     },
     {
+      "name": "@local/dsh-worktree",
+      "source": "../../packages/dsh-worktree"
+    },
+    {
       "name": "@local/dsh-web-firecrawl",
       "source": "../../packages/dsh-web-firecrawl"
     }

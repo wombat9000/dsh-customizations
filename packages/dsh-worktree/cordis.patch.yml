@@ -1,0 +1,5 @@
+# Shared cross-session coordination belongs in the host composition.
+# Grant the tools separately in a user-authored agent preset; see README.md.
+- insert:
+    - id: local-worktree-workers
+      name: '@local/dsh-worktree'

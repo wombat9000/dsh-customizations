@@ -1,0 +1,9 @@
+# Add these tool rows to a COPY of your agent preset, not the shipped preset.
+# The host bundle must already mount @local/dsh-worktree.
+# Keep the preset's existing tool-jobs row; add it only if absent.
+- id: local-worktree-tools
+  name: '@local/dsh-worktree/tools'
+
+# Required existing job controls:
+# - id: tool-jobs
+#   name: '@deepseek-ai/dsh-tool-jobs'
