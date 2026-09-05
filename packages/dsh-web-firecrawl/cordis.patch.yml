@@ -1,0 +1,17 @@
+# Select Firecrawl behind DSH's stable web_search and web_fetch tools.
+
+- id: web
+  config:
+    searchProvider: firecrawl
+    fetchProvider: firecrawl
+
+- id: tool-web
+  config:
+    search: true
+    fetch: true
+    searchTimeoutMs: 60000
+    fetchTimeoutMs: 60000
+
+- insert:
+    - id: local-web-firecrawl
+      name: '@local/dsh-web-firecrawl'

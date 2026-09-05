@@ -13,6 +13,10 @@
     {
       "name": "@wombat9000/dsh-session-recap",
       "source": "../../packages/dsh-session-recap"
+    },
+    {
+      "name": "@local/dsh-web-firecrawl",
+      "source": "../../packages/dsh-web-firecrawl"
     }
   ],
   "patch": "cordis.patch.yml"
