@@ -31,14 +31,17 @@ test('preset contributes exactly three tools and consumes the host service', asy
   await assert.rejects(tools.get('worktree_list').execute({}, {}), /calling agent/)
 })
 
-test('bundle mounts only the shared host service; tools stay opt-in in authored presets', async () => {
+test('bundle keeps worktree tools out of the host and remains in the portable recipe', async () => {
   const json = async path => JSON.parse(await readFile(new URL(path, import.meta.url), 'utf8'))
   const manifest = await json('../package.json')
   const recipe = await json('../../../profiles/personal-web/recipe.json')
   assert.equal(manifest.name, '@local/dsh-worktree')
   assert.equal(manifest.exports['./tools'], './src/tools.js')
   assert.deepEqual(manifest.dsh, { bundle: { patch: './cordis.patch.yml' } })
-  assert.equal(recipe.bundles.find(bundle => bundle.name === manifest.name).source, '../../packages/dsh-worktree')
+  const bundleIndex = recipe.bundles.findIndex(bundle => bundle.name === manifest.name)
+  assert.equal(recipe.bundles[bundleIndex].source, '../../packages/dsh-worktree')
+  const webIndex = recipe.bundles.findIndex(bundle => bundle.name === '@deepseek-ai/dsh-web-app')
+  assert.ok(webIndex >= 0 && bundleIndex > webIndex, 'worktree roster patch requires Web first')
   const patch = await readFile(new URL('../cordis.patch.yml', import.meta.url), 'utf8')
   assert.match(patch, /name: '@local\/dsh-worktree'/)
   assert.doesNotMatch(patch, /name: '@local\/dsh-worktree\/tools'/)

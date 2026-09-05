@@ -4,16 +4,30 @@ Manage Git worktrees from a coordinating DSH session and dispatch fresh backgrou
 
 Targets **DSH 0.1.2-rc.1**. Uses its public agent, subagent, sandbox-policy, tool, and background-job APIs. Git and Node.js 22.19 or newer must be available on the **DSH host**. Paths refer to that host's filesystem; remote filesystem or container-path translation is not implemented.
 
-## Install and grant tools
+## Install and select the preset
 
-The repository's `personal-web` recipe includes this host bundle. Applying it installs the shared `worktreeWorkers` service, **not the agent tools**. Restart DSH after applying the host bundle; no browser UI bundle is added.
+The repository's `personal-web` recipe includes this bundle. It installs the shared `worktreeWorkers` service and makes **Worktree coordinator** (`worktree-coordinator`) available in the agent preset picker. The preset includes Standard's native coding tools, job controls, subagents, workflows, and coordination instructions. No separate worker preset is needed: workers inherit this composition, then receive the restricted tool set described below.
 
-1. Copy your preferred agent preset into a new user-authored preset using DSH's preset copy facility. Never edit the deployment's shipped presets.
-2. Add the row in [`agent.cordis.example.yml`](agent.cordis.example.yml) to the copy's `agent.cordis.yml`.
-3. Retain the preset's `@deepseek-ai/dsh-tool-jobs` row. It supplies `job_output`, `job_list`, `job_kill`, and completion delivery.
-4. Mount-validate the copied preset and start a session using it. Confirm that `worktree_create`, `worktree_list`, and `worktree_dispatch` are available.
+**Before installing, check for an existing preset with ID `worktree-coordinator`.** The bundled system root takes precedence over the usual user root. If a user preset already has this ID, the package shadows it after restart, including for saved sessions and a saved default naming that ID. Copy your existing preset to a different ID and use that copy for new sessions and your default before installing. Existing conversations retain their recorded preset ID; if they must keep resolving the old composition, do not install this bundled root yet. Profiles with customized roster configuration also need the override described below.
 
-The bundle's host row belongs in the host composition. The tool row belongs in the agent preset and consumes the shared service; do not isolate it from the service or move the service into a preset.
+1. Apply or update the `personal-web` recipe using the [repository setup instructions](../../README.md#apply-the-starter-profile). For an existing standard Web profile, you can instead run `dsh plugin --profile <profile> add /absolute/path/to/packages/dsh-worktree`, replacing both placeholders.
+2. Restart that DSH profile and refresh the page. No browser UI bundle is added.
+3. Start a new session and select **Worktree coordinator** before sending its first message.
+4. Confirm that `worktree_create`, `worktree_list`, `worktree_dispatch`, `job_output`, `job_list`, and `job_kill` are available.
+
+Installation does not write a preset selection, write user settings, modify shipped preset files, or change running sessions. Standard remains the stock default, and a default ID saved in Settings still takes precedence. The ID collision above is an exception to preserving which composition that ID resolves to. Package updates replace this bundled preset for new mounts after restart. To customize it, copy it through DSH's preset copy facility into a new user-authored preset; never edit the installed package copy. User copies do not receive later package changes automatically. Removing the bundle removes its preset root on the next profile start; saved sessions that name this preset then cannot mount it. Keep the bundle installed while those sessions still need it.
+
+### Custom profile configuration
+
+The automatic roster wiring targets the standard Web profile in **DSH 0.1.2-rc.1**. Apply this bundle after `@deepseek-ai/dsh-web-app`, which supplies the `agent-presets` row. The package exposes its `presets` directory as a configured system-trust root. DSH still discovers its shipped presets and the usual user preset root. This trust label controls preset authoring; it does not elevate worker permissions.
+
+**Cordis replaces the entire roster `config`; it does not merge root arrays.** This bundle supplies `default: standard` and its own root. If your profile sets a different configuration default, additional roots, or discovery flags, retain them in a later profile override with the complete configuration and the worktree root. Likewise, a later override that replaces `config` without retaining the worktree root removes this preset from discovery. Copy the root expression from [`cordis.patch.yml`](cordis.patch.yml); it resolves the installed package from the profile's `baseUrl`, not from the session directory. A root with an earlier matching ID wins; check for an existing `worktree-coordinator` preset before installation.
+
+The bundle's service belongs in the host composition. Its tool row belongs in the agent preset and consumes that shared service; do not isolate it from the service or move the service into a preset.
+
+### Add the tools to another preset
+
+To keep using an existing customized native-tool preset, copy it into a new user-authored preset, add [`agent.cordis.example.yml`](agent.cordis.example.yml), and retain its `@deepseek-ai/dsh-tool-jobs` row. Mount-validate the result before starting a real session. PTC-only presets are not supported. The bundled [coordinator composition](presets/worktree-coordinator/agent.cordis.yml) also provides reusable coordination guidance.
 
 ## Tools
 
@@ -71,6 +85,8 @@ No changes to the Environment plugin are necessary: it already reads the viewed 
 
 ## Development
 
+The bundled composition is a snapshot of `@deepseek-ai/dsh-agent-presets` **0.1.2-rc.1** Standard, with coordinator persona guidance and one worktree-tools row added. It does not dynamically inherit future Standard changes. The upstream MIT notice is retained in `presets/worktree-coordinator/LICENSE.standard`. When updating DSH, compare the Standard rows and their isolate realms before updating this snapshot.
+
 From the repository root:
 
 ```sh
@@ -80,4 +96,6 @@ pnpm run check
 pnpm test
 ```
 
-Tests use temporary Git repositories, the real DSH agent loop and job registry, fake model streams, and inert tool bodies. They cover authority checks, cancellation, ownership, service reload, and disposal without calling a paid model or modifying the running GUI. They do not validate a real kernel sandbox, the browser child catalog, or loading a user preset from disk. Runtime dependencies are exact-pinned packages from the official MIT-licensed [DeepSeek Harness repository](https://github.com/deepseek-ai/deepseek-harness), already used by this repository. There are no new third-party runtime libraries. Review public contracts and rerun lifecycle/security tests before changing the DSH pin.
+Worker tests use temporary Git repositories, the real DSH agent loop and job registry, fake model streams, and inert tool bodies. They cover authority checks, cancellation, ownership, service reload, and disposal. Preset tests use the pinned CLI's patch, interpolation, discovery, and standing-mount APIs with temporary profile paths. Both the complete Standard and coordinator compositions mount on the same isolated host with real dormant services. Tests check tool scoping, service isolation, unchanged saved settings, root collisions, and exact Standard structure. They do not call a paid model, modify the running GUI, or validate a real kernel sandbox or the browser child catalog. Confirm the tool list in a new GUI session after deployment.
+
+Runtime dependencies are exact-pinned packages from the official MIT-licensed [DeepSeek Harness repository](https://github.com/deepseek-ai/deepseek-harness), already used by this repository. There are no new dependencies. Review public contracts and rerun lifecycle/security tests before changing the DSH pin.

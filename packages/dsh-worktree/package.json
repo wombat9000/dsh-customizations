@@ -1,6 +1,6 @@
 {
   "name": "@local/dsh-worktree",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "Git worktrees and background one-shot workers for DSH 0.1.2-rc.1",
   "type": "module",
@@ -10,7 +10,7 @@
     "./tools": "./src/tools.js",
     "./package.json": "./package.json"
   },
-  "files": ["src", "cordis.patch.yml", "agent.cordis.example.yml", "README.md"],
+  "files": ["src", "presets", "cordis.patch.yml", "agent.cordis.example.yml", "README.md"],
   "scripts": { "test": "node --test test/*.test.js" },
   "engines": { "node": "^22.19.0 || >=24.0.0" },
   "dsh": { "bundle": { "patch": "./cordis.patch.yml" } },
