@@ -130,9 +130,13 @@ window.__ModuleLoader__.load({
       return { mount, recap, invalidateSettings() { settingsPromise = undefined }, dismiss(sessionId) { const s = state(sessionId); publish(s, { ...s.value, dismissed: true }) } }
     }
     const buttonStyle = { font: 'inherit', color: 'inherit', background: 'transparent', border: '1px solid currentColor', borderRadius: 6, padding: '3px 9px', cursor: 'pointer' }
-    function RecapCard({ sessionId, controller }) {
+    function RecapCard({ sessionId, session, controller }) {
       const [state, setState] = React.useState({})
-      React.useEffect(() => controller.mount(sessionId, { document, window }, setState), [controller, sessionId])
+      const blank = session?.blank !== false
+      React.useEffect(() => {
+        if (!blank) return controller.mount(sessionId, { document, window }, setState)
+      }, [controller, sessionId, blank])
+      if (blank) return null
       const h = React.createElement
       const show = !state.dismissed
       return h('aside', { 'aria-label': 'Session recap', style: { width: '100%', boxSizing: 'border-box', padding: '8px 12px', border: '1px solid color-mix(in srgb, currentColor 18%, transparent)', borderRadius: 10, fontSize: 13 } },
@@ -147,6 +151,7 @@ window.__ModuleLoader__.load({
     }
     function SettingsCard({ rpc, controller }) {
       const h = React.createElement
+      const [open, setOpen] = React.useState(false)
       const [draft, setDraft] = React.useState(null)
       const [providers, setProviders] = React.useState([])
       const [error, setError] = React.useState('')
@@ -184,8 +189,17 @@ window.__ModuleLoader__.load({
       }
       const row = (label, input) => h('label', { style: { display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' } }, label, input)
       return h('section', { 'aria-label': 'Session recap settings', style: { padding: 16, border: '1px solid color-mix(in srgb, currentColor 18%, transparent)', borderRadius: 12, display: 'grid', gap: 12 } },
-        h('h3', { style: { margin: 0 } }, 'Session recap'),
-        h('p', { style: { margin: 0 } }, 'Show a short recap above the composer. Recaps use the selected model and never change the transcript.'),
+        h('button', {
+          type: 'button', 'aria-expanded': open, 'aria-label': `${open ? 'Collapse' : 'Expand'}: Session recap`,
+          onClick: () => setOpen((value) => !value),
+          style: { font: 'inherit', color: 'inherit', background: 'transparent', border: 0, padding: 0, width: '100%', display: 'flex', alignItems: 'center', gap: 12, textAlign: 'left', cursor: 'pointer' },
+        },
+          h('span', { style: { flex: 1, display: 'grid', gap: 6 } },
+            h('strong', null, 'Session recap'),
+            h('span', { style: { opacity: 0.65 } }, 'Show a short recap above the composer.')),
+          h('span', { 'aria-hidden': true, style: { transform: open ? 'rotate(180deg)' : undefined } }, '⌄')),
+        open ? h('div', { style: { display: 'grid', gap: 12 } },
+        h('p', { style: { margin: 0 } }, 'Recaps use the selected model and never change the transcript.'),
         draft ? h(React.Fragment, null,
           row('Automatic recap on return', h('input', { type: 'checkbox', checked: draft.autoRecap, disabled: busy, onChange: (event) => change('autoRecap', event.target.checked) })),
           row('Inactivity (minutes)', h('input', { type: 'number', min: 1, value: draft.inactivityMinutes, disabled: busy, onChange: (event) => change('inactivityMinutes', event.target.value) })),
@@ -197,7 +211,7 @@ window.__ModuleLoader__.load({
           h('small', null, 'The catalog is advisory. You can enter an exact provider and model route. Saving validates the route without generating a recap.'),
           h('button', { type: 'button', style: buttonStyle, disabled: busy, onClick: () => { void save() } }, busy ? 'Saving…' : 'Save')) : h('span', null, 'Loading settings…'),
         error ? h('p', { role: 'alert' }, error) : null,
-        notice ? h('p', { role: 'status' }, notice) : null)
+        notice ? h('p', { role: 'status' }, notice) : null) : null)
     }
     function apply(ctx) {
       let storage

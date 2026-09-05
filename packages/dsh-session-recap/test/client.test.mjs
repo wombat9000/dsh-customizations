@@ -170,22 +170,42 @@ test('Plugins card loads advisory models and saves an exact route without recap'
   } }
   const { SettingsCard } = load(react).exports
   const render = () => { cursor = 0; return SettingsCard({ rpc, controller: { invalidateSettings() { invalidations++ } } }) }
-  render(); mounted = true; effect(); await flush()
+  const collapsed = render()
+  const header = collapsed.children[0]
+  assert.equal(header.props['aria-expanded'], false)
+  assert.equal(collapsed.children[1], null)
+  mounted = true; effect(); await flush()
+  header.props.onClick()
   const tree = render()
+  assert.equal(tree.children[0].props['aria-expanded'], true)
   const nodes = []; const walk = (node) => { if (!node || typeof node !== 'object') return; nodes.push(node); for (const child of node.children || []) walk(child) }; walk(tree)
   const select = nodes.find((node) => node.type === 'select')
   select.props.onChange({ target: { value: '["custom","uncataloged"]' } })
   const updated = render(); const flat = []; const visit = (node) => { if (!node || typeof node !== 'object') return; flat.push(node); for (const child of node.children || []) visit(child) }; visit(updated)
-  flat.find((node) => node.type === 'button').props.onClick(); await flush()
+  flat.find((node) => node.type === 'button' && node.children.includes('Save')).props.onClick(); await flush()
   assert.equal(invalidations, 1)
   const saved = calls.find((call) => call.method === 'configure')
   assert.equal(saved.payload.provider, 'custom'); assert.equal(saved.payload.model, 'uncataloged')
   assert.equal(calls.some((call) => call.method === 'recap'), false)
+  render().children[0].props.onClick()
+  const closed = render()
+  assert.equal(closed.children[0].props['aria-expanded'], false)
+  assert.equal(closed.children[1], null)
+})
+test('blank or unavailable sessions hide the card and do not mount recap activity', () => {
+  const effects = []
+  const react = { createElement: () => { throw new Error('Blank card rendered') }, useState: () => [{}, () => {}], useEffect: (effect) => effects.push(effect) }
+  const { RecapCard } = load(react).exports
+  const controller = { mount() { throw new Error('Blank session mounted') } }
+  for (const session of [undefined, { blank: true }]) {
+    assert.equal(RecapCard({ sessionId: 'new', session, controller }), null)
+  }
+  for (const effect of effects) assert.equal(effect(), undefined)
 })
 test('card renders recap as escaped React text with manual and dismiss controls', () => {
   const state = { recap: { goal: '<script>bad()</script>', outcome: 'Done', nextStep: 'Test' } }
   const react = { createElement: (type, props, ...children) => ({ type, props, children }), useState: () => [state, () => {}], useEffect: () => {} }
-  const tree = load(react).exports.RecapCard({ sessionId: 'a', controller: {} })
+  const tree = load(react).exports.RecapCard({ sessionId: 'a', session: { blank: false }, controller: {} })
   assert.equal(tree.type, 'aside'); assert.equal(tree.props['aria-label'], 'Session recap')
   const text = JSON.stringify(tree)
   assert.match(text, /<script>bad\(\)<\/script>/); assert.match(text, /Dismiss session recap/)
