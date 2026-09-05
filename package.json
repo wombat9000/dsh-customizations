@@ -10,7 +10,7 @@
   "scripts": {
     "apply": "node scripts/apply-profile.mjs",
     "check": "node scripts/check.mjs",
-    "test": "node --test packages/dsh-session-recap/test/*.test.* tests/real-ui/*.test.mjs",
+    "test": "node --test packages/dsh-session-recap/test/*.test.* packages/dsh-web-firecrawl/test/index.test.js packages/dsh-web-firecrawl/test/client.test.js packages/dsh-web-firecrawl/test/profile.integration.test.js tests/real-ui/*.test.mjs",
     "test:browser": "vitest run --config vitest.browser.config.mjs",
     "test:visual": "playwright test",
     "test:visual:update": "playwright test --update-snapshots"
