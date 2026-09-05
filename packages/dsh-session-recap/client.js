@@ -149,6 +149,33 @@ window.__ModuleLoader__.load({
           h('small', null, `Earlier recap${state.generatedAt ? ` · ${new Date(state.generatedAt).toLocaleString()}` : ''}. Select Recap to check the latest conversation.`),
           ...[['goal', 'Goal'], ['outcome', 'Latest outcome'], ['nextStep', 'Next step']].map(([key, label]) => h('p', { key, style: { margin: '6px 0 0' } }, h('strong', null, `${label}: `), state.recap[key] || 'Not established.'))) : null)
     }
+    // Match DSH's settings-card metrics using public theme tokens, not private CSS-module names.
+    const settingsStyles = `
+      .dsh-session-recap-settings { border: .5px solid var(--dsw-alias-border-l4); background: var(--dsw-alias-bg-layer-3); border-radius: 16px; list-style: none; transition: border-color .16s, background .16s; }
+      .dsh-session-recap-settings:hover { border-color: var(--dsw-alias-label-dimmed); }
+      .dsh-session-recap-settings[data-open="true"] { background: var(--dsw-alias-bg-layer-2); border-color: var(--dsw-alias-label-dimmed); }
+      .dsh-session-recap-settings__header { appearance: none; width: 100%; font: inherit; color: inherit; text-align: left; cursor: pointer; background: transparent; border: 0; border-radius: 12px; display: flex; align-items: center; gap: 12px; padding: 14px 16px; }
+      .dsh-session-recap-settings__header:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary); outline-offset: -2px; }
+      .dsh-session-recap-settings__heading { display: flex; flex-direction: column; flex: 1; gap: 4px; min-width: 0; }
+      .dsh-session-recap-settings__name { color: var(--dsw-alias-label-primary); font-size: 15px; font-weight: 600; line-height: 1.4; }
+      .dsh-session-recap-settings__description { color: var(--dsw-alias-label-tertiary); font-size: 13px; line-height: 1.5; }
+      .dsh-session-recap-settings__chevron { color: var(--dsw-alias-label-tertiary); flex: none; transition: transform .16s; }
+      .dsh-session-recap-settings[data-open="true"] .dsh-session-recap-settings__chevron { transform: rotate(180deg); }
+      .dsh-session-recap-settings__body { border-top: .5px solid var(--dsw-alias-border-l2); margin: 0 16px; padding: 12px 0 8px; display: grid; gap: 12px; color: var(--dsw-alias-label-primary); font-size: 13px; line-height: 1.5; }
+      .dsh-session-recap-settings__row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; font-size: 13px; font-weight: 500; }
+      .dsh-session-recap-settings__row input:not([type="checkbox"]), .dsh-session-recap-settings__row select { box-sizing: border-box; min-width: 0; max-width: 100%; border: .5px solid var(--dsw-alias-border-l4); background: var(--dsw-alias-bg-layer-3); height: 34px; font: inherit; font-weight: 400; color: var(--dsw-alias-label-primary); border-radius: 8px; padding: 0 12px; }
+      .dsh-session-recap-settings__row input:focus-visible, .dsh-session-recap-settings__row select:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary); outline-offset: 2px; }
+      .dsh-session-recap-settings__row input:disabled, .dsh-session-recap-settings__row select:disabled { color: var(--dsw-alias-label-tertiary); cursor: default; }
+      .dsh-session-recap-settings__hint { color: var(--dsw-alias-label-tertiary); font-size: 12px; line-height: 1.5; }
+      .dsh-session-recap-settings__footer { border-top: .5px solid var(--dsw-alias-border-l2); padding: 12px 0 4px; display: flex; justify-content: flex-end; }
+      .dsh-session-recap-settings__save { appearance: none; font: inherit; cursor: pointer; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; padding: 5px 14px; font-size: 13px; line-height: 1.5; background: transparent; color: var(--dsw-alias-label-primary); }
+      .dsh-session-recap-settings__save:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover); }
+      .dsh-session-recap-settings__save:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary); outline-offset: 2px; }
+      .dsh-session-recap-settings__save:disabled { color: var(--dsw-alias-label-tertiary); cursor: default; }
+      .dsh-session-recap-settings__body [role="alert"] { margin: 0; color: var(--dsw-alias-label-error); }
+      .dsh-session-recap-settings__body [role="status"] { margin: 0; color: var(--dsw-alias-label-secondary); }
+      @media (prefers-reduced-motion: reduce) { .dsh-session-recap-settings, .dsh-session-recap-settings__chevron { transition: none; } }
+    `
     function SettingsCard({ rpc, controller }) {
       const h = React.createElement
       const [open, setOpen] = React.useState(false)
@@ -159,6 +186,12 @@ window.__ModuleLoader__.load({
       const [busy, setBusy] = React.useState(false)
       React.useEffect(() => {
         let alive = true
+        const style = typeof document === 'undefined' ? null : document.createElement('style')
+        if (style) {
+          style.dataset.pluginCss = `${ID}/settings`
+          style.textContent = settingsStyles
+          document.head.appendChild(style)
+        }
         const load = async () => {
           try {
             const result = await rpc.call(CHANNEL, 'settings', {})
@@ -172,7 +205,7 @@ window.__ModuleLoader__.load({
           if (result.ok) setProviders(result.value.providers)
           else setNotice('Model catalog unavailable. You can enter an exact route below.')
         }, () => { if (alive) setNotice('Model catalog unavailable. You can enter an exact route below.') })
-        return () => { alive = false }
+        return () => { alive = false; style?.remove() }
       }, [rpc])
       const change = (key, value) => setDraft((draft) => ({ ...draft, [key]: value }))
       const save = async () => {
@@ -187,18 +220,19 @@ window.__ModuleLoader__.load({
         } catch (error) { setError(error.message || String(error)) }
         finally { setBusy(false) }
       }
-      const row = (label, input) => h('label', { style: { display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' } }, label, input)
-      return h('section', { 'aria-label': 'Session recap settings', style: { padding: 16, border: '1px solid color-mix(in srgb, currentColor 18%, transparent)', borderRadius: 12, display: 'grid', gap: 12 } },
+      const row = (label, input) => h('label', { className: 'dsh-session-recap-settings__row' }, label, input)
+      return h('section', { 'aria-label': 'Session recap settings', className: 'dsh-session-recap-settings', 'data-open': open },
         h('button', {
           type: 'button', 'aria-expanded': open, 'aria-label': `${open ? 'Collapse' : 'Expand'}: Session recap`,
           onClick: () => setOpen((value) => !value),
-          style: { font: 'inherit', color: 'inherit', background: 'transparent', border: 0, padding: 0, width: '100%', display: 'flex', alignItems: 'center', gap: 12, textAlign: 'left', cursor: 'pointer' },
+          className: 'dsh-session-recap-settings__header',
         },
-          h('span', { style: { flex: 1, display: 'grid', gap: 6 } },
-            h('strong', null, 'Session recap'),
-            h('span', { style: { opacity: 0.65 } }, 'Show a short recap above the composer.')),
-          h('span', { 'aria-hidden': true, style: { transform: open ? 'rotate(180deg)' : undefined } }, '⌄')),
-        open ? h('div', { style: { display: 'grid', gap: 12 } },
+          h('span', { className: 'dsh-session-recap-settings__heading' },
+            h('span', { className: 'dsh-session-recap-settings__name' }, 'Session recap'),
+            h('span', { className: 'dsh-session-recap-settings__description' }, 'Show a short recap above the composer.')),
+          h('svg', { className: 'dsh-session-recap-settings__chevron', 'aria-hidden': true, focusable: 'false', width: 14, height: 14, viewBox: '0 0 14 14', fill: 'none' },
+            h('path', { d: 'M3.5 5.25 7 8.75l3.5-3.5', stroke: 'currentColor', strokeWidth: 1.2, strokeLinecap: 'round', strokeLinejoin: 'round' }))),
+        open ? h('div', { className: 'dsh-session-recap-settings__body' },
         h('p', { style: { margin: 0 } }, 'Recaps use the selected model and never change the transcript.'),
         draft ? h(React.Fragment, null,
           row('Automatic recap on return', h('input', { type: 'checkbox', checked: draft.autoRecap, disabled: busy, onChange: (event) => change('autoRecap', event.target.checked) })),
@@ -208,8 +242,9 @@ window.__ModuleLoader__.load({
             ...providers.map((provider) => h('optgroup', { key: provider.id, label: provider.name || provider.id }, ...provider.models.map((model) => h('option', { key: model.id, value: JSON.stringify([provider.id, model.id]) }, model.name || model.id)))))),
           row('Provider ID', h('input', { value: draft.provider || '', disabled: busy, onChange: (event) => change('provider', event.target.value) })),
           row('Model ID', h('input', { value: draft.model || '', disabled: busy, onChange: (event) => change('model', event.target.value) })),
-          h('small', null, 'The catalog is advisory. You can enter an exact provider and model route. Saving validates the route without generating a recap.'),
-          h('button', { type: 'button', style: buttonStyle, disabled: busy, onClick: () => { void save() } }, busy ? 'Saving…' : 'Save')) : h('span', null, 'Loading settings…'),
+          h('small', { className: 'dsh-session-recap-settings__hint' }, 'The catalog is advisory. You can enter an exact provider and model route. Saving validates the route without generating a recap.'),
+          h('div', { className: 'dsh-session-recap-settings__footer' },
+            h('button', { type: 'button', className: 'dsh-session-recap-settings__save', disabled: busy, onClick: () => { void save() } }, busy ? 'Saving…' : 'Save'))) : h('span', null, 'Loading settings…'),
         error ? h('p', { role: 'alert' }, error) : null,
         notice ? h('p', { role: 'status' }, notice) : null) : null)
     }

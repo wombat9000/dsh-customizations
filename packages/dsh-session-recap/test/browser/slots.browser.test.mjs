@@ -8,6 +8,25 @@ let fixture
 afterEach(async () => { await fixture?.unmount(); fixture = undefined })
 const click = (locator) => act(async () => { await locator.click() })
 
+test('settings owns a scoped stylesheet and removes it on unmount', async () => {
+  fixture = await mountSlot('settings.plugin.item')
+  const selector = 'style[data-plugin-css="wombat9000-session-recap/settings"]'
+  const style = document.querySelector(selector)
+  expect(style).not.toBeNull()
+  const check = (rules) => {
+    for (const rule of rules) {
+      if (rule.selectorText) {
+        for (const selector of rule.selectorText.split(',')) expect(selector.trim()).toMatch(/^\.dsh-session-recap-settings(?:\b|__)/)
+      } else if (rule.cssRules) check(rule.cssRules)
+    }
+  }
+  check(style.sheet.cssRules)
+  expect(page.getByRole('button', { name: 'Expand: Session recap' }).element().querySelector('svg[aria-hidden="true"]')).not.toBeNull()
+  await fixture.unmount()
+  fixture = undefined
+  expect(document.querySelector(selector)).toBeNull()
+})
+
 test('expanded settings fits a narrow slot', async () => {
   fixture = await mountSlot('settings.plugin.item', { narrow: true })
   await click(page.getByRole('button', { name: 'Expand: Session recap' }))
