@@ -1,0 +1,14 @@
+/* Deterministic slot-host fixture, not a copy of DSH's application shell. */
+:root { font-family: Arial, sans-serif; font-size: 14px; line-height: 1.5; color: #243044; background: #edf0f4; color-scheme: light; }
+body { margin: 0; }
+.fixture { box-sizing: border-box; width: 760px; max-width: 100%; padding: 24px; background: #fff; }
+h1 { font-size: 20px; line-height: 1.4; margin: 0 0 20px; }
+.conversation { min-height: 96px; margin-bottom: 16px; color: #596579; }
+textarea { display: block; box-sizing: border-box; width: 100%; height: 80px; margin-top: 12px; padding: 12px; resize: none; }
+input, select, textarea { font: inherit; color: inherit; background: #fff; border: 1px solid #abb4c1; border-radius: 4px; }
+input:not([type=checkbox]), select { padding: 4px 8px; }
+input[type=number] { width: 90px; }
+.fixture.dark { color: #e3e8ef; background: #18202c; color-scheme: dark; }
+.dark .conversation { color: #b7c0cf; }
+.dark input, .dark select, .dark textarea { background: #222e3e; border-color: #64748b; }
+* { animation: none !important; transition: none !important; caret-color: transparent !important; }

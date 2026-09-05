@@ -11,6 +11,8 @@ node_modules/
 # Build and test output
 lib/
 coverage/
+.vitest/
+artifacts/browser/
 
 # Backups created by the profile apply script
 *.bak
