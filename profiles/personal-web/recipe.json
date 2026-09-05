@@ -11,6 +11,10 @@
       "source": "@deepseek-ai/dsh-web-app"
     },
     {
+      "name": "@local/dsh-session-environment",
+      "source": "../../packages/dsh-session-environment"
+    },
+    {
       "name": "@wombat9000/dsh-session-recap",
       "source": "../../packages/dsh-session-recap"
     },

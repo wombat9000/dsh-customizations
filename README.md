@@ -14,14 +14,16 @@ Set `DSH_HOME` before applying a profile if your Harness home is not `~/.dsh`.
 
 ## Apply the starter profile
 
-The `personal-web` recipe selects the standard DSH base and Web bundles plus [Session Recap](packages/dsh-session-recap/README.md) and [Firecrawl](packages/dsh-web-firecrawl/README.md), targeting DSH `0.1.2-rc.1`. Configure the recap summary model in **Settings → Plugins → Plugin configuration → Session recap** and save your Firecrawl key in the collapsible **Firecrawl** card in that same list. Firecrawl replaces the profile's search/fetch providers; it requires a key before either web tool can run.
+The `personal-web` recipe selects the standard DSH base and Web bundles plus [Session Environment](packages/dsh-session-environment/README.md), [Session Recap](packages/dsh-session-recap/README.md), and [Firecrawl](packages/dsh-web-firecrawl/README.md), targeting DSH `0.1.2-rc.1`. Configure the recap summary model in **Settings → Plugins → Plugin configuration → Session recap** and save your Firecrawl key in the collapsible **Firecrawl** card in that same list. Firecrawl replaces the profile's search/fetch providers; it requires a key before either web tool can run.
 
 Existing installations require **one DSH Web restart** after applying this update so the host-side `web-firecrawl` settings registration discovers the card. Refresh the page afterward. Subsequent key changes take effect on the next request without a restart. Keys stay in DSH's credential store (or the launching environment), never in this repository.
 
-1. Validate the repository:
+1. Install dependencies, validate the repository, and build Session Environment:
 
    ```sh
+   pnpm install --frozen-lockfile --ignore-scripts
    pnpm run check
+   pnpm run build
    ```
 
 2. Preview the commands without changing DSH:
@@ -104,7 +106,9 @@ Run the following commands after you pull changes:
 
 ```sh
 git pull
+pnpm install --frozen-lockfile --ignore-scripts
 pnpm run check
+pnpm run build
 pnpm run apply -- personal-web
 ```
 
@@ -112,7 +116,7 @@ If a package needs a build step, run its workspace build before applying the pro
 
 ## Run tests
 
-Install dependencies with `pnpm install --frozen-lockfile --ignore-scripts`. Run repository checks with `pnpm run check` and the Node.js unit and host-integration tests with `pnpm test`.
+Install dependencies with `pnpm install --frozen-lockfile --ignore-scripts`. Run repository checks with `pnpm run check` and the Node.js unit and host-integration tests with `pnpm test`. The test command first runs `pnpm run build`, which type-checks and bundles Session Environment's TypeScript host and client. Its integration tests validate recipe wiring and generated entrypoints without starting DSH; the browser suites below do not yet cover the Environment card.
 
 ### Browser interactions and real DSH screenshots
 
