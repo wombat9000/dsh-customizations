@@ -13,6 +13,7 @@ lib/
 coverage/
 .vitest/
 artifacts/browser/
+artifacts/real-ui/
 
 # Backups created by the profile apply script
 *.bak

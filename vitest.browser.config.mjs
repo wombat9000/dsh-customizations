@@ -4,8 +4,7 @@ import { playwright } from '@vitest/browser-playwright'
 export default defineConfig({
   test: {
     include: ['packages/*/test/browser/*.browser.test.mjs'],
-    // Missing baselines must fail even outside CI. Only the update script writes them.
-    update: process.argv.includes('--update') ? 'all' : 'none',
+    // Component interactions only. Real-host visual comparisons use playwright.config.mjs.
     browser: {
       enabled: true,
       headless: true,
@@ -19,11 +18,6 @@ export default defineConfig({
       viewport: { width: 1000, height: 800 },
       screenshotDirectory: 'artifacts/browser',
       screenshotFailures: true,
-      expect: {
-        toMatchScreenshot: {
-          comparatorOptions: { allowedMismatchedPixels: 0, threshold: 0, includeAA: true },
-        },
-      },
     },
   },
 })

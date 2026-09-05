@@ -33,7 +33,7 @@ export async function mountSlot(name, { blank = false, narrow = false, dark = fa
         id: 'fixture-provider', name: 'Fixture provider',
         models: [{ id: 'fixture-model', name: 'Fixture model' }],
       }] } }
-      case 'recap': if (recapError) return { ok: false, error: { message: 'The fixture provider is unavailable. Try again.' } }
+      case 'recap': if (recapError) return { ok: false, error: { code: 'fixture-error', details: {}, message: 'The fixture provider is unavailable. Try again.' } }
         return { ok: true, value: {
         sessionId: payload.sessionId, generatedAt: '2026-01-02T03:04:05.000Z',
         recap: {

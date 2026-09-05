@@ -35,8 +35,10 @@ jobs:
       - run: pnpm install --frozen-lockfile --ignore-scripts
       - run: pnpm run check
       - run: pnpm test
-      # Never update baselines in CI. Missing and changed images must fail.
       - run: pnpm run test:browser
+      # One disposable DSH host serves the entire visual suite in this same job.
+      # Never update baselines in CI. Missing and changed images must fail.
+      - run: pnpm run test:visual
       - name: Upload browser failure evidence
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -45,6 +47,7 @@ jobs:
           path: |
             .vitest/attachments/
             artifacts/browser/
+            artifacts/real-ui/
           include-hidden-files: true
           if-no-files-found: ignore
           retention-days: 7
