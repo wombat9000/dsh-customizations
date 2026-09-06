@@ -1,6 +1,22 @@
 import { hasWorktreeCapability } from './capability.js'
 export const CHANNEL = '/local-worktrees'
 
+// Connection passes handler results through verbatim; it does not wrap values.
+export function createSnapshotRpcHandler(ctx, manager) {
+  const snapshot = createSnapshotHandler(ctx, manager)
+  return async (method, args) => {
+    try {
+      const value = await snapshot(method, args)
+      if (value.state === 'error') return { ok: false, error: { code: 'worktrees/read-failed', message: value.message, details: {} } }
+      return { ok: true, value }
+    } catch {
+      // Include capability lookup failures: the transport otherwise exposes thrown
+      // exceptions in its HTTP 500 body. Never send raw host exceptions.
+      return { ok: false, error: { code: 'worktrees/read-failed', message: 'Worktrees could not complete this request. Try again.', details: {} } }
+    }
+  }
+}
+
 export function createSnapshotHandler(ctx, manager) {
   const pending = new WeakMap()
   return async (method, args) => {

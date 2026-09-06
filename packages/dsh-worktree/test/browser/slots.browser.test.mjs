@@ -17,11 +17,13 @@ async function mount() {
   const listeners = new Set()
   let jobs = {}, value = snapshot(), deferred
   const rpc = { call: vi.fn(async (_channel, method, args) => {
-    if (method === 'capability') return { sessionId: args.sessionId, state: 'ready' }
+    if (method === 'capability') return { ok: true, value: { sessionId: args.sessionId, state: 'ready' } }
     if (deferred) await deferred.promise
     const result = structuredClone(value)
     if (args.runId === 'old' && result.selected) result.selected.run = { id: 'old', task: 'Implement feature', report: 'Tests passed' }
-    return result
+    return result.state === 'error'
+      ? { ok: false, error: { code: 'worktrees/read-failed', message: result.message, details: {} } }
+      : { ok: true, value: result }
   }) }
   const sessions = { list: { getSnapshot: () => ({ current: 'a', jobsBySession: jobs }), subscribe: cb => { listeners.add(cb); return () => listeners.delete(cb) } } }
   let registration, dispose
@@ -96,10 +98,20 @@ test('loading, backend error, unavailable, empty worktrees and empty runs render
     expect(f.container.textContent).toContain('Loading worktrees')
     await release()
     for (const [value, text] of [
-      [{ sessionId: 'a', state: 'error', message: 'Git unavailable' }, 'Git unavailable'],
+      [{ sessionId: 'a', state: 'error', message: 'private host details' }, 'Worktrees could not refresh. Try again.'],
       [{ sessionId: 'a', state: 'unavailable' }, 'unavailable for this session'],
+      [{ sessionId: 'a', state: 'disabled' }, 'unavailable for this session'],
       [{ sessionId: 'a', state: 'ready', worktrees: [], selected: null }, 'No worktrees found'],
       [{ ...snapshot(), selected: { path: '/repo/a', changes: { count: 0, files: [] }, runs: [], run: null } }, 'No recorded runs'],
-    ]) { f.set(value); await f.click('Refresh'); expect(f.container.textContent).toContain(text) }
+    ]) {
+      f.set(value); await f.click('Refresh')
+      expect(f.container.textContent).toContain(text)
+      expect(f.container.textContent).not.toContain('private host details')
+      if (value.state === 'error') {
+        expect(f.container.querySelector('[role="alert"]')).toBeTruthy()
+        expect(f.container.textContent).not.toContain('No worktrees found')
+        expect(f.container.textContent).not.toContain('Review feature')
+      }
+    }
   } finally { await f.close() }
 })
