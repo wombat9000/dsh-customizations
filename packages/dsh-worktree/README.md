@@ -57,7 +57,7 @@ Dispatch accepts an existing registered linked worktree from this repository, in
 
 1. Ask the coordinator to create `login-validation` and `search-pagination`.
 2. Dispatch implementation assignments with `mode: write` to both returned paths.
-3. Continue coordinating while the jobs run. On completion, collect each report with `job_output`.
+3. Finish independent coordination work while the jobs run. When only workers remain, end the turn with a brief progress update naming pending jobs and the next action. After completion notifications arrive, collect each report with `job_output`; do not use `wait: true` merely to supervise workers.
 4. Dispatch `mode: read-only` review assignments to the same paths. Optionally set `context_from` to the completed implementation job ID.
 5. Dispatch fresh write-mode workers to address review findings.
 6. Review and integrate retained changes explicitly. The plugin never merges or deletes worktrees.
@@ -81,7 +81,11 @@ The plugin retains at most 100 recent reports per live coordinator, bounded to 3
 
 ## Job lifecycle and limitations
 
-Jobs use DSH's existing `job_list`, `job_output`, and `job_kill`. Busy coordinators receive completion notices in their inbox; idle coordinators may be woken according to their job-controller configuration. The default controller allows three consecutive automatic wakes before notices remain queued, so this is not an unbounded autonomous scheduler. The default job registry admits ten running/stopping jobs per owner, shared with other background tools; it refuses admission at capacity instead of queueing.
+Jobs use DSH's existing `job_list`, `job_output`, and `job_kill`. The bundled preset explicitly sets `tool-jobs` to `completionDelivery: wakeup` and `maxConsecutiveWakes: 10`, instead of the upstream default budget of three. An idle coordinator receives up to ten consecutive completion-driven followup turns. A busy coordinator receives an injected notice without a duplicate followup turn. Claiming a human user message from the inbox resets the budget; merely inserting a message or claiming a plugin notice does not. After budget exhaustion, completions remain queued for a later turn rather than waking the coordinator. This uses the existing upstream controller, not an unbounded scheduler or a core DSH change, and grants no broader tools or permissions.
+
+Yielding ends the current turn, not the task. Give a brief progress update rather than a completion report while workers remain. Do not create an automatic goal solely to supervise workers. Keep existing goals truthful: pending workers alone do not justify marking a goal complete or blocked.
+
+The default job registry admits ten running/stopping jobs per owner, shared with other background tools; it refuses admission at capacity instead of queueing. This concurrency limit is separate from the wake budget.
 
 A job owns cancellation independently of its dispatch tool call. Completion waits for worker disposal before releasing the checkout assignment. Cancelling retains partial file changes. The worker's resources are disposed, but its worktree is not deleted. If cleanup fails, the checkout remains busy with `cleanupUncertain: true`; investigate the remaining resources before restarting the host. The plugin does not offer a force-unlock that could overlap an orphaned worker.
 
@@ -93,7 +97,7 @@ No changes to the Environment plugin are necessary: it already reads the viewed 
 
 ## Development
 
-The bundled composition is a snapshot of `@deepseek-ai/dsh-agent-presets` **0.1.2-rc.1** Standard, with coordinator persona guidance, one worktree-tools row, and an official Creator skill-directory reference added. It does not dynamically inherit future Standard changes. The upstream MIT notice is retained in `presets/worktree-coordinator/LICENSE.standard`. When updating DSH, compare the Standard rows and their isolate realms before updating this snapshot.
+The bundled composition is a snapshot of `@deepseek-ai/dsh-agent-presets` **0.1.2-rc.1** Standard, with coordinator persona guidance, one worktree-tools row, an official Creator skill-directory reference, and explicit bounded completion-wake configuration. It does not dynamically inherit future Standard changes. The upstream MIT notice is retained in `presets/worktree-coordinator/LICENSE.standard`. When updating DSH, compare the Standard rows and their isolate realms before updating this snapshot.
 
 From the repository root:
 
@@ -104,6 +108,6 @@ pnpm run check
 pnpm test
 ```
 
-Worker tests use temporary Git repositories, the real DSH agent loop and job registry, fake model streams, and inert tool bodies. They cover authority checks, cancellation, ownership, service reload, and disposal. Preset tests use the pinned CLI's patch, interpolation, discovery, and standing-mount APIs with temporary profile paths. The complete Standard and coordinator compositions, plus a coordinator copy made through the roster API in a separate user root without adjacent dependencies, mount on the same isolated host with real dormant services. Tests check tool scoping, service isolation, unchanged saved settings, root collisions, and exact Standard structure. They do not call a paid model, modify the running GUI, or validate a real kernel sandbox or the browser child catalog. Confirm the tool list in a new GUI session after deployment.
+Worker tests use temporary Git repositories, the real DSH agent loop and job registry, fake model streams, and inert tool bodies. They cover authority checks, cancellation, ownership, service reload, and disposal. Completion tests mount the installed upstream `tool-jobs` controller in a real agent scope and exercise idle followup, busy injection without duplicate followup, budget exhaustion, and human-message claim reset. Preset tests use the pinned CLI's patch, interpolation, discovery, and standing-mount APIs with temporary profile paths. The complete Standard and coordinator compositions, plus a coordinator copy made through the roster API in a separate user root without adjacent dependencies, mount on the same isolated host with real dormant services. Tests check tool scoping, service isolation, unchanged saved settings, root collisions, and exact Standard structure. They do not call a paid model, modify the running GUI, or validate a real kernel sandbox or the browser child catalog. Confirm the tool list in a new GUI session after deployment.
 
 Runtime dependencies are exact-pinned packages from the official MIT-licensed [DeepSeek Harness repository](https://github.com/deepseek-ai/deepseek-harness), already used by this repository. The skill-directory reference declares the already-used official `dsh-agent-presets` package as a direct dependency; it introduces no new vendor or package version. Review public contracts and rerun lifecycle/security tests before changing the DSH pin.

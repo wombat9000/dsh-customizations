@@ -90,9 +90,11 @@ test('coordinator retains every Standard row and only adds its tool contribution
     assert.equal(copied.name, original.name)
     assert.deepEqual(copied.disabled, original.disabled, `${original.id} enablement changed`)
     assert.deepEqual(copied.isolate, original.isolate, `${original.id} realm changed`)
-    // Only persona guidance and the official skill root customize leaf configs;
-    // every tool config stays identical to Standard.
-    if (!original.group && !['persona', 'skill-filesystem'].includes(original.id)) assert.deepEqual(copied.config, original.config, `${original.id} config changed`)
+    // Only guidance, the official skill root, and bounded job wakes differ.
+    if (original.id === 'tool-jobs') assert.deepEqual(copied.config, {
+      ...original.config, completionDelivery: 'wakeup', maxConsecutiveWakes: 10,
+    })
+    else if (!original.group && !['persona', 'skill-filesystem'].includes(original.id)) assert.deepEqual(copied.config, original.config, `${original.id} config changed`)
   }
   const tools = actual.filter(row => row.name === '@local/dsh-worktree/tools')
   assert.equal(tools.length, 1)
@@ -103,9 +105,20 @@ test('coordinator retains every Standard row and only adds its tool contribution
   const skillConfig = standard.find(row => row.id === 'skill-filesystem').config
   if (skillConfig === undefined) delete normalized.find(row => row.id === 'skill-filesystem').config
   else normalized.find(row => row.id === 'skill-filesystem').config = structuredClone(skillConfig)
+  const jobsConfig = standard.find(row => row.id === 'tool-jobs').config
+  if (jobsConfig === undefined) delete normalized.find(row => row.id === 'tool-jobs').config
+  else normalized.find(row => row.id === 'tool-jobs').config = structuredClone(jobsConfig)
   assert.deepEqual(normalized, standard, 'preserve exact Standard nesting and consumer realms')
   assert.ok(!actual.some(row => row.name.includes('tool-cordis')))
   const persona = actual.find(row => row.id === 'persona').config.text
+  assert.match(persona, /Finish independent coordination work first/)
+  assert.match(persona, /When only background workers remain, END your turn with a brief progress update/)
+  assert.match(persona, /Yielding the turn is not reporting task completion/)
+  assert.match(persona, /Do not use job_output\(wait: true\) merely to supervise workers; collect their results after completion notifications/)
+  assert.match(persona, /Do not create an automatic goal solely for worker supervision/)
+  assert.match(persona, /pending workers alone do not justify marking it complete or blocked/)
+  assert.match(persona, /Claiming a human user message from the inbox resets the wake budget/)
+  assert.match(persona, /completions remain queued rather than waking/)
   assert.match(persona, /plugin implementation or review, load the cordis-plugin-development skill/)
   assert.match(persona, /Before writing or changing a Cordis composition, load the editing-cordis-compositions skill/)
   assert.match(persona, /not grants of Creator runtime tools or broader permissions/)
