@@ -11,7 +11,7 @@ The repository's `personal-web` recipe includes this bundle. It installs the sha
 **Before installing, check for an existing preset with ID `worktree-coordinator`.** The bundled system root takes precedence over the usual user root. If a user preset already has this ID, the package shadows it after restart, including for saved sessions and a saved default naming that ID. Copy your existing preset to a different ID and use that copy for new sessions and your default before installing. Existing conversations retain their recorded preset ID; if they must keep resolving the old composition, do not install this bundled root yet. Profiles with customized roster configuration also need the override described below.
 
 1. Apply or update the `personal-web` recipe using the [repository setup instructions](../../README.md#apply-the-starter-profile). For an existing standard Web profile, you can instead run `dsh plugin --profile <profile> add /absolute/path/to/packages/dsh-worktree`, replacing both placeholders.
-2. Restart that DSH profile and refresh the page. No browser UI bundle is added.
+2. Restart that DSH profile and refresh the page to load the Worktrees tab.
 3. Start a new session and select **Worktree coordinator** before sending its first message.
 4. Confirm that `worktree_create`, `worktree_list`, `worktree_dispatch`, `job_output`, `job_list`, and `job_kill` are available.
 
@@ -36,6 +36,16 @@ The bundle's service belongs in the host composition. Its tool row belongs in th
 ### Add the tools to another preset
 
 To keep using an existing customized native-tool preset, copy it into a new user-authored preset, add [`agent.cordis.example.yml`](agent.cordis.example.yml), and retain its `@deepseek-ai/dsh-tool-jobs` row. Mount-validate the result before starting a real session. PTC-only presets are not supported. The bundled [coordinator composition](presets/worktree-coordinator/agent.cordis.yml) also provides reusable coordination guidance.
+
+## Read-only Worktrees tab
+
+The **Worktrees** conversation tab appears only when the viewed live session has this integration's registered capability. Copied presets work if they retain the integration; the preset name alone does not enable the tab. The tab lists repository Git worktrees, shows worker status separately from Git changes, and lets you copy the selected checkout path. It provides no create, dispatch, cancel, merge, delete, or other mutation controls.
+
+Assignments, reports, and recorded run counts belong only to the viewed session. History is process-local and retains at most 100 runs per live session, with reports limited to 32,000 characters. Restarting the harness or unloading the session loses this history. Counts are not lifetime totals. Repository-wide worker status can indicate another session's activity, but does not reveal its assignments or reports.
+
+While the page is visible and the tab is mounted, job subscriptions and 10-second polling refresh its data. Returning to the page also triggers a refresh; **Refresh** requests one manually. Refresh preserves the resolved checkout and run, including an initially automatic selection. If either disappears, the tab keeps that selection unavailable instead of switching to another one. An empty history selects its first arriving run, then preserves that run until you choose another selection. Remounting the tab resets selection.
+
+Git inspection includes tracked and untracked files, but excludes ignored files and submodule changes. It shows no inline diffs and does not refresh the Git index. Lists are bounded to 100 worktrees and 500 changed files per checkout. Bare, prunable, inaccessible, or unsafe checkouts can have unavailable Git status; configured executable status filters are refused.
 
 ## Tools
 

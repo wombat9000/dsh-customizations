@@ -8,12 +8,19 @@
   "exports": {
     ".": "./src/index.js",
     "./tools": "./src/tools.js",
+    "./client": "./client.js",
     "./package.json": "./package.json"
   },
-  "files": ["src", "presets", "cordis.patch.yml", "agent.cordis.example.yml", "README.md"],
+  "files": ["client.js", "src", "presets", "cordis.patch.yml", "agent.cordis.example.yml", "README.md"],
   "scripts": { "test": "node --test test/*.test.js" },
   "engines": { "node": "^22.19.0 || >=24.0.0" },
-  "dsh": { "bundle": { "patch": "./cordis.patch.yml" } },
+  "dsh": {
+    "bundle": { "patch": "./cordis.patch.yml" },
+    "client": {
+      "inject": ["@deepseek-ai/dsh-client-ui-conversation", "@deepseek-ai/dsh-api-remotes"],
+      "platform": "web"
+    }
+  },
   "dependencies": {
     "@deepseek-ai/dsh-agent": "0.1.2-rc.1",
     "@deepseek-ai/dsh-agent-presets": "0.1.2-rc.1",
@@ -30,6 +37,12 @@
     "@deepseek-ai/dsh-session-projection": "0.1.2-rc.1",
     "@deepseek-ai/dsh-system-prompt": "0.1.2-rc.1"
   },
-  "peerDependencies": { "@deepseek-ai/cordis": "4.0.2" },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "4.0.2",
+    "@deepseek-ai/dsh-api-remotes": "0.1.2-rc.1",
+    "@deepseek-ai/dsh-client-connection": "0.1.2-rc.1",
+    "@deepseek-ai/dsh-client-ui-conversation": "0.1.2-rc.1",
+    "react": "18.3.1"
+  },
   "license": "UNLICENSED"
 }

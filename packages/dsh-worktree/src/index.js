@@ -2,6 +2,7 @@ import { Service } from '@deepseek-ai/cordis'
 import { settleRun } from '@deepseek-ai/dsh-subagent'
 import * as git from './git.js'
 import { startRegisteredWorker } from './worker.js'
+import { CHANNEL, createSnapshotHandler } from './snapshot.js'
 
 export const name = 'worktree-workers'
 const MAX_REPORTS = 100
@@ -119,6 +120,9 @@ export class WorktreeManager {
       if (previous.status === 'running') throw new Error('The context source has not finished')
       handoff = `Previous assignment (${previous.status}):\n${bounded(previous.task, 4000)}\n\nPrevious report:\n${bounded(previous.report || '(no report available)', 26000)}`
     }
+    if (history.size >= MAX_REPORTS && [...history.values()].every(run => run.status === 'running')) {
+      throw new Error('Recorded run limit reached; wait for an assignment to finish')
+    }
     const record = { owner: parent, path: worktree.path, mode, task, status: 'running', report: '', jobId: undefined }
     this.active.set(worktree.path, record)
     try {
@@ -183,6 +187,9 @@ export default class WorktreeService extends Service {
   constructor(ctx) {
     super(ctx, 'worktreeWorkers')
     this.manager = new WorktreeManager(ctx)
+    ctx.inject(['connection'], connectionCtx => {
+      connectionCtx.effect(() => connectionCtx.connection.rpc.handle(CHANNEL, createSnapshotHandler(ctx, this.manager)))
+    })
   }
   create(parent, name, signal) { return this.manager.create(parent, name, signal) }
   list(parent, signal) { return this.manager.list(parent, signal) }
