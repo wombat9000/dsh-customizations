@@ -7,21 +7,23 @@ This private repository keeps DSH plugin bundles and reproducible profile recipe
 Install these tools before you use the repository:
 
 - DSH, with the `dsh` command available on `PATH`
-- Node.js 22.19 or newer
-- pnpm 11.9
+- Node.js `^22.19.0 || >=24.0.0`
+- pnpm 11.9.0, already available locally (not an unverified downloader shim)
+
+Before dependency work in any checkout or worktree, follow the [repository setup skill](.agents/skills/repository-setup/SKILL.md). It covers dependency ownership, pinned executable availability, offline cache limitations, and approval boundaries. You can read this Markdown directly without a plugin.
 
 Set `DSH_HOME` before applying a profile if your Harness home is not `~/.dsh`.
 
 ## Apply the starter profile
 
-The `personal-web` recipe selects the standard DSH base and Web bundles plus [Session Environment](packages/dsh-session-environment/README.md), [Session Recap](packages/dsh-session-recap/README.md), [Worktree workers](packages/dsh-worktree/README.md), and [Firecrawl](packages/dsh-web-firecrawl/README.md), targeting DSH `0.1.2-rc.1`. Configure the recap summary model in **Settings → Plugins → Plugin configuration → Session recap** and save your Firecrawl key in the collapsible **Firecrawl** card in that same list. Firecrawl replaces the profile's search/fetch providers; it requires a key before either web tool can run.
+The `personal-web` recipe selects the standard DSH base and Web bundles plus [Session Environment](packages/dsh-session-environment/README.md), [Session Recap](packages/dsh-session-recap/README.md), [Worktree workers](packages/dsh-worktree/README.md), [Project Steward](packages/dsh-project-steward/README.md), and [Firecrawl](packages/dsh-web-firecrawl/README.md), targeting DSH `0.1.2-rc.1`. Configure the recap summary model in **Settings → Plugins → Plugin configuration → Session recap** and save your Firecrawl key in the collapsible **Firecrawl** card in that same list. Firecrawl replaces the profile's search/fetch providers; it requires a key before either web tool can run.
 
 Existing installations require **one DSH Web restart** after applying this update so the host-side `web-firecrawl` settings registration discovers the card. Refresh the page afterward. Subsequent key changes take effect on the next request without a restart. Keys stay in DSH's credential store (or the launching environment), never in this repository.
 
-1. Install dependencies, validate the repository, and build Session Environment:
+1. After the setup procedure's ownership, executable, cache, and approval checks, install dependencies, validate the repository, and build Session Environment. If the offline install fails, stop; obtain separate approval for cache population rather than retrying online:
 
    ```sh
-   pnpm install --frozen-lockfile --ignore-scripts
+   pnpm install --offline --frozen-lockfile --ignore-scripts
    pnpm run check
    pnpm run build
    ```
@@ -47,6 +49,8 @@ Existing installations require **one DSH Web restart** after applying this updat
 The apply command adds every selected bundle in order. It does not remove bundles that are already installed but absent from the recipe.
 
 Worktree workers bundles the **Worktree coordinator** agent preset with its host service. After updating and restarting the profile, select it for a new session to use worktree tools alongside Standard's coding and job tools. For the stock Web profile, installation keeps Standard as the default and preserves saved default IDs. Before installing, check the [preset-ID collision and custom-roster prerequisites](packages/dsh-worktree/README.md#install-and-select-the-preset): these can affect which preset a saved ID resolves to. No shipped preset files or running sessions are modified.
+
+Project Steward bundles a separate **Project Steward** preset for repository setup and guidance audits. It retains Standard's tools, proposes changes before writing, and carries optional versioned templates. The personal-web profile patch retains both preset roots because bundle patches replace the entire roster configuration. Inspect [Project Steward's installation prerequisites](packages/dsh-project-steward/README.md#install-and-select) for ID collisions and custom roots. Selecting it performs no setup writes or installs.
 
 ## Repository structure
 
@@ -104,11 +108,11 @@ pnpm run apply -- personal-web --profile laptop-web
 
 ## Update another computer
 
-Run the following commands after you pull changes:
+After pulling changes, repeat the setup procedure's executable, ownership, cache, and approval checks before installing. The commands below do not authorize installs or profile changes:
 
 ```sh
 git pull
-pnpm install --frozen-lockfile --ignore-scripts
+pnpm install --offline --frozen-lockfile --ignore-scripts
 pnpm run check
 pnpm run build
 pnpm run apply -- personal-web
@@ -118,7 +122,7 @@ If a package needs a build step, run its workspace build before applying the pro
 
 ## Run tests
 
-Install dependencies with `pnpm install --frozen-lockfile --ignore-scripts`. Run repository checks with `pnpm run check` and the Node.js unit and host-integration tests with `pnpm test`. The test command first runs `pnpm run build`, which type-checks and bundles Session Environment's TypeScript host and client. Its integration tests validate recipe wiring and generated entrypoints without starting DSH; the browser suites below do not yet cover the Environment card.
+If dependencies are missing, follow the [repository setup skill](.agents/skills/repository-setup/SKILL.md) before an approved offline install. Run repository checks with `pnpm run check` and the Node.js unit and host-integration tests with `pnpm test`. The test command first runs `pnpm run build`, which type-checks and bundles Session Environment's TypeScript host and client. Its integration tests validate recipe wiring and generated entrypoints without starting DSH; the browser suites below do not yet cover the Environment card.
 
 ### Browser interactions and real DSH screenshots
 
@@ -142,7 +146,7 @@ docker run --rm --platform linux/arm64 --ipc=host \
   node node_modules/@playwright/test/cli.js test
 ```
 
-If your host dependencies target another OS or architecture, use a separate checkout for container testing. In that checkout, replace the final `node ...` line above with `npx --yes pnpm@11.9.0 install --frozen-lockfile --ignore-scripts` to install Linux dependencies first. This changes that checkout's `node_modules`; do not run it over dependencies you need for macOS. Then run the comparison command. To run the fast suite in the container, use `node node_modules/vitest/vitest.mjs run --config vitest.browser.config.mjs`. Outside the container, browser tests require `pnpm exec playwright install --with-deps chromium`; visual results may differ.
+If your host dependencies target another OS or architecture, use a separate checkout for container testing. Follow the repository setup procedure there: verify a locally available pnpm 11.9.0 executable, checkout-owned dependencies, and a compatible offline cache before an approved install. Do not invoke a downloader to provision pnpm automatically. If the executable or Linux cache is unavailable, obtain separate provisioning approval. This changes that checkout's `node_modules`; do not run it over shared dependencies or dependencies you need for macOS. Then run the comparison command. To run the fast suite in the container, use `node node_modules/vitest/vitest.mjs run --config vitest.browser.config.mjs`. Outside the container, browser tests require `pnpm exec playwright install --with-deps chromium`; visual results may differ.
 
 To update intentional visual changes, append `--update-snapshots` to the container command. The equivalent local script is `pnpm run test:visual:update`. Review every changed PNG in `packages/*/test/real-ui/*-snapshots/`, then run comparisons twice without updating. Normal runs fail on missing or changed baselines and never create reference images.
 

@@ -1,0 +1,33 @@
+---
+name: repository-setup
+description: Set up dependencies and choose validation commands for {{PROJECT_NAME}} in a fresh checkout or worktree.
+---
+
+# Repository setup
+
+Draft template v1. Replace or remove all placeholders. Commands below are **unverified proposals** until evidence is recorded. Adapt this procedure to the repository's actual toolchain; remove the pnpm section if it does not apply. This document requires no Project Steward plugin.
+
+## Prerequisites
+
+- Runtime: {{SUPPORTED_RUNTIME_AND_SOURCE}}.
+- Package manager: {{EXACT_PIN_AND_SOURCE}}.
+- Working directory: {{CHECKOUT_ROOT}}.
+- Dependency ownership: {{HOW_TO_INSPECT_ROOT_AND_WORKSPACE_NODE_MODULES}}.
+- Validation prerequisites and side effects: {{BUILD_TOOLS_BROWSER_PLATFORM_CREDENTIALS_ARTIFACTS}}.
+
+## pnpm setup, only if applicable
+
+1. Locate and inspect the executable without invoking a downloader shim. Establish that the exact pinned executable is already available locally. If absent, stop; obtain approval for provisioning separately.
+2. In each fresh checkout/worktree, inspect root and workspace dependency directories, symlink targets, parent paths, mount sharing, and virtual-store configuration. If `node_modules` is symlinked, shared, or ownership is uncertain, stop. Do not install there, remove links, or modify another checkout. Ordinary package links within an owned pnpm tree are expected.
+3. Inspect package-manager settings and the selected cache without revealing credentials. A cache directory's existence does not prove locked packages are available for this platform. If the executable or cache is missing, report the limitation; do not download automatically.
+4. After explicit approval, use {{VERIFIED_LOCAL_PNPM_EXECUTABLE}} with `install --offline --frozen-lockfile --ignore-scripts`. This writes dependencies and metadata. Do not run this placeholder. If offline resolution fails, stop; no automatic online fallback, lockfile changes, upgrades, or lifecycle scripts. Obtain separate approval for any required scripts or cache population.
+
+## Validation evidence
+
+| Status | Exact command and working directory | Prerequisites and side effects | Evidence |
+| --- | --- | --- | --- |
+| Unverified proposal | {{COMMAND}} | {{PREREQUISITES_AND_WRITES}} | Not run |
+| Verified definition only | {{COMMAND_FROM_SCRIPT}} | {{PREREQUISITES_AND_WRITES}} | {{SOURCE_FILE}}; execution not tested |
+| Executed successfully | {{ACTUAL_COMMAND}} | {{ACTUAL_ENVIRONMENT}} | {{DATE_RESULT_COUNTS}} |
+
+Delete unused rows. Do not label copied examples as executed. Record skipped checks and reasons, especially when existing dependencies were borrowed rather than installed in this checkout.

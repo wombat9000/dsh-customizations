@@ -1,3 +1,11 @@
-# Add machine-independent overrides for the personal-web profile here.
-# DSH rejects an empty or comments-only patch, so keep [] until overrides exist.
-[]
+# Bundle roster patches replace config rather than merging roots. Keep both
+# independent preset bundles in this final, machine-independent recipe override.
+- id: agent-presets
+  name: '@deepseek-ai/dsh-agent-presets'
+  config:
+    default: standard
+    roots:
+      - path: !!js process.getBuiltinModule('node:path').join(process.getBuiltinModule('node:path').dirname(process.getBuiltinModule('node:module').createRequire(baseUrl).resolve('@local/dsh-worktree/package.json')), 'presets')
+        trust: system
+      - path: !!js process.getBuiltinModule('node:path').join(process.getBuiltinModule('node:path').dirname(process.getBuiltinModule('node:module').createRequire(baseUrl).resolve('@local/dsh-project-steward/package.json')), 'presets')
+        trust: system

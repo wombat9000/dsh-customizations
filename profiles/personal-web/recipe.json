@@ -23,6 +23,10 @@
       "source": "../../packages/dsh-worktree"
     },
     {
+      "name": "@local/dsh-project-steward",
+      "source": "../../packages/dsh-project-steward"
+    },
+    {
       "name": "@local/dsh-web-firecrawl",
       "source": "../../packages/dsh-web-firecrawl"
     }
