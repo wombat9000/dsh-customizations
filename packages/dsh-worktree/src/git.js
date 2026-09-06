@@ -147,6 +147,57 @@ async function context(cwd, signal) {
   return { repository, commonDir, worktrees, registeredPaths: rows.map((row) => resolve(row.path)) }
 }
 
+export function parseStatus(output) {
+  const tokens = output.split('\0')
+  const files = []
+  let count = 0
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i]
+    if (!token) continue
+    const status = token.slice(0, 2)
+    const path = token.slice(3)
+    const from = /[RC]/.test(status) ? tokens[++i] : undefined
+    count++
+    if (files.length < 500) files.push({ status, path, ...(from !== undefined ? { from } : {}) })
+  }
+  return { count, files, truncated: count > files.length }
+}
+
+/** Bounded read-only UI inspection. Paths come exclusively from Git membership. */
+export async function inspectWorktrees(cwd, { signal } = {}) {
+  const info = await context(cwd, signal)
+  const rows = info.worktrees.slice(0, 100)
+  let next = 0
+  const worktrees = new Array(rows.length)
+  await Promise.all(Array.from({ length: Math.min(4, rows.length) }, async () => {
+    while (next < rows.length) {
+      const index = next++
+      const row = rows[index]
+      let changes
+      try {
+        if (row.bare || row.prunable) throw new Error('Checkout unavailable')
+        const registered = info.registeredPaths[index]
+        if ((await lstat(registered)).isSymbolicLink()) throw new Error('Symlink checkout')
+        const path = await canonical(registered)
+        if (path !== row.path) throw new Error('Checkout moved')
+        const actual = singleLine((await git(path, ['rev-parse', '--git-common-dir'], { signal })).stdout)
+        if (await canonical(resolve(path, actual)) !== info.commonDir) throw new Error('Repository changed')
+        const top = singleLine((await git(path, ['rev-parse', '--show-toplevel'], { signal })).stdout)
+        if (await canonical(top) !== path) throw new Error('Checkout root changed')
+        // Index refresh can invoke clean/process filters even for read-only status.
+        const filters = await git(path, ['config', '--null', '--get-regexp', '^filter\\..*\\.(clean|process)$'], { signal, accept: [0, 1] })
+        if (filters.stdout.split('\0').some(entry => entry && entry.slice(entry.indexOf('\n') + 1).trim())) throw new Error('External status filter configured')
+        changes = parseStatus((await git(path, ['status', '--porcelain=v1', '-z', '--untracked-files=all', '--ignore-submodules=all'], { signal })).stdout)
+      } catch {
+        checkAbort(signal)
+        changes = { error: 'Changed files unavailable for this checkout.' }
+      }
+      worktrees[index] = { ...row, changes }
+    }
+  }))
+  return { repository: info.repository, worktrees, truncated: info.worktrees.length > rows.length }
+}
+
 /** List registered Git checkouts. Detached branches use null; flags are booleans. */
 export async function listWorktrees(cwd, { signal } = {}) {
   const { repository, commonDir, worktrees } = await context(cwd, signal)

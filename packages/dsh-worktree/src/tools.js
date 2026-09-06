@@ -1,4 +1,5 @@
 import { defineTool } from '@deepseek-ai/dsh-tools'
+import { markIntegrationTool } from './capability.js'
 
 export const name = 'worktree-tools'
 export const inject = ['tools', 'worktreeWorkers']
@@ -8,7 +9,7 @@ export function apply(ctx) {
     schema: { type: 'string' },
     render(_args, value) { return [{ type: 'text', text: value }] },
   }
-  const register = (name, description, parameters, execute) => ctx.tools.register(defineTool({
+  const register = (name, description, parameters, execute) => ctx.tools.register(markIntegrationTool(defineTool({
     name, description, parameters, output,
     async execute(args, exec) {
       if (!exec.agent) throw new Error('Worktree tools require a calling agent')
@@ -16,7 +17,7 @@ export function apply(ctx) {
       // Sessions, job snapshots, or other registry references.
       return JSON.stringify(await execute(args, exec), null, 2)
     },
-  }))
+  })))
   register('worktree_create',
     'Create a retained Git worktree on a new worktree/<name> branch from this checkout HEAD. Does not switch this session or copy uncommitted changes. Requires Full access for shared Git metadata; never automatically escalates, merges, or deletes. Worktrees are stored under the original checkout .dsh/worktrees/.',
     { name: { type: 'string', required: true, description: 'Unique lowercase slug: 1–48 letters, digits, or hyphens; starts with a letter or digit.' } },
