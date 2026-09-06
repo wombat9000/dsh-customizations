@@ -1,0 +1,9 @@
+# {{PROJECT_NAME}} agent guidance
+
+Draft template v1. Replace or remove all placeholders before proposing this file.
+Merge relevant sections into existing guidance; do not overwrite unrelated rules.
+
+- Preserve {{PROJECT_SPECIFIC_CONVENTIONS}}.
+- Before {{TASK_TRIGGER}}, read {{RELEVANT_REPOSITORY_GUIDE}}.
+- If local skills exist in {{SKILL_DIRECTORY}}, inspect their names and descriptions and read only skills relevant to the task. If your agent has no skill tool, read the relevant `SKILL.md` directly.
+- Do not install or upgrade dependencies, edit CI, commit, or deploy without explicit approval.
