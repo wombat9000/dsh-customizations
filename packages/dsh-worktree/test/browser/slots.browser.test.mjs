@@ -1,11 +1,37 @@
 import React, { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { test, expect, vi } from 'vitest'
+import { page } from 'vitest/browser'
 let plugin
 window.__ModuleLoader__ = { load: ({ factory }) => { plugin = factory(() => React) } }
 await import('../../client.js')
 delete window.__ModuleLoader__
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
+
+test('themed layout is responsive and keeps details keyboard accessible', async () => {
+  const f = await mount()
+  try {
+    const rich = snapshot()
+    rich.repository = '/home/agent/workspace/dsh-customizations'
+    rich.worktrees[0].name = 'worktrees-tab-design'
+    rich.worktrees[0].branch = 'feat/worktrees-tab-design'
+    rich.worktrees.push({ path: '/repo/main', name: 'dsh-customizations', branch: 'main', workerStatus: 'idle', changes: { count: 0 } })
+    rich.selected.run.task = 'Review the Worktrees tab redesign, including accessibility and responsive layout.'
+    f.set(rich); await f.click('Refresh')
+    for (const theme of ['dark', 'light']) {
+      f.container.style.cssText = `width:960px;background:${theme === 'dark' ? '#161616' : '#fafafa'};color:${theme === 'dark' ? '#eee' : '#222'};--dsw-alias-label-primary:${theme === 'dark' ? '#eee' : '#222'};--dsw-alias-label-secondary:${theme === 'dark' ? '#aaa' : '#666'}`
+      expect(getComputedStyle(f.container.querySelector('.wt-layout')).gridTemplateColumns.split(' ').length).toBe(2)
+      expect(f.container.querySelector('details').open).toBe(false)
+      f.container.querySelector('.wt-card').focus()
+      expect(document.activeElement).toBe(f.container.querySelector('.wt-card'))
+      await page.screenshot({ path: `../../../../artifacts/browser/worktrees-${theme}.png` })
+    }
+    f.container.style.width = '360px'
+    expect(getComputedStyle(f.container.querySelector('.wt-layout')).gridTemplateColumns.split(' ').length).toBe(1)
+    expect(f.container.scrollWidth).toBeLessThanOrEqual(360)
+    await page.screenshot({ path: '../../../../artifacts/browser/worktrees-mobile.png' })
+  } finally { await f.close() }
+})
 
 const snapshot = () => ({ sessionId: 'a', state: 'ready', repository: '/repo', worktrees: [
   { path: '/repo/a', name: 'a', branch: 'feature', workerStatus: 'busy', changes: { count: 1 }, latestAssignment: 'Review feature' },
@@ -41,7 +67,7 @@ async function mount() {
     set(value_) { value = value_ },
     async jobs() { jobs = {}; await act(async () => { for (const cb of listeners) cb() }) },
     defer() { let resolve; deferred = { promise: new Promise(r => { resolve = r }) }; return async () => { deferred = undefined; await act(async () => resolve()) } },
-    async click(label) { const button = [...container.querySelectorAll('button')].find(b => b.textContent === label); expect(button).toBeTruthy(); await act(async () => button.click()) },
+    async click(label) { const button = [...container.querySelectorAll('button')].find(b => (b.getAttribute('aria-label') ?? b.textContent) === label); expect(button).toBeTruthy(); await act(async () => button.click()) },
     async close() { await act(async () => root.unmount()); dispose(); container.remove(); expect(listeners.size).toBe(0) },
   }
 }
@@ -50,7 +76,7 @@ test('registered slot renders separate statuses, details, selection and in-place
   const f = await mount()
   try {
     expect(f.container.textContent).toContain('Worker: busy')
-    expect(f.container.textContent).toContain('1 changed files')
+    expect(f.container.textContent).toContain('1 changed file')
     expect(f.container.textContent).toContain('file.txt')
     expect(f.container.textContent).toContain('This session’s recorded runs (2)')
     expect(f.container.textContent).toContain('not lifetime history')
@@ -79,7 +105,8 @@ test('copy checkout path reports clipboard success and rejection, and selection 
     writeText.mockRejectedValueOnce(new Error('Permission denied'))
     await f.click('Copy checkout path')
     expect(f.container.textContent).toContain('Copy failed. Select and copy the path above.')
-    expect(f.container.querySelector('h3').textContent).toBe('/repo/a')
+    expect(f.container.querySelector('h3').textContent).toBe('a')
+    expect(f.container.querySelector('.wt-detail .wt-path').textContent).toBe('/repo/a')
     await f.click('Copy checkout path')
     expect(f.container.textContent).toContain('Copied checkout path.')
     expect(f.container.textContent).not.toContain('Copy failed.')
