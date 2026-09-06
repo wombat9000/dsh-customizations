@@ -183,6 +183,20 @@ test('failed resource cleanup keeps the worktree fenced instead of permitting ov
   await assert.rejects(f.manager.dispatch(f.parent, task()), /active assignment/)
 })
 
+test('recorded history retains at most 100 runs with bounded reports, not lifetime history', async () => {
+  const f = fixture()
+  for (let i = 0; i < 105; i++) {
+    const run = await f.manager.dispatch(f.parent, task())
+    await finish(f, run.jobId, i, 'x'.repeat(40000))
+  }
+  const history = f.manager.history.get(f.parent)
+  assert.equal(history.size, 100)
+  assert.equal(history.has('job-1'), false)
+  assert.equal(history.get('job-105').report.length, 32000)
+  assert.match(history.get('job-105').report, /\[truncated\]$/)
+  assert.equal(f.manager.history.get(f.sibling), undefined)
+})
+
 test('pre-admission abort and invalid arguments never start a job', async () => {
   const f = fixture()
   await assert.rejects(f.manager.dispatch(f.parent, task(), AbortSignal.abort()), { name: 'AbortError' })

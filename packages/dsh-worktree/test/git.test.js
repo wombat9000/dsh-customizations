@@ -4,7 +4,7 @@ import { spawn } from 'node:child_process'
 import { chmod, lstat, mkdir, mkdtemp, readFile, realpath, rename, rm, symlink, writeFile } from 'node:fs/promises'
 import { devNull, tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { createWorktree, listWorktrees, resolveWorktree } from '../src/git.js'
+import { createWorktree, listWorktrees, resolveWorktree, inspectWorktrees, parseStatus } from '../src/git.js'
 
 // Production intentionally ignores GIT_CONFIG_* environment overrides. Isolate
 // normal user-config discovery instead, within this test file's own process.
@@ -59,6 +59,33 @@ async function fixture(t) {
   await run(repository, ['commit', '--quiet', '-m', 'initial'])
   return { base, repository }
 }
+
+test('UI status preserves unusual filenames, bounds lists and never refreshes the index', async t => {
+  const { repository } = await fixture(t)
+  const index = await readFile(join(repository, '.git', 'index'))
+  await writeFile(join(repository, 'odd\nname.txt'), 'new')
+  await writeFile(join(repository, 'file.txt'), 'modified')
+  const snapshot = await inspectWorktrees(repository)
+  assert.equal(snapshot.worktrees[0].changes.count, 2)
+  assert.ok(snapshot.worktrees[0].changes.files.some(file => file.path === 'odd\nname.txt'))
+  assert.deepEqual(await readFile(join(repository, '.git', 'index')), index)
+  const parsed = parseStatus('R  new\0old\0' + Array.from({ length: 600 }, (_, i) => `?? file${i}\0`).join(''))
+  assert.equal(parsed.count, 601)
+  assert.equal(parsed.files.length, 500)
+  assert.equal(parsed.files[0].from, 'old')
+  assert.equal(parsed.truncated, true)
+})
+
+test('UI status refuses executable filters and handles non-Git cwd', async t => {
+  const { repository, base } = await fixture(t)
+  await run(repository, ['config', 'filter.evil.clean', 'touch SHOULD_NOT_EXIST'])
+  await writeFile(join(repository, '.gitattributes'), '* filter=evil\n')
+  await writeFile(join(repository, 'file.txt'), 'modified')
+  const result = await inspectWorktrees(repository)
+  assert.ok(result.worktrees[0].changes.error)
+  await absent(join(repository, 'SHOULD_NOT_EXIST'))
+  await assert.rejects(inspectWorktrees(base), /Git exited/)
+})
 
 async function absent(path) {
   await assert.rejects(lstat(path), { code: 'ENOENT' })

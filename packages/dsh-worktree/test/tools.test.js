@@ -4,6 +4,7 @@ import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import test from 'node:test'
 import { apply, inject } from '../src/tools.js'
+import { hasWorktreeCapability } from '../src/capability.js'
 
 function fixture() {
   const tools = new Map()
@@ -31,13 +32,26 @@ test('preset contributes exactly three tools and consumes the host service', asy
   await assert.rejects(tools.get('worktree_list').execute({}, {}), /calling agent/)
 })
 
+test('actual integration definitions grant copied presets visibility and removal revokes it', () => {
+  const { tools } = fixture()
+  const agent = { session: { id: 'copy', header: { agentPreset: 'my-copy' } } }
+  const ctx = { agents: { get: () => agent }, tools: { get: name => tools.get(name) } }
+  assert.equal(hasWorktreeCapability(ctx, agent), true)
+  tools.delete('worktree_list')
+  assert.equal(hasWorktreeCapability(ctx, agent), false)
+  tools.set('worktree_list', { name: 'worktree_list' })
+  assert.equal(hasWorktreeCapability(ctx, agent), false)
+})
+
 test('bundle keeps worktree tools out of the host and remains in the portable recipe', async () => {
   const json = async path => JSON.parse(await readFile(new URL(path, import.meta.url), 'utf8'))
   const manifest = await json('../package.json')
   const recipe = await json('../../../profiles/personal-web/recipe.json')
   assert.equal(manifest.name, '@local/dsh-worktree')
   assert.equal(manifest.exports['./tools'], './src/tools.js')
-  assert.deepEqual(manifest.dsh, { bundle: { patch: './cordis.patch.yml' } })
+  assert.deepEqual(manifest.dsh.bundle, { patch: './cordis.patch.yml' })
+  assert.equal(manifest.dsh.client.platform, 'web')
+  assert.equal(manifest.exports['./client'], './client.js')
   const bundleIndex = recipe.bundles.findIndex(bundle => bundle.name === manifest.name)
   assert.equal(recipe.bundles[bundleIndex].source, '../../packages/dsh-worktree')
   const webIndex = recipe.bundles.findIndex(bundle => bundle.name === '@deepseek-ai/dsh-web-app')
