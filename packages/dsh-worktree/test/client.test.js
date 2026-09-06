@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { readFile } from 'node:fs/promises'
 import vm from 'node:vm'
-import { createSnapshotHandler } from '../src/snapshot.js'
+import { createSnapshotRpcHandler } from '../src/snapshot.js'
 import { markIntegrationTool } from '../src/capability.js'
 import { apply as applyTools } from '../src/tools.js'
 let plugin
@@ -13,13 +13,13 @@ const flush = async () => { for (let i = 0; i < 10; i++) await Promise.resolve()
 
 test('reader shows loading, rejects stale responses, preserves selection and cleans up', async () => {
   const requests = [], states = []
-  const reader = plugin.createReader({ call: (_channel, _method, args) => new Promise(resolve => requests.push({ args, resolve })) }, 'a', state => states.push(state))
+  const reader = plugin.createReader({ call: (_channel, _method, args) => new Promise(resolve => requests.push({ args, resolve: value => resolve({ ok: true, value }) })) }, 'a', state => states.push(state))
   const first = reader.refresh({ path: '/repo/a', runId: 'old' })
   assert.equal(states.at(-1).loading, true)
   const second = reader.refresh({ path: '/repo/b' })
-  requests[1].resolve({ sessionId: 'a', state: 'ready', marker: 'new', selected: { path: '/repo/b', run: { id: 'b-run' } } })
+  requests[1].resolve({ sessionId: 'a', state: 'ready', worktrees: [], marker: 'new', selected: { path: '/repo/b', run: { id: 'b-run' } } })
   await second
-  requests[0].resolve({ sessionId: 'a', state: 'ready', marker: 'stale', selected: { path: '/repo/a', run: { id: 'old' } } })
+  requests[0].resolve({ sessionId: 'a', state: 'ready', worktrees: [], marker: 'stale', selected: { path: '/repo/a', run: { id: 'old' } } })
   await first
   assert.equal(states.at(-1).value.marker, 'new')
   const third = reader.refresh()
@@ -39,7 +39,7 @@ function readerFixture({ empty = false } = {}) {
   const addRun = (id, path = '/repo/a') => history.set(id, { jobId: id, path, task: id, status: 'completed', mode: 'write' })
   if (!empty) addRun('initial')
   let paths = ['/repo/a', '/repo/b'], state
-  const handler = createSnapshotHandler({ agents: { get: () => agent }, tools: { get: () => tool } }, {
+  const handler = createSnapshotRpcHandler({ agents: { get: () => agent }, tools: { get: () => tool } }, {
     history: new WeakMap([[agent, history]]), cwd: () => '/repo', activeWorktrees: () => new Map(),
     git: { inspectWorktrees: async () => ({ repository: '/repo', worktrees: paths.map(path => ({ path, changes: { count: 0, files: [] } })) }) },
   })
@@ -95,12 +95,26 @@ test('empty history selects the first arriving run, then pins it', async () => {
   assert.equal(f.value.selected.run.id, 'first')
 })
 
-test('reader reports transport and mismatched-session errors without stale data', async () => {
-  let state
-  const reader = plugin.createReader({ call: async () => ({ sessionId: 'other' }) }, 'a', next => { state = next })
-  await reader.refresh()
-  assert.ok(state.error)
-  assert.equal(state.value, undefined)
+test('reader reports failed and malformed responses without stale data or raw errors', async () => {
+  for (const failure of [
+    { sessionId: 'a', state: 'ready' },
+    { ok: true, value: { sessionId: 'other', state: 'ready', worktrees: [] } },
+    { ok: true, value: { sessionId: 'a', state: 'ready' } },
+    { ok: true, value: { sessionId: 'a', state: 'unexpected' } },
+    { ok: false, error: { code: 'internal', message: 'SECRET', details: {} } },
+    new Error('SECRET transport failure'),
+  ]) {
+    let state, response = { ok: true, value: { sessionId: 'a', state: 'ready', worktrees: [] } }
+    const reader = plugin.createReader({ call: async () => { if (response instanceof Error) throw response; return response } }, 'a', next => { state = next })
+    await reader.refresh()
+    assert.equal(state.value.state, 'ready')
+    response = failure
+    await reader.refresh()
+    assert.equal(state.error, 'Worktrees could not refresh. Try again.')
+    assert.equal(state.value, undefined)
+    assert.doesNotMatch(JSON.stringify(state), /SECRET/)
+    reader.dispose()
+  }
 })
 
 test('copied-preset tab follows real integration definitions and same-session capability changes', async () => {
@@ -109,7 +123,7 @@ test('copied-preset tab follows real integration definitions and same-session ca
   const copy = { session: { id: 'copy', header: { agentPreset: 'my-copy' } } }
   const standard = { session: { id: 'standard', header: { agentPreset: 'worktree-coordinator' } } }
   const agents = new Map([['copy', copy], ['standard', standard]])
-  const handler = createSnapshotHandler({ agents: { get: id => agents.get(id) }, tools: { get: (name, owner) => owner === copy ? tools.get(name) : undefined } }, {})
+  const handler = createSnapshotRpcHandler({ agents: { get: id => agents.get(id) }, tools: { get: (name, owner) => owner === copy ? tools.get(name) : undefined } }, {})
   let current = 'copy', notify, tick, registered
   const stop = plugin.watchCapability({
     sessions: { list: { getSnapshot: () => ({ current }), subscribe: cb => { notify = cb; return () => {} } } },
@@ -137,7 +151,7 @@ test('tab registration follows current capability; subscription, timers and pend
   const document = { visibilityState: 'visible', addEventListener: (name, cb) => events.set(name, cb), removeEventListener: name => events.delete(name) }
   const stop = plugin.watchCapability({ document,
     sessions: { list: { getSnapshot: () => ({ current }), subscribe: cb => { callback = cb; return () => off++ } } },
-    rpc: { call: (_channel, _method, args) => new Promise(resolve => pending.push({ args, resolve })) },
+    rpc: { call: (_channel, _method, args) => new Promise(resolve => pending.push({ args, resolve: value => resolve({ ok: true, value }) })) },
     register: id => { registered.push(id); return () => removed++ },
     interval: cb => { tick = cb; return 1 }, clear: () => cleared++,
   })

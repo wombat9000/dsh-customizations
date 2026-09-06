@@ -6,6 +6,17 @@ window.__ModuleLoader__.load({
     const CHANNEL = '/local-worktrees'
     const visible = () => document.visibilityState !== 'hidden'
 
+    function unwrap(result, sessionId) {
+      // Do not display transport or server error strings: they can contain host
+      // details. A failed or malformed read is not an empty worktree list.
+      if (result?.ok !== true) throw new Error('Worktrees RPC failed.')
+      const value = result.value
+      if (value?.sessionId !== sessionId || !['ready', 'disabled', 'unavailable', 'error'].includes(value.state)) {
+        throw new Error('Invalid Worktrees response.')
+      }
+      return value
+    }
+
     // One mounted view, no session cache. Generations discard superseded reads.
     function createReader(rpc, sessionId, publish) {
       let generation = 0
@@ -18,9 +29,9 @@ window.__ModuleLoader__.load({
           const token = ++generation
           publish({ value, loading: true })
           try {
-            const result = await rpc.call(CHANNEL, 'snapshot', { sessionId, ...selection })
+            const result = unwrap(await rpc.call(CHANNEL, 'snapshot', { sessionId, ...selection }), sessionId)
             if (disposed || token !== generation) return
-            if (result?.sessionId !== sessionId) throw new Error('Worktrees returned a different session.')
+            if (result.state === 'error' || (result.state === 'ready' && !Array.isArray(result.worktrees))) throw new Error('Invalid Worktrees snapshot.')
             // Pin server defaults once resolved. Keep missing explicit selections
             // unavailable; an empty history may still resolve its first run later.
             if (result.state === 'ready' && result.selected) {
@@ -113,8 +124,9 @@ window.__ModuleLoader__.load({
         if (id !== current) { current = id; generation++; pending = undefined; remove() }
         if (stopped || !id || doc.visibilityState === 'hidden' || pending) return
         const token = generation
-        pending = Promise.resolve().then(() => rpc.call(CHANNEL, 'capability', { sessionId: id })).then(value => {
+        pending = Promise.resolve().then(() => rpc.call(CHANNEL, 'capability', { sessionId: id })).then(result => {
           if (stopped || token !== generation) return
+          const value = unwrap(result, id)
           if (value?.sessionId === id && value.state === 'ready') { if (!offTab) offTab = register(id) }
           else remove()
         }).catch(() => { if (!stopped && token === generation) remove() }).finally(() => { if (token === generation) pending = undefined })

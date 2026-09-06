@@ -2,7 +2,7 @@ import { Service } from '@deepseek-ai/cordis'
 import { settleRun } from '@deepseek-ai/dsh-subagent'
 import * as git from './git.js'
 import { startRegisteredWorker } from './worker.js'
-import { CHANNEL, createSnapshotHandler } from './snapshot.js'
+import { CHANNEL, createSnapshotRpcHandler } from './snapshot.js'
 
 export const name = 'worktree-workers'
 const MAX_REPORTS = 100
@@ -188,7 +188,7 @@ export default class WorktreeService extends Service {
     super(ctx, 'worktreeWorkers')
     this.manager = new WorktreeManager(ctx)
     ctx.inject(['connection'], connectionCtx => {
-      connectionCtx.effect(() => connectionCtx.connection.rpc.handle(CHANNEL, createSnapshotHandler(ctx, this.manager)))
+      connectionCtx.effect(() => connectionCtx.connection.rpc.handle(CHANNEL, createSnapshotRpcHandler(ctx, this.manager)))
     })
   }
   create(parent, name, signal) { return this.manager.create(parent, name, signal) }

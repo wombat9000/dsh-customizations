@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { createSnapshotHandler } from '../src/snapshot.js'
+import { createSnapshotHandler, createSnapshotRpcHandler } from '../src/snapshot.js'
 import { hasWorktreeCapability, markIntegrationTool } from '../src/capability.js'
 
 function fixture() {
@@ -18,6 +18,24 @@ function fixture() {
     git: { inspectWorktrees: async () => ({ repository: '/repo', truncated: false, worktrees: [{ path: '/repo/a', branch: 'a', changes: { count: 0, files: [], truncated: false } }] }) } }
   return { a, b, agents, tools, ctx, manager, call: createSnapshotHandler(ctx, manager) }
 }
+
+test('RPC adapter preserves private projection and wraps domain errors without host details', async () => {
+  const f = fixture()
+  const call = createSnapshotRpcHandler(f.ctx, f.manager)
+  const result = await call('snapshot', { sessionId: 'a' })
+  assert.equal(result.ok, true)
+  assert.deepEqual(result.value, await f.call('snapshot', { sessionId: 'a' }))
+  assert.doesNotMatch(JSON.stringify(result), /secret|SECRET/)
+  for (const args of [null, {}, { sessionId: 'a', path: [] }]) {
+    assert.deepEqual(await call('snapshot', args), { ok: false, error: {
+      code: 'worktrees/read-failed', message: 'Invalid Worktrees request.', details: {},
+    } })
+  }
+  f.ctx.agents.get = () => { throw new Error('SECRET host lookup') }
+  const failure = await call('capability', { sessionId: 'a' })
+  assert.equal(failure.ok, false)
+  assert.doesNotMatch(JSON.stringify(failure), /SECRET/)
+})
 
 test('visibility uses exact integration capability, including copied presets, not preset names', async () => {
   const f = fixture()
