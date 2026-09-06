@@ -19,7 +19,7 @@ delete window.__ModuleLoader__
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 
 const h = React.createElement
-export async function mountSlot(name, { blank = false, narrow = false, dark = false, recapError = false, deferRecap = false, recapGoal = 'Add reliable screenshot coverage for Session recap.' } = {}) {
+export async function mountSlot(name, { blank = false, narrow = false, dark = false, recapError = false, deferRecap = false, recapTopic = 'Add reliable screenshot coverage for Session recap.' } = {}) {
   const pending = new Map()
   let sessionId = 'fixture-session'
   localStorage.clear()
@@ -40,9 +40,9 @@ export async function mountSlot(name, { blank = false, narrow = false, dark = fa
         return { ok: true, value: {
         sessionId: payload.sessionId, generatedAt: '2026-01-02T03:04:05.000Z',
         recap: {
-          goal: typeof recapGoal === 'function' ? recapGoal(payload.sessionId) : recapGoal,
-          outcome: 'The plugin renders through the registered React slots.',
-          nextStep: 'Review the screenshots and run the pull request checks.',
+          bullets: [typeof recapTopic === 'function' ? recapTopic(payload.sessionId) : recapTopic,
+            'Use the registered React slots for the recap.',
+            'We paused at the screenshot review.'],
         },
       } }
       case 'configure': Object.assign(config, payload); return { ok: true, value: { ...config } }
@@ -50,8 +50,12 @@ export async function mountSlot(name, { blank = false, narrow = false, dark = fa
     }
   }) }
   const registrations = new Map()
+  const events = new Map()
   plugin.apply({
-    get(service) { expect(service).toBe('connection'); return { rpc } },
+    get(service) {
+      if (service === 'remote') return { $on(event, handler) { events.set(event, handler); return () => events.delete(event) } }
+      expect(service).toBe('connection'); return { rpc }
+    },
     slots: {
       inject(slot, register) {
         expect(['conversation.input.dock', 'conversation.session.header.utilities', 'settings.plugin.item']).toContain(slot)
@@ -80,12 +84,13 @@ export async function mountSlot(name, { blank = false, narrow = false, dark = fa
           h(header.Component, { ...header.options.inject(sessionId), useSession: (select) => select({ blank }) })),
         h('div', { className: 'conversation' }, blank ? 'Start a conversation.' : 'The implementation is ready for review.'),
         h('div', { 'data-testid': 'session-dock' }, h(Component, { ...options.inject(sessionId), session: { blank } })),
-        h('textarea', { 'aria-label': 'Message', placeholder: 'Send a message', readOnly: true }))
+        h('textarea', { 'aria-label': 'Message', placeholder: 'Send a message' }))
       : h(React.Fragment, null, h('h1', null, 'Plugin configuration'), h(Component, options.inject())))
   })
   await render()
   await document.fonts.ready
   return { rpc,
+    async sent(id = sessionId) { await act(async () => events.get('api-session/activity')(id, Date.now())) },
     async switchSession(id, isBlank = false) { sessionId = id; blank = isBlank; await render() },
     async resolveRecap(id = sessionId) {
       expect(pending.has(id)).toBe(true)

@@ -39,7 +39,7 @@ test('recap errors are exposed as alerts', async () => {
   fixture = await mountSlot('conversation.input.dock', { recapError: true })
   await click(page.getByRole('button', { name: 'Recap', exact: true }))
   await expect.element(page.getByRole('alert')).toHaveTextContent('The fixture provider is unavailable. Try again.')
-  await click(page.getByRole('button', { name: 'Dismiss session recap' }))
+  await fixture.sent()
   await expect.element(page.getByRole('complementary', { name: 'Session recap' })).not.toBeInTheDocument()
   await click(page.getByRole('button', { name: 'Recap', exact: true }))
   await expect.element(page.getByRole('alert')).toBeVisible()
@@ -54,7 +54,7 @@ test('blank conversation omits the recap slot', async () => {
   expect(fixture.rpc.call).not.toHaveBeenCalled()
 })
 
-test('header generates a recap into an initially absent panel and regenerates after dismissal', async () => {
+test('header generates a recap into an initially absent panel and regenerates after sending a message', async () => {
   fixture = await mountSlot('conversation.input.dock')
   await expect.element(page.getByRole('complementary', { name: 'Session recap' })).not.toBeInTheDocument()
   expect(page.getByTestId('session-dock').element().textContent).toBe('')
@@ -63,17 +63,44 @@ test('header generates a recap into an initially absent panel and regenerates af
   await expect.element(page.getByRole('status')).toBeVisible()
   expect(page.getByRole('status').element().textContent).toContain('Add reliable screenshot coverage')
   expect(fixture.rpc.call).toHaveBeenCalledWith('/session-recap', 'recap', { sessionId: 'fixture-session', automatic: false })
-  await click(page.getByRole('button', { name: 'Dismiss session recap' }))
+  await fixture.sent()
   await expect.element(page.getByRole('status')).not.toBeInTheDocument()
   await expect.element(page.getByRole('complementary', { name: 'Session recap' })).not.toBeInTheDocument()
   await click(page.getByRole('button', { name: 'Recap', exact: true }))
   await expect.element(page.getByRole('status')).toBeVisible()
   expect(fixture.rpc.call.mock.calls.filter(([, method]) => method === 'recap')).toHaveLength(2)
-  expect(page.getByTestId('session-dock').element().querySelectorAll('button')).toHaveLength(1)
+  expect(page.getByTestId('session-dock').element().querySelectorAll('button')).toHaveLength(0)
+})
+
+test('typing keeps the recap; another session send does not hide it', async () => {
+  fixture = await mountSlot('conversation.input.dock')
+  await click(page.getByRole('button', { name: 'Recap', exact: true }))
+  await act(async () => page.getByRole('textbox', { name: 'Message' }).fill('Draft only'))
+  await expect.element(page.getByRole('status')).toBeVisible()
+  await fixture.sent('another-session')
+  await expect.element(page.getByRole('status')).toBeVisible()
+  const panel = page.getByRole('complementary', { name: 'Session recap' }).element()
+  expect(panel.querySelectorAll('li')).toHaveLength(3)
+  expect(panel.querySelector('button, svg, small, strong')).toBeNull()
+  expect(panel.textContent).not.toMatch(/Earlier recap|Goal:|Latest outcome:|Next step:/)
+  await fixture.sent()
+  await expect.element(page.getByRole('status')).not.toBeInTheDocument()
+})
+
+test('successful send suppresses an in-flight recap and permits a fresh request', async () => {
+  fixture = await mountSlot('conversation.input.dock', { deferRecap: true })
+  await click(page.getByRole('button', { name: 'Recap', exact: true }))
+  await fixture.sent()
+  await expect.element(page.getByRole('complementary', { name: 'Session recap' })).not.toBeInTheDocument()
+  await fixture.resolveRecap()
+  await expect.element(page.getByRole('complementary', { name: 'Session recap' })).not.toBeInTheDocument()
+  await click(page.getByRole('button', { name: 'Recap', exact: true }))
+  await fixture.resolveRecap()
+  await expect.element(page.getByRole('status')).toBeVisible()
 })
 
 test('header and dock share busy state and isolate pending responses across session switches', async () => {
-  fixture = await mountSlot('conversation.input.dock', { deferRecap: true, recapGoal: (id) => `Goal for ${id}.` })
+  fixture = await mountSlot('conversation.input.dock', { deferRecap: true, recapTopic: (id) => `Goal for ${id}.` })
   await click(page.getByRole('button', { name: 'Recap', exact: true }))
   await expect.element(page.getByRole('button', { name: 'Recapping…', exact: true })).toBeDisabled()
   await expect.element(page.getByRole('status')).toHaveTextContent('Generating recap…')
@@ -98,7 +125,7 @@ test('header and dock share busy state and isolate pending responses across sess
 })
 
 test('narrow recap panel wraps long text without horizontal overflow', async () => {
-  fixture = await mountSlot('conversation.input.dock', { narrow: true, recapGoal: 'unbroken'.repeat(150) })
+  fixture = await mountSlot('conversation.input.dock', { narrow: true, recapTopic: 'unbroken'.repeat(150) })
   await click(page.getByRole('button', { name: 'Recap', exact: true }))
   await expect.element(page.getByRole('status')).toBeVisible()
   for (const element of [page.getByTestId('fixture').element(), page.getByTestId('session-dock').element(), page.getByRole('complementary', { name: 'Session recap' }).element()]) {
