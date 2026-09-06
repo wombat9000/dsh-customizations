@@ -18,7 +18,7 @@ window.__ModuleLoader__.load({
         return result.value
       }
       const state = (sessionId) => {
-        if (!states.has(sessionId)) states.set(sessionId, { value: {}, listeners: new Set(), pending: null })
+        if (!states.has(sessionId)) states.set(sessionId, { value: {}, listeners: new Set(), pending: null, generation: 0 })
         return states.get(sessionId)
       }
       const publish = (s, value) => { s.value = value; for (const listener of s.listeners) listener(value) }
@@ -42,12 +42,17 @@ window.__ModuleLoader__.load({
       async function recap(sessionId, automatic = false) {
         const s = state(sessionId)
         if (s.pending) return s.pending
-        publish(s, { ...s.value, busy: true, error: undefined, dismissed: false })
-        s.pending = Promise.resolve().then(() => rpc.call(CHANNEL, 'recap', { sessionId, automatic })).then(unwrap).then((result) => {
+        const generation = s.generation
+        publish(s, { ...s.value, busy: true, error: undefined })
+        const pending = Promise.resolve().then(() => rpc.call(CHANNEL, 'recap', { sessionId, automatic })).then(unwrap).then((result) => {
+          if (generation !== s.generation) return
           if (result.sessionId !== sessionId) throw new Error('Session recap returned a different session.')
-          publish(s, { ...s.value, busy: false, recap: result.recap, generatedAt: result.generatedAt, error: undefined })
-        }).catch((error) => publish(s, { ...s.value, busy: false, error: error.message || String(error) })).finally(() => { s.pending = null })
-        return s.pending
+          publish(s, { busy: false, recap: result.recap })
+        }).catch((error) => {
+          if (generation === s.generation) publish(s, { ...s.value, busy: false, error: error.message || String(error) })
+        }).finally(() => { if (s.pending === pending) s.pending = null })
+        s.pending = pending
+        return pending
       }
       function mount(sessionId, { document, window }, listener) {
         const s = state(sessionId)
@@ -64,9 +69,10 @@ window.__ModuleLoader__.load({
           if (!config.autoRecap || !config.provider || !config.model) { touch(activityKey); return }
           checking = true
           const token = generation
+          const recapGeneration = s.generation
           try {
             const activity = unwrap(await rpc.call(CHANNEL, 'activity', { sessionId }))
-            if (!alive || !active || token !== generation || !visible()) return
+            if (!alive || !active || token !== generation || recapGeneration !== s.generation || !visible()) return
             // A live session appears only after persisted history has loaded.
             // Do not claim the visit until loading and the active turn finish.
             if (!activity.ready || activity.running) {
@@ -83,7 +89,7 @@ window.__ModuleLoader__.load({
             const minutes = Number.isFinite(config.inactivityMinutes) && config.inactivityMinutes > 0 ? config.inactivityMinutes : 30
             if (previous !== undefined && now() - previous >= minutes * 60000) void recap(sessionId, true)
           } catch (error) {
-            if (alive && active && token === generation) publish(s, { ...s.value, error: error.message || String(error) })
+            if (alive && active && token === generation && recapGeneration === s.generation) publish(s, { ...s.value, error: error.message || String(error) })
           } finally { checking = false }
         }
         let generation = 0
@@ -92,14 +98,15 @@ window.__ModuleLoader__.load({
           if (!alive || active || !visible()) return
           active = true
           const token = ++generation
+          const recapGeneration = s.generation
           try {
             const config = await settings()
-            if (!alive || !active || token !== generation || !visible()) return
+            if (!alive || !active || token !== generation || recapGeneration !== s.generation || !visible()) return
             activityKey = key(config, sessionId)
             currentConfig = config
             checkReturn(config)
           } catch (error) {
-            if (alive && active) publish(s, { ...s.value, error: error.message || String(error) })
+            if (alive && active && recapGeneration === s.generation) publish(s, { ...s.value, error: error.message || String(error) })
           }
         }
         function leave() {
@@ -136,23 +143,26 @@ window.__ModuleLoader__.load({
           return () => s.listeners.delete(listener)
         },
         invalidateSettings() { settingsPromise = undefined },
-        dismiss(sessionId) { const s = state(sessionId); publish(s, { ...s.value, dismissed: true }) },
+        humanMessageSent(sessionId) {
+          const s = states.get(sessionId)
+          if (!s) return
+          s.generation++
+          s.pending = null
+          publish(s, {})
+          // A successful send counts as activity even without a mounted dock.
+          void settings().then((config) => touch(key(config, sessionId)), () => {})
+        },
       }
     }
     const recapStyles = `
-      .dsh-session-recap-action, .dsh-session-recap-card__dismiss { appearance: none; display: inline-flex; align-items: center; justify-content: center; gap: 6px; flex: none; font: inherit; font-size: 13px; line-height: 20px; color: var(--dsw-alias-label-secondary, inherit); background: transparent; border: 0; border-radius: 8px; padding: 5px 8px; cursor: pointer; }
-      .dsh-session-recap-action:hover:not(:disabled), .dsh-session-recap-card__dismiss:hover { background: var(--dsw-alias-interactive-bg-hover, #8882); color: var(--dsw-alias-label-primary, inherit); }
-      .dsh-session-recap-action:focus-visible, .dsh-session-recap-card__dismiss:focus-visible, .dsh-session-recap-card__body:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary, #6b9cff); outline-offset: 2px; }
+      .dsh-session-recap-action { appearance: none; display: inline-flex; align-items: center; justify-content: center; gap: 6px; flex: none; font: inherit; font-size: 13px; line-height: 20px; color: var(--dsw-alias-label-secondary, inherit); background: transparent; border: 0; border-radius: 8px; padding: 5px 8px; cursor: pointer; }
+      .dsh-session-recap-action:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover, #8882); color: var(--dsw-alias-label-primary, inherit); }
+      .dsh-session-recap-action:focus-visible, .dsh-session-recap-card__body:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary, #6b9cff); outline-offset: 2px; }
       .dsh-session-recap-action:disabled { color: var(--dsw-alias-label-tertiary, #888); cursor: default; }
       .dsh-session-recap-card { box-sizing: border-box; width: calc(100% - 2 * var(--dsh-composer-side-clearance, 16px) - 32px); max-width: var(--dsh-chat-content-width, 680px); min-width: 0; margin: 0 auto 8px; padding: 12px 16px; border: .5px solid var(--dsw-alias-border-l2, #8883); border-radius: 16px; background: var(--dsw-alias-bg-layer-2, #8881); color: var(--dsw-alias-label-primary, inherit); font-size: 13px; line-height: 1.6; }
-      .dsh-session-recap-card__header { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
-      .dsh-session-recap-card__title { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; font-weight: 600; }
-      .dsh-session-recap-card__icon { flex: none; color: var(--dsw-alias-label-tertiary, #888); }
-      .dsh-session-recap-card__dismiss { padding: 4px; }
       .dsh-session-recap-card__body { max-height: min(240px, 30vh); overflow-y: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
-      .dsh-session-recap-card__meta { display: block; color: var(--dsw-alias-label-tertiary, #888); font-size: 12px; }
-      .dsh-session-recap-card__row { margin: 8px 0 0; }
-      .dsh-session-recap-card__label { font-weight: 500; color: var(--dsw-alias-label-secondary, inherit); }
+      .dsh-session-recap-card__list { margin: 0; padding-left: 18px; }
+      .dsh-session-recap-card__row + .dsh-session-recap-card__row { margin-top: 4px; }
       .dsh-session-recap-card__loading { margin: 0; color: var(--dsw-alias-label-secondary, inherit); }
       .dsh-session-recap-card__error { margin: 4px 0; color: var(--dsw-alias-label-error, #d55); overflow-wrap: anywhere; }
       @media (max-width: 600px) { .dsh-session-recap-card { padding: 10px 12px; border-radius: 12px; } }
@@ -198,18 +208,13 @@ window.__ModuleLoader__.load({
       React.useEffect(() => {
         if (!blank) return controller.mount(sessionId, { document, window }, () => {})
       }, [controller, sessionId, blank])
-      if (blank || state.dismissed || !(state.busy || state.error || state.recap)) return null
+      if (blank || !(state.busy || state.error || state.recap)) return null
       const h = React.createElement
       return h('aside', { 'aria-label': 'Session recap', className: 'dsh-session-recap-card' },
-        h('div', { className: 'dsh-session-recap-card__header' },
-          h('strong', { className: 'dsh-session-recap-card__title' }, recapIcon('dsh-session-recap-card__icon'), 'Session recap'),
-          h('button', { type: 'button', className: 'dsh-session-recap-card__dismiss', onClick: () => controller.dismiss(sessionId), 'aria-label': 'Dismiss session recap', title: 'Dismiss session recap' },
-            h('svg', { 'aria-hidden': true, focusable: 'false', width: 16, height: 16, viewBox: '0 0 16 16', fill: 'none' }, h('path', { d: 'm4 4 8 8m0-8-8 8', stroke: 'currentColor', strokeWidth: 1.5, strokeLinecap: 'round' })))),
         state.busy ? h('p', { role: 'status', className: 'dsh-session-recap-card__loading' }, 'Generating recap…') : null,
         state.error ? h('p', { role: 'alert', className: 'dsh-session-recap-card__error' }, state.error) : null,
         state.recap ? h('div', { role: state.busy ? undefined : 'status', tabIndex: 0, 'aria-label': 'Recap content', className: 'dsh-session-recap-card__body' },
-          h('small', { className: 'dsh-session-recap-card__meta' }, `Earlier recap${state.generatedAt ? ` · ${new Date(state.generatedAt).toLocaleString()}` : ''}. Use Recap in the session header to refresh.`),
-          ...[['goal', 'Goal'], ['outcome', 'Latest outcome'], ['nextStep', 'Next step']].map(([key, label]) => h('p', { key, className: 'dsh-session-recap-card__row' }, h('strong', { className: 'dsh-session-recap-card__label' }, `${label}: `), state.recap[key] || 'Not established.'))) : null)
+          h('ul', { className: 'dsh-session-recap-card__list' }, ...state.recap.bullets.map((bullet, index) => h('li', { key: index, className: 'dsh-session-recap-card__row' }, bullet)))) : null)
     }
     // Match DSH's settings-card metrics using public theme tokens, not private CSS-module names.
     const settingsStyles = `
@@ -314,6 +319,8 @@ window.__ModuleLoader__.load({
       let storage
       try { storage = window.localStorage } catch {}
       const controller = createController({ rpc: ctx.get('connection').rpc, storage })
+      // DSH emits this only after a durable human-authored user/message.
+      ctx.get('remote').$on('api-session/activity', (sessionId) => controller.humanMessageSent(sessionId))
       ctx.slots.inject('conversation.input.dock', () => ctx.slots.register({
         name: 'conversation.input.dock', id: ID, order: 10,
         inject: (sessionId) => ({ sessionId, controller }),
@@ -326,6 +333,6 @@ window.__ModuleLoader__.load({
         name: 'settings.plugin.item', key: ID, inject: () => ({ rpc: ctx.get('connection').rpc, controller }),
       }, SettingsCard))
     }
-    return { inject: ['slots', 'connection'], apply, createController, RecapCard, RecapAction, SettingsCard, CHANNEL }
+    return { inject: ['slots', 'connection', 'remote'], apply, createController, RecapCard, RecapAction, SettingsCard, CHANNEL }
   },
 })

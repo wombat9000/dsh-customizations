@@ -1,6 +1,6 @@
 # Session Recap
 
-Session Recap shows a short reminder above the DSH Web composer when you return to a session. It summarizes the goal, latest outcome, and next step without adding messages to the transcript. You can also select **Recap** at any time.
+Session Recap shows 1–3 short bullets above the DSH Web composer when you return to a session: the topic, key direction, and where the discussion paused. It targets 40–70 words, with less text for simple threads. The card has no header or controls and disappears after your next message is saved to the conversation. Typing or a failed send does not hide it. Select **Recap** in the session header to request it again. Recaps do not add messages to the transcript.
 
 ## Install and configure
 
@@ -33,15 +33,16 @@ To install independently, select `@wombat9000/dsh-session-recap` from `packages/
 
 - Recaps run on return, not while you are away. The plugin uses the browser's recorded activity timestamp when available. On a first visit, it uses the latest persisted human message, assistant message, or turn-end event time instead. Session metadata changes do not reset this fallback. Old sessions can therefore recap automatically in a new browser; recent or empty sessions do not.
 - Automatic checks wait for loaded session history and a closed agent turn, retrying once per second while the session remains visible and focused. No automatic request runs without a configured provider/model or when automatic recaps are disabled. Manual generation also rejects an open agent turn.
-- **Dismiss** hides the current recap. **Recap** requests it again and can reuse the host cache.
+- A persisted human-message activity event clears the recap and invalidates any pending response for that session. Queued messages hide it when they enter the conversation, not merely when accepted into the queue. **Recap** requests it again and can reuse the host cache.
 - Identical session revisions and settings share an in-flight request and an in-memory cached result. The cache holds at most 100 entries and resets when DSH restarts. A changed session or configuration invalidates reuse.
-- Each request includes at most 160 recent messages, with a 24,000-byte budget for serialized history. It excludes tool results, reasoning, attachments, and system messages. Message framing adds a small amount of overhead.
-- The plugin asks the model to distinguish proposed work from assistant-reported completion. It cannot independently verify completed actions because it does not send tool results. Truncated history can omit earlier decisions.
+- Each request includes at most 40 visible messages, with a 24,000-byte budget for serialized history. Longer threads retain the first and last 10 eligible messages plus adjacent pairs sampled across the middle. Equal per-message budgets prevent long reports from excluding other turns. Gaps and shortened text are marked explicitly. Sampling can still miss important decisions.
+- History excludes tool results, reasoning, attachments, and system or injected messages. Message framing adds a small amount of overhead. The model summarizes the discussion rather than reporting task status; it must not invent agreement, completed work, or next steps. Essential completion claims remain qualified because tools are excluded.
+- Output validation requires 1–3 nonempty, single-line bullets, at most 240 characters each and 600 characters combined. The 40–70-word target is a prompt instruction, not a language-dependent word-count check.
 - Requests use a 1,400-token output setting, a 45-second timeout, and a maximum of four concurrent generations. Provider billing and cancellation behavior still depend on the adapter.
 - Summary text stays in host/browser memory. Browser storage contains activity timestamps, scoped by an opaque hash of the Harness home, host working directory, and plugin namespace, plus the session ID. This is not a distinct profile identity.
 - The selected provider receives conversation text. Choose a provider appropriate for your session's privacy requirements. A recap is generated text, not an authoritative record.
 
-This version regenerates from bounded recent conversation text after a revision changes. It does not feed an earlier generated summary back to the model, which avoids carrying forward unsupported claims.
+This version regenerates from bounded conversation excerpts after a revision changes. It does not feed an earlier generated summary back to the model, which avoids carrying forward unsupported claims.
 
 ## Development
 

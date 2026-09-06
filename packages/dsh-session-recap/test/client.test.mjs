@@ -30,7 +30,7 @@ function setup(overrides = {}) {
     if (method === 'settings') return { ok: true, value: config }
     if (method === 'activity') return { ok: true, value: activity }
     if (failure) return { ok: false, error: { message: 'Provider failed' } }
-    return { ok: true, value: { sessionId: payload.sessionId, recap: { goal: 'Goal', outcome: 'Done', nextStep: 'Test' } } }
+    return { ok: true, value: { sessionId: payload.sessionId, recap: { bullets: ['Thread topic', 'Key direction', 'Where we paused'] } } }
   } }
   const document = new Target(); document.visibilityState = 'visible'; document.hasFocus = () => true
   const window = new Target()
@@ -115,12 +115,55 @@ test('session return persists activity and does not bill on immediate remount', 
   assert.equal(f.data.size, 2)
   for (const value of f.data.values()) assert.match(value, /^\d+$/)
 })
-test('manual requests deduplicate, errors render, dismissal does not call RPC', async () => {
+test('manual requests deduplicate, errors render, successful send clears feedback', async () => {
   const f = setup(); f.mount(); await flush(); f.fail()
   await Promise.all([f.controller.recap('a'), f.controller.recap('a')])
   assert.equal(recaps(f).length, 1); assert.equal(f.value.error, 'Provider failed')
-  f.controller.dismiss('a'); assert.equal(f.value.dismissed, true)
+  f.controller.humanMessageSent('a'); assert.equal(f.value.error, undefined)
   assert.equal(recaps(f).length, 1)
+})
+test('successful sends invalidate late success and failure without affecting other sessions', async () => {
+  for (const failure of [false, true]) {
+    const f = setup({ autoRecap: false })
+    const original = f.rpc.call
+    const pending = []
+    f.rpc.call = (channel, method, payload) => method === 'recap' ? new Promise((resolve, reject) => pending.push({ resolve, reject, payload })) : original(channel, method, payload)
+    const first = f.controller.recap('a'); await flush()
+    f.controller.humanMessageSent('b')
+    assert.equal(f.controller.getSnapshot('a').busy, true)
+    f.controller.humanMessageSent('a')
+    assert.equal(Object.keys(f.controller.getSnapshot('a')).length, 0)
+    const second = f.controller.recap('a'); await flush()
+    if (failure) pending[0].reject(new Error('late error'))
+    else pending[0].resolve({ ok: true, value: { sessionId: 'a', recap: { bullets: ['Stale'] } } })
+    await first
+    assert.equal(f.controller.getSnapshot('a').busy, true)
+    assert.equal(f.controller.getSnapshot('a').error, undefined)
+    pending[1].resolve({ ok: true, value: { sessionId: 'a', recap: { bullets: ['Fresh'] } } })
+    await second
+    assert.equal(f.controller.getSnapshot('a').recap.bullets[0], 'Fresh')
+  }
+})
+test('late activity and settings failures cannot resurrect a cleared card', async () => {
+  for (const method of ['settings', 'activity']) {
+    const f = setup()
+    const original = f.rpc.call
+    let reject
+    f.rpc.call = (channel, endpoint, payload) => endpoint === method ? new Promise((resolve, fail) => { reject = fail }) : original(channel, endpoint, payload)
+    const stop = f.mount(); await flush()
+    assert.equal(typeof reject, 'function')
+    f.controller.humanMessageSent('a')
+    reject(new Error('Late failure')); await flush()
+    assert.equal(Object.keys(f.controller.getSnapshot('a')).length, 0)
+    stop()
+  }
+})
+test('typing does not clear a generated recap', async () => {
+  const f = setup({ autoRecap: false }); const stop = f.mount(); await flush()
+  await f.controller.recap('a')
+  f.document.emit('keydown'); f.document.emit('pointerdown'); await flush()
+  assert.equal(f.controller.getSnapshot('a').recap.bullets[0], 'Thread topic')
+  stop()
 })
 test('missing scope disables persisted automatic recap; manual remains available', async () => {
   const f = setup({ storageScope: undefined }); f.mount(); await flush()
@@ -148,7 +191,8 @@ test('unmount removes all listeners and settings completion cannot trigger a dep
 test('registers dock, header utility, and Plugins slots with one controller', () => {
   const { exports } = load()
   const entries = []
-  exports.apply({ get: () => ({ rpc: {} }), slots: { inject: (_name, register) => register(), register: (entry, component) => entries.push({ entry, component }) } })
+  const events = new Map()
+  exports.apply({ get: (name) => name === 'remote' ? { $on: (event, handler) => events.set(event, handler) } : { rpc: {} }, slots: { inject: (_name, register) => register(), register: (entry, component) => entries.push({ entry, component }) } })
   assert.deepEqual(entries.map(({ entry }) => entry.name), ['conversation.input.dock', 'conversation.session.header.utilities', 'settings.plugin.item'])
   assert.equal(entries[2].entry.key, 'wombat9000-session-recap')
   const dock = entries[0].entry.inject('session-1')
@@ -159,6 +203,11 @@ test('registers dock, header utility, and Plugins slots with one controller', ()
   assert.equal(entries[2].entry.inject().controller, dock.controller)
   assert.equal(entries[0].component, exports.RecapCard)
   assert.equal(entries[1].component, exports.RecapAction)
+  assert.equal(events.size, 1)
+  let sent
+  dock.controller.humanMessageSent = (id) => { sent = id }
+  events.get('api-session/activity')('session-1', 123)
+  assert.equal(sent, 'session-1')
   assert.doesNotMatch(source, /setInterval|dangerouslySetInnerHTML|conversation\.submit|session\.append/)
 })
 test('Plugins card loads advisory models and saves an exact route without recap', async () => {
@@ -215,7 +264,7 @@ function componentFixture(state = {}) {
     subscribe(id, listener) { assert.equal(id, 'a'); assert.equal(typeof listener, 'function'); return () => {} },
     mount(...args) { calls.push(['mount', ...args]); return () => {} },
     recap(id) { calls.push(['recap', id]) },
-    dismiss(id) { calls.push(['dismiss', id]) },
+
   }
   return { ...load(react).exports, controller, effects, subscriptions, calls }
 }
@@ -229,23 +278,24 @@ test('blank or unavailable sessions hide both surfaces without activity mounts',
   for (const effect of f.effects) effect()
   assert.deepEqual(f.calls, [])
 })
-test('empty and dismissed cards leave no panel', () => {
-  for (const state of [{}, { dismissed: true, recap: { goal: 'Hidden' } }, { dismissed: true, error: 'Hidden' }]) {
+test('empty cards leave no panel', () => {
+  for (const state of [{}]) {
     const f = componentFixture(state)
     assert.equal(f.RecapCard({ sessionId: 'a', session: { blank: false }, controller: f.controller }), null)
   }
 })
-test('card renders escaped recap text and dismissal but no generation button', () => {
-  const f = componentFixture({ recap: { goal: '<script>bad()</script>', outcome: 'Done', nextStep: 'Test' } })
+test('card renders only escaped bullets without header, metadata or controls', () => {
+  const f = componentFixture({ recap: { bullets: ['<script>bad()</script>', 'Direction', 'Paused'] }, generatedAt: '2026-01-01' })
   const tree = f.RecapCard({ sessionId: 'a', session: { blank: false }, controller: f.controller })
   assert.equal(tree.type, 'aside'); assert.equal(tree.props['aria-label'], 'Session recap')
   assert.ok(nodes(tree).some(node => node.props?.role === 'status'))
   assert.match(JSON.stringify(tree), /<script>bad\(\)<\/script>/)
   assert.doesNotMatch(JSON.stringify(tree), /dangerouslySetInnerHTML/)
   const buttons = nodes(tree).filter(node => node.type === 'button')
-  assert.equal(buttons.length, 1)
-  assert.equal(buttons[0].props['aria-label'], 'Dismiss session recap')
-  buttons[0].props.onClick(); assert.deepEqual(f.calls, [['dismiss', 'a']])
+  assert.equal(buttons.length, 0)
+  assert.equal(nodes(tree).filter(node => node.type === 'li').length, 3)
+  assert.equal(nodes(tree).filter(node => ['svg', 'small', 'strong'].includes(node.type)).length, 0)
+  assert.doesNotMatch(JSON.stringify(tree), /Earlier recap|2026-01-01|Latest outcome|Next step/)
 })
 test('busy and error cards expose accessible feedback', () => {
   for (const [state, role, text] of [[{ busy: true }, 'status', 'Generating recap…'], [{ error: 'Provider failed' }, 'alert', 'Provider failed']]) {
@@ -253,7 +303,7 @@ test('busy and error cards expose accessible feedback', () => {
     const tree = f.RecapCard({ sessionId: 'a', session: { blank: false }, controller: f.controller })
     const feedback = nodes(tree).find(node => node.props?.role === role)
     assert.ok(feedback); assert.ok(JSON.stringify(feedback).includes(text))
-    if (state.error) assert.ok(nodes(tree).some(node => node.props?.['aria-label'] === 'Dismiss session recap'))
+    assert.equal(nodes(tree).filter(node => node.type === 'button').length, 0)
   }
 })
 test('header selects blank state, subscribes without activity mounting, and generates', () => {
@@ -281,10 +331,10 @@ test('controller snapshots and independent subscriptions isolate sessions', asyn
   assert.notEqual(f.controller.getSnapshot('a'), initial)
   assert.deepEqual(b, [])
   await pending
-  assert.equal(a.at(-1).recap.goal, 'Goal')
-  stopA(); const count = a.length; f.controller.dismiss('a')
+  assert.equal(a.at(-1).recap.bullets[0], 'Thread topic')
+  stopA(); const count = a.length; f.controller.humanMessageSent('a')
   assert.equal(a.length, count)
-  assert.equal(f.controller.getSnapshot('a').dismissed, true)
+  assert.equal(f.controller.getSnapshot('a').recap, undefined)
   assert.equal(f.controller.getSnapshot('b').recap, undefined)
   stopB()
 })

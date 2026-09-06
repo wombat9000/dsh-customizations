@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { boundedHistory, LIMITS, normalizeSettings, parseRecap, RecapRuntime } from '../src/runtime.js'
 
-const answer = { goal: 'Ship recap', outcome: 'Implemented host', nextStep: 'Test UI' }
+const answer = { bullets: ['Recaps should refresh your memory, not report task status.', 'We settled on a few short bullets that disappear after you send a message.'] }
 const message = (text, role = 'user', kind = 'user') => ({ role, source: { kind }, content: [{ type: 'text', text }] })
 function fixture({ chunks, prepareError, delay = 0, timeoutMs } = {}) {
   const session = { seq: 2, deriveMessages: () => [message('Please build recap'), message('Done', 'assistant', 'model')] }
@@ -51,15 +51,49 @@ test('history excludes tools, reasoning, attachments and injected instructions',
   const messages = [message('secret', 'system', 'plugin'), message('tool secret', 'user', 'tool'), message('injected', 'user', 'plugin'), { ...message('visible'), content: [{ type: 'reasoning', text: 'private' }, { type: 'image', attachment: 'secret' }, { type: 'tool-call', arguments: 'secret' }, { type: 'text', text: 'visible' }] }]
   assert.deepEqual(boundedHistory(messages), [{ role: 'user', text: 'visible' }])
 })
-test('history bounds source text bytes and scanned messages', () => {
+test('history bounds transmitted text and selected messages', () => {
   const rows = boundedHistory(Array.from({ length: 1000 }, (_, i) => message(`${i} ${'😀'.repeat(30000)}`)))
   assert.ok(rows.length <= LIMITS.messages)
   assert.ok(rows.reduce((n, row) => n + Buffer.byteLength(row.text), 0) <= LIMITS.inputBytes)
   assert.ok(rows.at(-1).text.startsWith('999 '))
+  assert.ok(Buffer.byteLength(JSON.stringify(rows)) <= LIMITS.inputBytes)
+  assert.ok(rows.every(row => row.truncated && !/[\uD800-\uDBFF]$/u.test(row.text)))
 })
-test('strict recap shape and bounded fields', () => {
+test('strict bullet shape and hard brevity bounds', () => {
   assert.deepEqual(parseRecap(JSON.stringify(answer)), answer)
-  for (const value of ['```json\n{}\n```', '{}', 'null', JSON.stringify({ ...answer, extra: true }), JSON.stringify({ ...answer, goal: '' }), JSON.stringify({ ...answer, nextStep: 'x'.repeat(1201) })]) assert.throws(() => parseRecap(value))
+  assert.deepEqual(parseRecap('{"bullets":[" One topic. "]}'), { bullets: ['One topic.'] })
+  for (const value of ['```json\n{}\n```', '{}', 'null', JSON.stringify({ ...answer, extra: true }), ...[
+    [], ['', 'Topic'], [1], ['a', 'b', 'c', 'd'], ['x'.repeat(241)], Array(3).fill('x'.repeat(201)), ['First\nSecond'],
+  ].map(bullets => JSON.stringify({ bullets })), JSON.stringify({ goal: 'Old', outcome: 'Format', nextStep: 'Rejected' })]) assert.throws(() => parseRecap(value))
+  assert.ok(Object.isFrozen(parseRecap(JSON.stringify(answer)).bullets))
+  const escaped = '{"bullets":[' + Array(3).fill('"' + '\\u4e2d'.repeat(200) + '"').join(',') + ']}'
+  assert.deepEqual(parseRecap(escaped).bullets, Array(3).fill('中'.repeat(200)))
+})
+test('history retains opening, middle, and recent context with explicit gaps', () => {
+  const rows = boundedHistory(Array.from({ length: 1000 }, (_, i) => message(`${i} discussion`, i % 2 ? 'assistant' : 'user', i % 2 ? 'model' : 'user')))
+  assert.equal(rows.length, LIMITS.messages)
+  assert.equal(rows[0].text, '0 discussion')
+  assert.equal(rows.at(-1).text, '999 discussion')
+  assert.ok(rows.some(row => Number.parseInt(row.text) > 300 && Number.parseInt(row.text) < 700))
+  assert.ok(rows.some(row => row.omittedBefore > 0))
+  assert.deepEqual(rows.map(row => Number.parseInt(row.text)), rows.map(row => Number.parseInt(row.text)).sort((a, b) => a - b))
+})
+test('long reports do not crowd out user intent or corrections', () => {
+  const rows = boundedHistory([message('Make this a memory refresh.'), message('Report '.repeat(20000), 'assistant', 'model'), message('No status report. Keep it short.')])
+  assert.equal(rows.length, 3)
+  assert.equal(rows[0].text, 'Make this a memory refresh.')
+  assert.equal(rows[2].text, 'No status report. Keep it short.')
+  assert.equal(rows[1].truncated, true)
+  assert.ok(Buffer.byteLength(JSON.stringify(rows)) <= LIMITS.inputBytes)
+})
+test('injected and tool traffic cannot displace the visible conversation', () => {
+  const rows = boundedHistory([message('Original intent'), ...Array.from({ length: 500 }, () => message('Excluded data', 'user', 'tool')), message('Still exploring.', 'assistant', 'model')])
+  assert.deepEqual(rows, [{ role: 'user', text: 'Original intent' }, { role: 'assistant', text: 'Still exploring.' }])
+})
+test('short exploratory conversations retain all visible text without gaps', () => {
+  assert.deepEqual(boundedHistory([message('Could we explore two approaches?'), message('Both remain open.', 'assistant', 'model')]), [
+    { role: 'user', text: 'Could we explore two approaches?' }, { role: 'assistant', text: 'Both remain open.' },
+  ])
 })
 test('one-shot uses exact route, no tools, no historical metadata', async () => {
   const { runtime, calls } = fixture()
@@ -71,6 +105,11 @@ test('one-shot uses exact route, no tools, no historical metadata', async () => 
   assert.deepEqual(calls[0].tools, [])
   assert.equal(calls[0].messages.length, 1)
   assert.equal(calls[0].sessionId, undefined)
+  assert.match(calls[0].system, /40–70 words total/u)
+  assert.match(calls[0].system, /especially user corrections/u)
+  assert.match(calls[0].system, /Do not invent a next step/u)
+  assert.match(calls[0].system, /untrusted data/u)
+  assert.deepEqual(JSON.parse(calls[0].messages[0].content[0].text), [{ role: 'user', text: 'Please build recap' }, { role: 'assistant', text: 'Done' }])
 })
 test('deduplicates concurrent calls and caches exact revision/settings', async () => {
   const { runtime, calls, session, config } = fixture({ delay: 10 })
