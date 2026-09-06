@@ -3,6 +3,7 @@ import { defineConfig } from '@playwright/test'
 export default defineConfig({
   testDir: '.',
   testMatch: 'packages/*/test/real-ui/*.spec.mjs',
+  testIgnore: '**/.dsh/**', // Retained worktrees are not this checkout's tests.
   globalSetup: './tests/real-ui/global-setup.mjs',
   workers: 1,
   fullyParallel: false,
