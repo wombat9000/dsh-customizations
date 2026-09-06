@@ -90,9 +90,9 @@ test('coordinator retains every Standard row and only adds its tool contribution
     assert.equal(copied.name, original.name)
     assert.deepEqual(copied.disabled, original.disabled, `${original.id} enablement changed`)
     assert.deepEqual(copied.isolate, original.isolate, `${original.id} realm changed`)
-    // Persona guidance is the intentional customization; the remaining leaf
-    // configs (including every tool config) stay identical to Standard.
-    if (!original.group && !original.name.includes('persona')) assert.deepEqual(copied.config, original.config, `${original.id} config changed`)
+    // Only persona guidance and the official skill root customize leaf configs;
+    // every tool config stays identical to Standard.
+    if (!original.group && !['persona', 'skill-filesystem'].includes(original.id)) assert.deepEqual(copied.config, original.config, `${original.id} config changed`)
   }
   const tools = actual.filter(row => row.name === '@local/dsh-worktree/tools')
   assert.equal(tools.length, 1)
@@ -100,7 +100,71 @@ test('coordinator retains every Standard row and only adds its tool contribution
   assert.ok(!actual.some(row => row.name === '@local/dsh-worktree'), 'shared service belongs in host, not preset')
   const normalized = structuredClone(coordinator).filter(row => row.name !== '@local/dsh-worktree/tools')
   normalized.find(row => row.id === 'persona').config = structuredClone(standard.find(row => row.id === 'persona').config)
+  const skillConfig = standard.find(row => row.id === 'skill-filesystem').config
+  if (skillConfig === undefined) delete normalized.find(row => row.id === 'skill-filesystem').config
+  else normalized.find(row => row.id === 'skill-filesystem').config = structuredClone(skillConfig)
   assert.deepEqual(normalized, standard, 'preserve exact Standard nesting and consumer realms')
+  assert.ok(!actual.some(row => row.name.includes('tool-cordis')))
+  const persona = actual.find(row => row.id === 'persona').config.text
+  assert.match(persona, /plugin implementation or review, load the cordis-plugin-development skill/)
+  assert.match(persona, /Before writing or changing a Cordis composition, load the editing-cordis-compositions skill/)
+  assert.match(persona, /not grants of Creator runtime tools or broader permissions/)
+  assert.match(persona, /execution rules .* and cordis_inspect_\*, cordis_define, and cordis_run workflow apply only to dynamic plugins/)
+  assert.match(persona, /static packaged plugin development and review, use repository API contracts, imports, TypeScript\/JSX where supported, and normal build\/test workflows/)
+  assert.match(persona, /rather than bypassing restrictions or blocking static repository work/)
+})
+
+test('Creator skills resolve from a relocated preset and load official bodies on demand', async t => {
+  const { directory, baseUrl } = await profile(t)
+  const rows = parse(await readFile(compositionFile, 'utf8'))
+  // A normal user root is outside the deployment's dependency ancestry.
+  const userRoot = await mkdtemp(join(tmpdir(), 'dsh-user-creator-'))
+  t.after(() => rm(userRoot, { recursive: true, force: true }))
+  const relocated = pathToFileURL(`${userRoot}/copied-coordinator/`).href
+  assert.throws(() => createRequire(relocated).resolve('@deepseek-ai/dsh-agent-presets/package.json'), /Cannot find module/)
+  const ctxBase = new Context()
+  ctxBase.baseUrl = baseUrl
+  t.after(() => ctxBase.fiber.dispose())
+  const config = interpolate(ctxBase.extend({ baseUrl: relocated }), rows.find(row => row.id === 'skill-filesystem').config)
+  const local = createRequire(join(packageRoot, 'package.json'))
+  const officialRoot = join(dirname(local.resolve('@deepseek-ai/dsh-agent-presets/package.json')), 'presets/cordis/skills')
+  assert.deepEqual(config, { customSkillDirs: [officialRoot] })
+  const manifest = JSON.parse(await readFile(join(packageRoot, 'package.json'), 'utf8'))
+  assert.equal(manifest.dependencies['@deepseek-ai/dsh-agent-presets'], '0.1.2-rc.1')
+  const { FileSystemSkillProvider } = await installed('@deepseek-ai/dsh-skill-filesystem')
+  const ctx = new Context()
+  t.after(() => ctx.fiber.dispose())
+  const control = { signal: new AbortController().signal, invalidate() {} }
+  const provider = new FileSystemSkillProvider(ctx, control, {
+    ...config, includeDefaultRoots: false, watch: false,
+  })
+  t.after(() => provider.dispose())
+  const catalog = await provider.list({ cwd: directory })
+  for (const name of ['cordis-plugin-development', 'editing-cordis-compositions']) {
+    const summary = catalog.find(skill => skill.name === name)
+    assert.ok(summary, `installed Creator skill layout incompatible: missing ${name}`)
+    assert.equal(summary.content, undefined, 'catalog must not inject the full body')
+    assert.ok(summary.description)
+    assert.equal(summary.invocation.modelInvocable, true)
+    assert.equal(summary.path, join(officialRoot, name, 'SKILL.md'))
+    const loaded = await provider.get(summary, {})
+    const raw = await readFile(summary.path, 'utf8')
+    assert.equal(loaded.content, raw.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/, '').trim())
+    assert.equal(loaded.resourceBase.path, join(officialRoot, name))
+  }
+  const absent = new FileSystemSkillProvider(ctx, control, {
+    customSkillDirs: [join(directory, 'missing-skills')], includeDefaultRoots: false, watch: false,
+  })
+  t.after(() => absent.dispose())
+  assert.deepEqual(await absent.list({}), [], 'upstream omits absent skill directories')
+})
+
+test('missing deployment bundle fails interpolation instead of using a machine path', async t => {
+  const directory = await mkdtemp(join(tmpdir(), 'dsh-no-creator-'))
+  t.after(() => rm(directory, { recursive: true, force: true }))
+  const rows = parse(await readFile(compositionFile, 'utf8'))
+  assert.throws(() => interpolate({ root: { baseUrl: pathToFileURL(`${directory}/`).href } },
+    rows.find(row => row.id === 'skill-filesystem').config), /Cannot find module.*dsh-worktree/s)
 })
 
 test('package root wins a colliding user preset id', async t => {
@@ -190,19 +254,38 @@ test('full Standard and coordinator standing mounts coexist on an isolated host'
   const { default: WorktreeService } = await import('../src/index.js')
   await ctx.plugin(WorktreeService, {}).await()
   const manager = ctx.get('worktreeWorkers')
+  const userRoot = await mkdtemp(join(tmpdir(), 'dsh-user-mount-'))
+  t.after(() => rm(userRoot, { recursive: true, force: true }))
+  assert.throws(() => createRequire(pathToFileURL(`${userRoot}/`)).resolve('@local/dsh-worktree/package.json'), /Cannot find module/)
   await ctx.plugin(AgentPresets, {
-    default: 'standard', roots: [{ path: presetRoot, trust: 'system' }],
+    default: 'standard', roots: [{ path: presetRoot, trust: 'system' }, { path: userRoot, trust: 'user' }],
     includeShippedRoot: true, includeUserRoot: false,
   }).await()
   const roster = ctx.get('agentPresets')
+  await roster.copy(presetId, 'copied-coordinator')
+  const copied = await roster.resolve('copied-coordinator')
+  assert.equal(copied.path, join(userRoot, 'copied-coordinator', 'agent.cordis.yml'))
+  assert.equal(await readFile(copied.path, 'utf8'), await readFile(compositionFile, 'utf8'))
   const standard = await roster.standingKeyFor('standard')
   const coordinator = await roster.standingKeyFor(presetId)
+  const copiedKey = await roster.standingKeyFor('copied-coordinator')
+  assert.deepEqual([...ctx.get('tools').view(copiedKey).visible.keys()].sort(), [...ctx.get('tools').view(coordinator).visible.keys()].sort())
+  for (const name of ['cordis-plugin-development', 'editing-cordis-compositions']) {
+    assert.ok((await ctx.get('skills').get(name, { scope: copiedKey, cwd: directory })).content)
+  }
   assert.notEqual(standard, coordinator)
   const standardNames = [...ctx.get('tools').view(standard).visible.keys()].sort()
   const coordinatorNames = [...ctx.get('tools').view(coordinator).visible.keys()].sort()
   assert.ok(standardNames.length > 20)
   assert.deepEqual(coordinatorNames, [...standardNames, 'worktree_create', 'worktree_dispatch', 'worktree_list'].sort())
   assert.deepEqual([...ctx.get('tools').view().visible.keys()], [])
+  const skills = ctx.get('skills')
+  const catalog = await skills.list({ scope: coordinator, cwd: directory })
+  for (const name of ['cordis-plugin-development', 'editing-cordis-compositions']) {
+    assert.ok(catalog.some(skill => skill.name === name), `missing scoped skill ${name}`)
+    assert.ok((await skills.get(name, { scope: coordinator, cwd: directory })).content)
+  }
+  assert.deepEqual(await skills.list({ cwd: directory }), [], 'skills must not leak into the host scope')
   assert.equal(typeof manager.create, 'function')
   assert.equal(typeof ctx.get('worktreeWorkers').dispatch, 'function')
   for (const service of ['planMode', 'compaction', 'toolResultPruner', 'workflowEngine']) {

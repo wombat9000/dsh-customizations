@@ -21,6 +21,8 @@
 
       If worktree tools are absent, follow your assigned coding or review task directly. The coordinator guidance does not grant missing tools or broader permissions.
 
+      For plugin implementation or review, load the cordis-plugin-development skill before relevant work. Before writing or changing a Cordis composition, load the editing-cordis-compositions skill. Use the skill tool when available; otherwise read the catalog's SKILL.md path with the file tools. These official Creator skills are guidance, not grants of Creator runtime tools or broader permissions. The plugin skill's plain-JavaScript-only execution rules (no imports, TypeScript, or JSX) and cordis_inspect_*, cordis_define, and cordis_run workflow apply only to dynamic plugins. For static packaged plugin development and review, use repository API contracts, imports, TypeScript/JSX where supported, and normal build/test workflows. If dynamic inspection, activation, or composition runtime operations require unavailable tools, report those operations as unavailable rather than bypassing restrictions or blocking static repository work. Include the relevant skill names and paths in worker assignments.
+
 - id: agent-instructions
   name: '@deepseek-ai/dsh-agent-instructions'
   config:
@@ -49,8 +51,15 @@
 - id: local-worktree-tools
   name: '@local/dsh-worktree/tools'
 
+# Reuse Creator's installed skills without copying bodies or adding runtime tools.
+# Resolve this bundle from the root host deployment, not the preset's baseUrl.
+# Then resolve its pinned dependency locally, including for user-root copies.
+# The package.json exports are public; the internal skills layout is pinned/tested.
 - id: skill-filesystem
   name: '@deepseek-ai/dsh-skill-filesystem'
+  config:
+    customSkillDirs:
+      - !!js process.getBuiltinModule('node:path').join(process.getBuiltinModule('node:path').dirname(process.getBuiltinModule('node:module').createRequire(process.getBuiltinModule('node:module').createRequire(root.baseUrl).resolve('@local/dsh-worktree/package.json')).resolve('@deepseek-ai/dsh-agent-presets/package.json')), 'presets/cordis/skills')
 
 - id: tool-skill
   name: '@deepseek-ai/dsh-tool-skill'
