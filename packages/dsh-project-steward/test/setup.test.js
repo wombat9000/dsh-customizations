@@ -11,22 +11,62 @@ const skillPath = join(repo, '.agents/skills/repository-setup/SKILL.md')
 const templates = join(repo, 'packages/dsh-project-steward/presets/project-steward/skills/project-steward/templates/v1')
 const text = path => readFile(path, 'utf8')
 
-async function fresh(t) {
+async function fresh(t, source = repo, env = process.env) {
   const root = await mkdtemp(join(tmpdir(), 'steward-fresh-'))
   t.after(() => rm(root, { recursive: true, force: true }))
   const directory = join(root, 'checkout')
   await mkdir(directory)
   // Copy repository files, not borrowed node_modules, Git metadata, or builds.
   // Include this change's untracked files so the test also runs before commit.
-  const listed = spawnSync('git', ['ls-files', '--cached', '--others', '--exclude-standard', '-z'], { cwd: repo, encoding: 'utf8' })
+  // Container checkouts can have a different owner, and an isolated HOME hides
+  // actions/checkout's global trust entry. Trust only this known source path for
+  // this read-only command; do not change global config or trust other repos.
+  const sourcePath = await realpath(source)
+  const listed = spawnSync('git', ['-c', 'safe.directory=', '-c', `safe.directory=${sourcePath}`, 'ls-files', '--cached', '--others', '--exclude-standard', '-z'], { cwd: sourcePath, env, encoding: 'utf8' })
   assert.equal(listed.status, 0, listed.stderr)
   for (const relative of new Set(listed.stdout.split('\0').filter(path => path && !path.split('/').includes('node_modules')))) {
     const target = join(directory, relative)
     await mkdir(dirname(target), { recursive: true })
-    await cp(join(repo, relative), target)
+    await cp(join(sourcePath, relative), target)
   }
   return { root, directory }
 }
+
+test('fresh fixture handles dubious source ownership without persisting Git trust', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'steward-ownership-'))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  const source = join(root, 'source')
+  const home = join(root, 'home')
+  await mkdir(source)
+  await mkdir(home)
+  const env = { PATH: process.env.PATH, HOME: home, XDG_CONFIG_HOME: home, GIT_CONFIG_NOSYSTEM: '1' }
+  const git = args => spawnSync('git', args, { cwd: source, env, encoding: 'utf8' })
+  assert.equal(git(['init']).status, 0)
+  await writeFile(join(source, '.gitignore'), '.env\n.dsh/\nnode_modules/\nlib/\n')
+  await writeFile(join(source, 'tracked.js'), 'export default 1\n')
+  assert.equal(git(['add', '.gitignore', 'tracked.js']).status, 0)
+  await writeFile(join(source, 'untracked source.js'), 'export default 2\n')
+  await writeFile(join(source, '.env'), 'TEST_SECRET=fixture-only\n')
+  for (const name of ['.dsh', 'node_modules', 'lib']) {
+    await mkdir(join(source, name))
+    await writeFile(join(source, name, 'sentinel'), 'must not copy\n')
+  }
+  // Git's test hook exercises the real ownership check without chown/root.
+  env.GIT_TEST_ASSUME_DIFFERENT_OWNER = '1'
+  const denied = git(['ls-files'])
+  assert.equal(denied.status, 128, denied.stderr)
+  assert.match(denied.stderr, /detected dubious ownership/)
+  const configBefore = await text(join(source, '.git/config'))
+  const { directory } = await fresh(t, source, env)
+  assert.deepEqual((await readdir(directory)).sort(), ['.gitignore', 'tracked.js', 'untracked source.js'])
+  assert.equal(await text(join(directory, 'tracked.js')), 'export default 1\n')
+  assert.equal(await text(join(directory, 'untracked source.js')), 'export default 2\n')
+  assert.equal(await text(join(source, '.git/config')), configBefore)
+  assert.deepEqual(await readdir(home), [], 'fixture must not write global Git config')
+  const stillDenied = git(['ls-files'])
+  assert.equal(stillDenied.status, 128, stillDenied.stderr)
+  assert.match(stillDenied.stderr, /detected dubious ownership/)
+})
 
 test('fresh source fixture runs dependency-free checks with no pnpm executable or cache', async t => {
   const { root, directory } = await fresh(t)
