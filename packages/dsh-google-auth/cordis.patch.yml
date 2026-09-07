@@ -1,0 +1,5 @@
+# One shared host provider owns Google accounts, grants, and token refresh.
+# Integrations register their permission requirements without starting login.
+- insert:
+    - id: local-google-auth
+      name: '@local/dsh-google-auth'

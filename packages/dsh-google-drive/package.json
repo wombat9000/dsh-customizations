@@ -2,26 +2,17 @@
   "name": "@local/dsh-google-drive",
   "version": "0.1.0",
   "private": true,
-  "description": "Host-owned Google OAuth and read-only Drive tools for DSH 0.1.2-rc.1",
+  "description": "Read-only Drive metadata tools using shared Google auth for DSH 0.1.2-rc.1",
   "type": "module",
   "main": "src/index.js",
   "exports": {
     ".": "./src/index.js",
     "./tools": "./src/tools.js",
-    "./client": "./client.js",
     "./package.json": "./package.json"
   },
-  "files": ["src", "client.js", "presets", "cordis.patch.yml", "README.md"],
+  "files": ["src", "presets", "cordis.patch.yml", "README.md"],
   "scripts": { "test": "node --test test/*.test.js" },
   "engines": { "node": "^22.19.0 || >=24.0.0" },
-  "dsh": {
-    "bundle": { "patch": "./cordis.patch.yml" },
-    "client": {
-      "inject": ["@deepseek-ai/dsh-client-ui-settings-plugins"],
-      "platform": "web"
-    }
-  },
-  "dependencies": { "@deepseek-ai/schemastery": "3.18.2" },
-  "peerDependencies": { "react": "18.3.1" },
+  "dsh": { "bundle": { "patch": "./cordis.patch.yml" } },
   "license": "UNLICENSED"
 }
