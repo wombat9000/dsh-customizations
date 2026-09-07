@@ -76,7 +76,7 @@ test('published bundle discovers Google Drive; personal-web preserves all three 
   assert.equal(manifest.exports['./tools'], './src/tools.js')
   assert.equal(manifest.exports['./package.json'], './package.json')
   assert.equal(manifest.dependencies, undefined)
-  assert.equal(manifest.exports['./client'], undefined)
+  assert.equal(manifest.exports['./client'], './client.js')
   for (const combined of [false, true]) {
     const config = rosterConfig(f.baseUrl, combined ? await recipePatches() : [webPatch, join(f.packaged, 'cordis.patch.yml')])
     assert.equal(config.default, 'standard')
@@ -92,7 +92,7 @@ test('published bundle discovers Google Drive; personal-web preserves all three 
     }
     const own = roster.find(row => row.id === 'google-drive')
     assert.equal(own.name, 'Google Drive')
-    assert.equal(own.description, 'Standard coding tools plus read-only Drive metadata listing.')
+    assert.equal(own.description, 'Standard coding tools with progressive session access to selected Google Drive files and folders.')
     assert.equal(own.path, join(f.packaged, 'presets/google-drive/agent.cordis.yml'))
   }
 })
@@ -145,7 +145,7 @@ test('real dormant Standard and Google Drive mounts isolate tool contributions',
   assert.equal(await roster.standingKeyFor('google-drive'), drive)
   const names = key => [...ctx.get('tools').view(key).visible.keys()].sort()
   assert.ok(names(standard).length > 20)
-  assert.deepEqual(names(drive), [...names(standard), 'google_drive_list_files'].sort())
+  assert.deepEqual(names(drive), [...names(standard), 'request_drive_access'].sort())
   assert.deepEqual(names(), [])
   assert.equal(ctx.get('googleDrive'), service)
   for (const name of ['planMode', 'compaction', 'toolResultPruner', 'workflowEngine']) assert.equal(ctx.get(name), undefined)
