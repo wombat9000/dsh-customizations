@@ -43,6 +43,34 @@ test('selection is one-shot, owned, private picker separate from agent root', as
   assert.equal((await core.readText(owner, { fileId: 'child' })).text, 'content')
 })
 
+test('picker cursors bind view, search, parent and pending request without granting access', async t => {
+  const { core, owner, calls } = fixture(t)
+  const { requestId } = core.request(owner)
+  for (const view of ['my-drive', 'shared-with-me']) {
+    for (const search of [undefined, 'global search']) {
+      const options = { view, search, parentId: 'nested', pageSize: 20 }
+      const first = await core.pickerList(owner, requestId, options)
+      const pageToken = first.nextPageToken
+      await core.pickerList(owner, requestId, { ...options, pageToken })
+      assert.equal(calls.at(-1)[1].view, view)
+      assert.equal(calls.at(-1)[1].pageToken, 'private-google-token')
+      const before = calls.length
+      for (const change of [
+        { view: view === 'my-drive' ? 'shared-with-me' : 'my-drive' },
+        { search: 'other' }, { parentId: 'other' }, { pageSize: 10 },
+      ]) await assert.rejects(core.pickerList(owner, requestId, { ...options, ...change, pageToken }), /permission/)
+      await assert.rejects(core.pickerList(owner, core.request(owner).requestId, { ...options, pageToken }), /permission/)
+      assert.equal(calls.length, before)
+    }
+  }
+  const first = await core.pickerList(owner, requestId)
+  await core.pickerList(owner, requestId, { view: 'my-drive', pageToken: first.nextPageToken })
+  for (const view of ['', 'shared', null, 1, {}, []]) await assert.rejects(core.pickerList(owner, requestId, { view }), /Invalid/)
+  assert.deepEqual(core.grants(owner), [])
+  core.deny(owner, requestId)
+  await assert.rejects(core.pickerList(owner, requestId, { view: 'shared-with-me' }), /permission/)
+})
+
 test('future descendants are allowed and moved-out descendants denied', async t => {
   const { core, owner, approve, nodes } = fixture(t)
   await approve()

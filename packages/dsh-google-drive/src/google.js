@@ -21,11 +21,15 @@ export class GoogleDriveClient {
 
   async listFiles(options = {}) { return this.pickerList(options) }
 
-  async pickerList({ pageSize = 10, pageToken, parentId, search, signal, query } = {}) {
-    if (query !== undefined || (parentId !== undefined && !validId(parentId))
+  async pickerList({ pageSize = 10, pageToken, parentId, search, view = 'my-drive', signal, query } = {}) {
+    if (!['my-drive', 'shared-with-me'].includes(view) || query !== undefined || (parentId !== undefined && !validId(parentId))
       || (search !== undefined && (typeof search !== 'string' || search.length > 256))) throw new Error('Invalid Google Drive list options.')
     const filters = []
-    if (parentId) filters.push(`'${parentId}' in parents`)
+    // Search is account-wide: never add a parent or view restriction to it.
+    if (!search) {
+      if (parentId && parentId !== 'root') filters.push(`'${parentId}' in parents`)
+      else filters.push(view === 'shared-with-me' ? 'sharedWithMe = true' : "'root' in parents")
+    }
     if (search) filters.push(`name contains '${search.replaceAll('\\', '\\\\').replaceAll("'", "\\'")}'`)
     return this.#request({ pageSize, pageToken, query: filters.join(' and '), signal })
   }

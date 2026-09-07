@@ -93,6 +93,27 @@ test('HTTP boundary rejects cross-origin and malformed requests without leaking 
   assert.equal((await outcome).state, 'denied')
 })
 
+test('browse HTTP validates views and binds paginated search to its original view', async t => {
+  const { identity, post, plugin, browseCalls } = await fixture(t)
+  const { requestId } = await plugin.api('status', identity)
+  const request = { ...identity, requestId }
+  for (const view of ['my-drive', 'shared-with-me']) {
+    const options = { ...request, view, search: 'global', parentId: 'folder' }
+    const first = await post('browse', options)
+    assert.equal(first.status, 200)
+    assert.equal(browseCalls.at(-1).view, view)
+    const pageToken = first.result.value.nextPageToken
+    assert.equal((await post('browse', { ...options, pageToken })).status, 200)
+    assert.equal(browseCalls.at(-1).pageToken, 'google-private-cursor')
+    assert.equal((await post('browse', { ...options, pageToken, view: view === 'my-drive' ? 'shared-with-me' : 'my-drive' })).status, 409)
+  }
+  const before = browseCalls.length
+  for (const view of ['', 'unknown', 'MY-DRIVE', null, 0, {}, []]) {
+    assert.equal((await post('browse', { ...request, view })).status, 400)
+  }
+  assert.equal(browseCalls.length, before)
+})
+
 test('failed grant settles dead pending request so Manage can mint a usable identity', async t => {
   const { identity, plugin, post, outcome } = await fixture(t)
   const pending = await plugin.api('status', identity)

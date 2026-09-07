@@ -2,10 +2,10 @@ const PREFIX = '/api/plugins/google-drive/'
 const LOOPBACK = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1'])
 const FIELDS = {
   status: [], manage: [], revoke: [],
-  browse: ['requestId', 'parentId', 'search', 'pageToken'],
+  browse: ['requestId', 'parentId', 'search', 'view', 'pageToken'],
   grant: ['requestId', 'selected'], deny: ['requestId'],
   'edit-status': [], 'edit-manage': [], 'edit-revoke': [],
-  'edit-browse': ['requestId', 'parentId', 'search', 'pageToken'],
+  'edit-browse': ['requestId', 'parentId', 'search', 'view', 'pageToken'],
   'edit-grant': ['requestId', 'selected'], 'edit-deny': ['requestId'],
   'preview-status': [], 'preview-apply': ['requestId'], 'preview-deny': ['requestId'],
   'session-status': [], 'session-set': ['ownerId', 'revision', 'enabled'],
@@ -48,6 +48,7 @@ async function body(req, action) {
   if (!value || typeof value !== 'object' || Array.isArray(value)
     || Object.keys(value).some(key => !keys.includes(key))
     || typeof value.sessionId !== 'string' || typeof value.callId !== 'string'
+    || (Object.hasOwn(value, 'view') && !['my-drive', 'shared-with-me'].includes(value.view))
     || Object.entries(value).some(([key, field]) => key !== 'selected' && (typeof field !== 'string' || field.length > 4096))) {
     throw new Error('Invalid Drive permission request.')
   }

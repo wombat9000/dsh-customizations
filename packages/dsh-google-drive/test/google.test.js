@@ -8,11 +8,34 @@ const file = { id: 'id', name: 'Notes', mimeType: 'text/plain' }
 test('safe folder and literal picker search reject raw queries and path injection', async t => {
   const { client, calls, tokens } = fixture(t)
   await client.pickerList({ parentId: 'root', search: "a' or name contains '\\" })
-  assert.equal(new URL(calls[0].url).searchParams.get('q'), "trashed = false and ('root' in parents and name contains 'a\\' or name contains \\'\\\\')")
+  assert.equal(new URL(calls[0].url).searchParams.get('q'), "trashed = false and (name contains 'a\\' or name contains \\'\\\\')")
   for (const fileId of ['../id', 'https://evil.invalid', "id' or true", '', 'a'.repeat(257)]) await assert.rejects(client.getMetadata({ fileId }), /Invalid/)
   await assert.rejects(client.listFolder({ folderId: 'root', query: 'true' }), /Invalid/)
   await assert.rejects(client.pickerList({ query: 'true' }), /Invalid/)
   assert.equal(tokens.length, 1)
+})
+
+test('picker views scope only browsing, preserve literal global search and forward pagination', async t => {
+  const { client, calls, tokens } = fixture(t)
+  for (const view of ['my-drive', 'shared-with-me']) {
+    for (const parentId of [undefined, 'root', 'nested-folder']) {
+      for (const search of [undefined, '', "report'\\\\name"]) {
+        await client.pickerList({ view, parentId, search, pageToken: 'next&token=literal', pageSize: 50 })
+        const url = new URL(calls.at(-1).url)
+        const filter = search ? "name contains 'report\\'\\\\\\\\name'"
+          : parentId === 'nested-folder' ? "'nested-folder' in parents"
+            : view === 'my-drive' ? "'root' in parents" : 'sharedWithMe = true'
+        assert.equal(url.searchParams.get('q'), `trashed = false and (${filter})`)
+        assert.equal(url.searchParams.get('pageToken'), 'next&token=literal')
+        assert.equal(url.searchParams.get('pageSize'), '50')
+      }
+    }
+  }
+  const before = tokens.length
+  for (const view of ['', 'shared', 'MY-DRIVE', null, 1, {}, []]) {
+    await assert.rejects(client.pickerList({ view }), /Invalid/)
+  }
+  assert.equal(tokens.length, before)
 })
 
 test('bounded metadata requires exact ID, nontrash and parents', async t => {
@@ -88,7 +111,7 @@ test('fixed endpoint, fields, default ten and mandatory nontrash filter', async 
   const url = new URL(calls[0].url)
   assert.equal(url.origin + url.pathname, 'https://www.googleapis.com/drive/v3/files')
   assert.equal(url.searchParams.get('pageSize'), '10')
-  assert.equal(url.searchParams.get('q'), 'trashed = false')
+  assert.equal(url.searchParams.get('q'), "trashed = false and ('root' in parents)")
   assert.equal(url.searchParams.get('fields'), 'nextPageToken,files(id,name,mimeType,size,modifiedTime,webViewLink,parents,trashed)')
   assert.equal(calls[0].init.headers.Authorization, 'Bearer access-private')
   assert.equal(calls[0].init.redirect, 'error')

@@ -27,7 +27,7 @@ Installation and profile application require explicit approval. Follow the repos
 7. Open the picker, select resources, review the selection, and choose **Allow read access**. Opening or cancelling the modal grants nothing. **Cancel** closes the picker without denying the pending request; **Deny** settles it without access.
 8. Confirm that the card reports the grant. The agent loads `google-drive-read` before using the newly exposed tools.
 
-The picker starts at **My Drive**. Click a folder name to browse it; use its checkbox to select recursive access. Search looks across Drive, not only the current folder. **Review selection** expands the selected items for inspection or removal. The selection count and confirmation buttons stay visible while files scroll. See the [design screenshots](docs/screenshots/README.md) for dark, light, and narrow layouts.
+The picker starts at **My Drive**. Use the **My Drive** and **Shared with me** tabs to switch between your root folder and items shared with you. Each tab opens its top-level view. **Shared with me** is a Drive view, not a folder or a grant to everything shared with you. Click a folder name to browse it; breadcrumbs show the path beneath the tabs. Use a folder's checkbox to select recursive read access. Selections stay intact across tabs and share one confirmation. In the Sheets edit picker, folders are navigation-only and only individual spreadsheets can be selected. Search looks across Drive, not only the active tab or current folder, and labels the list as search results. **Review selection** expands the selected items for inspection or removal. The selection count and confirmation buttons stay visible while files scroll. See the [design screenshots](docs/screenshots/README.md) for dark, light, and narrow layouts.
 
 The host bundle supplies the toolbar toggle and scoped registrations; other presets need no Google Drive row. Installing the bundle does not enable the toggle, grant file access, change the default preset, or modify shipped Standard files. Legacy presets containing the tools row remain loadable, but that row no longer exposes tools automatically.
 
@@ -62,7 +62,7 @@ Google does not offer an atomic transaction combining ancestry checks with conte
 | `google_sheets_propose_edit` | After an edit grant | Prepares a local before/after preview and waits for exact human approval; no model-callable apply operation. |
 | `google-sheets` | After a read or edit grant | Trusted instructions for bounded reads, changes, approval, concurrency, and uncertain outcomes. |
 
-Listing cursors are opaque and bound to the session, folder, page size, and grant revision. The agent has no account-wide query operation. The private picker supports literal name search. Revocation removes tool/skill registrations; service checks remain authoritative even if a model retains an old schema or loaded skill text.
+Listing cursors are opaque and bound to the session, folder, page size, and grant revision. Picker cursors additionally bind the pending request, active view, and search; a cursor from one tab cannot be reused in another. The agent has no account-wide query operation. The private picker supports literal name search. Revocation removes tool/skill registrations; service checks remain authoritative even if a model retains an old schema or loaded skill text.
 
 ### Read PDFs and scans
 

@@ -64,7 +64,11 @@ try {
         request: async (method, body) => {
           window.captureCalls.push({ method, body })
           if (method !== 'browse') throw new Error('Screenshot fixture permits browsing only.')
-          return { files }
+          return { files: body.view === 'shared-with-me' ? [
+            { id: 'shared-folder', name: 'Partner collaboration', mimeType: FOLDER },
+            { id: 'shared-sheet', name: 'Shared planning', mimeType: 'application/vnd.google-apps.spreadsheet' },
+            { id: 'shared-brief', name: 'Project brief', mimeType: 'application/vnd.google-apps.document' },
+          ] : files }
         }, onChanged() {},
       }
       window.ReactDOM.createRoot(document.getElementById('app')).render(
@@ -78,7 +82,8 @@ try {
     await page.getByRole('checkbox', { name: 'Engineering', exact: true }).check()
     await page.getByRole('checkbox', { name: 'Launch brief', exact: true }).check()
     await page.getByRole('button', { name: 'Allow read access', exact: true }).waitFor({ state: 'visible' })
-    assert.equal(await page.evaluate(() => window.captureCalls[0].body.parentId), 'root')
+    assert.equal(await page.evaluate(() => window.captureCalls[0].body.view), 'my-drive')
+    assert.equal(await page.evaluate(() => window.captureCalls[0].body.parentId), undefined)
     const layout = await page.getByRole('dialog').evaluate(dialog => ({
       width: dialog.getBoundingClientRect().width,
       scrollWidth: dialog.scrollWidth,
@@ -120,6 +125,12 @@ try {
       await scrollRegion.evaluate(node => { node.scrollTop = node.scrollHeight })
       await page.screenshot({ path: join(output, 'picker-landscape.png'), animations: 'disabled' })
     }
+    await page.getByRole('tab', { name: 'Shared with me' }).click()
+    await page.getByRole('checkbox', { name: 'Shared planning', exact: true }).check()
+    await page.getByRole('button', { name: 'Review selection (3)', exact: true }).waitFor({ state: 'visible' })
+    assert.equal(await page.evaluate(() => window.captureCalls.at(-1).body.view), 'shared-with-me')
+    assert.equal(await page.getByRole('navigation', { name: 'Drive folders' }).count(), 0)
+    await page.screenshot({ path: join(output, `${variant.name}-shared.png`), animations: 'disabled' })
     assert.deepEqual(errors, [])
     await context.close()
     console.log(`Captured ${variant.name}; viewport and overflow checks passed.`)

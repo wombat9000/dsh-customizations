@@ -127,13 +127,13 @@ export class DrivePermissions {
     state.cursors.set(nextPageToken, { scope, token })
     return { nextPageToken }
   }
-  async pickerList(owner, requestId, { parentId, search, pageSize = 20, pageToken, signal, ...extra } = {}) {
-    if (Object.keys(extra).length) throw new Error('Invalid picker options.')
+  async pickerList(owner, requestId, { parentId, search, view = 'my-drive', pageSize = 20, pageToken, signal, ...extra } = {}) {
+    if (Object.keys(extra).length || !['my-drive', 'shared-with-me'].includes(view)) throw new Error('Invalid picker options.')
     const { state, request } = this.#request(owner, requestId)
-    const scope = JSON.stringify(['picker', requestId, parentId ?? null, search ?? null, pageSize])
+    const scope = JSON.stringify(['picker', requestId, view, parentId ?? null, search ?? null, pageSize])
     const token = this.#page(state, scope, pageToken)
     return this.#operation(owner, state, signal, async (signal, check) => {
-      const result = await this.#client.pickerList({ parentId, search, pageSize, pageToken: token, signal })
+      const result = await this.#client.pickerList({ parentId, search, view, pageSize, pageToken: token, signal })
       check()
       if (state.requests.get(requestId) !== request || request.busy) throw fail()
       return { files: result.files.filter(file => file.mimeType !== SHORTCUT).map(publicFile), ...this.#cursor(state, scope, result.nextPageToken) }
