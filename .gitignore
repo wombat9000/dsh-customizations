@@ -4,6 +4,10 @@ node_modules/
 .DS_Store
 
 # Local environment and credentials
+.dsh/
+client_secret*.json
+google-drive-client.json
+oauth.env
 .env
 .env.*
 !.env.example
