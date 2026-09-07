@@ -4,6 +4,10 @@ const FIELDS = {
   status: [], manage: [], revoke: [],
   browse: ['requestId', 'parentId', 'search', 'pageToken'],
   grant: ['requestId', 'selected'], deny: ['requestId'],
+  'edit-status': [], 'edit-manage': [], 'edit-revoke': [],
+  'edit-browse': ['requestId', 'parentId', 'search', 'pageToken'],
+  'edit-grant': ['requestId', 'selected'], 'edit-deny': ['requestId'],
+  'preview-status': [], 'preview-apply': ['requestId'], 'preview-deny': ['requestId'],
 }
 function reply(res, code, value) {
   res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store',

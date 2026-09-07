@@ -145,7 +145,7 @@ test('real dormant Standard and Google Drive mounts isolate tool contributions',
   assert.equal(await roster.standingKeyFor('google-drive'), drive)
   const names = key => [...ctx.get('tools').view(key).visible.keys()].sort()
   assert.ok(names(standard).length > 20)
-  assert.deepEqual(names(drive), [...names(standard), 'request_drive_access'].sort())
+  assert.deepEqual(names(drive), [...names(standard), 'request_drive_access', 'request_sheets_edit_access'].sort())
   assert.deepEqual(names(), [])
   assert.equal(ctx.get('googleDrive'), service)
   for (const name of ['planMode', 'compaction', 'toolResultPruner', 'workflowEngine']) assert.equal(ctx.get(name), undefined)

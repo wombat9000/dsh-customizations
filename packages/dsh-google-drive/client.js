@@ -228,7 +228,10 @@ window.__ModuleLoader__.load({
       }, icon(name))
     }
     const button = (label, onClick, disabled = false) => h('button', { type: 'button', onClick, disabled }, label)
-    function Card({ sessionId, callId, picker, request = api }) {
+    function EditCard(props) { return h(Card, { ...props, mode: 'edit' }) }
+    function Card({ sessionId, callId, picker, request = api, mode = 'read' }) {
+      const editing = mode === 'edit'
+      const endpoint = method => editing ? `edit-${method}` : method
       const [status, setStatus] = React.useState(null)
       const [error, setError] = React.useState('')
       const [busy, setBusy] = React.useState(false)
@@ -247,7 +250,7 @@ window.__ModuleLoader__.load({
         async function load() {
           if (generation.current !== token) return
           try {
-            const value = await request('status', { sessionId, callId }, controller.signal)
+            const value = await request(endpoint('status'), { sessionId, callId }, controller.signal)
             if (generation.current !== token) return
             if (!validStatus(value)) throw new Error('Invalid Drive status. Retry.')
             setStatus(value); setError(''); failures = 0
@@ -270,7 +273,7 @@ window.__ModuleLoader__.load({
         const token = ++generation.current
         mutation.current = new AbortController()
         try {
-          const value = await request(method, { sessionId, callId, ...(method === 'deny' && status?.requestId ? { requestId: status.requestId } : {}) }, mutation.current.signal)
+          const value = await request(endpoint(method), { sessionId, callId, ...(method === 'deny' && status?.requestId ? { requestId: status.requestId } : {}) }, mutation.current.signal)
           if (generation.current !== token) return
           if (!validStatus(value)) throw new Error('Invalid Drive status. Retry.')
           setStatus(value)
@@ -282,22 +285,22 @@ window.__ModuleLoader__.load({
         finally { if (generation.current === token) { acting.current = false; setBusy(false) } }
       }
       function open(value = status) {
-        picker.open({ owner, sessionId, callId, status: value, request, onChanged: () => refresh() })
+        picker.open({ owner, sessionId, callId, status: value, mode, request, onChanged: () => refresh() })
       }
-      const stateLabel = status?.state === 'granted' ? 'Read access allowed'
+      const stateLabel = status?.state === 'granted' ? (editing ? 'Session editing allowed' : 'Read access allowed')
         : status?.state === 'none' ? 'Waiting for request' : `Request ${status?.state}`
-      return h('section', { className: 'gd-access gd-card', 'aria-label': 'Google Drive access' },
+      return h('section', { className: 'gd-access gd-card', 'aria-label': editing ? 'Google Sheets edit access' : 'Google Drive access' },
         h('style', null, css),
         h('div', { className: 'gd-card-title' }, icon('drive'),
-          h('strong', null, 'Google Drive · Read-only access')),
+          h('strong', null, editing ? 'Google Sheets · Session edit access' : 'Google Drive · Read-only access')),
         typeof status?.reason === 'string' && h('p', null, status.reason),
         h('p', { className: 'gd-muted' },
-          'Choose what this session can read. Browsing and unselected items stay private.'),
+          editing ? 'Choose spreadsheets this session may edit. Every change needs a separate preview approval. Google account-level write consent persists beyond this session; DSH restricts selected files.' : 'Choose what this session can read. Browsing and unselected items stay private.'),
         !status && !error && h('p', { role: 'status' }, 'Checking access…'),
         error && h('p', { role: 'alert' }, error),
         status?.state === 'pending'
           ? h('div', { className: 'gd-actions' },
-            button('Choose files and folders', () => open(), busy),
+            button(editing ? 'Choose spreadsheets' : 'Choose files and folders', () => open(), busy),
             button('Deny', () => act('deny'), busy))
           : status && h(React.Fragment, null,
             h('p', null, `${stateLabel} · ${status.grants.length} selected items`),
@@ -306,7 +309,9 @@ window.__ModuleLoader__.load({
     }
     function Picker({ entry, close }) {
       const { sessionId, callId, status, request, onChanged } = entry
-      const [selected, setSelected] = React.useState(() => new Map(status.grants.map(item => [item.id, item])))
+      const editing = entry.mode === 'edit' || status.mode === 'edit'
+      const endpoint = method => editing ? `edit-${method}` : method
+      const [selected, setSelected] = React.useState(() => new Map(status.grants.filter(item => !editing || !item.recursive).map(item => [item.id, item])))
       const [path, setPath] = React.useState([])
       const [reviewOpen, setReviewOpen] = React.useState(false)
       const [draft, setDraft] = React.useState('')
@@ -340,7 +345,7 @@ window.__ModuleLoader__.load({
           ...(search ? { search } : { parentId }),
           ...(pageToken ? { pageToken } : {}),
         }
-        request('browse', body, controller.signal).then(value => {
+        request(endpoint('browse'), body, controller.signal).then(value => {
           if (!alive.current || token !== generation.current) return
           if (!Array.isArray(value?.files) || !value.files.every(item => typeof item.id === 'string' && typeof item.name === 'string' && typeof item.mimeType === 'string') || (value.nextPageToken !== undefined && typeof value.nextPageToken !== 'string')) throw new Error('Invalid Drive listing. Retry.')
           setListing(value)
@@ -353,8 +358,8 @@ window.__ModuleLoader__.load({
         acting.current = true; setBusy(true); setError('')
         mutation.current = new AbortController()
         try {
-          const body = method === 'revoke' ? { sessionId, callId } : { ...identity, selected: [...selected.values()].map(item => ({ id: item.id, recursive: item.recursive === true })) }
-          const value = await request(method, body, mutation.current.signal)
+          const body = method === 'revoke' ? { sessionId, callId } : { ...identity, selected: [...selected.values()].map(item => ({ id: item.id, recursive: editing ? false : item.recursive === true })) }
+          const value = await request(endpoint(method), body, mutation.current.signal)
           if (!alive.current) return
           if (!validStatus(value)) throw new Error('Invalid Drive status. Refresh to check access.')
           onChanged(); close()
@@ -379,6 +384,7 @@ window.__ModuleLoader__.load({
         })
       }
       function toggle(item, checked) {
+        if (editing && item.mimeType !== 'application/vnd.google-apps.spreadsheet') return
         setSelected(current => {
           const next = new Map(current)
           if (checked) next.set(item.id, { ...item, recursive: item.mimeType === FOLDER })
@@ -390,7 +396,7 @@ window.__ModuleLoader__.load({
       const hasFolders = selectedItems.some(item => item.recursive)
       return h('dialog', {
         ref: dialog, className: 'gd-access gd-modal',
-        'aria-label': 'Choose Google Drive access',
+        'aria-label': editing ? 'Choose Google Sheets edit access' : 'Choose Google Drive access',
         onCancel: event => { event.preventDefault(); cancel() },
       },
       h('style', null, css),
@@ -398,8 +404,8 @@ window.__ModuleLoader__.load({
       h('header', { className: 'gd-header' },
         h('span', { className: 'gd-drive-mark' }, icon('drive')),
         h('div', { className: 'gd-header-copy' },
-          h('h2', null, 'Choose files and folders'),
-          h('p', { className: 'gd-muted' }, 'Google Drive · Read-only · This session only')),
+          h('h2', null, editing ? 'Choose spreadsheets' : 'Choose files and folders'),
+          h('p', { className: 'gd-muted' }, editing ? 'Session editing · Separate approval for every change. Google account write consent persists beyond this session.' : 'Google Drive · Read-only · This session only')),
         iconButton('Close picker', 'close', cancel, busy)),
       h('div', { className: 'gd-toolbar' },
         h('form', {
@@ -450,7 +456,7 @@ window.__ModuleLoader__.load({
           },
           h('input', {
             id: checkboxId, type: 'checkbox', 'aria-label': item.name,
-            checked, disabled: busy, onChange: event => toggle(item, event.target.checked),
+            checked, disabled: busy || (editing && item.mimeType !== 'application/vnd.google-apps.spreadsheet'), onChange: event => toggle(item, event.target.checked),
           }),
           fileIcon(item),
           isFolder
@@ -472,7 +478,7 @@ window.__ModuleLoader__.load({
           type: 'button', 'aria-expanded': reviewOpen, disabled: busy,
           onClick: () => setReviewOpen(value => !value),
         }, icon(reviewOpen ? 'down' : 'chevron'), `Review selection (${selected.size})`) : h('span'),
-        status.grants.length > 0 && button('Revoke all access', () => mutate('revoke'), busy)),
+        status.grants.length > 0 && button(editing ? 'Remove all session edit access' : 'Revoke all access', () => mutate('revoke'), busy)),
       hasFolders && h('p', { className: 'gd-selection-note' },
         'Selected folders include all files and subfolders, including items added later.'),
       selected.size > 0 && reviewOpen && h('ul', { className: 'gd-tray', 'aria-label': 'Selected access' },
@@ -490,18 +496,229 @@ window.__ModuleLoader__.load({
           h('button', {
             type: 'button', className: 'gd-primary', disabled: busy || selected.size === 0,
             onClick: () => mutate('grant'),
-          }, 'Allow read access'))))
+          }, editing ? 'Allow editing for this session' : 'Allow read access'))))
+    }
+    const previewCSS = `
+      .gs-preview { width: min(1080px, calc(100vw - 24px)); }
+      .gs-preview .gd-header-copy { overflow-wrap: anywhere; max-height: 24dvh; overflow: auto; }
+      .gs-body { flex: 1; min-height: 0; overflow: auto; padding: 0 24px 24px; }
+      .gs-body p { margin: 8px 0; overflow-wrap: anywhere; }
+      .gs-grids { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+      .gs-grid { min-width: 0; }
+      .gs-table-scroll { overflow: auto; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; }
+      .gs-grid table { border-collapse: collapse; min-width: 100%; background: white; color: #202124; font: 13px Arial, sans-serif; }
+      .gs-grid th { background: #eef0f3; color: #444; font: 11px system-ui; padding: 6px; }
+      .gs-grid td { border: 1px solid #dadce0; min-width: 96px; max-width: 240px; padding: 6px; overflow-wrap: anywhere; white-space: pre-wrap; }
+      .gs-grid td[data-changed=true] { outline: 2px solid #b06000; outline-offset: -2px; }
+      .gs-detail { border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; padding: 12px; margin-top: 10px; }
+      .gs-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+      .gs-pair > div { min-width: 0; }
+      .gs-value { white-space: pre-wrap; overflow-wrap: anywhere; padding: 8px; background: var(--dsw-alias-bg-layer-2); border-radius: 6px; }
+      .gs-fields { margin: 8px 0; }
+      .gs-fields dt { color: var(--dsw-alias-label-secondary); }
+      .gs-fields dd { margin: 0 0 8px; white-space: pre-wrap; overflow-wrap: anywhere; }
+      @media (max-width: 650px) { .gs-grids, .gs-pair { grid-template-columns: 1fr; } .gs-body { padding: 0 16px 16px; } }
+    `
+    const previewStates = ['preparing', 'pending', 'applying', 'applied', 'denied', 'cancelled', 'expired', 'stale', 'failed', 'uncertain']
+    function validPreviewStatus(value) {
+      if (!value || !previewStates.includes(value.state) || typeof value.requestId !== 'string') return false
+      if (value.state !== 'pending' && !value.preview) return true
+      const p = value.preview
+      if (!p || typeof p.fileId !== 'string' || typeof p.range !== 'string' || typeof p.tab?.title !== 'string') return false
+      const validCells = snapshot => Array.isArray(snapshot?.cells) && snapshot.cells.length <= 200
+        && snapshot.cells.every(c => typeof c.cell === 'string' && /^[A-Z]{1,3}[1-9][0-9]{0,6}$/.test(c.cell))
+        && new Set(snapshot.cells.map(c => c.cell)).size === snapshot.cells.length
+        && new Set(snapshot.cells.map(c => c.cell.match(/^[A-Z]+/)[0])).size <= 20
+        && new Set(snapshot.cells.map(c => c.cell.match(/[0-9]+$/)[0])).size <= 100
+      return validCells(p.before) && validCells(p.after)
+        && p.before.cells.length === p.after.cells.length
+        && p.before.cells.every((c, i) => c.cell === p.after.cells[i].cell)
+    }
+    const same = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null)
+    function cellText(cell) {
+      const value = cell.userEnteredValue
+      if (typeof value?.formulaValue === 'string') return value.formulaValue
+      if (typeof value?.stringValue === 'string') return value.stringValue
+      if (typeof value?.numberValue === 'number') return String(value.numberValue)
+      if (typeof value?.boolValue === 'boolean') return value.boolValue ? 'TRUE' : 'FALSE'
+      return ''
+    }
+    function exactValue(cell) {
+      const value = cell.userEnteredValue
+      if (value == null) return { type: 'Empty cell', text: '(no value)' }
+      if (typeof value.stringValue === 'string') return { type: value.stringValue === '' ? 'Empty string' : 'Text', text: JSON.stringify(value.stringValue) }
+      if (typeof value.numberValue === 'number') return { type: 'Number', text: String(value.numberValue) }
+      if (typeof value.boolValue === 'boolean') return { type: 'Boolean', text: value.boolValue ? 'TRUE' : 'FALSE' }
+      if (typeof value.formulaValue === 'string') return { type: 'Formula · result not predicted', text: JSON.stringify(value.formulaValue) }
+      return { type: 'Empty cell', text: '(no value)' }
+    }
+    function colorCSS(value) {
+      if (!value || typeof value !== 'object') return undefined
+      const channels = ['red', 'green', 'blue'].map(key => value[key] ?? 0)
+      if (!channels.every(n => typeof n === 'number' && Number.isFinite(n) && n >= 0 && n <= 1)) return undefined
+      return `rgb(${channels.map(n => Math.round(n * 255)).join(', ')})`
+    }
+    function cellStyle(format = {}) {
+      format = format || {}
+      const text = format.textFormat || {}, style = {}
+      const bg = colorCSS(format.backgroundColorStyle?.rgbColor || format.backgroundColor), fg = colorCSS(text.foregroundColorStyle?.rgbColor || text.foregroundColor)
+      if (text.underline || text.strikethrough) style.textDecoration = [text.underline && 'underline', text.strikethrough && 'line-through'].filter(Boolean).join(' ')
+      // Keep every value readable even when the proposed wrap strategy clips text.
+      if (bg) style.backgroundColor = bg
+      if (fg) style.color = fg
+      if (typeof text.bold === 'boolean') style.fontWeight = text.bold ? 'bold' : 'normal'
+      if (typeof text.italic === 'boolean') style.fontStyle = text.italic ? 'italic' : 'normal'
+      if (Number.isFinite(text.fontSize) && text.fontSize >= 6 && text.fontSize <= 72) style.fontSize = `${text.fontSize}pt`
+      if (typeof text.fontFamily === 'string' && /^[a-zA-Z0-9 -]{1,80}$/.test(text.fontFamily)) style.fontFamily = text.fontFamily
+      if (['LEFT', 'CENTER', 'RIGHT'].includes(format.horizontalAlignment)) style.textAlign = format.horizontalAlignment.toLowerCase()
+      if (['TOP', 'MIDDLE', 'BOTTOM'].includes(format.verticalAlignment)) style.verticalAlign = format.verticalAlignment.toLowerCase()
+      const borderStyles = { SOLID: '1px solid', SOLID_MEDIUM: '2px solid', SOLID_THICK: '3px solid', DOTTED: '1px dotted', DASHED: '1px dashed', DOUBLE: '3px double', NONE: '0 solid' }
+      for (const side of ['top', 'bottom', 'left', 'right']) {
+        const border = format.borders?.[side]
+        if (borderStyles[border?.style]) style[`border${side[0].toUpperCase()}${side.slice(1)}`] = `${borderStyles[border.style]} ${colorCSS(border.colorStyle?.rgbColor || border.color) || '#202124'}`
+      }
+      return style
+    }
+    function formatFields(value, prefix = '', depth = 0) {
+      if (depth > 5 || !value || typeof value !== 'object') return []
+      if (prefix && Object.keys(value).length === 0) return [[prefix, /(?:Color|rgbColor)$/.test(prefix) ? '{} (RGB default black)' : '{} (empty object)']]
+      return Object.entries(value).flatMap(([key, item]) => {
+        const name = prefix ? `${prefix}.${key}` : key
+        if (item && typeof item === 'object' && !Array.isArray(item)) return formatFields(item, name, depth + 1)
+        return [[name, String(item)]]
+      })
+    }
+    function formatLabel(path) {
+      return path.split('.').map(part => part.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/^./, c => c.toUpperCase())).join(' › ')
+    }
+    function FormatDiff({ before, after }) {
+      const a = new Map(formatFields(before)), b = new Map(formatFields(after))
+      return h('dl', { className: 'gs-fields' }, [...new Set([...a.keys(), ...b.keys()])].filter(key => a.get(key) !== b.get(key)).map(key => h(React.Fragment, { key },
+        h('dt', null, formatLabel(key)), h('dd', null, `${a.get(key) ?? 'Default / unset'} → ${b.get(key) ?? 'Default / unset'}`))))
+    }
+    function Grid({ label, cells, changed }) {
+      const columns = [...new Set(cells.map(c => c.cell.match(/^[A-Z]+/)[0]))]
+      const rows = [...new Set(cells.map(c => c.cell.match(/[0-9]+$/)[0]))]
+      const lookup = new Map(cells.map(c => [c.cell, c]))
+      return h('section', { className: 'gs-grid', 'aria-label': label }, h('h3', null, label),
+        h('div', { className: 'gs-table-scroll', tabIndex: 0, role: 'region', 'aria-label': `${label} grid, scroll to review all columns` },
+          h('table', null, h('thead', null, h('tr', null, h('th'), columns.map(col => h('th', { key: col, scope: 'col' }, col)))),
+            h('tbody', null, rows.map(row => h('tr', { key: row }, h('th', { scope: 'row' }, row), columns.map(col => {
+              const cell = lookup.get(`${col}${row}`)
+              return h('td', { key: col, style: cellStyle(cell?.userEnteredFormat), 'data-changed': changed.has(`${col}${row}`) }, cell ? cellText(cell) : '')
+            })))))))
+    }
+    function PreviewDialog({ status, busy, error, act, close }) {
+      const dialog = React.useRef(null)
+      React.useEffect(() => { const previous = document.activeElement; dialog.current.showModal(); return () => { dialog.current?.close(); previous?.focus?.() } }, [])
+      const p = status.preview
+      const changes = p.before.cells.map((before, i) => ({ before, after: p.after.cells[i] })).filter(({ before, after }) => !same(before.userEnteredValue, after.userEnteredValue) || !same(before.userEnteredFormat, after.userEnteredFormat))
+      const changed = new Set(changes.map(c => c.before.cell))
+      const cleared = changes.filter(c => c.before.userEnteredValue != null && c.after.userEnteredValue == null).length
+      const formulas = changes.filter(c => !same(c.before.userEnteredValue, c.after.userEnteredValue) && typeof c.after.userEnteredValue?.formulaValue === 'string').length
+      const formats = changes.filter(c => !same(c.before.userEnteredFormat, c.after.userEnteredFormat)).length
+      return h('dialog', { ref: dialog, className: 'gd-access gd-modal gs-preview', 'aria-label': 'Review spreadsheet changes', onCancel: e => { e.preventDefault(); if (!busy) close() } },
+        h('style', null, css + previewCSS),
+        h('header', { className: 'gd-header' }, h('span', { className: 'gd-drive-mark' }, icon('spreadsheet')),
+          h('div', { className: 'gd-header-copy' }, h('h2', null, 'Review spreadsheet changes'), h('p', null, `${typeof p.fileName === 'string' ? p.fileName : 'Spreadsheet'} · ${p.tab.title} · ${p.range}`)), iconButton('Close preview', 'close', close, busy)),
+        h('div', { className: 'gs-body' },
+          h('p', { className: 'gd-muted' }, `Spreadsheet ID: ${p.fileId}`),
+          h('p', null, `${changes.length} changed cells · ${cleared} cleared · ${formulas} new or changed formulas · ${formats} formatting changes`),
+          h('p', { className: 'gd-muted' }, 'Approximate local preview. Raw values and formula text are shown, not calculated results or formatted number displays. Fonts, wrapping, themes, conditional formatting and rich text may differ in Google Sheets. Exact changes below are authoritative.'),
+          h('p', { className: 'gd-muted' }, 'DSH checks for changes before applying, but another editor can still change the spreadsheet between that check and the write.'),
+          h('div', { className: 'gs-grids' }, h(Grid, { label: 'Before', cells: p.before.cells, changed }), h(Grid, { label: 'After', cells: p.after.cells, changed })),
+          h('h3', null, 'Exact changes'),
+          h('p', { className: 'gd-muted' }, 'Text and formulas use quoted JSON notation: spaces are preserved and control characters are escaped. Types distinguish text, numbers, booleans and empty cells.'),
+          changes.map(({ before, after }) => h('section', { className: 'gs-detail', key: before.cell, 'aria-label': `Changes to ${before.cell}` },
+            h('strong', null, before.cell),
+            !same(before.userEnteredValue, after.userEnteredValue) && h('div', { className: 'gs-pair' }, ...[before, after].map((cell, i) => h('div', { key: i }, h('p', null, i ? 'After' : 'Before'), h('div', { className: 'gs-value' }, exactValue(cell).text), h('p', { className: 'gd-muted' }, `${exactValue(cell).type}${i && before.userEnteredValue != null && cell.userEnteredValue == null ? ' · Clear cell value' : ''}`)))),
+            h(FormatDiff, { before: before.userEnteredFormat, after: after.userEnteredFormat }))),
+          error && h('p', { role: 'alert' }, error), h('p', { role: 'status' }, `Status: ${status.state}`)),
+        h('footer', { className: 'gd-footer' }, h('div', { className: 'gd-footer-count' }, 'Only this exact proposal', h('p', null, 'No Google writes until you apply.')),
+          h('div', { className: 'gd-footer-actions' }, status.state === 'pending' ? h(React.Fragment, null,
+            button('Cancel proposal', () => act('preview-deny'), busy),
+            h('button', { type: 'button', className: 'gd-primary', disabled: busy, onClick: () => act('preview-apply') }, 'Apply changes')) : button('Close', close, busy))))
+    }
+    function PreviewCard({ sessionId, callId, request = api }) {
+      const [status, setStatus] = React.useState(null), [error, setError] = React.useState(''), [open, setOpen] = React.useState(false), [busy, setBusy] = React.useState(false)
+      const [revision, refresh] = React.useReducer(n => n + 1, 0)
+      const generation = React.useRef(0), acting = React.useRef(false), mutation = React.useRef(null)
+      React.useEffect(() => {
+        const token = ++generation.current, controller = new AbortController()
+        let timer, failures = 0
+        setStatus(null); setOpen(false); setError(''); setBusy(false); acting.current = false
+        async function load() {
+          if (generation.current !== token) return
+          try {
+            const value = await request('preview-status', { sessionId, callId }, controller.signal)
+            if (generation.current !== token) return
+            if (!validPreviewStatus(value)) throw new Error('Invalid spreadsheet preview. Approval is unavailable.')
+            setStatus(value); setError(''); failures = 0
+            if (['preparing', 'pending', 'applying'].includes(value.state)) timer = setTimeout(load, 1500)
+          } catch (err) {
+            if (generation.current !== token || err.name === 'AbortError') return
+            setError(err.message)
+            if (++failures <= 10) timer = setTimeout(load, 1500)
+          }
+        }
+        void load()
+        return () => { generation.current++; controller.abort(); mutation.current?.abort(); clearTimeout(timer) }
+      }, [sessionId, callId, request, revision])
+      async function act(method) {
+        if (acting.current || (status?.state !== 'pending' && !(method === 'preview-deny' && status?.state === 'preparing'))) return
+        acting.current = true; setBusy(true); setError('')
+        const token = ++generation.current
+        mutation.current = new AbortController()
+        try {
+          const value = await request(method, { sessionId, callId, requestId: status.requestId }, mutation.current.signal)
+          if (generation.current !== token) return
+          if (!validPreviewStatus(value)) throw new Error('Invalid write response.')
+          setStatus(value)
+        } catch (err) {
+          if (generation.current !== token) return
+          // A lost response must never re-enable Apply; only an authoritative new proposal can do that.
+          setStatus(previous => ({ ...previous, state: method === 'preview-apply' ? 'uncertain' : 'cancelled' }))
+          setError(method === 'preview-apply' ? 'Write outcome is unknown. Do not retry this proposal. Inspect the spreadsheet before proposing another change.' : 'Cancellation could not be confirmed. No write was requested by this action.')
+        } finally { if (generation.current === token) { acting.current = false; setBusy(false) } }
+      }
+      async function checkOutcome() {
+        if (acting.current) return
+        acting.current = true; setBusy(true)
+        const token = ++generation.current
+        mutation.current = new AbortController()
+        try {
+          const value = await request('preview-status', { sessionId, callId }, mutation.current.signal)
+          if (generation.current !== token) return
+          if (!validPreviewStatus(value) || value.requestId !== status.requestId) throw new Error('Cannot confirm this proposal outcome.')
+          if (!['preparing', 'pending', 'applying'].includes(value.state)) { setStatus(value); setError('') }
+          else setError('The outcome is not confirmed yet. Check status again later; do not resubmit the write.')
+        } catch { if (generation.current === token) setError('Cannot confirm the outcome. Check status again later; do not resubmit the write.') }
+        finally { if (generation.current === token) { acting.current = false; setBusy(false) } }
+      }
+      return h('section', { className: 'gd-access gd-card', 'aria-label': 'Google Sheets edit proposal' }, h('style', null, css),
+        h('div', { className: 'gd-card-title' }, icon('spreadsheet'), h('strong', null, 'Google Sheets · Proposed changes')),
+        h('p', { role: 'status' }, status ? `Status: ${status.state}` : 'Preparing preview…'),
+        status?.state === 'uncertain' && h('p', { role: 'alert' }, 'The write outcome is uncertain. Do not retry. Inspect the spreadsheet before proposing another change.'),
+        typeof status?.result?.message === 'string' && h('p', null, status.result.message),
+        error && h('p', { role: 'alert' }, error),
+        status?.preview && h('div', { className: 'gd-actions' }, button(status.state === 'pending' ? 'Review changes' : 'View proposal', () => setOpen(true), busy)),
+        status?.state === 'preparing' && button('Cancel proposal', () => act('preview-deny'), busy),
+        status?.state === 'uncertain' && button('Check outcome status', checkOutcome, busy),
+        !status && error && button('Refresh status', () => refresh()),
+        open && status?.preview && h(PreviewDialog, { status, busy, error, act, close: () => setOpen(false) }))
     }
     function Overlay({ picker }) {
       const entry = React.useSyncExternalStore(picker.subscribe, picker.getSnapshot)
       return entry ? h(Picker, { key: `${entry.sessionId}:${entry.callId}:${entry.status.requestId}`, entry, close: picker.close }) : null
     }
-    return { inject: ['slots'], api, validStatus, createPickerStore, Card, Picker, Overlay,
+    return { inject: ['slots'], api, validStatus, validPreviewStatus, cellStyle, createPickerStore, Card, EditCard, PreviewCard, PreviewDialog, Picker, Overlay,
       apply(ctx) {
         const picker = createPickerStore()
         ctx.effect(() => () => picker.close())
         ctx.slots.inject('tool.call.toolview', () => ctx.slots.register({ name: 'tool.call.toolview', key: 'request_drive_access', inject: () => ({ picker }) }, Card))
         ctx.slots.inject('shell.overlay', () => ctx.slots.register({ name: 'shell.overlay', id: 'google-drive-access', inject: () => ({ picker }) }, Overlay))
+        ctx.slots.inject('tool.call.toolview', () => ctx.slots.register({ name: 'tool.call.toolview', key: 'request_sheets_edit_access', inject: () => ({ picker }) }, EditCard))
+        ctx.slots.inject('tool.call.toolview', () => ctx.slots.register({ name: 'tool.call.toolview', key: 'google_sheets_propose_edit' }, PreviewCard))
       },
     }
   },

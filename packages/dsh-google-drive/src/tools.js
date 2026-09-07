@@ -1,4 +1,5 @@
 import { READ_SKILL } from './skill.js'
+import { createSheetsRequestTool, createSheetsDescribeTool, createSheetsReadTool, createSheetsProposeTool, SHEETS_SKILL } from './sheets-tools.js'
 
 export const name = 'google-drive-tools'
 export const inject = ['tools', 'googleDrive', 'skills']
@@ -78,19 +79,31 @@ export function apply(ctx) {
     service.assertOwner(agent)
     if (installed.has(agent)) return
     installed.add(agent)
-    let exposed = []
-    const clear = () => { for (const dispose of exposed.splice(0).reverse()) dispose() }
+    const groups = { drive: [], sheets: [], edits: [] }
+    const clearGroup = group => { for (const dispose of groups[group].splice(0).reverse()) dispose() }
+    const clear = () => { for (const group of Object.keys(groups)) clearGroup(group) }
     const update = () => {
       const granted = service.hasAccess(agent)
-      if (!granted) { clear(); return }
-      if (exposed.length) return
+      const editable = service.hasEditAccess?.(agent) === true
       const tools = agent.ctx.get('tools')
       const skills = agent.ctx.get('skills')
       if (!tools || !skills) throw new Error('Drive tool and skill registries are unavailable.')
+      const sync = (group, enabled, register) => {
+        if (!enabled) clearGroup(group)
+        else if (!groups[group].length) register(groups[group])
+      }
       try {
-        exposed.push(tools.register(createListTool(service)))
-        exposed.push(tools.register(createReadTool(service)))
-        exposed.push(skills.register(READ_SKILL))
+        sync('drive', granted, exposed => {
+          exposed.push(tools.register(createListTool(service)))
+          exposed.push(tools.register(createReadTool(service)))
+          exposed.push(skills.register(READ_SKILL))
+        })
+        sync('sheets', granted || editable, exposed => {
+          exposed.push(tools.register(createSheetsDescribeTool(service)))
+          exposed.push(tools.register(createSheetsReadTool(service)))
+          exposed.push(skills.register(SHEETS_SKILL))
+        })
+        sync('edits', editable, exposed => { exposed.push(tools.register(createSheetsProposeTool(service))) })
       } catch (error) { clear(); throw error }
     }
     const unwatch = service.observe(agent, update)
@@ -99,4 +112,5 @@ export function apply(ctx) {
     update()
   }
   ctx.tools.register(createRequestTool(service, prepare))
+  ctx.tools.register(createSheetsRequestTool(service, prepare))
 }
