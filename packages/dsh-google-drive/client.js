@@ -204,6 +204,10 @@ window.__ModuleLoader__.load({
         width: 100%; min-width: 0; border: 0; background: transparent; padding: 7px 0;
       }
       .gd-search button { border: 0; background: transparent; }
+      .gd-tabs { display: flex; gap: 16px; margin-top: 10px; }
+      .gd-access .gd-tabs button { border: 0; border-radius: 0; border-bottom: 2px solid transparent; background: transparent; padding: 10px 2px; }
+      .gd-access .gd-tabs button[aria-selected=true] { border-bottom-color: var(--dsw-alias-brand-primary); color: var(--dsw-alias-brand-primary); font-weight: 600; }
+      .gd-search-results { padding: 10px 0; overflow-wrap: anywhere; }
       .gd-breadcrumbs { display: flex; align-items: center; gap: 2px; min-height: 50px; overflow-x: auto; white-space: nowrap; }
       .gd-breadcrumbs button { padding: 5px 8px; border: 0; background: transparent; }
       .gd-breadcrumbs button:first-child { margin-left: -8px; }
@@ -404,6 +408,10 @@ window.__ModuleLoader__.load({
       const endpoint = method => editing ? `edit-${method}` : method
       const [selected, setSelected] = React.useState(() => new Map(status.grants.filter(item => !editing || !item.recursive).map(item => [item.id, item])))
       const [path, setPath] = React.useState([])
+      const [view, setView] = React.useState('my-drive')
+      const tabId = React.useId()
+      const tabs = [{ id: 'my-drive', label: 'My Drive' }, { id: 'shared-with-me', label: 'Shared with me' }]
+      const browseController = React.useRef(null)
       const [reviewOpen, setReviewOpen] = React.useState(false)
       const [draft, setDraft] = React.useState('')
       const [search, setSearch] = React.useState('')
@@ -429,11 +437,12 @@ window.__ModuleLoader__.load({
       React.useEffect(() => {
         const token = ++generation.current
         const controller = new AbortController()
+        browseController.current = controller
         setLoading(true); setListing(null); setError('')
-        // Name search is global; browsing always names an explicit parent.
+        // Name search is global; view identifies the browsing context only.
         const body = {
-          ...identity,
-          ...(search ? { search } : { parentId }),
+          ...identity, view,
+          ...(search ? { search } : parentId !== 'root' ? { parentId } : {}),
           ...(pageToken ? { pageToken } : {}),
         }
         request(endpoint('browse'), body, controller.signal).then(value => {
@@ -443,7 +452,7 @@ window.__ModuleLoader__.load({
         }).catch(err => { if (alive.current && token === generation.current && err.name !== 'AbortError') setError(err.message) })
           .finally(() => { if (alive.current && token === generation.current) setLoading(false) })
         return () => controller.abort()
-      }, [parentId, search, pageToken, revision])
+      }, [view, parentId, search, pageToken, revision])
       async function mutate(method) {
         if (acting.current) return
         acting.current = true; setBusy(true); setError('')
@@ -464,8 +473,27 @@ window.__ModuleLoader__.load({
         onChanged()
         close()
       }
+      function invalidateListing() {
+        // Invalidate synchronously, before React runs the next effect. Some
+        // transports finish after abort; generation also rejects those results.
+        generation.current++; browseController.current?.abort()
+        setListing(null); setLoading(true); setError('')
+      }
       function navigate(next) {
-        setPath(next); setSearch(''); setDraft(''); setPageToken(undefined)
+        invalidateListing()
+        setPath(next); setSearch(''); setDraft(''); setPageToken(undefined); retry()
+      }
+      function chooseView(next) {
+        setView(next); navigate([])
+      }
+      function tabKey(event, index) {
+        const next = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1
+          : event.key === 'ArrowRight' ? (index + 1) % tabs.length
+          : event.key === 'ArrowLeft' ? (index + tabs.length - 1) % tabs.length : undefined
+        if (next === undefined) return
+        event.preventDefault()
+        event.currentTarget.parentElement.children[next].focus()
+        chooseView(tabs[next].id)
       }
       function remove(id) {
         setSelected(current => {
@@ -503,7 +531,7 @@ window.__ModuleLoader__.load({
           className: 'gd-search', role: 'search',
           onSubmit: event => {
             event.preventDefault()
-            setSearch(draft.trim()); setPageToken(undefined); retry()
+            invalidateListing(); setPath([]); setSearch(draft.trim()); setPageToken(undefined); retry()
           },
         },
         icon('search'),
@@ -512,24 +540,28 @@ window.__ModuleLoader__.load({
           value: draft, disabled: busy, onChange: event => setDraft(event.target.value),
         }),
         h('button', { type: 'submit', disabled: busy }, 'Search')),
-        h('nav', { 'aria-label': 'Drive folders', className: 'gd-breadcrumbs' },
-          h('button', {
-            type: 'button', disabled: busy, onClick: () => navigate([]),
-            'aria-current': !search && path.length === 0 ? 'location' : undefined,
-          }, 'My Drive'),
-          search
-            ? h(React.Fragment, null, icon('chevron'),
-              h('span', { 'aria-current': 'location', className: 'gd-muted' }, `Search results for “${search}”`))
-            : path.map((item, index) => h(React.Fragment, { key: item.id },
-              icon('chevron'),
-              h('button', {
-                type: 'button', disabled: busy,
-                onClick: () => navigate(path.slice(0, index + 1)),
-                'aria-current': index === path.length - 1 ? 'location' : undefined,
-              }, item.name))))),
+        h('div', { role: 'tablist', 'aria-label': 'Drive locations', className: 'gd-tabs' },
+          tabs.map((tab, index) => h('button', {
+            key: tab.id, id: `${tabId}-${tab.id}`, type: 'button', role: 'tab',
+            'aria-selected': view === tab.id, 'aria-controls': `${tabId}-results`,
+            tabIndex: view === tab.id ? 0 : -1, disabled: busy,
+            onClick: () => chooseView(tab.id), onKeyDown: event => tabKey(event, index),
+          }, tab.label))),
+        search && h('p', { className: 'gd-search-results gd-muted', role: 'status' }, `Search results across all of Drive for “${search}”`),
+        !search && path.length > 0 && h('nav', { 'aria-label': 'Drive folders', className: 'gd-breadcrumbs' },
+          h('button', { type: 'button', disabled: busy, onClick: () => navigate([]) }, tabs.find(tab => tab.id === view).label),
+          path.map((item, index) => h(React.Fragment, { key: item.id },
+            icon('chevron'),
+            h('button', {
+              type: 'button', disabled: busy,
+              onClick: () => navigate(path.slice(0, index + 1)),
+              'aria-current': index === path.length - 1 ? 'location' : undefined,
+            }, item.name))))),
       h('div', { className: 'gd-column-head', 'aria-hidden': true },
         h('span', null, 'Name'), h('span', null, 'Type')),
-      h('div', { className: 'gd-browser', 'aria-busy': loading },
+      h('div', { className: 'gd-browser', id: `${tabId}-results`, role: 'tabpanel', tabIndex: 0,
+        'aria-labelledby': search ? undefined : `${tabId}-${view}`,
+        'aria-label': search ? 'Search results across all of Drive' : undefined, 'aria-busy': loading },
         loading && h('div', { className: 'gd-empty', role: 'status' },
           icon('folder'), h('p', { className: 'gd-muted' }, 'Loading files…')),
         error && h('div', { className: 'gd-error' },
@@ -560,7 +592,7 @@ window.__ModuleLoader__.load({
           h('span', { className: 'gd-file-type' }, fileType(item)[1]))
         })),
         listing?.nextPageToken && h('div', { className: 'gd-pagination' },
-          button('Next page', () => setPageToken(listing.nextPageToken), busy))),
+          button('Next page', () => { const next = listing.nextPageToken; invalidateListing(); setPageToken(next) }, busy || loading))),
       (selected.size > 0 || status.grants.length > 0) && h('section', {
         className: 'gd-selection', 'aria-label': 'Selection review',
       },

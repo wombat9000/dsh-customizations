@@ -47,6 +47,38 @@ function fixture(t, mode = 'read') {
   }
 }
 
+test('both access modes forward picker view and preserve read versus individual edit boundaries', async t => {
+  for (const mode of ['read', 'edit']) {
+    const { runtime, agent, request, client } = fixture(t, mode)
+    const calls = []
+    const folder = { ...file('folder'), mimeType: 'application/vnd.google-apps.folder' }
+    const sheet = { ...file('sheet'), mimeType: 'application/vnd.google-apps.spreadsheet' }
+    client.pickerList = async options => { calls.push(options); return { files: [folder, sheet, file('notes')] } }
+    client.getMetadata = async ({ fileId }) => fileId === 'folder' ? folder : sheet
+    const { input, done } = await request()
+    for (const view of ['my-drive', 'shared-with-me']) {
+      const result = await runtime.browse({ ...input, view, parentId: 'folder', search: 'global' })
+      assert.equal(calls.at(-1).view, view)
+      assert.equal(calls.at(-1).parentId, 'folder')
+      assert.equal(calls.at(-1).search, 'global')
+      assert.deepEqual(result.files.map(item => item.id), mode === 'edit' ? ['folder', 'sheet'] : ['folder', 'sheet', 'notes'])
+    }
+    await runtime.browse(input)
+    assert.equal(calls.at(-1).view, 'my-drive')
+    await assert.rejects(runtime.browse({ ...input, view: 'unknown' }), /Invalid/)
+    assert.deepEqual(runtime.resources(agent), [])
+    const grant = runtime.grant({ ...input, selected: [{ id: 'folder', recursive: true }] })
+    if (mode === 'edit') {
+      await assert.rejects(grant, /individual/)
+      assert.deepEqual(runtime.resources(agent), [])
+    } else {
+      await grant
+      assert.equal(runtime.resources(agent)[0].recursive, true)
+    }
+    await done
+  }
+})
+
 test('pending requests expire and late browser confirmations remain inert', async t => {
   t.mock.timers.enable({ apis: ['setTimeout'] })
   const { runtime, agent, request } = fixture(t)

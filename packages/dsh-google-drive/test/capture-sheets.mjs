@@ -42,7 +42,7 @@ try {
       window.root.render(h(plugin.PreviewDialog, { status, busy: false, error: '', act() { throw new Error('Screenshots cannot write') }, close() {} }))
       window.showPicker = () => window.root.render(h(plugin.Picker, { entry: {
         sessionId: 'synthetic-session', callId: 'synthetic-call', mode: 'edit', status: { state: 'pending', mode: 'edit', requestId: 'synthetic', grants: [] },
-        request: async method => { assertMethod(method); return { files: [{ id: 'folder', name: 'Finance', mimeType: 'application/vnd.google-apps.folder' }, { id: 'budget', name: 'Annual budget', mimeType: 'application/vnd.google-apps.spreadsheet' }, { id: 'forecast', name: 'Revenue forecast', mimeType: 'application/vnd.google-apps.spreadsheet' }] } }, onChanged() {},
+        request: async (method, body) => { assertMethod(method); return { files: body.view === 'shared-with-me' ? [{ id: 'shared-budget', name: 'Partner budget', mimeType: 'application/vnd.google-apps.spreadsheet' }] : [{ id: 'folder', name: 'Finance', mimeType: 'application/vnd.google-apps.folder' }, { id: 'budget', name: 'Annual budget', mimeType: 'application/vnd.google-apps.spreadsheet' }, { id: 'forecast', name: 'Revenue forecast', mimeType: 'application/vnd.google-apps.spreadsheet' }] } }, onChanged() {},
       }, close() {} }))
       function assertMethod(method) { if (method !== 'edit-browse') throw new Error('Screenshot fixture permits browsing only') }
     })
@@ -57,6 +57,10 @@ try {
     await page.evaluate(() => window.showPicker())
     await page.getByRole('checkbox', { name: 'Annual budget' }).check()
     await page.screenshot({ path: new URL(`sheets-picker-${name}.png`, output).pathname })
+    await page.getByRole('tab', { name: 'Shared with me' }).click()
+    await page.getByRole('checkbox', { name: 'Partner budget' }).check()
+    await page.getByRole('button', { name: 'Review selection (2)' }).waitFor()
+    await page.screenshot({ path: new URL(`sheets-picker-shared-${name}.png`, output).pathname })
     assert.deepEqual(errors, [])
     await context.close()
     console.log(`Captured Sheets ${name}: preview, exact details, edit picker.`)

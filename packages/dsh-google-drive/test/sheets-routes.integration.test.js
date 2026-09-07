@@ -100,6 +100,27 @@ async function fixture(t) {
   return { service, agent, events, audit, calls, post, identity, access, grant, prepare, toggle, tools, skills, stallWrites: () => { stallWrite = true } }
 }
 
+test('edit browse routes carry both views through to Google without granting edit access', async t => {
+  const f = await fixture(t)
+  const status = await f.post('edit-status', f.identity)
+  const input = { ...f.identity, requestId: status.result.value.requestId }
+  for (const view of ['my-drive', 'shared-with-me']) {
+    assert.equal((await f.post('edit-browse', { ...input, view })).status, 200)
+    assert.equal(new URL(f.calls.at(-1).url).searchParams.get('q'), view === 'my-drive'
+      ? "trashed = false and ('root' in parents)" : 'trashed = false and (sharedWithMe = true)')
+    assert.equal((await f.post('edit-browse', { ...input, view, parentId: 'folder', search: 'Budget' })).status, 200)
+    assert.equal(new URL(f.calls.at(-1).url).searchParams.get('q'), "trashed = false and (name contains 'Budget')")
+  }
+  const before = f.calls.length
+  for (const view of ['', 'unknown', null, 1, {}, []]) {
+    assert.equal((await f.post('edit-browse', { ...input, view })).status, 400)
+  }
+  assert.equal(f.calls.length, before)
+  assert.deepEqual((await f.post('edit-status', f.identity)).result.value.grants, [])
+  await f.post('edit-deny', input)
+  assert.equal((await f.access).state, 'denied')
+})
+
 test('real HTTP edit grant and preview apply sends one exact batch then reads back without custom history', { timeout: 5000 }, async t => {
   const f = await fixture(t); await f.grant()
   const p = await f.prepare()

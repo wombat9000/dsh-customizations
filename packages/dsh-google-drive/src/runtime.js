@@ -148,7 +148,7 @@ export class DriveAccessRuntime {
   async browse(input, signal) {
     const record = this.pending(input)
     const result = await this.permissions.pickerList(record.agent, record.requestId, {
-      parentId: input.parentId, search: input.search, pageToken: input.pageToken, pageSize: 50, signal,
+      parentId: input.parentId, search: input.search, view: input.view, pageToken: input.pageToken, pageSize: 50, signal,
     })
     if (this.mode !== 'edit') return result
     return { ...result, files: result.files.filter(file => ['application/vnd.google-apps.spreadsheet', 'application/vnd.google-apps.folder'].includes(file.mimeType)) }
