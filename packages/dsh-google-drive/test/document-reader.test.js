@@ -31,8 +31,8 @@ test('document reader keeps text MIME policy, byte limit and caller signal', asy
 
 test('read limits fail before metadata and unsupported documents never download', async () => {
   let metadataCalls = 0
-  const reader = new DriveDocumentReader({ getMetadata: async () => { metadataCalls++; return { ...file, mimeType: 'application/pdf' } },
-    transport: { request() { assert.fail('PDF download must remain disabled') } } })
+  const reader = new DriveDocumentReader({ getMetadata: async () => { metadataCalls++; return { ...file, mimeType: 'image/png' } },
+    transport: { request() { assert.fail('Unsupported image must not download') } } })
   for (const maxBytes of [0, -1, 1.5, 1_048_577, Infinity, '5', null]) {
     await assert.rejects(reader.readText({ fileId: 'id', maxBytes }), /Invalid Google Drive read limit/)
   }

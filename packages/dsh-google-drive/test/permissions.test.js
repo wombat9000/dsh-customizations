@@ -139,6 +139,110 @@ test('replace atomically removes deselected files, empty replacement revokes all
   assert.deepEqual(core.grants(owner), [])
 })
 
+test('read permission forwards only supplied PDF options and retains structured pages', async t => {
+  const { core, owner, client, approve } = fixture(t)
+  await approve()
+  const calls = []
+  const result = { text: '[Page 4]\nOCR text', format: 'pdf', mimeType: 'text/plain',
+    pages: [{ pageNumber: 4, text: 'OCR text', method: 'ocr' }], totalPages: 9,
+    actualRange: { startPage: 4, endPage: 4 }, nextStartPage: 5, warnings: [] }
+  client.readText = async args => { calls.push(args); return result }
+  const options = { fileId: 'explicit', maxBytes: 300, startPage: 4, endPage: 4, ocr: 'force', languages: ['eng'] }
+  const read = await core.readText(owner, options)
+  assert.deepEqual(calls[0], { ...options, signal: calls[0].signal })
+  assert.ok(calls[0].signal instanceof AbortSignal)
+  assert.deepEqual(read, { ...result, file: { id: 'explicit', name: 'explicit', mimeType: 'text/plain' } })
+  await core.readText(owner, { fileId: 'explicit' })
+  for (const key of ['startPage', 'endPage', 'ocr', 'languages']) assert.equal(Object.hasOwn(calls[1], key), false)
+  await assert.rejects(core.readText(owner, { fileId: 'explicit', processor: 'arbitrary' }), /Invalid/)
+  assert.equal(calls.length, 2)
+})
+
+test('deferred PDF processing receives abort on revocation, replacement and owner lifetime end', async t => {
+  for (const mode of ['caller', 'revoke', 'replace', 'account', 'release', 'dispose']) {
+    await t.test(mode, async t => {
+      const { core, owner, client, approve, reconnect } = fixture(t)
+      const grant = await approve()
+      const entered = deferred(), stalled = deferred()
+      let processingSignal, aborted = 0
+      client.readText = ({ signal }) => {
+        processingSignal = signal
+        signal.addEventListener('abort', () => { aborted++ }, { once: true })
+        entered.resolve()
+        return stalled.promise
+      }
+      const controller = new AbortController()
+      const reading = core.readText(owner, { fileId: 'explicit', startPage: 1, ocr: 'force', signal: controller.signal })
+      const rejected = assert.rejects(reading, /permission/)
+      await entered.promise
+      if (mode === 'caller') controller.abort()
+      else if (mode === 'revoke') core.revoke(owner, grant.grantId)
+      else if (mode === 'replace') await core.approve(owner, core.request(owner).requestId, { fileIds: ['explicit'], replace: true })
+      else if (mode === 'account') { reconnect(); core.invalidate() }
+      else if (mode === 'release') core.invalidate(owner)
+      else core.dispose()
+      await rejected
+      assert.equal(processingSignal.aborted, true)
+      assert.equal(aborted, 1)
+      stalled.resolve({ text: 'late OCR secret', pages: [{ pageNumber: 1, text: 'late OCR secret', method: 'ocr' }] })
+      await assert.rejects(reading, /permission/)
+    })
+  }
+})
+
+test('lazy account generation and dead-owner checks suppress late OCR without notifications', async t => {
+  for (const mode of ['generation', 'owner']) {
+    const { core, owner, client, approve, reconnect, dead } = fixture(t)
+    await approve()
+    const entered = deferred(), stalled = deferred()
+    let processingSignal
+    client.readText = ({ signal }) => { processingSignal = signal; entered.resolve(); return stalled.promise }
+    const reading = core.readText(owner, { fileId: 'explicit', ocr: 'force' })
+    const rejected = assert.rejects(reading, /permission/)
+    await entered.promise
+    if (mode === 'generation') reconnect()
+    else dead.add(owner)
+    stalled.resolve({ text: 'late OCR secret' })
+    await rejected
+    assert.equal(processingSignal.aborted, true)
+  }
+})
+
+test('fresh ancestry after deferred OCR rejects moved, trashed and shortcut resources', async t => {
+  for (const mode of ['moved', 'trashed', 'shortcut', 'parent']) {
+    const { core, owner, client, approve, nodes } = fixture(t)
+    await approve()
+    const entered = deferred(), stalled = deferred()
+    client.readText = () => { entered.resolve(); return stalled.promise }
+    const reading = core.readText(owner, { fileId: 'child', startPage: 1, endPage: 2 })
+    const rejected = assert.rejects(reading, /permission/)
+    await entered.promise
+    if (mode === 'moved') nodes.set('child', file('child', []))
+    else if (mode === 'trashed') nodes.set('child', { ...nodes.get('child'), trashed: true })
+    else if (mode === 'shortcut') nodes.set('child', { ...nodes.get('child'), mimeType: 'application/vnd.google-apps.shortcut' })
+    else nodes.set('nested', folder('nested', []))
+    stalled.resolve({ text: 'OCR secret', pages: [{ pageNumber: 1, text: 'OCR secret', method: 'ocr' }] })
+    await rejected
+  }
+})
+
+test('revocation while post-OCR metadata is pending suppresses the completed extraction', async t => {
+  const { core, owner, client, approve } = fixture(t)
+  await approve()
+  const entered = deferred(), stalled = deferred()
+  client.readText = async () => {
+    client.getMetadata = () => { entered.resolve(); return stalled.promise }
+    return { text: 'completed OCR secret' }
+  }
+  const reading = core.readText(owner, { fileId: 'explicit', ocr: 'force' })
+  const rejected = assert.rejects(reading, /permission/)
+  await entered.promise
+  core.revoke(owner)
+  await rejected
+  stalled.resolve(file('explicit'))
+  await assert.rejects(reading, /permission/)
+})
+
 test('movement during content fetch suppresses the returned content', async t => {
   const { core, owner, client, approve, nodes } = fixture(t)
   await approve()

@@ -52,6 +52,39 @@ test('tools validate input, require caller and pass exact owner plus cancellatio
   await assert.rejects(request.execute({ reason: '', selected: ['bad'] }, exec))
 })
 
+test('PDF read tool validates bounded options without changing text defaults or output', async () => {
+  const calls = []
+  const result = { text: '[Page 2]\nrecognized', pages: [{ pageNumber: 2, method: 'ocr' }],
+    totalPages: 9, actualRange: { startPage: 2, endPage: 2 }, nextStartPage: 3, warnings: [], mimeType: 'text/plain', format: 'pdf' }
+  const tool = createReadTool({ readText(owner, args) { calls.push({ owner, args }); return result } })
+  const exec = { agent: {}, signal: new AbortController().signal }
+  const serialized = await tool.execute({ fileId: 'pdf', startPage: 2, endPage: 2, ocr: 'force', languages: ['deu', 'eng'], maxBytes: 262144 }, exec)
+  assert.deepEqual(JSON.parse(serialized), result)
+  assert.equal(tool.output.schema.type, 'string')
+  assert.deepEqual(tool.output.render({}, serialized), [{ type: 'text', text: serialized }])
+  assert.equal(calls[0].owner, exec.agent)
+  assert.deepEqual(calls[0].args, { fileId: 'pdf', startPage: 2, endPage: 2, ocr: 'force', languages: ['deu', 'eng'], maxBytes: 262144, signal: exec.signal })
+  await tool.execute({ fileId: 'text' }, exec)
+  assert.deepEqual(calls[1].args, { fileId: 'text', maxBytes: 65536, signal: exec.signal })
+  for (const options of [{ startPage: 0 }, { startPage: 201 }, { startPage: 1.5 }, { startPage: '1' },
+    { endPage: 0 }, { endPage: 201 }, { endPage: 2.5 }, { endPage: '2' }, { startPage: 3, endPage: 2 }, { endPage: 6 },
+    { startPage: 5, endPage: 10 }, { ocr: 'yes' }, { ocr: null }, { languages: [] }, { languages: 'eng' },
+    { languages: ['eng', 'eng'] }, { languages: ['eng', 'deu', 'fra', 'spa'] }, { languages: ['../eng'] },
+    { languages: ['ENG'] }, { languages: [null] }, { startPage: null }, { extra: true }]) {
+    await assert.rejects(tool.execute({ fileId: 'pdf', ...options }, exec), undefined, JSON.stringify(options))
+  }
+  assert.equal(calls.length, 2)
+  for (const options of [{ startPage: 200 }, { startPage: 196, endPage: 200 }, { endPage: 5 },
+    { ocr: 'off', languages: ['fra', 'spa', 'ita'] }, { ocr: 'auto', languages: ['por'] }]) await tool.execute({ fileId: 'pdf', ...options }, exec)
+  const aborted = new AbortController(); aborted.abort()
+  await assert.rejects(tool.execute({ fileId: 'pdf' }, { ...exec, signal: aborted.signal }))
+  assert.equal(calls.length, 7)
+  assert.deepEqual(tool.parameters.properties.ocr.enum, ['auto', 'off', 'force'])
+  assert.equal(tool.parameters.properties.startPage.maximum, 200)
+  assert.equal(tool.parameters.properties.languages.maxItems, 3)
+  assert.equal(tool.parameters.properties.languages.uniqueItems, true)
+})
+
 test('progressive registrations expose tool and skill only after a grant and dispose on revoke', async () => {
   let access = false, changed
   const tools = new Map(), skills = new Map(), cleanups = []

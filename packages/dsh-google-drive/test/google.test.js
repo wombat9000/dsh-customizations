@@ -50,7 +50,7 @@ test('read-only text download and Docs export use fixed bounded endpoints', asyn
 })
 
 test('unsupported content MIME fails closed and oversized or malformed text fails', async t => {
-  for (const mimeType of ['application/pdf', 'application/vnd.google-apps.shortcut', 'application/vnd.google-apps.folder', 'application/vnd.google-apps.spreadsheet', 'image/png', 'text/html']) {
+  for (const mimeType of ['application/vnd.google-apps.shortcut', 'application/vnd.google-apps.folder', 'application/vnd.google-apps.spreadsheet', 'image/png', 'text/html']) {
     const { client, calls } = fixture(t, { fetch: () => Response.json({ ...file, mimeType, parents: [], trashed: false }) })
     await assert.rejects(client.readText({ fileId: 'id' }), /Unsupported/)
     assert.equal(calls.length, 1)
