@@ -19,7 +19,9 @@ export class DrivePermissions {
   #change
   #states = new Map()
   #disposed = false
-  constructor({ client, getAccountGeneration, isOwnerLive, onChange = () => {} } = {}) {
+  #selectionMimeType
+  constructor({ client, getAccountGeneration, isOwnerLive, onChange = () => {}, selectionMimeType } = {}) {
+    this.#selectionMimeType = selectionMimeType
     if (!client || typeof getAccountGeneration !== 'function' || typeof isOwnerLive !== 'function' || typeof onChange !== 'function') throw new Error('Invalid Drive permission options.')
     this.#client = client
     this.#generation = getAccountGeneration
@@ -151,6 +153,7 @@ export class DrivePermissions {
           check()
           const recursive = folderIds.includes(id)
           if (file.id !== id || file.trashed !== false || file.mimeType === SHORTCUT || (file.mimeType === FOLDER) !== recursive) throw new Error('Invalid Google Drive selection.')
+          if (this.#selectionMimeType && (recursive || file.mimeType !== this.#selectionMimeType)) throw new Error('Select individual Google Sheets spreadsheets only.')
           resources.push({ ...publicFile(file), recursive })
         }
         return resources
@@ -202,6 +205,18 @@ export class DrivePermissions {
     if (Object.keys(extra).length) throw new Error('Invalid Google Drive metadata options.')
     const state = this.#state(owner)
     return this.#operation(owner, state, signal, async (signal, check) => publicFile(await this.#authorized(state, fileId, signal, check)))
+  }
+  // Trusted Host callback only; browser/model callers cannot supply an action.
+  // The retained check/signal remain tied to this exact permission revision.
+  async withAuthorized(owner, { fileId, signal }, action) {
+    const state = this.#state(owner)
+    return this.#operation(owner, state, signal, async (signal, check) => {
+      const file = await this.#authorized(state, fileId, signal, check)
+      const result = await action(signal, check, publicFile(file))
+      check()
+      await this.#authorized(state, fileId, signal, check)
+      return result
+    })
   }
   async readText(owner, { fileId, maxBytes, startPage, endPage, ocr, languages, signal, ...extra } = {}) {
     if (Object.keys(extra).length) throw new Error('Invalid Google Drive read options.')

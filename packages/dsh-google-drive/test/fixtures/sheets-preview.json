@@ -1,0 +1,326 @@
+{
+  "state": "pending",
+  "requestId": "synthetic-preview-request",
+  "preview": {
+    "fileId": "synthetic-preview-book",
+    "fileName": "Synthetic format and value transitions",
+    "range": "'Tab'!A1:E2",
+    "tab": {
+      "sheetId": 7,
+      "title": "Tab",
+      "rowCount": 100,
+      "columnCount": 20
+    },
+    "before": {
+      "fileId": "synthetic-preview-book",
+      "range": "'Tab'!A1:E2",
+      "tab": {
+        "sheetId": 7,
+        "title": "Tab",
+        "rowCount": 100,
+        "columnCount": 20
+      },
+      "cells": [
+        {
+          "cell": "A1",
+          "userEnteredValue": {
+            "numberValue": 0
+          },
+          "effectiveValue": {
+            "numberValue": 0
+          },
+          "formattedValue": "0",
+          "userEnteredFormat": {}
+        },
+        {
+          "cell": "B1",
+          "userEnteredValue": {
+            "stringValue": "0"
+          },
+          "effectiveValue": {
+            "stringValue": "0"
+          },
+          "formattedValue": "0",
+          "userEnteredFormat": {
+            "backgroundColorStyle": {
+              "rgbColor": {
+                "red": 1,
+                "green": 0.2,
+                "blue": 0.1
+              }
+            }
+          }
+        },
+        {
+          "cell": "C1",
+          "userEnteredValue": {
+            "boolValue": true
+          },
+          "effectiveValue": {
+            "boolValue": true
+          },
+          "formattedValue": "TRUE",
+          "userEnteredFormat": {
+            "backgroundColorStyle": {
+              "themeColor": "ACCENT2"
+            }
+          }
+        },
+        {
+          "cell": "D1",
+          "userEnteredValue": null,
+          "effectiveValue": null,
+          "formattedValue": "",
+          "userEnteredFormat": {
+            "numberFormat": {
+              "type": "CURRENCY",
+              "pattern": "$#,##0.00"
+            }
+          }
+        },
+        {
+          "cell": "E1",
+          "userEnteredValue": {
+            "stringValue": ""
+          },
+          "effectiveValue": {
+            "stringValue": ""
+          },
+          "formattedValue": "",
+          "userEnteredFormat": {
+            "textFormat": {
+              "bold": true,
+              "italic": true
+            }
+          }
+        },
+        {
+          "cell": "A2",
+          "userEnteredValue": {
+            "stringValue": "Clear me"
+          },
+          "effectiveValue": {
+            "stringValue": "Clear me"
+          },
+          "formattedValue": "Clear me",
+          "userEnteredFormat": {
+            "textFormat": {
+              "fontFamily": "Arial",
+              "fontSize": 12,
+              "bold": true,
+              "italic": true,
+              "foregroundColor": {
+                "red": 0.4
+              }
+            }
+          }
+        },
+        {
+          "cell": "B2",
+          "userEnteredValue": {
+            "numberValue": 12
+          },
+          "effectiveValue": {
+            "numberValue": 12
+          },
+          "formattedValue": "12.00",
+          "userEnteredFormat": {
+            "backgroundColor": {
+              "red": 1
+            },
+            "textFormat": {
+              "bold": true
+            },
+            "horizontalAlignment": "RIGHT",
+            "wrapStrategy": "WRAP",
+            "numberFormat": {
+              "type": "NUMBER",
+              "pattern": "0.00"
+            }
+          }
+        },
+        {
+          "cell": "C2",
+          "userEnteredValue": {
+            "formulaValue": "=1+1"
+          },
+          "effectiveValue": {
+            "numberValue": 2
+          },
+          "formattedValue": "2",
+          "userEnteredFormat": {}
+        },
+        {
+          "cell": "D2",
+          "userEnteredValue": {
+            "stringValue": "=1+1"
+          },
+          "effectiveValue": {
+            "stringValue": "=1+1"
+          },
+          "formattedValue": "=1+1",
+          "userEnteredFormat": {}
+        },
+        {
+          "cell": "E2",
+          "userEnteredValue": {
+            "boolValue": false
+          },
+          "effectiveValue": {
+            "boolValue": false
+          },
+          "formattedValue": "FALSE",
+          "userEnteredFormat": {
+            "borders": {
+              "top": {
+                "style": "SOLID",
+                "color": {
+                  "red": 0.2
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "after": {
+      "fileId": "synthetic-preview-book",
+      "range": "'Tab'!A1:E2",
+      "tab": {
+        "sheetId": 7,
+        "title": "Tab",
+        "rowCount": 100,
+        "columnCount": 20
+      },
+      "cells": [
+        {
+          "cell": "A1",
+          "userEnteredValue": {
+            "stringValue": "0"
+          },
+          "effectiveValue": null,
+          "formattedValue": "",
+          "userEnteredFormat": {
+            "backgroundColor": {}
+          },
+          "displayUncalculated": true
+        },
+        {
+          "cell": "B1",
+          "userEnteredValue": {
+            "numberValue": 0
+          },
+          "effectiveValue": null,
+          "formattedValue": "",
+          "userEnteredFormat": {
+            "backgroundColorStyle": {
+              "themeColor": "ACCENT1"
+            }
+          },
+          "displayUncalculated": true
+        },
+        {
+          "cell": "C1",
+          "userEnteredValue": {
+            "stringValue": "true"
+          },
+          "effectiveValue": null,
+          "formattedValue": "",
+          "userEnteredFormat": {
+            "backgroundColorStyle": {
+              "rgbColor": {
+                "blue": 1
+              }
+            }
+          },
+          "displayUncalculated": true
+        },
+        {
+          "cell": "D1",
+          "userEnteredValue": {
+            "stringValue": ""
+          },
+          "effectiveValue": null,
+          "formattedValue": "",
+          "userEnteredFormat": {
+            "numberFormat": {
+              "type": "NUMBER"
+            }
+          },
+          "displayUncalculated": true
+        },
+        {
+          "cell": "E1",
+          "userEnteredValue": null,
+          "effectiveValue": null,
+          "formattedValue": "",
+          "userEnteredFormat": {
+            "textFormat": {
+              "italic": true
+            }
+          },
+          "displayUncalculated": true
+        },
+        {
+          "cell": "A2",
+          "userEnteredValue": null,
+          "effectiveValue": null,
+          "formattedValue": "",
+          "userEnteredFormat": {},
+          "displayUncalculated": true
+        },
+        {
+          "cell": "B2",
+          "userEnteredValue": {
+            "numberValue": 12
+          },
+          "effectiveValue": {
+            "numberValue": 12
+          },
+          "formattedValue": "",
+          "userEnteredFormat": {},
+          "displayUncalculated": true
+        },
+        {
+          "cell": "C2",
+          "userEnteredValue": {
+            "stringValue": "=1+1"
+          },
+          "effectiveValue": null,
+          "formattedValue": "",
+          "userEnteredFormat": {},
+          "displayUncalculated": true
+        },
+        {
+          "cell": "D2",
+          "userEnteredValue": {
+            "formulaValue": "=1+1"
+          },
+          "effectiveValue": null,
+          "formattedValue": "",
+          "userEnteredFormat": {},
+          "displayUncalculated": true
+        },
+        {
+          "cell": "E2",
+          "userEnteredValue": {
+            "stringValue": "false"
+          },
+          "effectiveValue": null,
+          "formattedValue": "",
+          "userEnteredFormat": {
+            "borders": {
+              "top": {
+                "style": "NONE",
+                "color": {
+                  "red": 0.2
+                }
+              }
+            }
+          },
+          "displayUncalculated": true
+        }
+      ]
+    }
+  }
+}

@@ -18,8 +18,14 @@ test('host declares read scope and browser routes without authenticating on moun
     effect(fn) { cleanups.push(fn()) }, on(event) { events.push(event) },
     provide(name, value) { assert.equal(name, 'googleDrive'); service = value },
   })
-  assert.deepEqual(registrations, [{ id: 'google-drive', label: 'Google Drive', scopes: ['https://www.googleapis.com/auth/drive.readonly'] }])
-  assert.equal(routes.length, 6)
+  assert.deepEqual(registrations, [
+    { id: 'google-drive', label: 'Google Drive', scopes: ['https://www.googleapis.com/auth/drive.readonly'] },
+    { id: 'google-sheets-edit', label: 'Google Sheets editing (account-wide)', scopes: ['https://www.googleapis.com/auth/spreadsheets'] },
+  ])
+  assert.deepEqual(routes.map(route => route.path), ['status', 'manage', 'revoke', 'browse', 'grant', 'deny',
+    'edit-status', 'edit-manage', 'edit-revoke', 'edit-browse', 'edit-grant', 'edit-deny',
+    'preview-status', 'preview-apply', 'preview-deny'].map(action => `/api/plugins/google-drive/${action}`))
+  assert.ok(routes.every(route => route.kind === 'exact' && typeof route.handler === 'function'))
   assert.deepEqual(events, ['agent/disposed'])
   await assert.rejects(service.listFiles({}, {}), /exact live/)
   for (const cleanup of cleanups.reverse()) cleanup()
@@ -98,14 +104,14 @@ test('progressive registrations expose tool and skill only after a grant and dis
     request() { return { state: 'denied' } },
   }
   apply({ tools: scoped.tools, skills: scoped.skills, googleDrive: service, effect: fn => cleanups.push(fn()) })
-  assert.deepEqual([...tools.keys()], ['request_drive_access'])
+  assert.deepEqual([...tools.keys()], ['request_drive_access', 'request_sheets_edit_access'])
   await tools.get('request_drive_access').execute({ reason: 'Read documents' }, { agent, callId: 'call' })
   assert.equal(skills.size, 0)
   access = true; changed()
-  assert.deepEqual([...tools.keys()], ['request_drive_access', 'google_drive_list_files', 'google_drive_read_file'])
+  assert.deepEqual([...tools.keys()], ['request_drive_access', 'request_sheets_edit_access', 'google_drive_list_files', 'google_drive_read_file', 'google_sheets_list_tabs', 'google_sheets_read_range'])
   assert.equal(skills.get('google-drive-read'), READ_SKILL)
   access = false; changed()
-  assert.deepEqual([...tools.keys()], ['request_drive_access'])
+  assert.deepEqual([...tools.keys()], ['request_drive_access', 'request_sheets_edit_access'])
   assert.equal(skills.size, 0)
   for (const cleanup of cleanups.reverse()) cleanup()
 })

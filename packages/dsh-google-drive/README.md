@@ -1,6 +1,6 @@
 # Google Drive
 
-`@local/dsh-google-drive` provides progressive, session-scoped read access to selected Google Drive files and folders. The **Google Drive** preset retains Standard coding tools but initially exposes only `request_drive_access`. Its custom conversation card opens a private file/folder picker. After you confirm the selection, the session receives listing and text-reading tools plus the `google-drive-read` skill.
+`@local/dsh-google-drive` provides session-scoped Drive reading and Google Sheets reading and approved edits. The **Google Drive** preset retains Standard coding tools and initially exposes `request_drive_access` and `request_sheets_edit_access`. Both use our private picker. Read grants expose Drive listing, text reading, and Sheets range reading. Separate edit grants expose a local Sheets preview; only **Apply changes** sends the exact reviewed write. See [Sheets setup, preview, and limits](docs/sheets.md).
 
 ## Prerequisites and security boundary
 
@@ -10,7 +10,9 @@
 - Google authorizes account-level read access; **DSH**, not Google OAuth, enforces the selected file/folder subset. This version does not use Google Picker's `drive.file` authorization model.
 - This protects the Drive service and its model tools against out-of-selection requests. It is not a security boundary against trusted Host plugins, arbitrary same-process code, or shell tools with access to credentials/runtime files. Keep DSH's filesystem and execution policies appropriate for your threat model.
 
-There are no Drive write, delete, share, or upload operations. Supported content includes Google Docs exported as plain text, plain text, Markdown, CSV, TSV, JSON, and PDF text extraction with optional local optical character recognition (OCR). PDF support requires administrator-installed tools in the **DSH Host's environment**, not merely the agent's sandbox. See [PDF runtime setup and security limits](docs/pdf-runtime.md). Text reading does not require those tools. Sheets, Slides, standalone images, and other binary formats remain unsupported; their metadata can still be listed within the selection.
+Drive file creation, deletion, sharing, and uploads remain unavailable. Separate Sheets tools read bounded ranges and propose cell values, formulas, clears, and basic formatting with one-shot approval. Sheets needs the Sheets API enabled; editing additionally needs explicit account-wide `spreadsheets` consent. Google does not enforce our selected-file write restriction; DSH does.
+
+The text reader supports Google Docs exported as plain text, plain text, Markdown, CSV, TSV, JSON, and PDF text extraction with optional local optical character recognition (OCR). PDF support requires administrator-installed tools in the **DSH Host's environment**, not merely the agent's sandbox. See [PDF runtime setup and security limits](docs/pdf-runtime.md). Text and Sheets reading need no native tools. Slides, standalone images, and other binary formats remain unsupported; their metadata can still be listed within the selection.
 
 ## Install and request access
 
@@ -51,7 +53,12 @@ Google does not offer an atomic transaction combining ancestry checks with conte
 | `request_drive_access` | Initially available | Requests selection with a task-specific reason; never accepts a model-supplied grant. |
 | `google_drive_list_files` | After a grant | Lists selected roots, or current children of an authorized `folderId`; defaults to ten entries, maximum 100. |
 | `google_drive_read_file` | After a grant | Reads supported text or a PDF page range; default text limit 65,536 UTF-8 bytes, maximum 262,144. Oversized text fails rather than silently truncating. |
-| `google-drive-read` | After a grant | On-demand trusted instructions for browsing, reading, citations, and handling untrusted file content. |
+| `google-drive-read` | After a read grant | On-demand trusted instructions for browsing, reading, citations, and handling untrusted file content. |
+| `request_sheets_edit_access` | Initially available | Requests individual spreadsheets for session editing; selection never applies a write. |
+| `google_sheets_list_tabs` | After a read or edit grant | Lists at most 100 grid tabs for an authorized spreadsheet. |
+| `google_sheets_read_range` | After a read or edit grant | Reads an explicit tab-qualified rectangle: at most 200 cells, 20 columns, and 100 rows. |
+| `google_sheets_propose_edit` | After an edit grant | Prepares a local before/after preview and waits for exact human approval; no model-callable apply operation. |
+| `google-sheets` | After a read or edit grant | Trusted instructions for bounded reads, changes, approval, concurrency, and uncertain outcomes. |
 
 Listing cursors are opaque and bound to the session, folder, page size, and grant revision. The agent has no account-wide query operation. The private picker supports literal name search. Revocation removes tool/skill registrations; service checks remain authoritative even if a model retains an old schema or loaded skill text.
 
@@ -75,7 +82,7 @@ Downloads are limited to 20 MiB and documents to 200 pages. Processing uses boun
 
 ## Composition and interfaces
 
-The Host owns `googleDrive`, permission state, and browser endpoints. Every Google operation uses `googleAuth.withAccessToken('google-drive', operation)`. The auth provider exposes a non-secret access generation and change subscription so Drive can invalidate local grants immediately when account access changes.
+The Host owns `googleDrive`, permission state, and browser endpoints. Drive and Sheets reads use `googleAuth.withAccessToken('google-drive', operation)`. Sheets proposal preparation and approved writes use the separately declared `google-sheets-edit` integration. Registration declares consent requirements only; it neither reads credentials nor begins OAuth. The auth provider exposes a non-secret access generation and change subscription so both grant types invalidate immediately when account access changes.
 
 The authored preset contributes tools and skills, not another service:
 
@@ -88,7 +95,7 @@ The public read methods require the exact live agent: `listFiles(agent, args)` a
 
 The Client uses the keyed `tool.call.toolview` slot and an additive `shell.overlay` slot. A native modal dialog supplies focus isolation. This does not use the native binary approval control: only the validated selection endpoint can establish a resource grant.
 
-Same-origin, loopback JSON POST endpoints under `/api/plugins/google-drive/` provide `status`, `browse`, `grant`, `deny`, `manage`, and `revoke`. They require the `X-DSH-Google-Drive: 1` header, exact session/tool-call identity, and—for browsing and confirmation—a pending opaque request ID. The Host rejects stale, duplicate, cancelled, cross-session, and invalid selections. There is no token endpoint. Generic approval cannot bypass selection.
+Same-origin, loopback JSON POST endpoints under `/api/plugins/google-drive/` provide `status`, `browse`, `grant`, `deny`, `manage`, and `revoke` for reading. The `edit-` prefixed equivalents manage independent Sheets edit grants. `preview-status`, `preview-apply`, and `preview-deny` operate on Host-retained proposals. All require the `X-DSH-Google-Drive: 1` header and exact session/tool-call identity; confirmations also require a pending opaque request ID. The browser never submits an edit payload or Google request. The Host rejects stale, duplicate, cancelled, cross-session, and invalid selections. There is no token endpoint. Generic approval cannot bypass selection or the exact preview.
 
 Permission transition diagnostics stay in memory on each request record: at most 20 entries containing outcomes and confirmed resource IDs/recursion flags, never picker browsing or file contents. They are not a durable audit trail and never restore grants. Grant publication waits for the local transition to finish; if it fails, access is removed. The newest 20 settled request cards per live session retain management state; older cards require a fresh tool request.
 

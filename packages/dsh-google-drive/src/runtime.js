@@ -6,7 +6,9 @@ const LIMIT = 10 * 60 * 1000
 // Browser methods never accept an Agent supplied over the wire. The registry
 // resolves the current exact root, and each request retains that same identity.
 export class DriveAccessRuntime {
-  constructor({ client, googleAuth, agents, approval, onChange = () => {} }) {
+  constructor({ client, googleAuth, agents, approval, onChange = () => {}, mode = 'read' }) {
+    if (!['read', 'edit'].includes(mode)) throw new Error('Invalid Drive access mode.')
+    this.mode = mode
     this.auth = googleAuth
     this.agents = agents
     this.approval = approval
@@ -15,6 +17,7 @@ export class DriveAccessRuntime {
     this.committing = new Set()
     this.closed = false
     this.permissions = new DrivePermissions({ client,
+      ...(mode === 'edit' ? { selectionMimeType: 'application/vnd.google-apps.spreadsheet' } : {}),
       getAccountGeneration: () => googleAuth.getAccessGeneration(),
       isOwnerLive: owner => this.isLive(owner),
       onChange: owner => onChange(owner),
@@ -51,8 +54,12 @@ export class DriveAccessRuntime {
     const generation = this.auth.getAccessGeneration()
     const status = await this.auth.status()
     if (generation !== this.auth.getAccessGeneration()) throw new Error('Google account connection changed. Request access again.')
-    if (!status.connected || !status.integrations.some(item => item.id === 'google-drive' && item.authorized)) {
-      throw new Error('Connect Google Drive with read access in Settings → Plugins → Google accounts, then request session access again.')
+    const integration = this.mode === 'edit' ? 'google-sheets-edit' : 'google-drive'
+    if (!status.connected || !status.integrations.some(item => item.id === integration && item.authorized)
+      || !status.integrations.some(item => item.id === 'google-drive' && item.authorized)) {
+      throw new Error(this.mode === 'edit'
+        ? 'Connect Google Drive and enable Google Sheets editing in Settings → Plugins → Google accounts, then request session access again.'
+        : 'Connect Google Drive with read access in Settings → Plugins → Google accounts, then request session access again.')
     }
   }
   audit(record, action, resources) {
@@ -111,7 +118,7 @@ export class DriveAccessRuntime {
       record.state = 'cancelled'
     }
     record.resolve?.({ state: record.state,
-      ...(record.state === 'granted' ? { resources, skill: 'google-drive-read' } : {}) })
+      ...(record.state === 'granted' ? { resources, skill: this.mode === 'edit' ? 'google-sheets' : 'google-drive-read' } : {}) })
     record.resolve = undefined
     this.onChange(record.agent)
   }
@@ -123,7 +130,7 @@ export class DriveAccessRuntime {
   status({ sessionId, callId }) {
     const record = this.resolve(sessionId, callId)
     const grants = this.resources(record.agent)
-    return { state: record.state === 'granted' && !grants.length ? 'none' : record.state,
+    return { ...(this.mode === 'edit' ? { mode: 'edit' } : {}), state: record.state === 'granted' && !grants.length ? 'none' : record.state,
       ...(typeof record.reason === 'string' ? { reason: record.reason } : {}),
       ...(record.state === 'pending' ? { requestId: record.requestId } : {}), grants }
   }
@@ -135,9 +142,11 @@ export class DriveAccessRuntime {
   }
   async browse(input, signal) {
     const record = this.pending(input)
-    return this.permissions.pickerList(record.agent, record.requestId, {
+    const result = await this.permissions.pickerList(record.agent, record.requestId, {
       parentId: input.parentId, search: input.search, pageToken: input.pageToken, pageSize: 50, signal,
     })
+    if (this.mode !== 'edit') return result
+    return { ...result, files: result.files.filter(file => ['application/vnd.google-apps.spreadsheet', 'application/vnd.google-apps.folder'].includes(file.mimeType)) }
   }
   async grant(input, signal) {
     const record = this.pending(input)
