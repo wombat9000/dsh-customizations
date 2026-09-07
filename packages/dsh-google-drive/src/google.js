@@ -62,7 +62,7 @@ export class GoogleDriveClient {
     } })
   }
 
-  dispose() { this.#transport.dispose() }
+  dispose() { this.#documents.dispose(); this.#transport.dispose() }
 }
 
 function projectMetadata(result, { fileId, pageSize }) {

@@ -10,7 +10,7 @@
 - Google authorizes account-level read access; **DSH**, not Google OAuth, enforces the selected file/folder subset. This version does not use Google Picker's `drive.file` authorization model.
 - This protects the Drive service and its model tools against out-of-selection requests. It is not a security boundary against trusted Host plugins, arbitrary same-process code, or shell tools with access to credentials/runtime files. Keep DSH's filesystem and execution policies appropriate for your threat model.
 
-There are no Drive write, delete, share, or upload operations. Sheets, Slides, PDF, images, and arbitrary binary content are not readable by this version. Listing their metadata is allowed within the selection. Supported content is Google Docs exported as plain text, plus plain text, Markdown, CSV, TSV, and JSON files.
+There are no Drive write, delete, share, or upload operations. Supported content includes Google Docs exported as plain text, plain text, Markdown, CSV, TSV, JSON, and PDF text extraction with optional local optical character recognition (OCR). PDF support requires administrator-installed tools in the **DSH Host's environment**, not merely the agent's sandbox. See [PDF runtime setup and security limits](docs/pdf-runtime.md). Text reading does not require those tools. Sheets, Slides, standalone images, and other binary formats remain unsupported; their metadata can still be listed within the selection.
 
 ## Install and request access
 
@@ -50,10 +50,28 @@ Google does not offer an atomic transaction combining ancestry checks with conte
 | --- | --- | --- |
 | `request_drive_access` | Initially available | Requests selection with a task-specific reason; never accepts a model-supplied grant. |
 | `google_drive_list_files` | After a grant | Lists selected roots, or current children of an authorized `folderId`; defaults to ten entries, maximum 100. |
-| `google_drive_read_file` | After a grant | Reads supported text, default 65,536 bytes, maximum 262,144. Oversized responses fail rather than silently truncate. |
+| `google_drive_read_file` | After a grant | Reads supported text or a PDF page range; default text limit 65,536 UTF-8 bytes, maximum 262,144. Oversized text fails rather than silently truncating. |
 | `google-drive-read` | After a grant | On-demand trusted instructions for browsing, reading, citations, and handling untrusted file content. |
 
 Listing cursors are opaque and bound to the session, folder, page size, and grant revision. The agent has no account-wide query operation. The private picker supports literal name search. Revocation removes tool/skill registrations; service checks remain authoritative even if a model retains an old schema or loaded skill text.
+
+### Read PDFs and scans
+
+The existing `google_drive_read_file` tool accepts these PDF-only options:
+
+| Option | Behavior |
+| --- | --- |
+| `startPage`, `endPage` | One-based inclusive page range, at most five pages per call. Defaults to pages 1–5, or the remaining pages of a shorter document. |
+| `ocr` | `auto` (default) extracts embedded text and applies OCR to sparse pages; `off` extracts only embedded text; `force` applies OCR to every requested page. |
+| `languages` | One to three installed OCR language codes, default `["eng"]`. Supported codes: `eng`, `deu`, `fra`, `spa`, `ita`, `por`. No models are downloaded automatically. |
+
+For example, read the first three pages of an approved German PDF with `{"fileId":"approved-file-id","startPage":1,"endPage":3,"languages":["deu","eng"]}`. Do not supply page or OCR options for non-PDF files.
+
+PDF results include page-numbered `text`, per-page `pages` with `method` (`embedded`, `ocr`, or `none`), `totalPages`, `actualRange`, `warnings`, and `nextStartPage` when later pages remain. Only the returned range has been read. The source MIME type remains in `file.mimeType`; the extracted output's `mimeType` is `text/plain`.
+
+OCR can miss or misread text, tables, handwriting, and layout. Automatic selection is a heuristic: a page with enough embedded text can also contain unread scanned regions. Use `force` when needed, and check important identifiers, amounts, and deadlines against the original. Empty text is not proof that a page contains no information. Encrypted PDFs are rejected, including those that open without a password.
+
+Downloads are limited to 20 MiB and documents to 200 pages. Processing uses bounded native child processes, not the harness event loop. Permission revocation cancels processing and suppresses results; the service rechecks ancestry after processing before returning any content. No PDF or OCR text is cached between reads. Native processes are **not a security sandbox**; review the [platform-specific limits and parser risks](docs/pdf-runtime.md) before enabling them.
 
 ## Composition and interfaces
 

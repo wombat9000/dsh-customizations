@@ -29,7 +29,7 @@ export class GoogleTransport {
     if (signal !== undefined && !(signal instanceof AbortSignal)) throw new Error('Invalid cancellation signal.')
     if (signal?.aborted) throw cancelled()
     // Validate request options before acquiring credentials, but after cancellation.
-    const { url, maxBytes, decode, transform = value => value } = prepare()
+    const { url, maxBytes, decode, overflowMessage, transform = value => value } = prepare()
     const controller = new AbortController()
     const abort = () => controller.abort()
     signal?.addEventListener('abort', abort, { once: true })
@@ -69,7 +69,10 @@ export class GoogleTransport {
                   const { done, value } = await wait(reader.read())
                   if (done) break
                   length += value.byteLength
-                  if (length > (response.ok ? maxBytes : 16_384)) throw new Error()
+                  if (length > (response.ok ? maxBytes : 16_384)) {
+                    if (response.ok && overflowMessage) failure = overflowMessage
+                    throw new Error()
+                  }
                   chunks.push(Buffer.from(value))
                 }
               } catch (error) {

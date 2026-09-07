@@ -203,12 +203,17 @@ export class DrivePermissions {
     const state = this.#state(owner)
     return this.#operation(owner, state, signal, async (signal, check) => publicFile(await this.#authorized(state, fileId, signal, check)))
   }
-  async readText(owner, { fileId, maxBytes, signal, ...extra } = {}) {
+  async readText(owner, { fileId, maxBytes, startPage, endPage, ocr, languages, signal, ...extra } = {}) {
     if (Object.keys(extra).length) throw new Error('Invalid Google Drive read options.')
     const state = this.#state(owner)
     return this.#operation(owner, state, signal, async (signal, check) => {
       await this.#authorized(state, fileId, signal, check)
-      const result = await this.#client.readText({ fileId, maxBytes, signal })
+      // Keep the entire extraction inside this permission lifetime. Omitted PDF
+      // options must stay omitted so ordinary text reads retain their contract.
+      const result = await this.#client.readText({ fileId, maxBytes, signal,
+        ...(startPage === undefined ? {} : { startPage }), ...(endPage === undefined ? {} : { endPage }),
+        ...(ocr === undefined ? {} : { ocr }), ...(languages === undefined ? {} : { languages }),
+      })
       check()
       const file = await this.#authorized(state, fileId, signal, check)
       return { ...result, file: publicFile(file) }
