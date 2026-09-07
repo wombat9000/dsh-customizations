@@ -86,6 +86,24 @@ The write is attempted once. DSH reads back the range after a successful respons
 
 Cancellation, revocation, browser disconnection, or timeout after dispatch can produce an uncertain outcome. They do not imply rollback. No automatic write retry occurs, even after an ambiguous network failure. HTTP write failures are conservatively treated as uncertain once dispatched.
 
+## Diagnose a failed Sheets read
+
+A successful Drive picker confirms the selected resource through Drive, not the availability of the Sheets API. A failed tab or range read does not itself revoke session grants. Sheets edit grants preserve existing Drive read grants and also permit bounded reads of the selected spreadsheet.
+
+Use the specific error before changing permissions:
+
+- **API disabled:** enable Google Sheets API in the Cloud project that owns the OAuth client. Reconnecting Google or selecting files again does not enable an API.
+- **Missing OAuth scope:** review the required permissions in **Settings → Plugins → Google accounts**.
+- **Authentication failure:** check the connected Google account in Settings.
+- **Forbidden or not found:** check the spreadsheet ID and that account's file access. A generic forbidden response does not establish a missing OAuth scope.
+- **Invalid request:** inspect the range or integration request; granting access again does not repair it.
+- **Rate limit, service failure, network failure, or timeout:** resolve the temporary condition before retrying a read. Do not request file permissions again without evidence that they are missing.
+- **Invalid response or unknown failure:** retain the diagnostic and investigate the integration. Do not infer a consent problem.
+
+**Starting another OAuth connection clears current session grants, even if consent fails or is cancelled.** Do not reconnect merely because a generic read failed. Diagnostic messages use fixed categories; raw Google error messages, account data, and returned troubleshooting URLs are not exposed.
+
+These diagnostics do not change write safety. Every failure after a write is dispatched remains **Uncertain**, with no automatic retry.
+
 ## Bounds and storage
 
 - At most 100 individually selected spreadsheets per edit grant.

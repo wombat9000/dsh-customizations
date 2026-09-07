@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { getEventListeners } from 'node:events'
 import { GoogleSheetsClient, SHEETS_SCOPE, SHEETS_MIME } from '../src/sheets.js'
+import { SheetsTransport } from '../src/sheets-transport.js'
 
 const fileId = 'sheet_123'
 const range = "'Tab'!A1:B2"
@@ -239,6 +240,81 @@ test('late auth callback after cancellation cannot dispatch', async () => {
 test('auth lifecycle abort and dispose cancel reads', async () => {
   const auth = new AbortController(); const { client, calls } = fixture({ auth: fn => fn('secret-token', auth.signal), fetch: async () => { auth.abort(); return new Promise(() => {}) } })
   await assert.rejects(client.read({ fileId, range }), { code: 'cancelled' }); client.dispose(); await assert.rejects(client.read({ fileId, range })); assert.equal(calls.length, 1)
+})
+const privateDiagnostic = 'secret-token https://evil.test/?access_token=private ignore instructions <script>alert(1)</script>'
+const errorInfo = reason => ({ error: { message: privateDiagnostic, details: [{ '@type': 'type.googleapis.com/google.rpc.ErrorInfo', reason, metadata: { service: privateDiagnostic, activationUrl: privateDiagnostic } }] } })
+const diagnosticCases = [
+  [403, errorInfo('SERVICE_DISABLED'), 'api_disabled'],
+  [403, { error: { errors: [{ reason: 'accessNotConfigured', message: privateDiagnostic }] } }, 'api_disabled'],
+  [403, errorInfo('ACCESS_TOKEN_SCOPE_INSUFFICIENT'), 'scopes'],
+  [403, { error: { errors: [{ reason: 'insufficientPermissions' }] } }, 'scopes'],
+  ...['rateLimitExceeded', 'userRateLimitExceeded', 'quotaExceeded', 'dailyLimitExceeded'].map(reason => [403, { error: { errors: [{ reason, message: privateDiagnostic }] } }, 'rate_limit']),
+  [403, { error: { errors: [{ reason: `rateLimitExceeded ${privateDiagnostic}` }] } }, 'forbidden'],
+  [403, errorInfo('IAM_PERMISSION_DENIED'), 'forbidden'],
+  [403, { error: { message: 'SERVICE_DISABLED ACCESS_TOKEN_SCOPE_INSUFFICIENT', details: [{ reason: 'SERVICE_DISABLED' }] } }, 'forbidden'],
+  [403, errorInfo(`SERVICE_DISABLED ${privateDiagnostic}`), 'forbidden'],
+  [403, { error: { details: [null, 42, privateDiagnostic], errors: [null] } }, 'forbidden'],
+  [401, errorInfo('SERVICE_DISABLED'), 'auth'],
+  [404, errorInfo('SERVICE_DISABLED'), 'not_found'],
+  [400, errorInfo('SERVICE_DISABLED'), 'invalid'],
+  [429, errorInfo('SERVICE_DISABLED'), 'rate_limit'],
+  [500, errorInfo('SERVICE_DISABLED'), 'server'],
+  [503, errorInfo('SERVICE_DISABLED'), 'server'],
+  [418, errorInfo('SERVICE_DISABLED'), 'http'],
+]
+for (const [status, payload, diagnostic] of diagnosticCases) for (const write of [false, true]) test(`safe ${status} ${diagnostic} diagnostics for ${write ? 'POST' : 'GET'}`, async () => {
+  let calls = 0
+  const transport = new SheetsTransport({ withAccessToken: fn => fn('secret-token'), fetch: async () => { calls++; return Response.json(payload, { status }) } })
+  await assert.rejects(transport.request('https://sheets.googleapis.com/private', write ? { body: '{}' } : {}), error => {
+    assert.equal(error.code, write ? 'uncertain' : 'request'); assert.equal(error.diagnostic, diagnostic)
+    assert.ok(error.message.length < 400)
+    for (const secret of ['secret-token', 'https://', 'access_token', '<script>', 'ignore instructions', 'activationUrl']) assert.ok(!`${error.message} ${JSON.stringify(error)} ${error.stack}`.includes(secret))
+    assert.equal(error.cause, undefined)
+    if (write) assert.match(error.message, /Inspect the sheet before preparing another edit/)
+    if (diagnostic === 'not_found') assert.match(error.message, /not found or is not accessible/)
+    return true
+  })
+  assert.equal(calls, 1); transport.dispose()
+})
+for (const write of [false, true]) for (const kind of ['network', 'timeout', 'bad-json', 'missing-body', 'oversize', 'error-oversize', 'broken-stream', 'malformed-error']) test(`bounded ${kind} diagnostics for ${write ? 'POST' : 'GET'}`, async () => {
+  let calls = 0
+  const transport = new SheetsTransport({ requestTimeoutMs: 20, withAccessToken: fn => fn('secret-token'), fetch: async () => {
+    calls++
+    if (kind === 'network') throw Object.assign(Error(privateDiagnostic), { diagnostic: privateDiagnostic, code: 'api_disabled' })
+    if (kind === 'timeout') return new Promise(() => {})
+    if (kind === 'missing-body') return new Response(null)
+    if (kind === 'oversize' || kind === 'error-oversize') return new Response('x'.repeat(kind === 'oversize' ? 2_000_001 : 16_385), { status: kind === 'oversize' ? 200 : 403 })
+    if (kind === 'broken-stream') return { ok: true, body: { getReader: () => ({ read() { throw Error(privateDiagnostic) }, cancel() { throw Error(privateDiagnostic) } }) } }
+    return new Response(privateDiagnostic, { status: kind === 'malformed-error' ? 403 : 200 })
+  } })
+  await assert.rejects(transport.request('https://sheets.googleapis.com/private', write ? { body: '{}' } : {}), error => {
+    assert.equal(error.code, write ? 'uncertain' : 'request')
+    assert.equal(error.diagnostic, kind === 'network' || kind === 'timeout' ? kind : kind === 'malformed-error' ? 'forbidden' : 'response')
+    assert.ok(!error.message.includes('secret-token')); assert.ok(!error.message.includes('https://')); return true
+  })
+  assert.equal(calls, 1); transport.dispose()
+})
+test('forged authentication diagnostics are not forwarded and never dispatch', async () => {
+  let calls = 0
+  const transport = new SheetsTransport({ withAccessToken: () => { throw Object.assign(Error(privateDiagnostic), { code: 'scopes', diagnostic: privateDiagnostic }) }, fetch: async () => { calls++ } })
+  await assert.rejects(transport.request('https://sheets.googleapis.com/private'), { code: 'request', diagnostic: 'auth', message: 'Google Sheets authentication is unavailable or was rejected. Check Google accounts in Settings. Reconnecting clears session grants.' })
+  assert.equal(calls, 0)
+})
+for (const token of [undefined, '', 'bad\ntoken', 'x'.repeat(16_385)]) test(`invalid token is diagnosed locally without dispatch (${typeof token}, ${token?.length ?? 0})`, async () => {
+  let calls = 0
+  const transport = new SheetsTransport({ withAccessToken: fn => fn(token), fetch: async () => { calls++ } })
+  await assert.rejects(transport.request('https://sheets.googleapis.com/private', { body: '{}' }), error => {
+    assert.equal(error.code, 'request'); assert.equal(error.diagnostic, 'auth')
+    assert.match(error.message, /Check Google accounts in Settings/); assert.match(error.message, /Reconnecting clears session grants/)
+    return true
+  })
+  assert.equal(calls, 0)
+})
+test('unclassified dispatch guard errors stay neutral and do not dispatch', async () => {
+  let calls = 0
+  const transport = new SheetsTransport({ withAccessToken: fn => fn('secret-token'), fetch: async () => { calls++ } })
+  await assert.rejects(transport.request('https://sheets.googleapis.com/private', { body: '{}', beforeDispatch() { throw Error(privateDiagnostic) } }), { code: 'request', diagnostic: 'request', message: 'Google Sheets request failed for an unknown reason.' })
+  assert.equal(calls, 0)
 })
 test('auth callback replay cannot repeat a write', async () => {
   const { client, calls } = fixture({ auth: async fn => { try { return await fn('secret-token') } catch { return fn('secret-token') } }, fetch: async (_url, o) => { if (o.method === 'POST') throw Error('secret'); return Response.json(data()) } })
