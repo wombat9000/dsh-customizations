@@ -129,6 +129,19 @@ test('repo guidance tracks source pins, script prerequisites, CI distinction, an
   assert.ok(!skill.includes('{{'), 'repo-owned procedure must not retain template placeholders')
 })
 
+test('release-age configuration and guidance retain review and approval boundaries', async () => {
+  const workspace = await text(join(repo, 'pnpm-workspace.yaml'))
+  assert.match(workspace, /^minimumReleaseAge: 10080(?:\s+#.*)?$/m)
+  assert.doesNotMatch(workspace, /^minimumReleaseAgeExclude:/m)
+  const steward = join(templates, '../../SKILL.md')
+  for (const path of [skillPath, steward, join(templates, 'repository-setup.SKILL.md.template')]) {
+    const guidance = await text(path)
+    for (const phrase of ['minimumReleaseAge: 10080', '7 days in minutes', 'pinned pnpm', 'urgent security fix', 'package-and-version', 'approval', 'not a safety guarantee']) {
+      assert.ok(guidance.includes(phrase), `${path}: missing ${phrase}`)
+    }
+  }
+})
+
 test('v1 templates explicitly distinguish placeholders and verification evidence', async () => {
   const names = (await readdir(templates)).sort()
   assert.deepEqual(names, ['AGENTS.md.template', 'repository-setup.SKILL.md.template'])
