@@ -85,7 +85,7 @@ export class GoogleAuthService {
     this.generation = 0
     this.mutation = Promise.resolve()
     this.integrations = new Map()
-    this.pendingIntegrationId = undefined
+    this.pendingIntegrations = undefined
     this.accessOperations = new Set()
     this.accessGeneration = 0
     this.accessListeners = new Set()
@@ -99,7 +99,7 @@ export class GoogleAuthService {
     // External settings changes also invalidate a pending browser link. This
     // does not revoke or erase the connected account's existing credential.
     this.client?.cancel({ force: true })
-    this.pendingIntegrationId = undefined
+    this.pendingIntegrations = undefined
   }
 
   sandboxAvailable() {
@@ -114,7 +114,7 @@ export class GoogleAuthService {
       // Interrupt publication immediately instead of waiting behind begin().
       if (this.client?.cancel() === false) throw new Error('Google sign-in is finishing. Wait before changing callback mode.')
       this.modeRevision++
-      this.pendingIntegrationId = undefined
+      this.pendingIntegrations = undefined
     }
     return this.serialize(async () => {
       if (typeof this.saveCallbackMode !== 'function') throw new Error('Google callback settings are read-only.')
@@ -157,7 +157,7 @@ export class GoogleAuthService {
       if (this.integrations.get(definition.id) !== definition) return
       this.integrations.delete(definition.id)
       this.invalidateAccess(definition.id)
-      if (this.pendingIntegrationId === definition.id) {
+      if (this.pendingIntegrations?.includes(definition)) {
         // A commit already underway may finish, but no removed integration can
         // obtain a token. Removing a plugin is not Google grant revocation.
         this.client?.cancel()
@@ -210,7 +210,7 @@ export class GoogleAuthService {
     const previous = this.client
     this.client = undefined
     await previous?.dispose()
-    this.pendingIntegrationId = undefined
+    this.pendingIntegrations = undefined
     if (this.loading) await this.loading.catch(() => {})
     await credentialAdapter(this.credentials, '').delete()
   }
@@ -244,15 +244,16 @@ export class GoogleAuthService {
     let status
     try { status = await (await this.load()).status() }
     catch { status = { configured: false, connected: false, pending: false, grantedScopes: [], error: CONFIG_ERROR } }
-    if (!status.pending) this.pendingIntegrationId = undefined
+    if (!status.pending) this.pendingIntegrations = undefined
     const granted = new Set(status.connected ? status.grantedScopes : [])
+    const requiredScopes = [...new Set([...this.integrations.values()].flatMap(item => item.scopes))].sort()
     return {
       configured: status.configured === true, connected: status.connected === true, pending: status.pending === true,
       useSandbox: this.useSandbox, sandboxAvailable: this.sandboxAvailable(),
       ...(Number.isFinite(status.expiresAt) ? { expiresAt: status.expiresAt } : {}),
       ...(status.error ? { error: status.error } : {}),
       ...(status.account ? { account: { id: status.account.id, ...(status.account.email ? { email: status.account.email } : {}) } } : {}),
-      ...(status.pending && this.pendingIntegrationId ? { pendingIntegrationId: this.pendingIntegrationId } : {}),
+      requiredScopes, missingScopes: requiredScopes.filter(scope => !granted.has(scope)),
       integrations: [...this.integrations.values()].map(integration => {
         const missingScopes = integration.scopes.filter(scope => !granted.has(scope))
         return { id: integration.id, label: integration.label, scopes: [...integration.scopes],
@@ -261,8 +262,15 @@ export class GoogleAuthService {
     }
   }
 
-  async begin(integrationId) {
-    const integration = this.integration(integrationId)
+  async begin(...args) {
+    if (args.length) throw new Error('Google account login accepts no integration ID or caller scopes.')
+    const integrations = [...this.integrations.values()]
+    if (!integrations.length) throw new Error('No Google integrations are registered.')
+    const assertSnapshot = () => {
+      if (this.integrations.size !== integrations.length) throw new Error('Google integrations changed; connect again.')
+      for (const integration of integrations) this.assertIntegration(integration)
+    }
+    const scopes = [...new Set(integrations.flatMap(item => item.scopes))].sort()
     this.syncCallbackMode()
     const modeRevision = this.modeRevision
     return this.serialize(async () => {
@@ -272,16 +280,21 @@ export class GoogleAuthService {
       if (this.useSandbox && (!publisher || !this.sandboxAvailable())) {
         throw new Error('Sandbox callback forwarding is unavailable. Start the sandbox bridge or turn off sandbox forwarding.')
       }
+      assertSnapshot()
       const client = await this.load()
-      this.assertIntegration(integration)
+      assertSnapshot()
       if (this.modeRevision !== modeRevision) throw new Error('Callback mode changed; connect again.')
       this.invalidateAccess()
-      const result = await client.begin({ scopes: [...integration.scopes],
+      assertSnapshot()
+      if (this.modeRevision !== modeRevision) throw new Error('Callback mode changed; connect again.')
+      // Track exact registrations before OAuth starts so removal also cancels
+      // an in-flight callback publication, not only an already returned link.
+      this.pendingIntegrations = integrations
+      const result = await client.begin({ scopes,
         ...(publisher ? { publishCallback: (port, signal) => publisher.publish({ port, signal }) } : {}),
       })
-      this.pendingIntegrationId = integration.id
       try {
-        this.assertIntegration(integration)
+        assertSnapshot()
         if (this.modeRevision !== modeRevision) throw new Error('Callback mode changed; connect again.')
       } catch (error) { client.cancel(); throw error }
       return result
@@ -293,7 +306,7 @@ export class GoogleAuthService {
     // Invalidate begin() even while it is still loading configuration and has
     // not created a client/listener yet. Recheck once queued mutations settle.
     this.modeRevision++
-    this.pendingIntegrationId = undefined
+    this.pendingIntegrations = undefined
     return this.serialize(async () => {
       if (this.client?.cancel() === false) throw new Error('Google sign-in is finishing. Wait for completion, then disconnect if needed.')
       await this.client?.cleanup?.()

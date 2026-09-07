@@ -38,8 +38,8 @@ test('callback forwarding saves true and false immediately and stays busy throug
   fixture.handlers.status.mockImplementationOnce(() => refreshed.promise)
   await act(async () => save.resolve())
   await expect.element(callbackMode()).toBeDisabled()
-  await expect.element(button('Connect Google Drive')).toBeDisabled()
-  await act(async () => refreshed.resolve(ok({ configured: true, connected: false, pending: false, useSandbox: true, sandboxAvailable: true, integrations: [integration()] })))
+  await expect.element(button('Connect Google account')).toBeDisabled()
+  await act(async () => refreshed.resolve(ok({ configured: true, connected: false, pending: false, useSandbox: true, sandboxAvailable: true, requiredScopes: integration().scopes, missingScopes: integration().missingScopes, integrations: [integration()] })))
   await expect.element(callbackMode()).toBeChecked()
   await expect.element(callbackMode()).toBeEnabled()
   await click(callbackMode())
@@ -51,15 +51,15 @@ for (const useSandbox of [false, true]) test(`unavailable bridge with forwarding
   await expect.element(callbackMode()).toBeEnabled()
   if (useSandbox) {
     await expect.element(callbackMode()).toBeChecked()
-    await expect.element(button('Connect Google Drive')).toBeDisabled()
+    await expect.element(button('Connect Google account')).toBeDisabled()
     await expect.element(page.getByRole('alert')).toHaveTextContent('Sandbox callback bridge unavailable. Restore the Docker sandbox bridge or turn off sandbox callback forwarding before connecting. DSH will not fall back to a direct host callback.')
     expect(fixture.container.textContent).toContain('will not fall back')
   } else {
-    await expect.element(button('Connect Google Drive')).toBeEnabled()
+    await expect.element(button('Connect Google account')).toBeEnabled()
     await expect.element(page.getByRole('alert')).not.toBeInTheDocument()
     await click(callbackMode())
     await expect.element(callbackMode()).toBeChecked()
-    await expect.element(button('Connect Google Drive')).toBeDisabled()
+    await expect.element(button('Connect Google account')).toBeDisabled()
   }
   expect(fixture.handlers.connect).not.toHaveBeenCalled()
 })
@@ -92,7 +92,7 @@ test('pending login permits callback toggle but cancellation confirmation can re
 })
 test('host callback-mode refusal preserves the pending login and its authorization link', async () => {
   capturePolling(); fixture = await mountSettings({ status: { configured: true }, overrides: { 'callback-mode': async () => failure('SECRET precommit refusal') } }); await toggle()
-  await click(button('Connect Google Drive'))
+  await click(button('Connect Google account'))
   vi.spyOn(window, 'confirm').mockReturnValue(true)
   await click(callbackMode())
   await expect.element(callbackMode()).not.toBeChecked()
@@ -115,7 +115,7 @@ test('initial status keeps callback mode disabled until loaded', async () => {
   fixture = await mountSettings({ overrides: { status: () => initial.promise } }); await toggle()
   await expect.element(callbackMode()).toBeDisabled()
   await expect.element(callbackMode()).not.toBeChecked()
-  await act(async () => initial.resolve(ok({ configured: false, connected: false, pending: false, useSandbox: true, sandboxAvailable: true, integrations: [] })))
+  await act(async () => initial.resolve(ok({ configured: false, connected: false, pending: false, useSandbox: true, sandboxAvailable: true, requiredScopes: [], missingScopes: [], integrations: [] })))
   await expect.element(callbackMode()).toBeEnabled()
   await expect.element(callbackMode()).toBeChecked()
 })
@@ -146,11 +146,11 @@ test('collapsed shared card saves write-only JSON and clears draft after success
   expect(fixture.handlers.configure).toHaveBeenCalledExactlyOnceWith({ clientJson })
   await expect.element(input()).toBeDisabled()
   await act(async () => pending.resolve())
-  await expect.element(input()).toHaveValue(''); await expect.element(button('Connect Google Drive')).toBeEnabled()
+  await expect.element(input()).toHaveValue(''); await expect.element(button('Connect Google account')).toBeEnabled()
   expect(fixture.container.textContent).not.toContain('fixture-not-a-real-secret')
   expect(fixture.handlers.connect).not.toHaveBeenCalled()
 })
-test('incremental permissions require an explicit click with the exact integration id', async () => {
+test('incremental permissions require one explicit account-level click', async () => {
   capturePolling()
   const extra = integration({ id: 'calendar-exact-id', label: 'Google Calendar', scopes: ['calendar.readonly', 'calendar.events.readonly'], missingScopes: ['calendar.events.readonly'] })
   fixture = await mountSettings({ status: { configured: true, connected: true, account: { id: 'safe-id', email: 'fixture@example.test' }, integrations: [integration({ authorized: true, missingScopes: [] }), extra] } })
@@ -160,14 +160,14 @@ test('incremental permissions require an explicit click with the exact integrati
   expect(fixture.container.textContent).toContain('Granted / Ready')
   expect(fixture.container.textContent).toContain('calendar.readonly')
   expect(fixture.container.textContent).toContain('calendar.events.readonly')
-  await expect.element(button('Connect Google Drive')).not.toBeInTheDocument()
+  await expect.element(button('Connect Google account')).not.toBeInTheDocument()
   expect(fixture.handlers.connect).not.toHaveBeenCalled()
   const open = vi.spyOn(window, 'open').mockImplementation(() => null)
-  await click(button('Grant additional permissions for Google Calendar'))
-  expect(fixture.handlers.connect).toHaveBeenCalledExactlyOnceWith({ integrationId: 'calendar-exact-id' })
+  await click(button('Grant additional permissions'))
+  expect(fixture.handlers.connect).toHaveBeenCalledExactlyOnceWith({})
   expect(open).not.toHaveBeenCalled()
-  await expect.element(button('Grant additional permissions for Google Calendar')).not.toBeInTheDocument()
-  expect(fixture.container.textContent).toContain('Pending integration: Google Calendar')
+  await expect.element(button('Grant additional permissions')).not.toBeInTheDocument()
+  expect(fixture.container.textContent).toContain('Waiting for Google authorization')
   await expect.element(button('Disconnect')).toBeDisabled()
   await expect.element(button('Remove client configuration')).toBeDisabled()
   await expect.element(input()).toBeDisabled()
@@ -179,12 +179,12 @@ test('incremental permissions require an explicit click with the exact integrati
   fixture.setStatus({ pending: false, integrations: [integration({ authorized: true, missingScopes: [] }), { ...extra, authorized: true, missingScopes: [] }] })
   await poll(); expect(timers.size).toBe(0)
   await expect.element(link).not.toBeInTheDocument()
-  await expect.element(button('Grant additional permissions for Google Calendar')).not.toBeInTheDocument()
+  await expect.element(button('Grant additional permissions')).not.toBeInTheDocument()
 })
-test('first connection passes exact id and shared disconnect warns about all integrations', async () => {
+test('first connection sends no integration ID and shared disconnect warns about all integrations', async () => {
   capturePolling(); fixture = await mountSettings({ status: { configured: true } }); await toggle()
-  await click(button('Connect Google Drive'))
-  expect(fixture.handlers.connect).toHaveBeenCalledExactlyOnceWith({ integrationId: 'google-drive' })
+  await click(button('Connect Google account'))
+  expect(fixture.handlers.connect).toHaveBeenCalledExactlyOnceWith({})
   fixture.setStatus({ connected: true, pending: false, account: { id: 'safe-account-id' } }); await poll()
   expect(fixture.container.textContent).toContain('safe-account-id')
   const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true)
@@ -194,6 +194,35 @@ test('first connection passes exact id and shared disconnect warns about all int
   expect(confirm.mock.calls[1][0]).toContain('does not revoke access')
   expect(fixture.handlers.disconnect).toHaveBeenCalledExactlyOnceWith({})
 })
+test('one account connect covers Drive and Sheets with transparent account-wide warning', async () => {
+  capturePolling()
+  const drive = 'https://www.googleapis.com/auth/drive.readonly'
+  const sheets = 'https://www.googleapis.com/auth/spreadsheets'
+  fixture = await mountSettings({ status: { configured: true, integrations: [
+    integration({ scopes: [drive], missingScopes: [drive] }),
+    integration({ id: 'google-sheets-edit', label: 'Google Sheets editing (account-wide)', scopes: [sheets], missingScopes: [sheets] }),
+  ] } })
+  await toggle()
+  const actions = () => [...fixture.container.querySelectorAll('button')].filter(node => /Connect|Grant additional/.test(node.textContent))
+  expect(actions()).toHaveLength(1)
+  expect(actions()[0].textContent).toBe('Connect Google account')
+  const summary = fixture.container.querySelector('[aria-label="Account permissions"]')
+  expect([...summary.querySelectorAll('li')].map(node => node.textContent)).toEqual([drive, sheets])
+  expect(summary.textContent).toContain('Google Sheets edit permission is account-wide')
+  expect(summary.textContent).toContain('separate session read/edit grants and approval for each write')
+  expect(summary.textContent).toContain('Existing granted scopes are retained')
+  await click(button('Connect Google account'))
+  expect(fixture.handlers.connect).toHaveBeenCalledExactlyOnceWith({})
+  expect(actions()).toHaveLength(0)
+  fixture.setStatus({ pending: false, connected: true, integrations: [
+    integration({ authorized: true, scopes: [drive], missingScopes: [] }),
+    integration({ id: 'google-sheets-edit', label: 'Sheets', authorized: true, scopes: [sheets], missingScopes: [] }),
+  ] })
+  await poll()
+  expect(actions()).toHaveLength(0)
+  expect(fixture.container.textContent).toContain('Granted / Ready')
+})
+
 test('no integrations explains installation and never renders connect controls', async () => {
   fixture = await mountSettings({ status: { configured: true, integrations: [] } }); await toggle()
   expect(fixture.container.textContent).toContain('Install and enable a Google integration first')
@@ -206,7 +235,7 @@ test('labels, account text, and all required and missing scopes render as escape
   expect(fixture.container.textContent).toContain(label); expect(fixture.container.textContent).toContain(scope)
   expect(fixture.container.textContent).toContain('<b>account</b>')
   expect(fixture.container.querySelector('img, script, b')).toBeNull()
-  await expect.element(button(`Grant additional permissions for ${label}`)).toBeEnabled()
+  await expect.element(button('Grant additional permissions')).toBeEnabled()
 })
 test('configuration failures retain draft without reflecting server secrets; invalid JSON stays local', async () => {
   fixture = await mountSettings({ overrides: { configure: async () => failure(`Rejected: ${clientJson}`) } }); await toggle()
@@ -236,9 +265,9 @@ test('pending cancellation requires confirmation and stops polling', async () =>
 })
 test('invalid authorization links never render and host failures remain visible', async () => {
   fixture = await mountSettings({ status: { configured: true }, overrides: { connect: async () => failure('Use the local loopback GUI.') } }); await toggle()
-  await click(button('Connect Google Drive')); await expect.element(page.getByRole('alert')).toHaveTextContent('Use the local loopback GUI.')
+  await click(button('Connect Google account')); await expect.element(page.getByRole('alert')).toHaveTextContent('Use the local loopback GUI.')
   fixture.handlers.connect.mockResolvedValueOnce(ok({ authorizationUrl: 'https://accounts.google.com.evil.example/o/oauth2/v2/auth' }))
-  await click(button('Connect Google Drive')); await expect.element(page.getByRole('alert')).toHaveTextContent('Google returned an invalid authorization link. Cancel and try connecting again.')
+  await click(button('Connect Google account')); await expect.element(page.getByRole('alert')).toHaveTextContent('Google returned an invalid authorization link. Cancel and try connecting again.')
   await expect.element(page.getByRole('link', { name: 'Continue with Google' })).not.toBeInTheDocument()
 })
 test('polls do not overlap; reset ignores stale responses and unmount clears timers', async () => {
@@ -250,7 +279,7 @@ test('polls do not overlap; reset ignores stale responses and unmount clears tim
   expect(timers.size).toBe(0); expect(fixture.handlers.status).toHaveBeenCalledTimes(2)
   fixture.setStatus({ pending: false })
   await act(async () => fixture.listeners.get('connection/reset')())
-  await act(async () => { pending.resolve(ok({ configured: true, connected: false, pending: true, useSandbox: false, sandboxAvailable: true, integrations: [integration()] })); await running })
+  await act(async () => { pending.resolve(ok({ configured: true, connected: false, pending: true, useSandbox: false, sandboxAvailable: true, requiredScopes: integration().scopes, missingScopes: integration().missingScopes, integrations: [integration()] })); await running })
   expect(timers.size).toBe(0)
   fixture.setStatus({ pending: true }); await act(async () => fixture.listeners.get('connection/reset')())
   expect(timers.size).toBe(1)

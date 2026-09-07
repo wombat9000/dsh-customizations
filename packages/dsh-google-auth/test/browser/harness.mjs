@@ -27,12 +27,15 @@ export async function mountSettings({ status = {}, overrides = {} } = {}) {
   let state = { configured: false, connected: false, pending: false, useSandbox: false, sandboxAvailable: true, integrations: [integration()], ...status }
   const clear = (configured) => { state = { ...state, configured, connected: false, pending: false, account: undefined, integrations: state.integrations.map((item) => ({ ...item, authorized: false, missingScopes: item.scopes })) }; return ok({}) }
   const handlers = Object.fromEntries(Object.entries({
-    status: async () => ok({ ...state }),
+    status: async () => ok({ ...state,
+      requiredScopes: [...new Set(state.integrations.flatMap(item => item.scopes))].sort(),
+      missingScopes: [...new Set(state.integrations.flatMap(item => item.missingScopes))].sort(),
+    }),
     configure: async () => clear(true),
     'clear-config': async () => clear(false),
     'callback-mode': async ({ useSandbox }) => { state.useSandbox = useSandbox; state.pending = false; return ok({}) },
-    connect: async ({ integrationId }) => {
-      state.pending = true; state.pendingIntegrationId = integrationId
+    connect: async () => {
+      state.pending = true
       return ok({ authorizationUrl: 'https://accounts.google.com/o/oauth2/v2/auth?state=browser-fixture', expiresAt: Date.now() + 60000 })
     },
     cancel: async () => { state.pending = false; return ok({}) },
@@ -44,8 +47,7 @@ export async function mountSettings({ status = {}, overrides = {} } = {}) {
     expect(options.method).toBe('POST'); expect(options.credentials).toBe('same-origin')
     expect(options.headers).toEqual({ 'Content-Type': 'application/json', 'X-DSH-Google-Auth': '1' })
     const method = url.split('/').at(-1), body = JSON.parse(options.body)
-    if (method === 'connect') expect(Object.keys(body)).toEqual(['integrationId'])
-    else if (method === 'callback-mode') { expect(Object.keys(body)).toEqual(['useSandbox']); expect(typeof body.useSandbox).toBe('boolean') }
+    if (method === 'callback-mode') { expect(Object.keys(body)).toEqual(['useSandbox']); expect(typeof body.useSandbox).toBe('boolean') }
     else if (method !== 'configure') expect(body).toEqual({})
     const result = await handlers[method](body)
     return { ok: result.ok, json: async () => result }

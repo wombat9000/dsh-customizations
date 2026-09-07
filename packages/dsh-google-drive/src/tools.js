@@ -1,8 +1,5 @@
-import { READ_SKILL } from './skill.js'
-import { createSheetsRequestTool, createSheetsDescribeTool, createSheetsReadTool, createSheetsProposeTool, SHEETS_SKILL } from './sheets-tools.js'
-
 export const name = 'google-drive-tools'
-export const inject = ['tools', 'googleDrive', 'skills']
+export const inject = ['googleDrive']
 const render = (_args, value) => [{ type: 'text', text: value }]
 const output = { schema: { type: 'string' }, render }
 function object(args, keys) {
@@ -72,45 +69,7 @@ export function createReadTool(service) {
     },
   }
 }
-export function apply(ctx) {
-  const installed = new WeakSet()
-  const service = ctx.googleDrive
-  function prepare(agent) {
-    service.assertOwner(agent)
-    if (installed.has(agent)) return
-    installed.add(agent)
-    const groups = { drive: [], sheets: [], edits: [] }
-    const clearGroup = group => { for (const dispose of groups[group].splice(0).reverse()) dispose() }
-    const clear = () => { for (const group of Object.keys(groups)) clearGroup(group) }
-    const update = () => {
-      const granted = service.hasAccess(agent)
-      const editable = service.hasEditAccess?.(agent) === true
-      const tools = agent.ctx.get('tools')
-      const skills = agent.ctx.get('skills')
-      if (!tools || !skills) throw new Error('Drive tool and skill registries are unavailable.')
-      const sync = (group, enabled, register) => {
-        if (!enabled) clearGroup(group)
-        else if (!groups[group].length) register(groups[group])
-      }
-      try {
-        sync('drive', granted, exposed => {
-          exposed.push(tools.register(createListTool(service)))
-          exposed.push(tools.register(createReadTool(service)))
-          exposed.push(skills.register(READ_SKILL))
-        })
-        sync('sheets', granted || editable, exposed => {
-          exposed.push(tools.register(createSheetsDescribeTool(service)))
-          exposed.push(tools.register(createSheetsReadTool(service)))
-          exposed.push(skills.register(SHEETS_SKILL))
-        })
-        sync('edits', editable, exposed => { exposed.push(tools.register(createSheetsProposeTool(service))) })
-      } catch (error) { clear(); throw error }
-    }
-    const unwatch = service.observe(agent, update)
-    agent.ctx.effect(() => () => { unwatch(); clear(); installed.delete(agent) })
-    ctx.effect(() => () => { unwatch(); clear(); installed.delete(agent) })
-    update()
-  }
-  ctx.tools.register(createRequestTool(service, prepare))
-  ctx.tools.register(createSheetsRequestTool(service, prepare))
-}
+// Compatibility entry for already-authored Google Drive presets. The Host's
+// session toolbar now owns all exact-agent registrations, default OFF. Keeping
+// this row loadable must not add standing tools or silently re-enable a session.
+export function apply() {}

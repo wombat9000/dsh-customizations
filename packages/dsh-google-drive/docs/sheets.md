@@ -1,6 +1,6 @@
 # Read and edit Google Sheets with a local preview
 
-The Google Drive preset can read selected spreadsheets and propose bounded cell edits. Our existing picker controls session access. A local before/after preview shows the proposed values, formulas, clears, and basic formatting. Only **Apply changes** sends the exact reviewed batch to Google; creating or cancelling a preview sends no write.
+Any top-level session can read selected spreadsheets and propose bounded cell edits after you enable **Google Drive** in its toolbar and grant access. Our existing picker controls session access. A local before/after preview shows the proposed values, formulas, clears, and basic formatting. Only **Apply changes** sends the exact reviewed batch to Google; creating or cancelling a preview sends no write.
 
 ## Permissions and setup
 
@@ -9,10 +9,9 @@ The Google Drive preset can read selected spreadsheets and propose bounded cell 
 After an explicitly approved plugin update, Host restart, and Web refresh:
 
 1. Enable both the Google Drive API and Google Sheets API in the Cloud project that owns your Desktop OAuth client.
-2. In **Settings → Plugins → Google accounts**, connect **Google Drive** with `https://www.googleapis.com/auth/drive.readonly`. That scope also authorizes Sheets reads; no additional read consent is needed.
-3. If you want editing, connect **Google Sheets editing (account-wide)** and consent to `https://www.googleapis.com/auth/spreadsheets`. This is separate, explicit consent. Existing Google file permissions still apply: the API cannot edit a spreadsheet your account cannot edit.
-4. Start a new **Google Drive** session. Request read access through `request_drive_access`, or editing through `request_sheets_edit_access`.
-5. For editing, use our picker to select individual spreadsheets and allow editing for this session. Folders remain navigable but cannot be selected for recursive editing.
+2. In **Settings → Plugins → Google accounts**, review the required permissions and choose **Connect Google account**. One OAuth flow requests all currently enabled integration scopes, including `https://www.googleapis.com/auth/drive.readonly` and `https://www.googleapis.com/auth/spreadsheets`. For an existing connection missing scopes, choose **Grant additional permissions** instead. Existing Google file permissions still apply: the API cannot edit a spreadsheet your account cannot edit.
+3. Open a top-level session with any preset and enable **Google Drive** in the session toolbar. It defaults off, including for the Google Drive preset. Request read access through `request_drive_access`, or editing through `request_sheets_edit_access`. Neither the toggle nor account-wide OAuth consent grants session file access or write approval.
+4. For editing, use our picker to select individual spreadsheets and allow editing for this session. Folders remain navigable but cannot be selected for recursive editing.
 
 Installing or merging this version does not enable APIs, start OAuth, change Google accounts, apply a profile, or deploy to a running GUI. Sheets adds no npm or native dependencies.
 
@@ -25,6 +24,8 @@ Installing or merging this version does not enable APIs, start OAuth, change Goo
 | Apply changes | One immutable reviewed batch | One attempt only; denial, expiry, cancellation, failure, or completion makes it unusable. |
 
 Read grants never become edit grants. An edit grant permits Sheets reads for its selected spreadsheets but does not expose unrelated Drive files. Read and edit selections are independent: removing a read grant does not remove an existing edit grant, and removing editing does not remove an independent read grant. Manage each card separately. Removing both ends this session's access, not Google's account consent or changes already written.
+
+Turning the session's Google Drive toggle off revokes both selections, removes the tools, and cancels pending requests and previews. Re-enabling requires fresh file grants. It does not revoke Google's consent or undo writes already sent; dispatched operations retain outcome reporting, including uncertainty.
 
 Session unload, Host restart, plugin disposal, account disconnect, client replacement, and a new Google sign-in invalidate grants. Consent changes can therefore require selecting resources again. Revocation cancels pending previews and in-flight operations. It cannot erase already-returned conversation content or undo a write already dispatched.
 

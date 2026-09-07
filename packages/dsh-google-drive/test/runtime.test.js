@@ -5,7 +5,7 @@ import { GoogleDriveService } from '../src/index.js'
 
 const deferred = () => { let resolve; const promise = new Promise(done => { resolve = done }); return { promise, resolve } }
 const file = id => ({ id, name: id, mimeType: 'text/plain', parents: [], trashed: false })
-function fixture(t) {
+function fixture(t, mode = 'read') {
   const events = []
   const agent = { session: { id: 'session', append() { assert.fail('Drive must not append custom session events') } } }
   const agentsById = new Map([[agent.session.id, agent]])
@@ -17,14 +17,14 @@ function fixture(t) {
   const googleAuth = {
     getAccessGeneration: () => generation,
     onAccessChange: listener => { listeners.add(listener); return () => listeners.delete(listener) },
-    status: async () => ({ connected: true, integrations: [{ id: 'google-drive', authorized: true }] }),
+    status: async () => ({ connected: true, integrations: [{ id: 'google-drive', authorized: true }, { id: 'google-sheets-edit', authorized: true }] }),
   }
   const client = {
     getMetadata: async ({ fileId }) => file(fileId),
     pickerList: async () => ({ files: [file('notes')] }),
     readText: async () => ({ text: 'secret', mimeType: 'text/plain' }),
   }
-  const runtime = new DriveAccessRuntime({ client, googleAuth, agents, approval: { overrideOf: () => policy }, onChange: () => {} })
+  const runtime = new DriveAccessRuntime({ client, googleAuth, agents, approval: { overrideOf: () => policy }, onChange: () => {}, mode })
   const audit = runtime.audit.bind(runtime)
   runtime.audit = (record, action, resources) => {
     audit(record, action, resources)
@@ -205,12 +205,14 @@ test('runtime revoke cancels ignored-abort reads and managed pending requests', 
 test('public service gates reads and observer exposure until grant transition commits', async t => {
   let service
   const blocked = []
-  const agent = { session: { id: 'service-session', append() { assert.fail('Drive must not append custom session events') } } }
+  const scoped = { tools: { register: () => () => {} }, skills: { register: () => () => {} } }
+  const agent = { session: { id: 'service-session', append() { assert.fail('Drive must not append custom session events') } },
+    ctx: { get: name => scoped[name], effect: fn => fn() } }
   const googleAuth = {
     withAccessToken: async (_id, operation) => operation('synthetic-token', new AbortController().signal),
     getAccessGeneration: () => 1,
     onAccessChange: () => () => {},
-    status: async () => ({ connected: true, integrations: [{ id: 'google-drive', authorized: true }] }),
+    status: async () => ({ connected: true, integrations: [{ id: 'google-drive', authorized: true }, { id: 'google-sheets-edit', authorized: true }] }),
   }
   const entered = deferred()
   const gate = deferred()
@@ -222,6 +224,8 @@ test('public service gates reads and observer exposure until grant transition co
     },
   })
   t.after(() => { observing = false; service.dispose() })
+  const sessionStatus = service.browser('session-status', { sessionId: agent.session.id })
+  service.browser('session-set', { sessionId: agent.session.id, ownerId: sessionStatus.ownerId, revision: sessionStatus.revision, enabled: true })
   let observing = false
   service.observe(agent, () => {
     if (!observing) return
@@ -246,6 +250,62 @@ test('public service gates reads and observer exposure until grant transition co
   service.browser('revoke', input)
   assert.equal(service.hasAccess(agent), false)
   await assert.rejects(service.readText(agent, { fileId: 'notes' }), /committed/)
+})
+
+for (const mode of ['read', 'edit']) {
+  test(`${mode} request and manage reject a toolbar epoch changed during auth lookup`, async t => {
+    const f = fixture(t, mode)
+    let revision = 1
+    f.runtime.enableRevision = () => revision
+    const { input, done } = await f.request()
+    f.runtime.deny(input); await done
+    const status = await f.googleAuth.status()
+    const gate = deferred(), entered = deferred()
+    f.googleAuth.status = async () => { entered.resolve(); return gate.promise }
+    const request = f.runtime.request(f.agent, { callId: 'waiting', reason: 'Read notes' })
+    const rejected = assert.rejects(request, /toolbar/)
+    const manage = f.runtime.manage(input)
+    const manageRejected = assert.rejects(manage, /toolbar/)
+    await entered.promise
+    revision += 2 // OFF then ON, even if no request record existed at OFF.
+    f.runtime.revokeOwner(f.agent)
+    gate.resolve(status)
+    await rejected; await manageRejected
+    assert.equal(f.runtime.records.has('session:waiting'), false)
+    assert.equal(f.runtime.status(input).state, 'denied')
+  })
+
+  test(`${mode} old access cards cannot mutate a later toolbar epoch`, async t => {
+    const f = fixture(t, mode)
+    let revision = 1
+    f.runtime.enableRevision = () => revision
+    const { input, done } = await f.request()
+    revision++
+    f.runtime.revokeOwner(f.agent)
+    assert.equal((await done).state, 'cancelled')
+    revision++
+    assert.equal(f.runtime.status(input).state, 'cancelled', 'history remains readable')
+    await assert.rejects(f.runtime.manage(input), /toolbar/)
+    await assert.rejects(f.runtime.grant({ ...input, selected: [{ id: 'notes', recursive: false }] }), /toolbar/)
+    assert.throws(() => f.runtime.deny(input), /toolbar/)
+    assert.throws(() => f.runtime.revoke(input), /active/)
+  })
+}
+
+test('an old access card never displays a later toolbar epoch grant', async t => {
+  const f = fixture(t)
+  let revision = 1
+  f.runtime.enableRevision = () => revision
+  const old = await f.request()
+  await f.runtime.grant({ ...old.input, selected: [{ id: 'old-notes', recursive: false }] })
+  await old.done
+  revision++; f.runtime.revokeOwner(f.agent); revision++
+  const current = await f.request()
+  await f.runtime.grant({ ...current.input, selected: [{ id: 'new-notes', recursive: false }] })
+  await current.done
+  assert.equal(f.runtime.status(old.input).state, 'none')
+  assert.deepEqual(f.runtime.status(old.input).grants, [])
+  assert.equal(f.runtime.status(current.input).grants[0].id, 'new-notes')
 })
 
 test('runtime request rejects disabled prompting and unauthenticated Drive', async t => {

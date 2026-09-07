@@ -36,8 +36,6 @@ async function readBody(req, action) {
     if (action === 'configure') return Object.keys(data).length === 1 && typeof data.clientJson === 'string'
       && data.clientJson.length <= 32768 ? data : undefined
     if (action === 'callback-mode') return Object.keys(data).length === 1 && typeof data.useSandbox === 'boolean' ? data : undefined
-    if (action === 'connect') return Object.keys(data).length === 1 && typeof data.integrationId === 'string'
-      && /^[a-z][a-z0-9-]{0,63}$/u.test(data.integrationId) ? data : undefined
     return Object.keys(data).length === 0 ? data : undefined
   } catch { return undefined }
   finally { clearTimeout(timer) }
@@ -59,7 +57,7 @@ export function settingsHandler(service, action, port) {
       return
     }
     try {
-      const value = await (action === 'connect' ? service.begin(body.integrationId)
+      const value = await (action === 'connect' ? service.begin()
         : action === 'configure' ? service.configure(body.clientJson)
           : action === 'clear-config' ? service.clearConfig()
             : action === 'callback-mode' ? service.setCallbackMode(body.useSandbox) : service[action]())
@@ -70,7 +68,7 @@ export function settingsHandler(service, action, port) {
         ...(Number.isFinite(value.expiresAt) ? { expiresAt: value.expiresAt } : {}),
         ...(typeof value.error === 'string' ? { error: value.error } : {}),
         ...(value.account ? { account: { id: value.account.id, ...(value.account.email ? { email: value.account.email } : {}) } } : {}),
-        ...(typeof value.pendingIntegrationId === 'string' ? { pendingIntegrationId: value.pendingIntegrationId } : {}),
+        requiredScopes: [...value.requiredScopes], missingScopes: [...value.missingScopes],
         integrations: value.integrations.map(item => ({ id: item.id, label: item.label,
           scopes: [...item.scopes], authorized: item.authorized === true, missingScopes: [...item.missingScopes] })),
       } : action === 'connect' ? {
@@ -84,7 +82,7 @@ export function settingsHandler(service, action, port) {
           : action === 'connect'
           ? service.useSandbox === true
             ? 'Could not start Google login. Check client configuration and the sandbox bridge/helper. No direct callback fallback was used.'
-            : 'Could not start Google login. Check client configuration and the selected integration, then retry.'
+            : 'Could not start Google login. Check client configuration and enabled integrations, then retry.'
           : action === 'configure'
             ? 'Could not save configuration. Paste downloaded Google Desktop client JSON and check credential storage access.'
             : action === 'cancel'

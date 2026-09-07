@@ -2,7 +2,6 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import * as host from '../src/index.js'
 import { createListTool, createReadTool, createRequestTool, apply } from '../src/tools.js'
-import { READ_SKILL } from '../src/skill.js'
 
 test('host declares read scope and browser routes without authenticating on mount', async () => {
   const registrations = [], cleanups = [], routes = [], events = []
@@ -24,7 +23,7 @@ test('host declares read scope and browser routes without authenticating on moun
   ])
   assert.deepEqual(routes.map(route => route.path), ['status', 'manage', 'revoke', 'browse', 'grant', 'deny',
     'edit-status', 'edit-manage', 'edit-revoke', 'edit-browse', 'edit-grant', 'edit-deny',
-    'preview-status', 'preview-apply', 'preview-deny'].map(action => `/api/plugins/google-drive/${action}`))
+    'preview-status', 'preview-apply', 'preview-deny', 'session-status', 'session-set'].map(action => `/api/plugins/google-drive/${action}`))
   assert.ok(routes.every(route => route.kind === 'exact' && typeof route.handler === 'function'))
   assert.deepEqual(events, ['agent/disposed'])
   await assert.rejects(service.listFiles({}, {}), /exact live/)
@@ -91,27 +90,8 @@ test('PDF read tool validates bounded options without changing text defaults or 
   assert.equal(tool.parameters.properties.languages.uniqueItems, true)
 })
 
-test('progressive registrations expose tool and skill only after a grant and dispose on revoke', async () => {
-  let access = false, changed
-  const tools = new Map(), skills = new Map(), cleanups = []
-  const register = map => value => { map.set(value.name, value); return () => map.delete(value.name) }
-  const scoped = { tools: { register: register(tools) }, skills: { register: register(skills) } }
-  const agent = { ctx: { get: name => scoped[name], effect: fn => cleanups.push(fn()) } }
-  const service = {
-    assertOwner(owner) { assert.equal(owner, agent) },
-    hasAccess() { return access },
-    observe(owner, cb) { assert.equal(owner, agent); changed = cb; return () => { changed = undefined } },
-    request() { return { state: 'denied' } },
-  }
-  apply({ tools: scoped.tools, skills: scoped.skills, googleDrive: service, effect: fn => cleanups.push(fn()) })
-  assert.deepEqual([...tools.keys()], ['request_drive_access', 'request_sheets_edit_access'])
-  await tools.get('request_drive_access').execute({ reason: 'Read documents' }, { agent, callId: 'call' })
-  assert.equal(skills.size, 0)
-  access = true; changed()
-  assert.deepEqual([...tools.keys()], ['request_drive_access', 'request_sheets_edit_access', 'google_drive_list_files', 'google_drive_read_file', 'google_sheets_list_tabs', 'google_sheets_read_range'])
-  assert.equal(skills.get('google-drive-read'), READ_SKILL)
-  access = false; changed()
-  assert.deepEqual([...tools.keys()], ['request_drive_access', 'request_sheets_edit_access'])
-  assert.equal(skills.size, 0)
-  for (const cleanup of cleanups.reverse()) cleanup()
+test('legacy tools composition remains loadable without enabling tools or accessing Google', () => {
+  const forbidden = new Proxy({}, { get() { assert.fail('legacy compatibility row must not register or grant anything') } })
+  apply(forbidden)
+  apply(forbidden)
 })

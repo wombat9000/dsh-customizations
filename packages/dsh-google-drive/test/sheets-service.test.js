@@ -5,12 +5,15 @@ import { createSheetsDescribeTool, createSheetsReadTool, createSheetsProposeTool
 import { SHEETS_MIME } from '../src/sheets.js'
 
 const sheet = { properties: { title: 'Book' }, sheets: [{ properties: { sheetId: 0, title: 'Tab', gridProperties: { rowCount: 100, columnCount: 20 } } }] }
-function fixture(t) {
-  const agent = { session: { id: 'root' } }, child = { session: { id: 'child' } }, calls = [], tokens = [], listeners = new Set()
+function fixture(t, { enabled = true, authStatus } = {}) {
+  const registrations = new Set()
+  const register = value => { registrations.add(value); return () => registrations.delete(value) }
+  const ctx = { get: () => ({ register }), effect: fn => fn() }
+  const agent = { session: { id: 'root' }, ctx }, child = { session: { id: 'child' } }, calls = [], tokens = [], listeners = new Set()
   const service = new GoogleDriveService({ agents: { get: id => id === 'root' ? agent : id === 'child' ? child : undefined, roots: () => [agent] }, approval: { overrideOf: () => 'ask' }, googleAuth: {
     withAccessToken: (id, fn) => { tokens.push(id); return fn('synthetic-token') }, getAccessGeneration: () => 1,
     onAccessChange: cb => { listeners.add(cb); return () => listeners.delete(cb) },
-    status: async () => ({ connected: true, integrations: [{ id: 'google-drive', authorized: true }, { id: 'google-sheets-edit', authorized: true }] }),
+    status: authStatus ?? (async () => ({ connected: true, integrations: [{ id: 'google-drive', authorized: true }, { id: 'google-sheets-edit', authorized: true }] })),
   }, fetch: async (url, opts) => {
     calls.push({ url, ...opts }); const u = new URL(url)
     if (u.hostname === 'sheets.googleapis.com') return Response.json(sheet)
@@ -18,6 +21,8 @@ function fixture(t) {
     return Response.json({ id, name: id, mimeType: id === 'folder' ? 'application/vnd.google-apps.folder' : id === 'text' ? 'text/plain' : SHEETS_MIME, parents: [], trashed: false })
   } })
   t.after(() => service.dispose())
+  const toggle = enabled => service.browser('session-set', { sessionId: 'root', ...service.browser('session-status', { sessionId: 'root' }), enabled })
+  if (enabled) toggle(true)
   let serial = 0
   async function request(edit = false) {
     const callId = `call-${++serial}`, input = { sessionId: 'root', callId }
@@ -31,7 +36,7 @@ function fixture(t) {
     await service.browser(edit ? 'edit-grant' : 'grant', { ...r.input, selected: [{ id, recursive: false }] })
     assert.equal((await r.done).state, 'granted'); return r.input
   }
-  return { service, agent, child, calls, tokens, listeners, request, grant }
+  return { service, agent, child, calls, tokens, listeners, request, grant, toggle, registrations }
 }
 
 test('Sheets tools pass exact caller, call ID and cancellation, rejecting unknown arguments', async () => {
@@ -74,7 +79,7 @@ test('assembled edit-only grant permits bounded reads but does not grant arbitra
   await assert.rejects(f.service.listFiles(f.agent, {})); await assert.rejects(f.service.readText(f.agent, { fileId: 'book' }))
   await assert.rejects(f.service.readSheet(f.agent, { fileId: 'unselected', range: 'Tab!A1' }))
   f.service.release(f.agent); assert.equal(f.service.hasEditAccess(f.agent), false)
-  await assert.rejects(f.service.readSheet(f.agent, { fileId: 'book', range: 'Tab!A1' }))
+  await assert.rejects(async () => f.service.readSheet(f.agent, { fileId: 'book', range: 'Tab!A1' }))
 })
 for (const id of ['folder', 'text']) test(`assembled edit picker rejects ${id} resources`, async t => {
   const f = fixture(t), r = await f.request(true)
@@ -95,6 +100,34 @@ test('opening unrelated read picker preserves pending edit preview; edit revoke 
   assert.equal((await done).state, 'cancelled')
   f.service.release(f.agent); await read.done
   assert.ok(f.calls.every(call => call.method !== 'POST'))
+})
+
+for (const edit of [false, true]) test(`OFF during ${edit ? 'edit' : 'read'} auth await prevents a picker even after re-enable`, async t => {
+  let resume
+  const f = fixture(t, { authStatus: () => new Promise(resolve => { resume = resolve }) })
+  const done = f.service[edit ? 'requestEdit' : 'request'](f.agent, { callId: 'waiting', reason: 'Read' })
+  f.toggle(false); f.toggle(true)
+  resume({ connected: true, integrations: [{ id: 'google-drive', authorized: true }, { id: 'google-sheets-edit', authorized: true }] })
+  await assert.rejects(done, /Enable Google Drive/)
+  assert.throws(() => f.service.browser(edit ? 'edit-status' : 'status', { sessionId: 'root', callId: 'waiting' }))
+  assert.equal(f.calls.length, 0)
+})
+
+test('OFF retains inert permission records and cancels a pending preview', async t => {
+  const f = fixture(t), access = await f.grant(true)
+  const done = f.service.proposeSheetEdit(f.agent, { fileId: 'book', range: 'Tab!A1', changes: [{ cell: 'A1', value: 2 }], callId: 'off-preview' })
+  const input = { sessionId: 'root', callId: 'off-preview' }
+  for (let i = 0; i < 100; i++) { await Promise.resolve(); if (f.service.browser('preview-status', input).state !== 'preparing') break }
+  assert.equal(f.service.browser('preview-status', input).state, 'pending')
+  f.toggle(false)
+  assert.equal((await done).state, 'cancelled')
+  assert.equal(f.service.browser('preview-status', input).state, 'cancelled')
+  assert.equal(f.service.browser('edit-status', access).state, 'none')
+  assert.equal(f.registrations.size, 0)
+  assert.ok(f.calls.every(call => call.method !== 'POST'))
+  f.toggle(true)
+  assert.equal(f.service.hasEditAccess(f.agent), false)
+  await assert.rejects(async () => f.service.browser('edit-grant', { ...access, selected: [{ id: 'book', recursive: false }] }))
 })
 
 test('assembled service rejects arbitrary browser dispatch and releases auth listeners', t => {

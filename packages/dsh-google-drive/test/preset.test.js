@@ -108,7 +108,7 @@ test('preset preserves exact Standard configuration and appends only its consume
   assert.ok(patch.some(row => row.insert?.some(item => item.name === '@local/dsh-google-drive')))
 })
 
-test('real dormant Standard and Google Drive mounts isolate tool contributions', { timeout: 15000 }, async t => {
+test('real dormant Standard and legacy Google Drive mounts both default to tools disabled', { timeout: 15000 }, async t => {
   const f = await fixture(t)
   const ctx = new Context()
   t.after(() => ctx.fiber.dispose())
@@ -145,7 +145,9 @@ test('real dormant Standard and Google Drive mounts isolate tool contributions',
   assert.equal(await roster.standingKeyFor('google-drive'), drive)
   const names = key => [...ctx.get('tools').view(key).visible.keys()].sort()
   assert.ok(names(standard).length > 20)
-  assert.deepEqual(names(drive), [...names(standard), 'request_drive_access', 'request_sheets_edit_access'].sort())
+  assert.deepEqual(names(drive), names(standard))
+  assert.equal(names(drive).includes('request_drive_access'), false)
+  assert.equal(names(drive).includes('request_sheets_edit_access'), false)
   assert.deepEqual(names(), [])
   assert.equal(ctx.get('googleDrive'), service)
   for (const name of ['planMode', 'compaction', 'toolResultPruner', 'workflowEngine']) assert.equal(ctx.get(name), undefined)

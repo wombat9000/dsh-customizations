@@ -37,6 +37,7 @@ window.__ModuleLoader__.load({
     function validStatus(value) {
       return value && ['configured', 'connected', 'pending'].every((key) => typeof value[key] === 'boolean')
         && ['useSandbox', 'sandboxAvailable'].every((key) => value[key] === undefined || typeof value[key] === 'boolean')
+        && ['requiredScopes', 'missingScopes'].every((key) => Array.isArray(value[key]) && value[key].every((scope) => typeof scope === 'string'))
         && Array.isArray(value.integrations) && value.integrations.every((item) => item && typeof item.id === 'string' && typeof item.label === 'string'
           && typeof item.authorized === 'boolean' && ['scopes', 'missingScopes'].every((key) => Array.isArray(item[key]) && item[key].every((scope) => typeof scope === 'string')))
     }
@@ -77,7 +78,7 @@ window.__ModuleLoader__.load({
         void refresh()
         return () => { active = false; window.clearTimeout(timer) }
       }, [request, revision, busy])
-      const act = async (method, integrationId) => {
+      const act = async (method) => {
         if (acting.current || (status?.pending && method !== 'cancel')) return
         if (method === 'configure') {
           if (!draft.trim() || draft.length > 32768) { setFailure('Paste the downloaded Desktop OAuth client JSON (at most 32,768 characters).'); return }
@@ -93,7 +94,7 @@ window.__ModuleLoader__.load({
         const current = ++generation.current
         acting.current = true; setBusy(true); setFailure(undefined); setLink(undefined)
         try {
-          const value = await request(method, method === 'configure' ? { clientJson: draft } : method === 'connect' ? { integrationId } : {})
+          const value = await request(method, method === 'configure' ? { clientJson: draft } : {})
           if (current !== generation.current) return
           if (method === 'configure' || method === 'clear-config') setDraft('')
           if (method === 'connect') setLink(authorizationUrl(value?.authorizationUrl))
@@ -139,12 +140,11 @@ window.__ModuleLoader__.load({
       }
       const sandboxUnavailable = status?.useSandbox === true && status?.sandboxAvailable !== true
       const label = status === undefined ? 'Checking…' : status === null ? 'Unavailable' : status.pending ? 'Waiting for Google authorization' : status.connected ? 'Connected' : status.configured ? 'Not connected' : 'Not configured'
-      const button = (label, method, disabled = false, integrationId) => h('button', {
-        type: 'button', style: styles.button, disabled: busy || disabled || (status?.pending && method !== 'cancel'), onClick: () => { void act(method, integrationId) },
+      const button = (label, method, disabled = false) => h('button', {
+        type: 'button', style: styles.button, disabled: busy || disabled || (status?.pending && method !== 'cancel'), onClick: () => { void act(method) },
       }, label)
       const account = status?.account
       const accountLabel = typeof account?.email === 'string' && account.email ? account.email : typeof account?.id === 'string' ? account.id : 'Google account'
-      const pendingLabel = status?.integrations.find((item) => item.id === status.pendingIntegrationId)?.label ?? status?.pendingIntegrationId
       return h('details', { style: styles.card },
         h('summary', { style: { cursor: 'pointer' } }, h('span', { style: styles.title }, 'Google accounts'), h('p', { style: styles.hint }, 'Shared account and integration permissions.')),
         h('div', { style: styles.section, role: 'group', 'aria-labelledby': 'google-auth-card-title' },
@@ -163,14 +163,18 @@ window.__ModuleLoader__.load({
             placeholder: status?.configured ? 'Paste new JSON to replace the stored configuration' : 'Paste downloaded Desktop OAuth client JSON',
             style: { ...styles.button, width: '100%', boxSizing: 'border-box', cursor: 'text' }, onChange: (event) => setDraft(event.target.value) }),
           h('div', { style: styles.actions }, button('Save client configuration', 'configure', !status || !draft.trim()), status?.configured ? button('Remove client configuration', 'clear-config') : null),
+          status?.integrations.length ? h('section', { 'aria-label': 'Account permissions' },
+            h('h4', { style: styles.title }, 'Permissions for all enabled integrations'),
+            h('p', { style: styles.hint }, 'One Google login requests all required scopes below, plus identity access. Enabling an integration later may require additional consent. Existing granted scopes are retained.'),
+            h('ul', null, ...status.requiredScopes.map((scope) => h('li', { key: scope }, scope))),
+            status.requiredScopes.includes('https://www.googleapis.com/auth/spreadsheets') ? h('p', { style: styles.hint }, 'Warning: Google Sheets edit permission is account-wide. Google can authorize editing all your spreadsheets, not only files selected in DSH. DSH still requires separate session read/edit grants and approval for each write.') : null,
+            status.pending || (status.connected && !status.missingScopes.length) ? null : button(status.connected ? 'Grant additional permissions' : 'Connect Google account', 'connect', !status.configured || sandboxUnavailable)) : null,
           ...(status?.integrations ?? []).map((item) => h('section', { key: item.id, 'aria-label': item.label },
             h('h4', { style: styles.title }, item.label),
             h('p', { style: styles.hint }, 'Required scopes:'), h('ul', null, ...item.scopes.map((scope) => h('li', { key: scope }, scope))),
             item.authorized ? h('p', { style: styles.hint }, 'Granted / Ready') : h('div', null,
-              h('p', { style: styles.hint }, 'Missing permissions:'), h('ul', null, ...item.missingScopes.map((scope) => h('li', { key: scope }, scope))),
-              status.pending ? null : button(status.connected ? `Grant additional permissions for ${item.label}` : `Connect ${item.label}`, 'connect', !status.configured || sandboxUnavailable, item.id)))),
+              h('p', { style: styles.hint }, 'Missing permissions:'), h('ul', null, ...item.missingScopes.map((scope) => h('li', { key: scope }, scope)))))),
           status && !status.integrations.length ? h('p', { style: styles.hint }, 'Install and enable a Google integration first. No integrations are registered.') : null,
-          status?.pending ? h('p', { style: styles.hint }, 'Pending integration: ', typeof pendingLabel === 'string' ? pendingLabel : 'Google integration') : null,
           status?.pending && !link ? h('p', { style: styles.hint }, 'Complete authorization in the Google tab you already opened, or cancel and connect again to get a new link.') : null,
           link && status?.pending ? h('a', { ...external, href: link }, 'Continue with Google') : null,
           h('div', { style: styles.actions }, status?.pending ? button('Cancel', 'cancel') : null, status?.connected ? button('Disconnect', 'disconnect') : null,

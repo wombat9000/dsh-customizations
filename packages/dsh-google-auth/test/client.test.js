@@ -25,7 +25,7 @@ test('all requests use the shared same-origin POST contract', async () => {
   const calls = []
   const { api } = load(async (url, options) => { calls.push({ url, options }); return { ok: true, json: async () => ({ ok: true, value: {} }) } })
   for (const method of ['status', 'configure', 'clear-config', 'connect', 'cancel', 'disconnect']) {
-    const body = method === 'configure' ? { clientJson: 'fixture' } : method === 'connect' ? { integrationId: 'google-drive' } : {}
+    const body = method === 'configure' ? { clientJson: 'fixture' } : {}
     await api(method, body)
     const { url, options } = calls.at(-1)
     assert.equal(url, `/api/plugins/google-auth/${method}`)
