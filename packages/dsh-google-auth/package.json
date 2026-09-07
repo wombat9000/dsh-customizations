@@ -1,0 +1,26 @@
+{
+  "name": "@local/dsh-google-auth",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Shared Google OAuth and explicit integration permissions for DSH 0.1.2-rc.1",
+  "type": "module",
+  "main": "src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./client": "./client.js",
+    "./package.json": "./package.json"
+  },
+  "files": ["src", "client.js", "cordis.patch.yml", "README.md"],
+  "scripts": { "test": "node --test test/*.test.js" },
+  "engines": { "node": "^22.19.0 || >=24.0.0" },
+  "dsh": {
+    "bundle": { "patch": "./cordis.patch.yml" },
+    "client": {
+      "inject": ["@deepseek-ai/dsh-client-ui-settings-plugins"],
+      "platform": "web"
+    }
+  },
+  "dependencies": { "@deepseek-ai/schemastery": "3.18.2" },
+  "peerDependencies": { "react": "18.3.1" },
+  "license": "UNLICENSED"
+}

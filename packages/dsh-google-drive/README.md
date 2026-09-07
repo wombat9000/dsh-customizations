@@ -1,75 +1,49 @@
 # Google Drive
 
-This persistent DSH plugin adds a Google Drive connection card and a **Google Drive** agent preset. The preset retains Standard's coding tools and adds `google_drive_list_files` for read-only file metadata listing. This package is not a temporary dynamic Cordis plugin.
+`@local/dsh-google-drive` adds read-only Drive metadata listing and a **Google Drive** agent preset. Authentication belongs to the separate [Google auth provider](../dsh-google-auth/README.md); this package has no login implementation, credential store, client configuration, or browser Settings card.
 
 ## Scope and prerequisites
 
-- The plugin requests `https://www.googleapis.com/auth/drive.metadata.readonly` and exposes only read-only metadata operations. A shared existing Google OAuth grant can carry broader previously granted scopes; an access token is not guaranteed to be exclusively metadata-scoped. The plugin does not read file contents, modify Drive files, or provide Docs, Sheets, or Forms operations.
-- The plugin supports one Google account per DSH credential store. Sessions and profiles sharing that store share the account. Use one active DSH host to manage this connection; cross-process token refresh coordination is not implemented.
-- The OAuth callback listens on host loopback address `127.0.0.1`. Your browser must run on the same host as DSH; a remote browser or container loopback does not reach that listener automatically.
-- The package does not install or execute the `gws` CLI.
-- Keep OAuth client configuration, tokens, and DSH runtime state outside this repository.
+- Compose `@local/dsh-google-auth` on the host before Drive. The personal-web recipe includes both. Without `googleAuth`, the Drive host waits instead of creating another auth provider.
+- Enable the Google Drive API in the OAuth client's Google Cloud project.
+- Drive declares `https://www.googleapis.com/auth/drive.metadata.readonly`. Registration alone performs no OAuth or Google API request. Missing permissions require explicit consent in **Settings → Plugins → Google accounts**.
+- The only tool is `google_drive_list_files`. It lists non-trashed file metadata, defaults to ten files, supports bounded pagination/search, and never reads contents or modifies files.
+- Docs, Sheets, Forms, Gmail, GCP, and `gws` execution are not included. Authentication is ready for separate future integrations.
 
-## Configure the OAuth client
+## Install, connect, and select the preset
 
-Create a Google OAuth **Desktop app** client in a Google Cloud project with the Drive API enabled. Download its client JSON. This is OAuth client configuration, not a user credential or an authorized-user token file.
+Installation and profile application require explicit approval. Follow the repository's [setup procedure](../../README.md#apply-the-starter-profile). Keep OAuth configuration, tokens, and DSH runtime state outside Git.
 
-In **Settings → Plugins → Google Drive**, paste the downloaded Desktop JSON into the write-only configuration textarea, then choose **Save client configuration**. The plugin validates `installed.client_id` and the optional `installed.client_secret`, and stores only those normalized fields. It uses fixed Google endpoints rather than endpoints supplied in the JSON. The UI never returns the saved JSON or client secret.
+1. Before applying the profile, check for an existing preset ID named `google-drive`. Resolve collisions without modifying shipped presets.
+2. After approval, install/apply Google auth and Google Drive. If your profile has custom preset roots, preserve those roots: Cordis replaces the roster's complete configuration rather than merging individual fields.
+3. Restart the existing DSH profile and refresh its Web page.
+4. Open **Settings → Plugins → Google accounts**, save the downloaded Desktop OAuth JSON in the write-only field, and choose **Connect Google Drive**. Follow **Continue with Google** to grant access.
+5. Select **Google Drive** when creating a new session and confirm that it exposes `google_drive_list_files`.
+6. Ask the agent to list ten Drive files. The result contains names, IDs, types, safe Google links when available, and a next-page token when another page exists.
 
-Replacing or removing the configuration cancels any pending connection flow and clears the old connection. Clearing configuration deletes both the local client configuration and token record. Version 1 has no `clientJsonPath` or separate host-file configuration support. Do not put the JSON in a composition, model prompt, or Git.
+The preset copies Standard from pinned `@deepseek-ai/dsh-agent-presets` `0.1.2-rc.1` and appends only the Drive tool consumer. It preserves Standard configuration, plan-mode guidance, and upstream attribution. Installing it does not add tools to existing sessions or alter shipped Standard files.
 
-## Install and select the preset
+## Shared account behavior
 
-Installation and profile application require explicit approval. Follow the repository's [setup and apply procedure](../../README.md#apply-the-starter-profile); these instructions do not authorize either operation.
+Google accounts Settings shows the registered Drive integration and its missing permissions. Future integrations can request additional consent using the same Desktop client and connected account. Drive does not depend on Gmail or GCP and cannot silently request their permissions.
 
-1. Before applying the profile, check for an existing preset ID named `google-drive`. Resolve any collision without modifying shipped presets.
-2. After approval, install/apply the bundle and its preset roster configuration. If your profile has custom preset roots, preserve those roots: a patch replaces the roster's complete `config`, rather than merging individual fields.
-3. Restart the DSH profile, then refresh its existing Web page.
-4. Open **Settings → Plugins → Google Drive**, save the OAuth client configuration, and connect as described below.
-5. Select **Google Drive** when creating a new session. Confirm that the session exposes `google_drive_list_files`.
+One account is shared per credential store in this version. Disconnecting or replacing the shared client clears local access for all integrations and aborts in-flight Drive operations. The operation wrapper also rejects late previous-account results, even if a transport ignores cancellation. Switching Google accounts requires disconnecting first. Disconnect is local and does not revoke Google's grant.
 
-The bundled preset is a copy of Standard from pinned `@deepseek-ai/dsh-agent-presets` `0.1.2-rc.1`, with the Drive consumer appended. It preserves Standard's configuration and plan-mode guidance. Installation does not change shipped Standard files or add tools to existing sessions.
+The shared provider owns callback, storage, scope normalization, account binding, refresh, and lifecycle rules. See its [security and account limitations](../dsh-google-auth/README.md#remove-access), including the single-active-host limitation and the fact that a reused OAuth grant can contain broader preexisting scopes.
 
-## Connect or disconnect
+## Composition boundaries
 
-In **Settings → Plugins → Google Drive**, choose **Connect**, then complete Google's consent flow in your browser. The settings card reports connection status, not tokens. Treat connection status and listed metadata as sensitive account information.
+The Drive host injects `googleAuth`, registers the `google-drive` integration with its exact metadata scope, and publishes a `googleDrive` service containing only `listFiles(args)`. Every complete API operation runs through `googleAuth.withAccessToken('google-drive', operation)`. The shared auth signal cancels downstream access when the account lifecycle changes. Drive never exposes tokens.
 
-If you no longer want to complete an in-progress connection, use the card's cancel action. Once the credential store starts committing the grant, cancellation reports that sign-in is finishing; wait for completion, then disconnect if needed. To remove the saved local connection, use its disconnect action. Disconnect is **local only**: it removes the stored token record but keeps the client configuration. It does not revoke Google's grant. Optionally, revoke access manually in your Google account's third-party access settings.
-
-The settings control endpoints accept local, same-origin requests only. They are not a remote token API.
-
-## Host and agent boundaries
-
-The host provider injects `credentials`, `webServer`, and `settings`. It registers an empty settings namespace so DSH dispatches the card; neither the client JSON nor tokens enter the settings document. It owns OAuth, credential persistence, settings endpoints, and the shared `googleDrive` service:
-
-- `listFiles` lists Drive metadata for the connected account.
-- `getAccessToken` obtains an access token for trusted host-side consumers. It is host-only and is not exposed as a model tool or an HTTP endpoint.
-
-The agent preset appends this consumer row outside an isolate realm so it can resolve the host service:
+The agent preset contributes the model tool outside an isolate realm so it can resolve that host service:
 
 ```yaml
 - id: tool-google-drive
   name: '@local/dsh-google-drive/tools'
 ```
 
-That row contributes the per-agent `google_drive_list_files` tool. It does not create another account service.
-
-### Credential storage
-
-The plugin stores normalized client configuration under DSH credential provider `google-drive`, key `client`. Its structural shape is `{ kind: 'grant', payload: { version: 1, clientId, clientSecret? } }`, where `clientSecret?` denotes an optional field.
-
-The account token record uses the same provider, key `default`, with this structural shape:
-
-```text
-{ kind: 'grant', payload: { version: 1, clientId, tokens } }
-```
-
-These shapes describe field names, not sample credentials. The underlying DSH credential provider controls storage at rest; this package does not guarantee encryption. Tokens remain host-side and must not appear in status responses, tool results, logs, or documentation.
-
-### Future CLI integration
-
-A future trusted host-side `gws` integration can call `googleDrive.getAccessToken` and pass the result only in the child process's environment. It must never expose that token through a model tool or HTTP response. No such CLI installation or execution is included yet.
+The tool consumer registers no service. Neither host bundle registers model tools globally.
 
 ## Verification boundary
 
-The installation and connection steps above are checks to perform after an approved deployment. This documentation does not claim a live profile mount, browser connection, OAuth exchange, or Google Drive request has been verified.
+Tests use synthetic credentials and mock Google responses, real DSH service/preset fixtures, and browser component tests. No live profile deployment, real Google login, or real Drive request is implied. Perform the connection and listing steps after an approved deployment. The earlier pre-release Drive-owned auth configuration is not imported automatically; configure the shared Google accounts provider and reconnect if you tested that version.

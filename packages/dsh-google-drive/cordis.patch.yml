@@ -1,4 +1,5 @@
-# Shared OAuth state and browser settings routes belong to the host.
+# Metadata service consumes the separately composed @local/dsh-google-auth host.
+# Installing Drive alone grants no account access; googleAuth must be present.
 - insert:
     - id: local-google-drive
       name: '@local/dsh-google-drive'

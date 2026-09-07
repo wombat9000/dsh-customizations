@@ -55,6 +55,8 @@ async function recipePatches() {
   const names = recipe.bundles.map(bundle => bundle.name)
   assert.equal(names.filter(name => name === '@local/dsh-google-drive').length, 1)
   assert.equal(names.at(-1), '@local/dsh-google-drive')
+  assert.equal(names.filter(name => name === '@local/dsh-google-auth').length, 1)
+  assert.ok(names.indexOf('@local/dsh-google-auth') < names.indexOf('@local/dsh-google-drive'))
   const patches = []
   for (const bundle of recipe.bundles) {
     const manifestPath = bundle.source.startsWith('.')
@@ -73,7 +75,8 @@ test('published bundle discovers Google Drive; personal-web preserves all three 
   assert.equal(manifest.name, '@local/dsh-google-drive')
   assert.equal(manifest.exports['./tools'], './src/tools.js')
   assert.equal(manifest.exports['./package.json'], './package.json')
-  assert.deepEqual(manifest.dependencies, { '@deepseek-ai/schemastery': '3.18.2' })
+  assert.equal(manifest.dependencies, undefined)
+  assert.equal(manifest.exports['./client'], undefined)
   for (const combined of [false, true]) {
     const config = rosterConfig(f.baseUrl, combined ? await recipePatches() : [webPatch, join(f.packaged, 'cordis.patch.yml')])
     assert.equal(config.default, 'standard')
