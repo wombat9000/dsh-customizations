@@ -58,7 +58,7 @@ test('actual HTTP routes match client transport from pending through browse, gra
   const filtered = await plugin.api('browse', { ...request, parentId: 'folder', search: 'Budget' })
   assert.equal(filtered.files.length, 2)
   assert.equal(browseCalls.at(-1).parentId, 'folder'); assert.equal(browseCalls.at(-1).search, 'Budget')
-  assert.deepEqual(audit.map(([, item]) => item.action), ['requested'], 'local browse/search must not append session audit or transcript')
+  assert.deepEqual(audit, [], 'requests and local browse/search must not append custom session events')
   const granted = await plugin.api('grant', { ...request, selected: [{ id: 'folder', recursive: true }] })
   assert.equal(plugin.validStatus(granted), true)
   assert.equal(granted.state, 'granted')
@@ -72,6 +72,7 @@ test('actual HTTP routes match client transport from pending through browse, gra
   const revoked = await plugin.api('revoke', identity)
   assert.equal(plugin.validStatus(revoked), true); assert.deepEqual(revoked.grants, [])
   assert.equal((await post('browse', { ...identity, requestId: managed.requestId })).status, 409)
+  assert.deepEqual(audit, [], 'grant, manage and revoke must not append custom session events')
 })
 
 test('HTTP boundary rejects cross-origin and malformed requests without leaking provider details', async t => {

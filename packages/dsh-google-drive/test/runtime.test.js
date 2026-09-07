@@ -7,7 +7,7 @@ const deferred = () => { let resolve; const promise = new Promise(done => { reso
 const file = id => ({ id, name: id, mimeType: 'text/plain', parents: [], trashed: false })
 function fixture(t) {
   const events = []
-  const agent = { session: { id: 'session', append: (type, value) => events.push({ type, ...value }) } }
+  const agent = { session: { id: 'session', append() { assert.fail('Drive must not append custom session events') } } }
   const agentsById = new Map([[agent.session.id, agent]])
   let roots = [agent]
   const agents = { get: id => agentsById.get(id), roots: () => roots }
@@ -25,6 +25,11 @@ function fixture(t) {
     readText: async () => ({ text: 'secret', mimeType: 'text/plain' }),
   }
   const runtime = new DriveAccessRuntime({ client, googleAuth, agents, approval: { overrideOf: () => policy }, onChange: () => {} })
+  const audit = runtime.audit.bind(runtime)
+  runtime.audit = (record, action, resources) => {
+    audit(record, action, resources)
+    events.push(record.audit.at(-1))
+  }
   t.after(() => runtime.dispose())
   let serial = 0
   async function request(signal) {
@@ -64,6 +69,20 @@ test('runtime pending picker is private; grant audit precedes returned permissio
   assert.equal(events.at(-1).action, 'granted')
   assert.deepEqual(runtime.resources(agent).map(value => value.id), ['notes'])
   await assert.rejects(runtime.grant({ ...input, selected: [{ id: 'notes', recursive: false }] }), /active/)
+})
+
+test('transition audit stays bounded in memory and expires with its owner', async t => {
+  const { runtime, agent, request } = fixture(t)
+  const { input, done } = await request()
+  runtime.deny(input)
+  await done
+  const record = runtime.records.get(runtime.key(agent, input.callId))
+  for (let i = 0; i < 30; i++) runtime.audit(record, 'revoked')
+  assert.equal(record.audit.length, 20)
+  assert.deepEqual(Object.keys(record.audit[0]).sort(), ['action', 'callId'])
+  runtime.release(agent)
+  assert.equal(runtime.records.size, 0)
+  assert.deepEqual(runtime.resources(agent), [])
 })
 
 test('runtime rejects copied agent identities, child sessions and replaced root', async t => {
@@ -153,7 +172,11 @@ test('reconnect during status rejects stale request rather than creating a picke
 test('runtime grant audit failure cancels result and removes access', async t => {
   const { runtime, agent, request } = fixture(t)
   const { input, done } = await request()
-  agent.session.append = (_type, value) => { if (value.action === 'granted') throw new Error('audit unavailable') }
+  const audit = runtime.audit.bind(runtime)
+  runtime.audit = (record, action, resources) => {
+    if (action === 'granted') throw new Error('audit unavailable')
+    audit(record, action, resources)
+  }
   await runtime.grant({ ...input, selected: [{ id: 'notes', recursive: false }] })
   assert.equal((await done).state, 'cancelled')
   assert.deepEqual(runtime.resources(agent), [])
@@ -179,17 +202,10 @@ test('runtime revoke cancels ignored-abort reads and managed pending requests', 
   assert.equal(runtime.status(input).state, 'cancelled')
 })
 
-test('public service gates reads and observer exposure until grant audit commits', async t => {
-  const events = []
+test('public service gates reads and observer exposure until grant transition commits', async t => {
   let service
   const blocked = []
-  const agent = { session: { id: 'service-session', append: (_type, value) => {
-    if (value.action === 'granted') {
-      assert.equal(service.hasAccess(agent), false)
-      blocked.push(assert.rejects(service.readText(agent, { fileId: 'notes' }), /committed/))
-    }
-    events.push(value.action)
-  } } }
+  const agent = { session: { id: 'service-session', append() { assert.fail('Drive must not append custom session events') } } }
   const googleAuth = {
     withAccessToken: async (_id, operation) => operation('synthetic-token', new AbortController().signal),
     getAccessGeneration: () => 1,
@@ -205,11 +221,18 @@ test('public service gates reads and observer exposure until grant audit commits
       return new URL(url).searchParams.get('alt') === 'media' ? new Response('safe text') : Response.json(file('notes'))
     },
   })
-  t.after(() => service.dispose())
-  service.observe(agent, () => { if (service.hasAccess(agent)) assert.ok(events.includes('granted')) })
+  t.after(() => { observing = false; service.dispose() })
+  let observing = false
+  service.observe(agent, () => {
+    if (!observing) return
+    const status = service.browser('status', { sessionId: agent.session.id, callId: 'call' })
+    if (service.hasAccess(agent)) assert.equal(status.state, 'granted')
+    else if (status.grants.length) blocked.push(assert.rejects(service.readText(agent, { fileId: 'notes' }), /committed/))
+  })
   const done = service.request(agent, { callId: 'call', reason: 'Read notes' })
   await Promise.resolve(); await Promise.resolve(); await Promise.resolve()
   const input = { sessionId: agent.session.id, callId: 'call', requestId: service.browser('status', { sessionId: agent.session.id, callId: 'call' }).requestId }
+  observing = true
   const granted = service.browser('grant', { ...input, selected: [{ id: 'notes', recursive: false }] })
   await entered.promise
   await assert.rejects(service.listFiles(agent, {}), /committed/)
