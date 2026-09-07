@@ -1,4 +1,5 @@
 import { createServer } from 'node:http';
+import { httpFailure } from './diagnostics.js';
 import { randomBytes, createHash, timingSafeEqual } from 'node:crypto';
 
 export const IDENTITY_SCOPES = Object.freeze(['openid', 'https://www.googleapis.com/auth/userinfo.email']);
@@ -9,6 +10,8 @@ const TOKEN = 'https://oauth2.googleapis.com/token';
 const REVOKE = 'https://oauth2.googleapis.com/revoke';
 const USERINFO = 'https://openidconnect.googleapis.com/v1/userinfo';
 const fail = (message) => new Error(message);
+// Only locally constructed request diagnostics may cross the consent boundary.
+const requestDiagnostics = new WeakMap();
 const text = (value, max) => typeof value === 'string' && value.length > 0 && value.length <= max;
 const same = (a, b) => typeof a === 'string' && Buffer.byteLength(a) === Buffer.byteLength(b)
   && timingSafeEqual(Buffer.from(a), Buffer.from(b));
@@ -110,13 +113,15 @@ export class GoogleOAuthClient {
     });
     const timer = setTimeout(abort, this.requestTimeoutMs);
     let reader;
+    let failure = 'Google network request failed. Try again.';
     try {
       const operation = (async () => {
         if (controller.signal.aborted) throw fail('Cancelled.');
         const response = await this.fetch(url, { ...options, redirect: 'error', signal: controller.signal });
-        if (!response.ok || controller.signal.aborted) {
+        failure = httpFailure(response.status);
+        if (controller.signal.aborted) {
           void response.body?.cancel().catch(() => {});
-          throw fail('Google request failed.');
+          throw fail('Cancelled.');
         }
         reader = response.body?.getReader();
         const chunks = [];
@@ -127,18 +132,25 @@ export class GoogleOAuthClient {
             if (controller.signal.aborted) throw fail('Cancelled.');
             if (done) break;
             length += value.byteLength;
-            if (length > 1_048_576) throw fail('Response too large.');
+            if (length > (response.ok ? 1_048_576 : 16_384)) throw fail('Response too large.');
             chunks.push(Buffer.from(value));
           }
         }
-        if (empty) return undefined;
+        if (empty && response.ok) return undefined;
         const result = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+        if (!response.ok) {
+          failure = httpFailure(response.status, result);
+          throw fail('Google request failed.');
+        }
         if (!result || typeof result !== 'object' || Array.isArray(result)) throw fail('Invalid response.');
         return result;
       })();
       return await Promise.race([operation, cancelled]);
     } catch {
-      throw fail('Google request failed. Try again or reconnect.');
+      const message = controller.signal.aborted ? 'Google request failed. Try again or reconnect.' : failure;
+      const error = fail(message);
+      requestDiagnostics.set(error, message);
+      throw error;
     } finally {
       clearTimeout(timer);
       controller.abort();
@@ -316,8 +328,8 @@ export class GoogleOAuthClient {
           record.account = { id: identity.sub,
             ...(identity.email_verified === true && text(identity.email, 320) ? { email: identity.email } : {}) };
           await this.saveCredentials(record, epoch, flow);
-        } catch {
-          if (this.flow === flow) this.error = safeError;
+        } catch (error) {
+          if (this.flow === flow) this.error = requestDiagnostics.get(error) ?? safeError;
         } finally {
           if (this.flow === flow) { this.flow = null; this.closeFlow(flow); }
         }

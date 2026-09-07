@@ -1,3 +1,5 @@
+import { httpFailure, authFailure } from './diagnostics.js'
+
 export const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.metadata.readonly'
 const FILES = 'https://www.googleapis.com/drive/v3/files'
 const FIELDS = 'nextPageToken,files(id,name,mimeType,size,modifiedTime,webViewLink,parents,trashed)'
@@ -60,15 +62,14 @@ export class GoogleDriveClient {
         ...(pageToken ? { pageToken } : {}), q: query ? `trashed = false and (${query})` : 'trashed = false' }).toString()
       timer = setTimeout(abort, this.#timeout)
       let result
+      let failure = 'Google network request failed. Try again.'
+      let reader
       try {
         const response = await wait(this.#fetch(url.toString(), {
           headers: { Authorization: `Bearer ${token}` }, redirect: 'error', signal: controller.signal,
         }))
-        if (!response.ok) {
-          void response.body?.cancel().catch(() => {})
-          throw new Error()
-        }
-        const reader = response.body?.getReader()
+        failure = httpFailure(response.status)
+        reader = response.body?.getReader()
         const chunks = []
         let length = 0
         try {
@@ -76,7 +77,7 @@ export class GoogleDriveClient {
             const { done, value } = await wait(reader.read())
             if (done) break
             length += value.byteLength
-            if (length > 1_048_576) throw new Error()
+            if (length > (response.ok ? 1_048_576 : 16_384)) throw new Error()
             chunks.push(Buffer.from(value))
           }
         } catch (error) {
@@ -85,7 +86,12 @@ export class GoogleDriveClient {
         }
         if (controller.signal.aborted) throw cancelled()
         result = JSON.parse(Buffer.concat(chunks).toString('utf8'))
-      } catch { throw new Error('Google request failed. Try again or reconnect.') }
+        if (!response.ok) {
+          failure = httpFailure(response.status, result)
+          throw new Error()
+        }
+      } catch { throw new Error(failure) }
+      finally { void reader?.cancel().catch(() => {}) }
       if (!result || !Array.isArray(result.files) || result.files.length > pageSize
         || (result.nextPageToken !== undefined && !text(result.nextPageToken, 4096))) throw new Error('Invalid Google Drive response.')
       const files = result.files.map(file => {
@@ -116,6 +122,8 @@ export class GoogleDriveClient {
       // Only locally constructed metadata errors are safe to return. Never
       // reflect arbitrary authentication-provider errors or token values.
       if (error === operationError) throw error
+      const diagnostic = authFailure(error?.message)
+      if (diagnostic) throw new Error(diagnostic)
       throw new Error('Connect Google Drive in Settings → Plugins → Google accounts, then retry.')
     } finally {
       clearTimeout(timer)

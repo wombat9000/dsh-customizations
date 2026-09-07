@@ -465,12 +465,37 @@ test('reconnect aborts old refresh; token consumers cannot bypass pending consen
   assert.equal(writes.length, 0);
 });
 
+test('consent status preserves only locally constructed request diagnostics', async (t) => {
+  for (const stage of ['token', 'identity']) {
+    const { client, writes } = fixture(t, { fetch: (url) => {
+      if (stage === 'identity' && url.includes('/token')) return json(token());
+      return json({ error: 'invalid_grant', error_description: 'private-token https://private.invalid/' }, 400);
+    } });
+    await login(client);
+    assert.equal((await client.status()).error, 'Google request failed (HTTP 400): invalid_grant. Try again or reconnect.');
+    assert.equal(writes.length, 0);
+  }
+  const { client } = fixture(t, { credentials: {
+    async get() { return null; },
+    async set() { throw new Error('Google request failed (HTTP 400): invalid_grant. Try again or reconnect.'); },
+    async delete() {},
+  } });
+  await login(client);
+  assert.equal((await client.status()).error, 'Google sign-in failed. Try connecting again.');
+});
+
 test('transport fixes endpoints, bounds size and time including abort-ignoring fetch and bodies', async (t) => {
   for (const fetchImpl of [() => json({ secret: 'private' }, 400), () => new Response('x'.repeat(1_048_577)),
     () => new Response('private invalid JSON'), () => { throw new Error('private URL token'); },
     () => new Promise(() => {}), () => new Response(new ReadableStream({ start() {} }))]) {
     const { client } = fixture(t, { record: { ...fresh(), expiresAt: 0 }, requestTimeoutMs: 20, fetch: fetchImpl });
-    await assert.rejects(client.getAccessToken(required), { message: 'Google request failed. Try again or reconnect.' });
+    await assert.rejects(client.getAccessToken(required), error => {
+      assert.ok(['Google request failed. Try again or reconnect.',
+        'Google request failed (HTTP 400). Try again or reconnect.',
+        'Google request failed (HTTP 200). Try again or reconnect.',
+        'Google network request failed. Try again.'].includes(error.message));
+      return true;
+    });
   }
   const { client, calls } = fixture(t);
   for (const url of ['https://attacker.invalid/token', 'https://oauth2.googleapis.com/token?x=1',
