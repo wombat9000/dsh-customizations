@@ -35,7 +35,7 @@ Installing the bundle does not change existing sessions, the default preset, or 
 - Selected folders include their current descendants and future additions, recursively. A descendant moved outside all selected folders loses access on subsequent checks unless it is also explicitly selected.
 - Shortcuts do not grant access to targets and are excluded from the picker and listings.
 - At most 100 files/folders can be selected. Ancestry walks are bounded to 100 parents; exceeding that limit fails closed.
-- Picker browsing and searches do not enter model output or the permission audit. The model receives only the confirmed resource summary and later authorized tool results.
+- Picker browsing and searches do not enter model output or local transition diagnostics. The model receives only the confirmed resource summary and later authorized tool results.
 - **Manage access** opens a fresh request with the current selection. Confirmation replaces the selection; deselected resources lose access. **Revoke all access** removes the entire session grant and cancels pending requests.
 - Pending requests expire after ten minutes. Cancelling the requesting tool cancels its request. Approval policy `never` prevents new interactive requests and confirmations.
 - Grants belong to the exact live top-level agent/session and Google account lifetime. Other sessions and subagents do not inherit them.
@@ -90,8 +90,10 @@ The Client uses the keyed `tool.call.toolview` slot and an additive `shell.overl
 
 Same-origin, loopback JSON POST endpoints under `/api/plugins/google-drive/` provide `status`, `browse`, `grant`, `deny`, `manage`, and `revoke`. They require the `X-DSH-Google-Drive: 1` header, exact session/tool-call identity, and—for browsing and confirmation—a pending opaque request ID. The Host rejects stale, duplicate, cancelled, cross-session, and invalid selections. There is no token endpoint. Generic approval cannot bypass selection.
 
-Session events named `google-drive/access` record request outcomes and confirmed resource IDs/recursion flags, not picker browsing or file contents. They are audit records, not persisted grants or restart recovery. Grant publication waits for the audit append; if it fails, access is removed. The newest 20 settled request cards per live session retain management state; older cards require a fresh tool request.
+Permission transition diagnostics stay in memory on each request record: at most 20 entries containing outcomes and confirmed resource IDs/recursion flags, never picker browsing or file contents. They are not a durable audit trail and never restore grants. Grant publication waits for the local transition to finish; if it fails, access is removed. The newest 20 settled request cards per live session retain management state; older cards require a fresh tool request.
+
+The plugin does not append custom `google-drive/access` events to session history. DSH `0.1.2-rc.1` rejects unknown events without an `ignorable` envelope marker, but its public append API cannot write that marker. Earlier versions wrote incompatible records; this fix prevents new ones and does not repair or delete existing histories. After an approved plugin update and Host restart, use a new session if an older history already fails to load.
 
 ## Verification boundary
 
-Tests use synthetic Google responses, real dormant DSH preset/scoped-registry fixtures, actual loopback HTTP integration, and Chromium component interactions. No credentials or real Drive contents enter tests. These checks do not imply live profile deployment, real Google consent, or a real Drive read. After an approved deployment, verify selection, reading, cross-session denial, and revocation in the existing GUI.
+Tests use synthetic Google responses, real dormant DSH preset/scoped-registry fixtures, actual compressed JSONL session flush/reopen checks, loopback HTTP integration, and Chromium component interactions. No credentials or real Drive contents enter tests. These checks do not imply live profile deployment, real Google consent, or a real Drive read. After an approved deployment, verify selection, reading, cross-session denial, and revocation in the existing GUI.

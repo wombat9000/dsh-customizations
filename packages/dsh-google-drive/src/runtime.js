@@ -56,10 +56,14 @@ export class DriveAccessRuntime {
     }
   }
   audit(record, action, resources) {
-    record.agent.session.append('google-drive/access', {
+    // DSH 0.1.2-rc.1 refuses unknown persisted event types, but Session.append
+    // cannot emit the required ignorable envelope marker. Keep informational
+    // transition records local; grants are never reconstructed from an audit.
+    const entries = record.audit ?? []
+    record.audit = [...entries.slice(-19), {
       action, callId: record.callId,
       ...(resources ? { resources: resources.map(item => ({ id: item.id, recursive: item.recursive === true })) } : {}),
-    })
+    }]
   }
   async request(agent, { callId, reason, signal }) {
     this.requirePrompt(agent)
