@@ -25,6 +25,8 @@ Installation and profile application require explicit approval. Follow the repos
 7. Open the picker, select resources, review the selection, and choose **Allow read access**. Opening or cancelling the modal grants nothing. **Cancel** closes the picker without denying the pending request; **Deny** settles it without access.
 8. Confirm that the card reports the grant. The agent loads `google-drive-read` before using the newly exposed tools.
 
+The picker starts at **My Drive**. Click a folder name to browse it; use its checkbox to select recursive access. Search looks across Drive, not only the current folder. **Review selection** expands the selected items for inspection or removal. The selection count and confirmation buttons stay visible while files scroll. See the [design screenshots](docs/screenshots/README.md) for dark, light, and narrow layouts.
+
 Installing the bundle does not change existing sessions, the default preset, or shipped Standard files. Other authored presets can opt in by adding the consumer row shown below. The stock Standard preset remains unchanged.
 
 ## Selection and lifetime
