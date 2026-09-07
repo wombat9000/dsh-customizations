@@ -1,4 +1,4 @@
-# Metadata service consumes the separately composed @local/dsh-google-auth host.
+# Session permission service consumes the separately composed Google auth host.
 # Installing Drive alone grants no account access; googleAuth must be present.
 - insert:
     - id: local-google-drive

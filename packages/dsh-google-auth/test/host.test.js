@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { GoogleDriveService } from '../../dsh-google-drive/src/index.js'
+import { GoogleDriveClient } from '../../dsh-google-drive/src/google.js'
 import { GoogleAuthService, CLIENT_KEY, CREDENTIAL_KEY, credentialAdapter, parseClientJson } from '../src/index.js'
 
 const scope = 'https://www.googleapis.com/auth/drive.metadata.readonly'
@@ -32,6 +32,23 @@ function fixture(overrides = {}) {
 }
 const register = (service, id = 'drive', scopes = [scope]) => service.registerIntegration({ id, label: id, scopes })
 
+test('non-secret access generation invalidates observers on reconnect, reset and disposal', async () => {
+  const f = fixture()
+  register(f.service, 'drive')
+  const seen = []
+  const removeThrowing = f.service.onAccessChange(() => { throw new Error('observer failure') })
+  const remove = f.service.onAccessChange(() => seen.push(f.service.getAccessGeneration()))
+  assert.equal(f.service.getAccessGeneration(), 0)
+  await f.service.begin('drive')
+  await f.service.disconnect()
+  assert.deepEqual(seen, [1, 2])
+  remove(); removeThrowing()
+  f.service.dispose()
+  assert.equal(f.service.getAccessGeneration(), 3)
+  assert.deepEqual(seen, [1, 2])
+  assert.throws(() => f.service.onAccessChange(() => {}), /unavailable/)
+})
+
 test('registry canonicalizes email aliases for missing permission comparisons and rejects sparse scopes', async () => {
   const email = 'https://www.googleapis.com/auth/userinfo.email'
   const f = fixture({ status: { grantedScopes: [email] } })
@@ -47,7 +64,7 @@ test('actual Drive fetch aborts on shared auth disconnect and cannot return old 
   const f = fixture(), started = deferred(), release = deferred()
   register(f.service, 'google-drive')
   let fetchSignal
-  const drive = new GoogleDriveService({ googleAuth: f.service, fetch: async (_url, init) => {
+  const drive = new GoogleDriveClient({ withAccessToken: operation => f.service.withAccessToken('google-drive', operation), fetch: async (_url, init) => {
     fetchSignal = init.signal
     assert.equal(init.headers.Authorization, 'Bearer FIXTURE-ACCESS')
     started.resolve()

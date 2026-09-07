@@ -4,6 +4,63 @@ import * as metadata from '../src/google.js'
 const { GoogleDriveClient } = metadata
 const deferred = () => { let resolve; const promise = new Promise(done => { resolve = done }); return { resolve, promise } }
 const file = { id: 'id', name: 'Notes', mimeType: 'text/plain' }
+
+test('safe folder and literal picker search reject raw queries and path injection', async t => {
+  const { client, calls, tokens } = fixture(t)
+  await client.pickerList({ parentId: 'root', search: "a' or name contains '\\" })
+  assert.equal(new URL(calls[0].url).searchParams.get('q'), "trashed = false and ('root' in parents and name contains 'a\\' or name contains \\'\\\\')")
+  for (const fileId of ['../id', 'https://evil.invalid', "id' or true", '', 'a'.repeat(257)]) await assert.rejects(client.getMetadata({ fileId }), /Invalid/)
+  await assert.rejects(client.listFolder({ folderId: 'root', query: 'true' }), /Invalid/)
+  await assert.rejects(client.pickerList({ query: 'true' }), /Invalid/)
+  assert.equal(tokens.length, 1)
+})
+
+test('bounded metadata requires exact ID, nontrash and parents', async t => {
+  for (const value of [{ ...file, parents: [], trashed: false }, { ...file }, { ...file, id: 'other', parents: [], trashed: false }, { ...file, parents: [], trashed: true }, { ...file, parents: [42], trashed: false }]) {
+    const { client, calls } = fixture(t, { fetch: () => Response.json(value) })
+    if (value.id === 'id' && value.trashed === false && value.parents?.length === 0) assert.deepEqual(await client.getMetadata({ fileId: 'id' }), value)
+    else await assert.rejects(client.getMetadata({ fileId: 'id' }), /Invalid Google Drive metadata/)
+    assert.equal(new URL(calls[0].url).pathname, '/drive/v3/files/id')
+  }
+})
+
+test('parentless files normalize to an empty ancestry without accepting malformed parents', async t => {
+  const { client } = fixture(t, { fetch: () => Response.json({ ...file, trashed: false }) })
+  assert.deepEqual((await client.getMetadata({ fileId: 'id' })).parents, [])
+  for (const parents of [null, 'folder', ['../folder'], [42]]) {
+    const f = fixture(t, { fetch: () => Response.json({ ...file, trashed: false, parents }) })
+    await assert.rejects(f.client.getMetadata({ fileId: 'id' }), /Invalid Google Drive metadata/)
+  }
+})
+
+test('read-only text download and Docs export use fixed bounded endpoints', async t => {
+  for (const mimeType of ['text/plain', 'application/vnd.google-apps.document']) {
+    let count = 0
+    const { client, calls } = fixture(t, { fetch: () => ++count === 1
+      ? Response.json({ ...file, mimeType, parents: [], trashed: false }) : new Response('hello') })
+    const result = await client.readText({ fileId: 'id', maxBytes: 5 })
+    assert.equal(result.text, 'hello')
+    assert.equal(result.mimeType, 'text/plain')
+    const url = new URL(calls[1].url)
+    assert.equal(url.origin, 'https://www.googleapis.com')
+    assert.equal(url.pathname, mimeType === 'text/plain' ? '/drive/v3/files/id' : '/drive/v3/files/id/export')
+    assert.equal(url.searchParams.get(mimeType === 'text/plain' ? 'alt' : 'mimeType'), mimeType === 'text/plain' ? 'media' : 'text/plain')
+    assert.equal(calls[1].init.redirect, 'error')
+  }
+})
+
+test('unsupported content MIME fails closed and oversized or malformed text fails', async t => {
+  for (const mimeType of ['application/pdf', 'application/vnd.google-apps.shortcut', 'application/vnd.google-apps.folder', 'application/vnd.google-apps.spreadsheet', 'image/png', 'text/html']) {
+    const { client, calls } = fixture(t, { fetch: () => Response.json({ ...file, mimeType, parents: [], trashed: false }) })
+    await assert.rejects(client.readText({ fileId: 'id' }), /Unsupported/)
+    assert.equal(calls.length, 1)
+  }
+  for (const body of ['123456', new Uint8Array([0xff])]) {
+    let count = 0
+    const { client } = fixture(t, { fetch: () => ++count === 1 ? Response.json({ ...file, parents: [], trashed: false }) : new Response(body) })
+    await assert.rejects(client.readText({ fileId: 'id', maxBytes: 5 }), /Google request failed/)
+  }
+})
 function fixture(t, options = {}) {
   const calls = []
   const tokens = []
@@ -19,9 +76,10 @@ function fixture(t, options = {}) {
   return { client, calls, tokens }
 }
 
-test('metadata module exports no OAuth or configuration API', () => {
+test('Drive module exports no OAuth or configuration API', () => {
   assert.deepEqual(Object.keys(metadata).sort(), ['DRIVE_SCOPE', 'GoogleDriveClient'])
-  assert.deepEqual(Object.getOwnPropertyNames(GoogleDriveClient.prototype).sort(), ['constructor', 'dispose', 'listFiles'])
+  assert.deepEqual(Object.getOwnPropertyNames(GoogleDriveClient.prototype).sort(), ['constructor', 'dispose', 'getMetadata', 'listFiles', 'listFolder', 'pickerList', 'readText'])
+  assert.equal(metadata.DRIVE_SCOPE, 'https://www.googleapis.com/auth/drive.readonly')
 })
 
 test('fixed endpoint, fields, default ten and mandatory nontrash filter', async t => {
@@ -34,7 +92,7 @@ test('fixed endpoint, fields, default ten and mandatory nontrash filter', async 
   assert.equal(url.searchParams.get('fields'), 'nextPageToken,files(id,name,mimeType,size,modifiedTime,webViewLink,parents,trashed)')
   assert.equal(calls[0].init.headers.Authorization, 'Bearer access-private')
   assert.equal(calls[0].init.redirect, 'error')
-  await client.listFiles({ pageSize: 1, pageToken: 'a&key=b', query: "name contains 'Notes'" })
+  await client.listFiles({ pageSize: 1, pageToken: 'a&key=b', search: 'Notes' })
   const next = new URL(calls[1].url)
   assert.equal(next.searchParams.get('pageToken'), 'a&key=b')
   assert.equal(next.searchParams.get('q'), "trashed = false and (name contains 'Notes')")

@@ -87,6 +87,8 @@ export class GoogleAuthService {
     this.integrations = new Map()
     this.pendingIntegrationId = undefined
     this.accessOperations = new Set()
+    this.accessGeneration = 0
+    this.accessListeners = new Set()
   }
 
   syncCallbackMode() {
@@ -124,7 +126,21 @@ export class GoogleAuthService {
     })
   }
 
+  // Host-only, non-secret account lifetime. Reconnecting also invalidates local
+  // resource grants, even when Google ultimately returns the same account.
+  getAccessGeneration() { return this.accessGeneration }
+
+  onAccessChange(listener) {
+    if (this.closed || typeof listener !== 'function') throw new Error('Google access observer is unavailable.')
+    this.accessListeners.add(listener)
+    return () => this.accessListeners.delete(listener)
+  }
+
   invalidateAccess(integrationId) {
+    this.accessGeneration++
+    for (const listener of this.accessListeners) {
+      try { listener() } catch { /* An observer cannot prevent revocation. */ }
+    }
     for (const operation of this.accessOperations) {
       if (integrationId === undefined || operation.integration.id === integrationId) operation.controller.abort()
     }
@@ -336,6 +352,7 @@ export class GoogleAuthService {
     this.generation++
     const cleanup = this.client?.dispose()
     this.integrations.clear()
+    this.accessListeners.clear()
     return cleanup
   }
 }

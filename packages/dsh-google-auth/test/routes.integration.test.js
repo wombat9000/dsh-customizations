@@ -15,7 +15,7 @@ const cli = createRequire(require.resolve('@deepseek-ai/dsh/package.json'))
 const installed = name => import(pathToFileURL(cli.resolve(name)).href)
 const { Context } = await installed('@deepseek-ai/cordis')
 const { default: WebServer } = await installed('@deepseek-ai/dsh-host-webserver')
-const scope = 'https://www.googleapis.com/auth/drive.metadata.readonly'
+const scope = 'https://www.googleapis.com/auth/drive.readonly'
 const actions = ['status', 'connect', 'cancel', 'disconnect', 'configure', 'clear-config', 'callback-mode']
 const clientJson = JSON.stringify({ installed: { client_id: 'fixture.apps.googleusercontent.com', client_secret: 'FIXTURE-ONLY' } })
 
@@ -110,6 +110,8 @@ test('real Cordis SettingsFile/WebServer lifecycle serves Google namespace; Driv
   await settingsFiber.await()
   const records = new Map(), reads = []
   await ctx.plugin({ name: 'test-google-credentials', apply(ctx) {
+    ctx.provide('agents', { get() {}, roots() { return [] } })
+    ctx.provide('approval', { overrideOf() { return 'ask' } })
     ctx.provide('credentials', {
       async readRecord(key) { reads.push(key); return records.get(key) },
       async modifyRecord(key, fn) { const next = await fn(records.get(key)); if (next) records.set(key, next); return records.get(key) },
@@ -126,14 +128,15 @@ test('real Cordis SettingsFile/WebServer lifecycle serves Google namespace; Driv
   await driveFiber.await()
   assert.equal(reads.length, 0, 'Drive registration must not read credentials')
   assert.equal(ctx.get('settings').describe().some(item => item.ns === 'google-drive'), false)
-  assert.deepEqual(Object.keys(ctx.get('googleDrive')), ['listFiles'])
+  assert.equal(typeof ctx.get('googleDrive').request, 'function')
+  assert.equal(typeof ctx.get('googleDrive').readText, 'function')
   const auth = ctx.get('googleAuth')
   assert.equal(auth.integration('google-drive').scopes[0], scope)
   // Exercise the actual injected Drive service without network or Google login.
   const ids = []
   auth.getAccessToken = async (...args) => { ids.push(args); throw Error('fixture authentication unavailable') }
   await assert.rejects(ctx.get('googleDrive').listFiles())
-  assert.deepEqual(ids, [['google-drive']])
+  assert.deepEqual(ids, [], 'unscoped calls fail before authentication')
   const initial = await (await post('status')).json()
   assert.equal(initial.value.configured, false)
   assert.equal(initial.value.useSandbox, false)
@@ -154,7 +157,8 @@ test('real Cordis SettingsFile/WebServer lifecycle serves Google namespace; Driv
   assert.equal((await post('clear-config', {}, { Origin: 'https://attacker.invalid' })).status, 403)
   assert.equal(records.size, 1)
   for (const action of ['getAccessToken', 'token', 'refresh']) assert.equal((await post(action)).status, 404)
-  assert.equal((await fetch(`${base}/api/plugins/google-drive/status`)).status, 404)
+  assert.equal((await fetch(`${base}/api/plugins/google-drive/status`)).status, 403)
+  assert.equal((await fetch(`${base}/api/plugins/google-drive/token`)).status, 404)
   await driveFiber.dispose()
   assert.equal(auth.integrations.size, 0)
   await first.dispose()
