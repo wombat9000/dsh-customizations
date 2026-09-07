@@ -8,6 +8,7 @@ const FIELDS = {
   'edit-browse': ['requestId', 'parentId', 'search', 'pageToken'],
   'edit-grant': ['requestId', 'selected'], 'edit-deny': ['requestId'],
   'preview-status': [], 'preview-apply': ['requestId'], 'preview-deny': ['requestId'],
+  'session-status': [], 'session-set': ['ownerId', 'revision', 'enabled'],
 }
 function reply(res, code, value) {
   res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store',
@@ -31,6 +32,18 @@ async function body(req, action) {
     chunks.push(chunk)
   }
   const value = JSON.parse(Buffer.concat(chunks).toString('utf8'))
+  if (action === 'session-status' || action === 'session-set') {
+    const keys = ['sessionId', ...FIELDS[action]]
+    const identity = field => typeof field === 'string' && field.length > 0 && field.length <= 200
+    if (!value || typeof value !== 'object' || Array.isArray(value)
+      || Object.keys(value).length !== keys.length || Object.keys(value).some(key => !keys.includes(key))
+      || !identity(value.sessionId)
+      || (action === 'session-set' && (!identity(value.ownerId) || !Number.isSafeInteger(value.revision)
+        || value.revision < 0 || typeof value.enabled !== 'boolean'))) {
+      throw new Error('Invalid Drive session request.')
+    }
+    return value
+  }
   const keys = ['sessionId', 'callId', ...FIELDS[action]]
   if (!value || typeof value !== 'object' || Array.isArray(value)
     || Object.keys(value).some(key => !keys.includes(key))

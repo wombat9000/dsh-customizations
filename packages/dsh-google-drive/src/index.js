@@ -3,10 +3,11 @@ import { DriveAccessRuntime } from './runtime.js'
 import { registerRoutes } from './routes.js'
 import { GoogleSheetsClient, SHEETS_SCOPE } from './sheets.js'
 import { SheetsRuntime } from './sheets-runtime.js'
+import { SessionDriveTools } from './session-tools.js'
 
 const ACCESS_ACTIONS = ['status', 'browse', 'grant', 'deny', 'manage', 'revoke']
 const PREVIEW_ACTIONS = { 'preview-status': 'status', 'preview-apply': 'approve', 'preview-deny': 'deny' }
-const BROWSER_ACTIONS = [...ACCESS_ACTIONS, ...ACCESS_ACTIONS.map(action => `edit-${action}`), ...Object.keys(PREVIEW_ACTIONS)]
+const BROWSER_ACTIONS = [...ACCESS_ACTIONS, ...ACCESS_ACTIONS.map(action => `edit-${action}`), ...Object.keys(PREVIEW_ACTIONS), 'session-status', 'session-set']
 
 export const name = 'google-drive'
 export const inject = ['googleAuth', 'agents', 'approval', 'webServer']
@@ -21,6 +22,7 @@ export class GoogleDriveService {
   #sheetsReadClient
   #sheetsWriteClient
   #observers = new Map()
+  #sessionTools
   constructor({ googleAuth, agents, approval, fetch } = {}) {
     if (typeof googleAuth?.withAccessToken !== 'function' || typeof googleAuth.getAccessGeneration !== 'function'
       || typeof googleAuth.onAccessChange !== 'function') throw new Error('The updated Google authentication service is required.')
@@ -30,12 +32,15 @@ export class GoogleDriveService {
       // revisions. Merely opening an unrelated picker must not cancel a preview.
       for (const callback of this.#observers.get(agent) ?? []) callback()
     }
-    this.#runtime = new DriveAccessRuntime({ client: this.#client, googleAuth, agents, approval, onChange })
-    this.#editRuntime = new DriveAccessRuntime({ client: this.#client, googleAuth, agents, approval, onChange, mode: 'edit' })
+    const isEnabled = agent => this.#sessionTools?.isEnabled(agent) === true
+    const enableRevision = agent => this.#sessionTools?.revisionOf(agent) ?? 0
+    this.#runtime = new DriveAccessRuntime({ client: this.#client, googleAuth, agents, approval, onChange, isEnabled, enableRevision })
+    this.#editRuntime = new DriveAccessRuntime({ client: this.#client, googleAuth, agents, approval, onChange, isEnabled, enableRevision, mode: 'edit' })
     this.#sheetsReadClient = new GoogleSheetsClient({ withAccessToken: operation => googleAuth.withAccessToken('google-drive', operation), fetch })
     this.#sheetsWriteClient = new GoogleSheetsClient({ withAccessToken: operation => googleAuth.withAccessToken('google-sheets-edit', operation), fetch })
     this.#sheets = new SheetsRuntime({ readRuntime: this.#runtime, editRuntime: this.#editRuntime,
       readClient: this.#sheetsReadClient, writeClient: this.#sheetsWriteClient, googleAuth })
+    this.#sessionTools = new SessionDriveTools({ service: this, agents })
   }
   assertOwner(agent) { this.#runtime.assertOwner(agent) }
   hasAccess(agent) { return !this.#runtime.committing.has(agent) && this.#runtime.resources(agent).length > 0 }
@@ -60,14 +65,25 @@ export class GoogleDriveService {
   // Browser-only dispatch stays separate from the model tool surface.
   browser(action, args, signal) {
     if (!BROWSER_ACTIONS.includes(action)) throw new Error('Unknown Drive interaction.')
+    if (action === 'session-status') return this.#sessionTools.status(args)
+    if (action === 'session-set') return this.#sessionTools.set(args, signal)
     if (Object.hasOwn(PREVIEW_ACTIONS, action)) return this.#sheets[PREVIEW_ACTIONS[action]](args, signal)
     if (action.startsWith('edit-')) return this.#editRuntime[action.slice(5)](args, signal)
     return this.#runtime[action](args, signal)
   }
+  revokeSession(agent) {
+    let failure
+    for (const revoke of [() => this.#runtime.revokeOwner(agent), () => this.#editRuntime.revokeOwner(agent), () => this.#sheets.permissionsChanged(agent)]) {
+      try { revoke() } catch (error) { failure ??= error }
+    }
+    if (failure) throw failure
+  }
   release(agent) {
+    this.#sessionTools.release(agent)
     this.#sheets.release(agent); this.#runtime.release(agent); this.#editRuntime.release(agent); this.#observers.delete(agent)
   }
   dispose() {
+    this.#sessionTools.dispose()
     this.#sheets.dispose(); this.#runtime.dispose(); this.#editRuntime.dispose()
     this.#client.dispose(); this.#sheetsReadClient.dispose(); this.#sheetsWriteClient.dispose(); this.#observers.clear()
   }

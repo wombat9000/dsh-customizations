@@ -19,6 +19,90 @@ window.__ModuleLoader__.load({
       if (!response.ok || result?.ok !== true) throw new Error('Drive access could not be updated. Refresh and check your Google connection, then retry.')
       return result.value
     }
+    function validSessionStatus(value) {
+      if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+      if (value.available === false) return value.enabled === false && value.ownerId === undefined && value.revision === undefined
+      return value.available === true && typeof value.enabled === 'boolean'
+        && typeof value.ownerId === 'string' && value.ownerId.length > 0
+        && Number.isSafeInteger(value.revision) && value.revision >= 0
+    }
+    function SessionToggle({ sessionId, useSession, api: request = api }) {
+      const blank = useSession ? useSession(session => session.blank) : false
+      return h(SessionToggleState, { key: `${sessionId}:${blank === true}`, sessionId, request })
+    }
+    function SessionToggleState({ sessionId, request }) {
+      const [view, setView] = React.useState({ status: null, busy: true, error: '' })
+      const machine = React.useRef(null)
+      React.useEffect(() => {
+        const state = { live: true, busy: false, status: null, controller: null, timer: null }
+        machine.current = state
+        const publish = error => { if (state.live) setView({ status: state.status, busy: state.busy, error }) }
+        const accept = value => {
+          if (!validSessionStatus(value)) throw new Error('Invalid session status. Refresh status before changing Google Drive.')
+          if (value.available && state.status?.available && value.ownerId === state.status.ownerId && (value.revision < state.status.revision || (value.revision === state.status.revision && value.enabled !== state.status.enabled))) throw new Error('Session status is stale. Refresh status.')
+          state.status = value
+        }
+        state.load = async (notice = '') => {
+          if (!state.live || state.busy) return
+          clearTimeout(state.timer)
+          state.busy = true; publish(notice)
+          state.controller = new AbortController()
+          try {
+            const value = sessionId ? await request('session-status', { sessionId }, state.controller.signal) : { available: false, enabled: false }
+            if (!state.live) return
+            accept(value); state.blocked = false; publish(notice)
+          } catch (error) {
+            if (!state.live) return
+            state.blocked = true; publish('Cannot confirm Google Drive session status. Retry status check.')
+          } finally {
+            if (state.live) {
+              state.busy = false
+              setView(previous => ({ ...previous, status: state.status, busy: false }))
+              state.timer = setTimeout(() => state.load(), 3000)
+            }
+          }
+        }
+        state.toggle = async () => {
+          if (!state.live || state.busy || state.blocked || !state.status?.available) return
+          clearTimeout(state.timer)
+          const previous = state.status
+          state.busy = true; publish('')
+          state.controller = new AbortController()
+          try {
+            const value = await request('session-set', { sessionId, ownerId: previous.ownerId, revision: previous.revision, enabled: !previous.enabled }, state.controller.signal)
+            if (!state.live) return
+            if (!validSessionStatus(value) || (value.available && (value.ownerId !== previous.ownerId || value.revision <= previous.revision || value.enabled !== !previous.enabled))) throw new Error('Unconfirmed mutation')
+            accept(value); state.busy = false; publish('')
+            state.timer = setTimeout(() => state.load(), 3000)
+          } catch {
+            if (!state.live) return
+            state.blocked = true; state.busy = false
+            await state.load('Change could not be confirmed. Checking authoritative status; no change is retried.')
+          }
+        }
+        void state.load()
+        return () => { state.live = false; state.controller?.abort(); clearTimeout(state.timer) }
+      }, [sessionId, request])
+      const disabled = view.busy || !view.status?.available || machine.current?.blocked
+      return h('div', { className: 'gd-session-toggle' }, h('style', null, `
+        .gd-session-toggle { position:relative; display:inline-flex; flex-wrap:wrap; max-width:100%; align-items:center; gap:6px; font:12px/1.4 var(--dsw-font-family,system-ui); color:var(--dsw-alias-label-secondary); }
+        .gd-session-toggle button { font:inherit; color:inherit; cursor:pointer; border:1px solid var(--dsw-alias-border-l2); background:transparent; border-radius:7px; padding:5px 8px; }
+        .gd-session-toggle button:disabled { cursor:default; opacity:.55; }
+        .gd-session-toggle button:focus-visible { outline:2px solid var(--dsw-alias-brand-primary); outline-offset:2px; }
+        .gd-session-toggle [role=switch] { display:inline-flex; align-items:center; gap:7px; white-space:nowrap; }
+        .gd-session-toggle [aria-checked=true] { color:var(--dsw-alias-brand-primary); }
+        .gd-toggle-track { width:24px; height:14px; border-radius:9px; background:var(--dsw-alias-border-l2); padding:2px; }
+        .gd-toggle-track::after { content:''; display:block; width:10px; height:10px; border-radius:50%; background:var(--dsw-alias-label-secondary); }
+        [aria-checked=true] .gd-toggle-track { background:var(--dsw-alias-brand-primary); }
+        [aria-checked=true] .gd-toggle-track::after { transform:translateX(10px); background:var(--dsw-alias-bg-layer-1); }
+        .gd-toggle-message { width:min(280px,80vw); padding:10px; border:1px solid var(--dsw-alias-border-l2); border-radius:8px; background:var(--dsw-alias-bg-layer-1); }
+      `), h('button', { type: 'button', role: 'switch', 'aria-label': 'Google Drive', 'aria-checked': view.status?.enabled === true, disabled,
+        title: view.status?.available === false ? 'Start or resume this session to enable Google Drive' : 'Enable Drive and Sheets tools for this session', onClick: () => machine.current?.toggle() },
+        h('span', { className: 'gd-toggle-track', 'aria-hidden': true }), 'Google Drive'),
+        h('span', { role: 'status', style: { fontSize: 11 } }, view.busy ? 'Checking…' : !view.status?.available ? 'Unavailable' : ''),
+        h('span', { title: 'Enabling grants no file access. Turning OFF revokes session grants, cancels requests and previews, and removes tools. It cannot undo dispatched writes.', 'aria-label': 'Enabling grants no file access. Turning OFF revokes session grants, cancels requests and previews, and removes tools. It cannot undo dispatched writes.', tabIndex: 0 }, 'ⓘ'),
+        view.error && h('div', { className: 'gd-toggle-message', role: 'alert' }, view.error, ' ', h('button', { type: 'button', disabled: view.busy, onClick: () => machine.current?.load() }, 'Retry status check')))
+    }
     function validStatus(value) {
       return value && ['pending', 'granted', 'denied', 'cancelled', 'none'].includes(value.state)
         && Array.isArray(value.grants) && value.grants.every(item => typeof item.id === 'string' && typeof item.recursive === 'boolean')
@@ -711,8 +795,12 @@ window.__ModuleLoader__.load({
       const entry = React.useSyncExternalStore(picker.subscribe, picker.getSnapshot)
       return entry ? h(Picker, { key: `${entry.sessionId}:${entry.callId}:${entry.status.requestId}`, entry, close: picker.close }) : null
     }
-    return { inject: ['slots'], api, validStatus, validPreviewStatus, cellStyle, createPickerStore, Card, EditCard, PreviewCard, PreviewDialog, Picker, Overlay,
+    return { inject: ['slots'], api, SessionToggle, validSessionStatus, validStatus, validPreviewStatus, cellStyle, createPickerStore, Card, EditCard, PreviewCard, PreviewDialog, Picker, Overlay,
       apply(ctx) {
+        ctx.slots.inject('conversation.session.header.utilities', () => ctx.slots.register({
+          name: 'conversation.session.header.utilities', id: 'google-drive-session-toggle', order: 20,
+          inject: sessionId => ({ sessionId, api }),
+        }, SessionToggle))
         const picker = createPickerStore()
         ctx.effect(() => () => picker.close())
         ctx.slots.inject('tool.call.toolview', () => ctx.slots.register({ name: 'tool.call.toolview', key: 'request_drive_access', inject: () => ({ picker }) }, Card))

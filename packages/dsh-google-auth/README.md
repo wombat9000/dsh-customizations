@@ -20,10 +20,10 @@ Installation and profile application require approval; follow the repository's [
 2. Open **Settings → Plugins → Google accounts**.
 3. Paste the downloaded Desktop JSON in the write-only field and choose **Save client configuration**. The provider stores only `installed.client_id` and the optional `installed.client_secret`. It ignores supplied endpoint URLs and never returns the saved JSON to the browser.
 4. If DSH runs inside Docker Sandbox, enable **Use sandbox callback forwarding**. Leave it off when DSH runs directly on your computer. See [Callback routing](#callback-routing) for prerequisites.
-5. Review an integration's required scopes, then choose its **Connect** action.
+5. Review **Permissions for all enabled integrations**, then choose **Connect Google account**. One login requests all currently registered integration scopes together. With the Google Drive bundle enabled, these include Drive read access and account-wide Sheets edit access. Google does not restrict this permission to DSH's selected files; DSH still requires session file grants and approval for each write.
 6. Follow **Continue with Google** and approve the requested access. The card shows the connected account and each integration's permission status.
 
-When a newly installed integration needs more permissions, its card lists the missing scopes. Choose **Grant additional permissions** for that integration to start another consent flow. Installing it or calling its tools cannot silently start that flow. The provider requests the union of existing granted scopes, the selected integration's scopes, and identity scopes. A token is returned only if the current grant covers the requesting integration.
+If an existing connection lacks required scopes, choose the account-level **Grant additional permissions** action. A newly enabled integration can require this additional consent, but installing it or calling its tools cannot silently start login. The provider requests the union of existing granted scopes, all currently registered integration scopes, and identity scopes. Removing an integration does not revoke historical Google grants. A token is returned only if the current grant covers the requesting integration. Session read/edit grants remain separate and unchanged; starting a new sign-in invalidates existing session grants.
 
 Account identity comes from Google's authenticated userinfo endpoint, not from an unverified JWT. Incremental consent must return the same stable Google account ID. To switch accounts, disconnect first. The provider requests `openid` and Google email identity access so it can bind grants to the account and display a verified email when available. It normalizes Google's `email`/`profile` scope aliases when comparing grants.
 
@@ -81,10 +81,10 @@ The Gmail declaration is an example, not a shipped integration.
 | `getAccessGeneration()` | Returns a non-secret process-local revision for account access. Reconnect, reset, integration removal, and disposal advance it; ordinary token refresh does not. It is an invalidation marker, not proof of authentication. |
 | `onAccessChange(listener)` | Subscribes a trusted Host consumer to access invalidation and returns a disposer. Drive uses this to revoke session selections. Listener failures cannot prevent account invalidation. |
 | `setCallbackMode(useSandbox)` | Persists the boolean preference and cancels a pending login. Uses the same local Settings authorization boundary. |
-| `begin(integrationId)` | Starts explicit browser consent for one registered integration. The Settings UI is the intended caller. |
+| `begin()` | Starts explicit browser consent for all currently registered integrations. Accepts no arguments; rejects an empty registry. Checks the exact registration snapshot around asynchronous work and cancels pending consent if a participating integration is removed. The Settings UI is the intended caller. |
 | `cancel()`, `disconnect()`, `configure(clientJson)`, `clearConfig()` | Manage the shared connection through the local Settings boundary. |
 
-HTTP accepts an integration ID for consent, never arbitrary scopes. Account controls require same-origin local POST requests with the plugin's custom header. There is no HTTP token endpoint.
+The HTTP `connect` action accepts only an empty JSON object, never an integration ID or caller-selected scopes. Status includes aggregate `requiredScopes` and `missingScopes` alongside each integration's status. Account controls require same-origin local POST requests with the plugin's custom header. There is no HTTP token endpoint.
 
 Future GCP tools can register the IAM scope and use their token for narrowly permissioned service-account impersonation. IAM roles remain the authority for the service account's capabilities. A future trusted `gws` adapter can register its required scopes and use `withAccessToken` to pass the token only in a child process's environment. It must stop the subprocess when the supplied signal aborts and must not expose tokens through generic shell arguments, tool results, or logs.
 

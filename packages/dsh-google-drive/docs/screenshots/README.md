@@ -1,4 +1,4 @@
-# Drive picker design screenshots
+# Drive UI design screenshots
 
 These screenshots render the actual `client.js` picker component with synthetic file names and the pinned DSH bundle’s native theme CSS. They show the desktop dark/light layouts, the selection review, and the narrow layout. They are PR design evidence, not screenshots of a deployed DSH profile or real Google Drive data.
 
@@ -16,6 +16,23 @@ The script overwrites the PNGs in this directory. It starts no web server, block
 - [Selection review](picker-selection.png)
 - [Narrow layout](picker-mobile.png)
 - [Landscape, scrolled selection review](picker-landscape.png)
+
+## Session toggle
+
+These images render the exported `SessionToggle` component beside mock **Session log** and **Recap** controls. The toolbar, session, and status responses are synthetic; the theme CSS comes from the pinned DSH bundle. They do not verify the live header slot or host authorization.
+
+With the existing pinned browser prerequisites, run:
+
+```sh
+node packages/dsh-google-drive/test/capture-session-toggle.mjs
+```
+
+The script overwrites only `session-toggle-*.png`. It blocks external requests, starts no server, and checks default OFF plus one mocked enable mutation.
+
+- [Dark, OFF](session-toggle-dark.png)
+- [Light, OFF](session-toggle-light.png)
+- [Narrow, OFF](session-toggle-narrow.png)
+- [Dark, enabled](session-toggle-enabled-dark.png)
 
 ## Sheets editing and local preview
 

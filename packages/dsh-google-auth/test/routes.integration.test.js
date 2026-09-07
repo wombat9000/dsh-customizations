@@ -40,13 +40,14 @@ test('local request guard requires exact loopback host, origin, JSON and CSRF he
   assert.equal(allowedRequest({ ...valid, socket: { remoteAddress: '192.0.2.1' } }, 1234), false)
 })
 
-test('HTTP bodies are strict, consent accepts only integrationId and projections never expose tokens', async t => {
+test('HTTP bodies are strict, account consent accepts only an empty object and projections never expose tokens', async t => {
   const calls = []
+  let failConnect = false
   const service = {
-    async status() { return { configured: true, connected: true, pending: true, pendingIntegrationId: 'drive', expiresAt: 42,
+    async status() { return { configured: true, connected: true, pending: true, requiredScopes: [scope], missingScopes: [], expiresAt: 42,
       account: { id: 'account-1', email: 'fixture@example.invalid', accessToken: 'PRIVATE' }, accessToken: 'PRIVATE', refreshToken: 'PRIVATE', clientSecret: 'PRIVATE', grantedScopes: [scope],
       integrations: [{ id: 'drive', label: 'Drive', scopes: [scope], authorized: true, missingScopes: [], tokens: 'PRIVATE' }] } },
-    async begin(...args) { calls.push(['begin', ...args]); if (args[0] === 'unknown') throw Error('PRIVATE invalid_grant'); return { authorizationUrl: 'https://accounts.google.com/fixture', expiresAt: 42, accessToken: 'PRIVATE' } },
+    async begin(...args) { calls.push(['begin', ...args]); if (failConnect) throw Error('PRIVATE invalid_grant'); return { authorizationUrl: 'https://accounts.google.com/fixture', expiresAt: 42, accessToken: 'PRIVATE' } },
     async configure(...args) { calls.push(['configure', ...args]); return { clientSecret: 'PRIVATE' } },
     async cancel() { throw Error('PRIVATE commit in progress') },
     async disconnect() { calls.push(['disconnect']); return { refreshToken: 'PRIVATE' } },
@@ -57,13 +58,13 @@ test('HTTP bodies are strict, consent accepts only integrationId and projections
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
   t.after(() => new Promise(resolve => { server.closeAllConnections(); server.close(resolve) }))
   const base = `http://127.0.0.1:${server.address().port}`, post = requester(base)
-  for (const body of [{}, null, [], { integrationId: 'drive', scopes: [scope] }, { scopes: [scope] }, { integrationId: 'drive', scope }, { integrationId: 'drive', clientId: 'x' }, { integrationId: 'drive', __extra: true }, { integrationId: '../drive' }, { integrationId: 1 }, '{', 'x'.repeat(1025)]) {
+  for (const body of [{ integrationId: 'drive' }, null, [], { integrationId: 'drive', scopes: [scope] }, { scopes: [scope] }, { integrationId: 'drive', scope }, { integrationId: 'drive', clientId: 'x' }, { integrationId: 'drive', __extra: true }, { integrationId: '../drive' }, { integrationId: 1 }, '{', 'x'.repeat(1025)]) {
     assert.equal((await post('connect', body)).status, 400, JSON.stringify(body))
   }
   assert.equal(calls.length, 0)
-  const connect = await post('connect', { integrationId: 'drive' })
+  const connect = await post('connect', {})
   assert.deepEqual(await connect.json(), { ok: true, value: { authorizationUrl: 'https://accounts.google.com/fixture', expiresAt: 42 } })
-  assert.deepEqual(calls, [['begin', 'drive']])
+  assert.deepEqual(calls, [['begin']])
   for (const action of ['status', 'cancel', 'disconnect', 'clear-config']) assert.equal((await post(action, { scopes: [scope] })).status, 400)
   for (const body of [{}, { clientJson: 1 }, { clientJson, scopes: [scope] }, { clientJson: 'x'.repeat(32769) }]) assert.equal((await post('configure', body)).status, 400)
   assert.deepEqual(await (await post('configure', { clientJson })).json(), { ok: true, value: {} })
@@ -73,9 +74,10 @@ test('HTTP bodies are strict, consent accepts only integrationId and projections
   assert.equal(status.headers.get('x-content-type-options'), 'nosniff')
   assert.equal(status.headers.get('referrer-policy'), 'no-referrer')
   assert.deepEqual(await status.json(), { ok: true, value: { configured: true, connected: true, pending: true, useSandbox: false, sandboxAvailable: false, expiresAt: 42,
-    pendingIntegrationId: 'drive', account: { id: 'account-1', email: 'fixture@example.invalid' },
+    requiredScopes: [scope], missingScopes: [], account: { id: 'account-1', email: 'fixture@example.invalid' },
     integrations: [{ id: 'drive', label: 'Drive', scopes: [scope], authorized: true, missingScopes: [] }] } })
-  for (const [action, body] of [['connect', { integrationId: 'unknown' }], ['cancel', {}]]) {
+  failConnect = true
+  for (const [action, body] of [['connect', {}], ['cancel', {}]]) {
     const response = await post(action, body)
     assert.equal(response.status, 400)
     assert.equal((await response.text()).includes('PRIVATE'), false)

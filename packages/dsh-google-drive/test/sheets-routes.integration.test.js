@@ -9,7 +9,18 @@ import { SHEETS_MIME } from '../src/sheets.js'
 const actions = ['edit-status', 'edit-manage', 'edit-revoke', 'edit-browse', 'edit-grant', 'edit-deny', 'preview-status', 'preview-apply', 'preview-deny']
 async function fixture(t) {
   const events = new EventEmitter(), audit = [], calls = []
-  const agent = { session: { id: 'root', append: (...args) => audit.push(args) } }
+  const tools = new Map(), skills = new Map()
+  const registry = values => ({ register(value) {
+    if (values.has(value.name)) throw new Error('Duplicate fixture registration')
+    values.set(value.name, value); return () => values.delete(value.name)
+  } })
+  const registries = { tools: registry(tools), skills: registry(skills) }
+  const agent = { session: { id: 'root', append: (...args) => audit.push(args) }, ctx: {
+    get: key => registries[key], effect(factory) {
+      let cleanup = factory()
+      return () => { const fn = cleanup; cleanup = undefined; fn?.() }
+    },
+  } }
   let entered = { stringValue: 'before' }, stallWrite = false, stallRead = false, port
   const service = new GoogleDriveService({
     agents: { get: id => id === 'root' ? agent : undefined, roots: () => [agent] }, approval: { overrideOf: () => 'ask' },
@@ -41,10 +52,11 @@ async function fixture(t) {
       return Response.json(u.pathname.endsWith('/files') ? { files: [file] } : file)
     },
   })
-  const runtime = Object.fromEntries(actions.map(action => [action, (args, signal) => service.browser(action, args, signal)]))
+  const allActions = [...actions, 'session-status', 'session-set']
+  const runtime = Object.fromEntries(allActions.map(action => [action, (args, signal) => service.browser(action, args, signal)]))
   const server = createServer((req, res) => {
     const action = req.url.split('/').at(-1)
-    if (!actions.includes(action)) { res.writeHead(404); res.end(); return }
+    if (!allActions.includes(action)) { res.writeHead(404); res.end(); return }
     void createHandler(runtime, action, port)(req, res)
   })
   server.listen(0, '127.0.0.1'); await once(server, 'listening'); port = server.address().port
@@ -56,6 +68,16 @@ async function fixture(t) {
       headers: { ...headers, ...options.headers }, ...(options.method === 'GET' ? {} : { body: JSON.stringify(input) }) })
     return { status: response.status, headers: response.headers, result: await response.json() }
   }
+  async function toggle(enabled) {
+    const status = await post('session-status', { sessionId: 'root' })
+    assert.equal(status.status, 200)
+    const { ownerId, revision } = status.result.value
+    const result = await post('session-set', { sessionId: 'root', ownerId, revision, enabled })
+    assert.equal(result.status, 200)
+    assert.equal(result.result.value.enabled, enabled)
+    return result.result.value
+  }
+  await toggle(true)
   const identity = { sessionId: 'root', callId: 'access' }
   const access = service.requestEdit(agent, { callId: identity.callId, reason: 'Edit synthetic budget' })
   async function grant() {
@@ -75,7 +97,7 @@ async function fixture(t) {
     const status = await post('preview-status', input)
     return { done, input: { ...input, requestId: status.result.value.requestId }, status }
   }
-  return { service, agent, events, audit, calls, post, identity, access, grant, prepare, stallWrites: () => { stallWrite = true } }
+  return { service, agent, events, audit, calls, post, identity, access, grant, prepare, toggle, tools, skills, stallWrites: () => { stallWrite = true } }
 }
 
 test('real HTTP edit grant and preview apply sends one exact batch then reads back without custom history', { timeout: 5000 }, async t => {
@@ -141,6 +163,59 @@ test('browser denial while preparation stalls aborts upstream read and settles w
   assert.equal((await f.post('preview-deny', p.input)).result.value.state, 'denied')
   await aborted; assert.equal((await p.done).state, 'denied')
   assert.equal(f.calls.filter(c => c.method === 'POST').length, 0)
+})
+
+test('toolbar OFF cancels pending picker; ON cannot revive old access cards', { timeout: 5000 }, async t => {
+  const f = await fixture(t)
+  assert.equal(f.tools.size, 2)
+  await f.toggle(false)
+  assert.equal((await f.access).state, 'cancelled')
+  assert.equal(f.tools.size, 0); assert.equal(f.skills.size, 0)
+  assert.equal((await f.post('edit-status', f.identity)).result.value.state, 'cancelled')
+  await f.toggle(true)
+  assert.equal(f.tools.size, 2)
+  assert.equal((await f.post('edit-manage', f.identity)).status, 409)
+  assert.equal(f.calls.length, 0)
+})
+
+test('toolbar OFF during preview preparation aborts reads and retains sanitized status', { timeout: 5000 }, async t => {
+  const f = await fixture(t); await f.grant()
+  const p = await f.prepare({ stalled: true })
+  const aborted = once(f.events, 'upstream-aborted')
+  await f.toggle(false); await aborted
+  assert.equal((await p.done).state, 'cancelled')
+  const identity = { sessionId: p.input.sessionId, callId: p.input.callId }
+  const result = await f.post('preview-status', identity)
+  assert.equal(result.status, 200)
+  assert.equal(result.result.value.state, 'cancelled')
+  assert.equal(result.result.value.preview, undefined)
+  assert.equal(f.tools.size, 0); assert.equal(f.skills.size, 0)
+  await f.toggle(true)
+  assert.equal((await f.post('preview-apply', p.input)).status, 409)
+  assert.equal(f.calls.filter(c => c.method === 'POST').length, 0)
+})
+
+test('toolbar OFF after write dispatch preserves uncertain tool and HTTP outcome without retry', { timeout: 5000 }, async t => {
+  const f = await fixture(t); await f.grant(); const p = await f.prepare(); f.stallWrites()
+  const dispatched = once(f.events, 'write-dispatched'), aborted = once(f.events, 'upstream-aborted')
+  const browser = f.post('preview-apply', p.input)
+  await dispatched; await f.toggle(false); await aborted
+  const result = await browser
+  assert.equal(result.status, 200)
+  assert.equal(result.result.value.state, 'uncertain')
+  const outcome = await p.done
+  assert.equal(outcome.state, 'uncertain')
+  assert.equal(outcome.snapshot, undefined)
+  const status = await f.post('preview-status', { sessionId: p.input.sessionId, callId: p.input.callId })
+  assert.equal(status.status, 200)
+  assert.equal(status.result.value.state, 'uncertain')
+  assert.equal(status.result.value.preview, undefined)
+  assert.equal(JSON.stringify(status.result).includes('PRIVATE_'), false)
+  assert.equal(f.tools.size, 0); assert.equal(f.skills.size, 0)
+  await f.toggle(true)
+  assert.equal((await f.post('preview-apply', p.input)).status, 409)
+  assert.equal(f.calls.filter(c => c.method === 'POST').length, 1)
+  assert.deepEqual(f.audit, [])
 })
 
 test('browser disconnect after dispatched POST settles tool as uncertain without leaking provider content', { timeout: 5000 }, async t => {

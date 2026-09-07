@@ -40,7 +40,7 @@ test('cancel during configuration load invalidates begin before a listener can s
   })
   t.after(async () => { release.resolve(); await service.dispose() })
   service.registerIntegration({ id: 'drive', label: 'Drive', scopes: [scope] })
-  const starting = assert.rejects(service.begin('drive'), /changed|cancel/i)
+  const starting = assert.rejects(service.begin(), /changed|cancel/i)
   await entered.promise
   const cancelling = service.cancel()
   release.resolve()
@@ -65,12 +65,12 @@ test('direct mode never consults publication and disabling prevents future forwa
   t.after(() => f.service.dispose())
   assert.equal((await f.service.status()).useSandbox, false)
   assert.equal((await f.service.status()).sandboxAvailable, true)
-  const first = await f.service.begin('drive')
+  const first = await f.service.begin()
   assert.equal(new URL(new URL(first.authorizationUrl).searchParams.get('redirect_uri')).hostname, '127.0.0.1')
   await f.service.cancel()
   await f.service.setCallbackMode(true)
   await f.service.setCallbackMode(false)
-  await f.service.begin('drive')
+  await f.service.begin()
   assert.equal(publishes, 0)
   assert.deepEqual(f.saved, [true, false])
 })
@@ -79,7 +79,7 @@ for (const publisher of [undefined, { available: () => false, publish() { assert
   test(`enabled forwarding blocks without ${publisher ? 'available bridge' : 'publisher service'}`, async t => {
     const f = fixture({ mode: true, publisher })
     t.after(() => f.service.dispose())
-    await assert.rejects(f.service.begin('drive'), /unavailable/)
+    await assert.rejects(f.service.begin(), /unavailable/)
     assert.equal(f.service.client, undefined, 'must not start a direct callback listener')
     assert.equal((await f.service.status()).sandboxAvailable, false)
   })
@@ -100,7 +100,7 @@ for (const phase of ['startup', 'waiting']) for (const external of [false, true]
     } })
     t.after(async () => { release.resolve(); await f.service.dispose() })
     const grant = f.records.get(CREDENTIAL_KEY)
-    const pending = f.service.begin('drive')
+    const pending = f.service.begin()
     const outcome = phase === 'startup' ? assert.rejects(pending, /cancel|changed|could not start/i) : pending
     await entered.promise
     assert.ok(Number.isInteger(port) && port > 0 && port <= 65535)
@@ -130,7 +130,7 @@ test('failed mode persistence preserves enabled mode without a direct fallback',
   t.after(() => f.service.dispose())
   await assert.rejects(f.service.setCallbackMode(false), { message: 'Could not save Google callback settings.' })
   assert.equal((await f.service.status()).useSandbox, true)
-  await assert.rejects(f.service.begin('drive'), /unavailable/)
+  await assert.rejects(f.service.begin(), /unavailable/)
   assert.deepEqual(f.saved, [])
 })
 

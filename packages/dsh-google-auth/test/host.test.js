@@ -39,7 +39,7 @@ test('non-secret access generation invalidates observers on reconnect, reset and
   const removeThrowing = f.service.onAccessChange(() => { throw new Error('observer failure') })
   const remove = f.service.onAccessChange(() => seen.push(f.service.getAccessGeneration()))
   assert.equal(f.service.getAccessGeneration(), 0)
-  await f.service.begin('drive')
+  await f.service.begin()
   await f.service.disconnect()
   assert.deepEqual(seen, [1, 2])
   remove(); removeThrowing()
@@ -126,7 +126,7 @@ for (const action of ['configure', 'clearConfig', 'begin', 'dispose']) test(`${a
   const rejected = assert.rejects(result, /cancelled/)
   await started.promise
   if (action === 'configure') await f.service.configure(clientJson)
-  else if (action === 'begin') await f.service.begin('drive')
+  else if (action === 'begin') await f.service.begin()
   else await f.service[action]()
   assert.equal(signal.aborted, true)
   await rejected
@@ -160,6 +160,7 @@ test('status derives per-integration missing permissions and projects only accou
   register(f.service, 'calendar', [otherScope, scope])
   assert.deepEqual(await f.service.status(), {
     configured: true, connected: true, pending: false, useSandbox: false, sandboxAvailable: false, account: tokens.account,
+    requiredScopes: [otherScope, scope].sort(), missingScopes: [otherScope],
     integrations: [
       { id: 'drive', label: 'drive', scopes: [scope], authorized: true, missingScopes: [] },
       { id: 'calendar', label: 'calendar', scopes: [otherScope, scope].sort(), authorized: false, missingScopes: [otherScope] },
@@ -171,18 +172,80 @@ test('status derives per-integration missing permissions and projects only accou
   disconnected.records.clear()
 })
 
-test('scoped tokens and consent accept exact registered IDs only, never caller scopes', async () => {
+test('tokens require exact IDs and account consent rejects caller arguments', async () => {
   const f = fixture()
   const remove = register(f.service)
   for (const id of [undefined, null, 'unknown', { integrationId: 'drive', scopes: [otherScope] }, [scope]]) await assert.rejects(f.service.getAccessToken(id), /not registered/)
   assert.equal(f.reads.length, 0)
   assert.equal(await f.service.getAccessToken('drive'), 'FIXTURE-ACCESS')
-  await f.service.begin('drive')
+  await f.service.begin()
   assert.deepEqual(f.calls, [['token', { scopes: [scope] }], ['begin', { scopes: [scope] }]])
   remove()
   await assert.rejects(f.service.getAccessToken('drive'), /not registered/)
-  await assert.rejects(f.service.begin('drive'), /not registered/)
+  await assert.rejects(f.service.begin(), /No Google integrations/)
+  for (const args of [['drive'], [undefined], [{ scopes: [scope] }], [{}]]) await assert.rejects(f.service.begin(...args), /accepts no/)
   assert.deepEqual(f.calls.at(-1), ['cancel'])
+})
+
+test('account consent unions and deduplicates all current integrations while token checks stay exact', async () => {
+  const driveScope = 'https://www.googleapis.com/auth/drive.readonly'
+  const sheetsScope = 'https://www.googleapis.com/auth/spreadsheets'
+  const f = fixture({ status: { grantedScopes: [driveScope] } })
+  register(f.service, 'drive', [driveScope])
+  register(f.service, 'sheets', [sheetsScope, driveScope])
+  await f.service.begin()
+  assert.deepEqual(f.calls, [['begin', { scopes: [driveScope, sheetsScope] }]])
+  const status = await f.service.status()
+  assert.deepEqual(status.requiredScopes, [driveScope, sheetsScope])
+  assert.deepEqual(status.missingScopes, [sheetsScope])
+  assert.deepEqual(status.integrations.map(item => item.authorized), [true, false])
+  await f.service.getAccessToken('drive')
+  assert.deepEqual(f.calls.at(-1), ['token', { scopes: [driveScope] }])
+  register(f.service, 'calendar', [otherScope])
+  assert.equal(f.calls.filter(call => call[0] === 'begin').length, 1, 'later registration never starts consent')
+  await f.service.begin()
+  assert.deepEqual(f.calls.at(-1), ['begin', { scopes: [otherScope, driveScope, sheetsScope].sort() }])
+})
+
+for (const phase of ['load', 'begin']) for (const change of ['remove', 'replace', 'add']) {
+  test(`account scope snapshot rejects ${change} during ${phase}`, async () => {
+    const gate = deferred(), entered = deferred()
+    const f = fixture(phase === 'begin' ? { begin: () => { entered.resolve(); return gate.promise } } : {})
+    register(f.service, 'drive')
+    const remove = register(f.service, 'calendar', [otherScope])
+    if (phase === 'load') {
+      const read = f.credentials.readRecord
+      f.credentials.readRecord = async key => { entered.resolve(); await gate.promise; return read(key) }
+    }
+    const request = f.service.begin()
+    const rejected = assert.rejects(request, /changed/)
+    await entered.promise
+    if (change !== 'add') remove()
+    if (change === 'replace') register(f.service, 'calendar', [otherScope])
+    if (change === 'add') register(f.service, 'new-integration', [scope])
+    if (phase === 'begin' && change !== 'add') assert.equal(f.calls.at(-1)[0], 'cancel', 'removal interrupts begin immediately')
+    gate.resolve({ authorizationUrl: 'https://accounts.google.com/fixture' })
+    await rejected
+    if (phase === 'load') assert.equal(f.calls.some(call => call[0] === 'begin'), false)
+    else assert.equal(f.calls.at(-1)[0], 'cancel')
+  })
+}
+
+for (const change of ['remove', 'cancel']) test(`access observer ${change} cannot start stale account consent`, async () => {
+  const f = fixture()
+  const remove = register(f.service)
+  f.service.onAccessChange(() => { if (change === 'remove') remove(); else void f.service.cancel() })
+  await assert.rejects(f.service.begin(), /changed/)
+  assert.equal(f.calls.some(call => call[0] === 'begin'), false)
+})
+
+test('removing any participating integration cancels a returned account login', async () => {
+  const f = fixture()
+  register(f.service)
+  const remove = register(f.service, 'calendar', [otherScope])
+  await f.service.begin()
+  remove()
+  assert.equal(f.calls.at(-1)[0], 'cancel')
 })
 
 test('inflight token cannot escape after unregistration or replacement', async () => {
@@ -200,7 +263,7 @@ test('inflight consent rejects removal and cancels pending OAuth', async () => {
   const gate = deferred(), started = deferred()
   const f = fixture({ begin: () => { started.resolve(); return gate.promise } })
   const remove = register(f.service)
-  const request = f.service.begin('drive')
+  const request = f.service.begin()
   await started.promise; remove(); gate.resolve({ authorizationUrl: 'https://accounts.google.com/fixture' })
   await assert.rejects(request, /changed/)
   assert.deepEqual(f.calls.at(-1), ['cancel'])
@@ -242,11 +305,12 @@ test('a client configuration read already in flight cannot publish an obsolete c
   assert.equal(f.records.get(CLIENT_KEY).payload.clientId, clientId)
 })
 
-test('pending status names the integration and successful cancel clears it', async () => {
+test('pending status is account-wide and successful cancel clears tracked registrations', async () => {
   const f = fixture({ status: { pending: true } })
   register(f.service)
-  await f.service.begin('drive')
-  assert.equal((await f.service.status()).pendingIntegrationId, 'drive')
+  await f.service.begin()
+  assert.equal((await f.service.status()).pendingIntegrationId, undefined)
+  assert.deepEqual(f.service.pendingIntegrations, [f.service.integration('drive')])
   assert.deepEqual(await f.service.cancel(), {})
   assert.equal((await f.service.status()).pendingIntegrationId, undefined)
 })
@@ -265,9 +329,9 @@ test('disconnect removes the whole grant for all integrations but preserves clie
 
 test('cancel refused during commit is an error and preserves pending integration', async () => {
   const f = fixture({ cancel: false })
-  register(f.service); await f.service.begin('drive')
+  register(f.service); await f.service.begin()
   await assert.rejects(f.service.cancel(), /finishing/)
-  assert.equal(f.service.pendingIntegrationId, 'drive')
+  assert.deepEqual(f.service.pendingIntegrations, [f.service.integration('drive')])
 })
 
 test('credential adapter rejects wrong clients and malformed grant envelopes', async () => {
