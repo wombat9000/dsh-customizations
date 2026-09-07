@@ -21,7 +21,7 @@ test('themed layout is responsive and keeps details keyboard accessible', async 
     for (const theme of ['dark', 'light']) {
       f.container.style.cssText = `width:960px;background:${theme === 'dark' ? '#161616' : '#fafafa'};color:${theme === 'dark' ? '#eee' : '#222'};--dsw-alias-label-primary:${theme === 'dark' ? '#eee' : '#222'};--dsw-alias-label-secondary:${theme === 'dark' ? '#aaa' : '#666'}`
       expect(getComputedStyle(f.container.querySelector('.wt-layout')).gridTemplateColumns.split(' ').length).toBe(2)
-      expect(f.container.querySelector('details').open).toBe(false)
+      expect(f.container.querySelector('details')).toBeNull()
       f.container.querySelector('.wt-card').focus()
       expect(document.activeElement).toBe(f.container.querySelector('.wt-card'))
       await page.screenshot({ path: `../../../../artifacts/browser/worktrees-${theme}.png` })
@@ -79,7 +79,7 @@ test('registered slot renders separate statuses, details, selection and in-place
     expect(f.container.textContent).toContain('1 changed file')
     expect(f.container.textContent).toContain('file.txt')
     expect(f.container.textContent).toContain('This session’s recorded runs (2)')
-    expect(f.container.textContent).toContain('not lifetime history')
+    expect(f.container.textContent).not.toContain('About this view')
     await f.click('1. write · completed')
     expect(f.container.textContent).toContain('Tests passed')
     await f.click('Refresh')
@@ -117,13 +117,48 @@ test('copy checkout path reports clipboard success and rejection, and selection 
   }
 })
 
-test('loading, backend error, unavailable, empty worktrees and empty runs render explicitly', async () => {
+test('initial load still presents a loading state', async () => {
+  const container = document.createElement('div'); document.body.append(container)
+  const root = createRoot(container)
+  let resolve
+  const pending = new Promise(r => { resolve = r })
+  const sessions = { list: { getSnapshot: () => ({ jobsBySession: {} }), subscribe: () => () => {} } }
+  try {
+    await act(async () => root.render(React.createElement(plugin.Panel, { sessionId: 'a', sessions, rpc: { call: () => pending } })))
+    expect(container.textContent).toContain('Loading worktrees…')
+    expect(container.querySelector('.wt-layout')).toBeNull()
+    expect(container.querySelector('button').disabled).toBe(true)
+    await act(async () => resolve({ ok: true, value: snapshot() }))
+    expect(container.textContent).not.toContain('Loading worktrees…')
+    expect(container.querySelector('.wt-layout')).toBeTruthy()
+  } finally { await act(async () => root.unmount()); container.remove() }
+})
+
+test('refresh keeps layout stable; errors, unavailable and empty states remain explicit', async () => {
   const f = await mount()
   try {
+    const layout = f.container.querySelector('.wt-layout')
+    const before = layout.getBoundingClientRect().toJSON()
+    const button = [...f.container.querySelectorAll('button')].find(b => b.textContent === 'Refresh')
+    const buttonBefore = button.getBoundingClientRect().toJSON()
+    button.focus()
     const release = f.defer()
     await f.click('Refresh')
-    expect(f.container.textContent).toContain('Loading worktrees')
+    expect(f.container.textContent).not.toContain('Loading worktrees')
+    expect(getComputedStyle(f.container.querySelector('.wt-refresh-status')).visibility).toBe('visible')
+    expect(f.container.querySelector('.wt-layout')).toBe(layout)
+    expect(layout.getBoundingClientRect().toJSON()).toEqual(before)
+    expect(button.getBoundingClientRect().toJSON()).toEqual(buttonBefore)
+    expect(button.disabled).toBe(false)
+    expect(document.activeElement).toBe(button)
     await release()
+    expect(layout.getBoundingClientRect().toJSON()).toEqual(before)
+    expect(getComputedStyle(f.container.querySelector('.wt-refresh-status')).visibility).toBe('hidden')
+    const finishJobRefresh = f.defer()
+    await f.jobs()
+    expect(layout.getBoundingClientRect().toJSON()).toEqual(before)
+    expect(f.container.textContent).not.toContain('Loading worktrees')
+    await finishJobRefresh()
     for (const [value, text] of [
       [{ sessionId: 'a', state: 'error', message: 'private host details' }, 'Worktrees could not refresh. Try again.'],
       [{ sessionId: 'a', state: 'unavailable' }, 'unavailable for this session'],
