@@ -13,11 +13,132 @@ function fixture({ chunks, prepareError, delay = 0, timeoutMs } = {}) {
     return { config: options, inputModalities: ['text'], async *stream(request) {
       calls.push(request)
       if (delay) await new Promise(resolve => setTimeout(resolve, delay))
-      yield* chunks ?? [{ type: 'text-delta', text: JSON.stringify(answer) }, { type: 'finish', reason: { kind: 'stop' } }]
+      yield* (typeof chunks === 'function' ? chunks(calls.length, request) : chunks) ?? [{ type: 'text-delta', text: JSON.stringify(answer) }, { type: 'finish', reason: { kind: 'stop' } }]
     } }
   } }
   return { session, config, calls, llm, runtime: new RecapRuntime({ sessions: { get: id => id === 's' ? session : undefined }, llm, settings: () => config, timeoutMs }) }
 }
+
+const response = bullets => [{ type: 'text-delta', text: JSON.stringify({ bullets }) }, { type: 'finish', reason: { kind: 'stop' } }]
+test('normalizes whitespace before size checks and accepts modest overruns without truncation', async () => {
+  assert.deepEqual(parseRecap(JSON.stringify({ bullets: ['  First\r\n Second\t third.  '] })), { bullets: ['First Second third.'] })
+  const bullets = ['x'.repeat(320), 'y'.repeat(280)]
+  const { runtime, calls } = fixture({ chunks: response(bullets) })
+  assert.deepEqual((await runtime.recap({ sessionId: 's' })).recap.bullets, bullets)
+  assert.equal(calls.length, 1)
+})
+test('oversized valid drafts get exactly one shortening call on the same route and signal', async () => {
+  for (const draft of [['x'.repeat(321)], Array(3).fill('x'.repeat(201))]) {
+    const { runtime, calls } = fixture({ chunks: n => response(n === 1 ? draft : answer.bullets) })
+    assert.deepEqual((await runtime.recap({ sessionId: 's' })).recap, answer)
+    assert.equal(calls.length, 2)
+    assert.equal(calls[1].provider, 'existing')
+    assert.equal(calls[1].model, 'exact')
+    assert.equal(calls[1].signal, calls[0].signal)
+    assert.deepEqual(calls[1].tools, [])
+    assert.match(calls[1].system, /untrusted recap draft/)
+    assert.deepEqual(JSON.parse(calls[1].messages[0].content[0].text), { bullets: draft })
+    assert.equal((await runtime.recap({ sessionId: 's' })).cached, true)
+  }
+})
+test('failed repair is bounded, sanitized, and never cached', async () => {
+  for (const second of [response(['SECRET'.repeat(100)]), response([null]), [{ type: 'tool-call-delta' }], [{ type: 'finish', reason: { kind: 'max-tokens' } }]]) {
+    const { runtime, calls } = fixture({ chunks: n => n === 1 ? response(['x'.repeat(321)]) : second })
+    await assert.rejects(runtime.recap({ sessionId: 's' }), error => !error.message.includes('SECRET'))
+    assert.equal(calls.length, 2)
+    assert.equal(runtime.cache.size, 0)
+    assert.equal(runtime.pending.size, 0)
+  }
+})
+test('malformed drafts never trigger shortening and diagnostics reveal only metadata', async () => {
+  for (const bullets of [['SECRET'.repeat(100), null], [], ['a', 'b', 'c', 'd'], ['\n ']]) {
+    const { runtime, calls } = fixture({ chunks: response(bullets) })
+    await assert.rejects(runtime.recap({ sessionId: 's' }), error => /reason=.*index=.*count=/.test(error.message) && !error.message.includes('SECRET'))
+    assert.equal(calls.length, 1)
+  }
+})
+test('provider failure during repair is not retried or exposed', async () => {
+  const { runtime, calls } = fixture({ chunks: n => {
+    if (n === 2) throw new Error('SECRET provider request')
+    return response(['x'.repeat(321)])
+  } })
+  await assert.rejects(runtime.recap({ sessionId: 's' }), error => error.code === 'generation-failed' && !error.message.includes('SECRET'))
+  assert.equal(calls.length, 2)
+})
+test('repair shares the original timeout and rejects stale results', async () => {
+  const timed = fixture({ delay: 30, timeoutMs: 50, chunks: n => response(n === 1 ? ['x'.repeat(321)] : answer.bullets) })
+  await assert.rejects(timed.runtime.recap({ sessionId: 's' }), { code: 'cancelled' })
+  assert.equal(timed.calls.length, 2)
+  assert.equal(timed.runtime.cache.size, 0)
+  const stale = fixture({ chunks: n => {
+    if (n === 2) stale.session.seq++
+    return response(n === 1 ? ['x'.repeat(321)] : answer.bullets)
+  } })
+  await assert.rejects(stale.runtime.recap({ sessionId: 's' }), { code: 'stale' })
+  assert.equal(stale.runtime.cache.size, 0)
+})
+
+test('output limit aborts promptly even when iterator cleanup waits for cancellation', async () => {
+  let cleaned = false
+  const { runtime, calls } = fixture({ timeoutMs: 10_000, chunks: async function* (_, request) {
+    const aborted = new Promise(resolve => request.signal.addEventListener('abort', resolve, { once: true }))
+    try {
+      yield { type: 'text-delta', text: 'x'.repeat(LIMITS.outputChars + 1) }
+    } finally {
+      await aborted
+      cleaned = true
+    }
+  } })
+  // Immediate abort can let the cancellation side of Promise.race win.
+  const rejected = assert.rejects(runtime.recap({ sessionId: 's' }), error =>
+    error.code === 'cancelled' || error.reason === 'output-limit')
+  try {
+    await new Promise(resolve => setImmediate(resolve))
+    assert.equal(calls[0].signal.aborted, true)
+    assert.equal(cleaned, true)
+    assert.equal(runtime.pending.size, 0)
+    assert.equal(runtime.controllers.size, 0)
+    assert.equal(runtime.cache.size, 0)
+    assert.equal(calls.length, 1)
+  } finally {
+    runtime.dispose()
+    await rejected
+  }
+})
+
+test('dispose during repair cancels its stream and clears pending work without caching', async () => {
+  let repairStarted
+  const started = new Promise(resolve => { repairStarted = resolve })
+  let cleaned = false
+  const { runtime, calls } = fixture({ chunks: async function* (n, request) {
+    if (n === 1) { yield* response(['x'.repeat(321)]); return }
+    const aborted = new Promise(resolve => request.signal.addEventListener('abort', resolve, { once: true }))
+    repairStarted()
+    try { await aborted } finally { cleaned = true }
+  } })
+  const rejected = assert.rejects(runtime.recap({ sessionId: 's' }), { code: 'cancelled' })
+  await started
+  runtime.dispose()
+  await rejected
+  assert.equal(calls.length, 2)
+  assert.equal(calls[1].signal.aborted, true)
+  assert.equal(cleaned, true)
+  assert.equal(runtime.pending.size, 0)
+  assert.equal(runtime.controllers.size, 0)
+  assert.equal(runtime.cache.size, 0)
+})
+
+test('session becoming running after the draft prevents the repair call', async () => {
+  const { runtime, session, calls } = fixture({ chunks: function* () {
+    yield* response(['x'.repeat(321)])
+    session.snapshotEvents = () => [{ type: 'turn/start', time: 100 }]
+  } })
+  session.snapshotEvents = () => []
+  await assert.rejects(runtime.recap({ sessionId: 's' }), { code: 'session-running' })
+  assert.equal(calls.length, 1)
+  assert.equal(runtime.pending.size, 0)
+  assert.equal(runtime.cache.size, 0)
+})
 
 test('activity uses restored conversation event times, excludes metadata and injected messages', () => {
   const { runtime, session } = fixture()
@@ -63,7 +184,7 @@ test('strict bullet shape and hard brevity bounds', () => {
   assert.deepEqual(parseRecap(JSON.stringify(answer)), answer)
   assert.deepEqual(parseRecap('{"bullets":[" One topic. "]}'), { bullets: ['One topic.'] })
   for (const value of ['```json\n{}\n```', '{}', 'null', JSON.stringify({ ...answer, extra: true }), ...[
-    [], ['', 'Topic'], [1], ['a', 'b', 'c', 'd'], ['x'.repeat(241)], Array(3).fill('x'.repeat(201)), ['First\nSecond'],
+    [], ['', 'Topic'], [1], ['a', 'b', 'c', 'd'], ['x'.repeat(321)], Array(3).fill('x'.repeat(201)), ['  \n\t '], ['x'.repeat(321), null],
   ].map(bullets => JSON.stringify({ bullets })), JSON.stringify({ goal: 'Old', outcome: 'Format', nextStep: 'Rejected' })]) assert.throws(() => parseRecap(value))
   assert.ok(Object.isFrozen(parseRecap(JSON.stringify(answer)).bullets))
   const escaped = '{"bullets":[' + Array(3).fill('"' + '\\u4e2d'.repeat(200) + '"').join(',') + ']}'
