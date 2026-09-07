@@ -5,7 +5,7 @@ import { createSheetsDescribeTool, createSheetsReadTool, createSheetsProposeTool
 import { SHEETS_MIME } from '../src/sheets.js'
 
 const sheet = { properties: { title: 'Book' }, sheets: [{ properties: { sheetId: 0, title: 'Tab', gridProperties: { rowCount: 100, columnCount: 20 } } }] }
-function fixture(t, { enabled = true, authStatus } = {}) {
+function fixture(t, { enabled = true, authStatus, sheetsResponse = () => Response.json(sheet) } = {}) {
   const registrations = new Set()
   const register = value => { registrations.add(value); return () => registrations.delete(value) }
   const ctx = { get: () => ({ register }), effect: fn => fn() }
@@ -16,7 +16,7 @@ function fixture(t, { enabled = true, authStatus } = {}) {
     status: authStatus ?? (async () => ({ connected: true, integrations: [{ id: 'google-drive', authorized: true }, { id: 'google-sheets-edit', authorized: true }] })),
   }, fetch: async (url, opts) => {
     calls.push({ url, ...opts }); const u = new URL(url)
-    if (u.hostname === 'sheets.googleapis.com') return Response.json(sheet)
+    if (u.hostname === 'sheets.googleapis.com') return sheetsResponse()
     const id = u.pathname.split('/').at(-1)
     return Response.json({ id, name: id, mimeType: id === 'folder' ? 'application/vnd.google-apps.folder' : id === 'text' ? 'text/plain' : SHEETS_MIME, parents: [], trashed: false })
   } })
@@ -70,6 +70,31 @@ test('assembled service routes read grants to read scope and never authorizes ed
   assert.throws(() => f.service.readSheet(f.child, { fileId: 'book', range: 'Tab!A1' }))
   assert.throws(() => f.service.readSheet({ session: f.agent.session }, { fileId: 'book', range: 'Tab!A1' }))
   assert.ok(f.tokens.every(id => id === 'google-drive')); assert.ok(f.calls.every(call => call.method !== 'POST'))
+})
+for (const httpStatus of [400, 401, 403, 404, 429, 500]) test(`Sheets HTTP ${httpStatus} preserves read and edit grants and never dispatches writes`, async t => {
+  const f = fixture(t, { sheetsResponse: () => Response.json({ error: {
+    message: 'private upstream details must not escape',
+    details: [{ '@type': 'type.googleapis.com/google.rpc.ErrorInfo', reason: 'SERVICE_DISABLED', domain: 'googleapis.com', metadata: { service: 'sheets.googleapis.com' } }],
+  } }, { status: httpStatus }) })
+  const read = await f.grant(false, 'text')
+  const readTool = [...f.registrations].find(item => item.name === 'google_drive_read_file')
+  assert.ok(readTool)
+  const edit = await f.grant(true)
+  for (const operation of [() => f.service.describeSheets(f.agent, { fileId: 'book' }),
+    () => f.service.readSheet(f.agent, { fileId: 'book', range: 'Tab!A1' })]) {
+    await assert.rejects(operation, error => {
+      assert.equal(error.code, 'request')
+      assert.doesNotMatch(error.message, /private upstream/)
+      return true
+    })
+    assert.equal(f.service.hasAccess(f.agent), true)
+    assert.equal(f.service.hasEditAccess(f.agent), true)
+    assert.equal(f.registrations.has(readTool), true)
+    assert.deepEqual(f.service.browser('status', read).grants.map(item => item.id), ['text'])
+    assert.deepEqual(f.service.browser('edit-status', edit).grants.map(item => item.id), ['book'])
+    assert.deepEqual((await f.service.listFiles(f.agent, {})).files.map(item => item.id), ['text'])
+  }
+  assert.ok(f.calls.every(call => call.method !== 'POST'))
 })
 test('assembled edit-only grant permits bounded reads but does not grant arbitrary Drive access', async t => {
   const f = fixture(t); await f.grant(true)

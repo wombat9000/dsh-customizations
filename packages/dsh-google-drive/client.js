@@ -42,23 +42,27 @@ window.__ModuleLoader__.load({
           if (value.available && state.status?.available && value.ownerId === state.status.ownerId && (value.revision < state.status.revision || (value.revision === state.status.revision && value.enabled !== state.status.enabled))) throw new Error('Session status is stale. Refresh status.')
           state.status = value
         }
-        state.load = async (notice = '') => {
+        state.load = async (notice = '', background = false) => {
           if (!state.live || state.busy) return
           clearTimeout(state.timer)
-          state.busy = true; publish(notice)
-          state.controller = new AbortController()
+          state.controller?.abort()
+          const controller = new AbortController()
+          state.controller = controller
+          const current = () => state.live && state.controller === controller
+          state.busy = !background
+          if (!background) publish(notice)
           try {
-            const value = sessionId ? await request('session-status', { sessionId }, state.controller.signal) : { available: false, enabled: false }
-            if (!state.live) return
+            const value = sessionId ? await request('session-status', { sessionId }, controller.signal) : { available: false, enabled: false }
+            if (!current()) return
             accept(value); state.blocked = false; publish(notice)
           } catch (error) {
-            if (!state.live) return
+            if (!current()) return
             state.blocked = true; publish('Cannot confirm Google Drive session status. Retry status check.')
           } finally {
-            if (state.live) {
+            if (current()) {
               state.busy = false
               setView(previous => ({ ...previous, status: state.status, busy: false }))
-              state.timer = setTimeout(() => state.load(), 3000)
+              state.timer = setTimeout(() => state.load('', true), 3000)
             }
           }
         }
@@ -66,6 +70,9 @@ window.__ModuleLoader__.load({
           if (!state.live || state.busy || state.blocked || !state.status?.available) return
           clearTimeout(state.timer)
           const previous = state.status
+          // A user action supersedes an in-flight background read. Its late
+          // response must not replace the mutation's authoritative status.
+          state.controller?.abort()
           state.busy = true; publish('')
           state.controller = new AbortController()
           try {
@@ -73,7 +80,7 @@ window.__ModuleLoader__.load({
             if (!state.live) return
             if (!validSessionStatus(value) || (value.available && (value.ownerId !== previous.ownerId || value.revision <= previous.revision || value.enabled !== !previous.enabled))) throw new Error('Unconfirmed mutation')
             accept(value); state.busy = false; publish('')
-            state.timer = setTimeout(() => state.load(), 3000)
+            state.timer = setTimeout(() => state.load('', true), 3000)
           } catch {
             if (!state.live) return
             state.blocked = true; state.busy = false

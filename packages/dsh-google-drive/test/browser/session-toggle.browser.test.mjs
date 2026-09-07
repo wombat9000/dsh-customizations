@@ -124,6 +124,44 @@ test('OFF sends exact revision and blank reset aborts without assuming unavailab
   blank = false; await render()
   expect(calls.at(-2).signal.aborted).toBe(true)
 })
+test('background poll preserves toolbar appearance and yields to a user action', async () => {
+  let reads = 0, resolvePoll
+  const fixture = await mount(method => {
+    if (method === 'session-set') return status(true, 1)
+    if (++reads === 1) return status()
+    return new Promise(resolve => { resolvePoll = resolve })
+  })
+  const button = toggle().element()
+  const toolbar = container.querySelector('.gd-session-toggle')
+  const before = toolbar.getBoundingClientRect()
+  const text = container.textContent
+  const opacity = getComputedStyle(button).opacity
+  await expect.poll(() => reads, { timeout: 4500 }).toBe(2)
+  await expect.element(toggle()).toBeEnabled()
+  expect(container.textContent).toBe(text)
+  expect(getComputedStyle(button).opacity).toBe(opacity)
+  expect(toolbar.getBoundingClientRect().width).toBe(before.width)
+  expect(toolbar.getBoundingClientRect().height).toBe(before.height)
+  const poll = fixture.calls.at(-1)
+  await click()
+  expect(poll.signal.aborted).toBe(true)
+  await expect.element(toggle()).toHaveAttribute('aria-checked', 'true')
+  // Simulate a transport that resolves despite cancellation.
+  await act(async () => resolvePoll(status(false, 0)))
+  await expect.element(toggle()).toHaveAttribute('aria-checked', 'true')
+  expect(container.querySelector('[role=alert]')).toBeNull()
+  expect(fixture.calls.filter(call => call.method === 'session-set')).toHaveLength(1)
+}, 10000)
+test('failed background poll locks the switch and exposes a read-only retry', async () => {
+  let reads = 0, rejectPoll
+  await mount(() => { if (++reads === 2) return new Promise((resolve, reject) => { rejectPoll = reject }); return status() })
+  await expect.poll(() => reads, { timeout: 4500 }).toBe(2)
+  await act(async () => rejectPoll(new Error('offline')))
+  expect(container.querySelector('[role=alert]').textContent).toContain('Cannot confirm')
+  await expect.element(toggle()).toBeDisabled()
+  await act(async () => page.getByRole('button', { name: 'Retry status check' }).click())
+  await expect.element(toggle()).toBeEnabled()
+}, 10000)
 test('poll refreshes other-tab changes and owner lifecycle', async () => {
   let value = status()
   await mount(() => value)
