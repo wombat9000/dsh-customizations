@@ -78,7 +78,9 @@ test('bounds response shape and sanitizes transport, body, timeout and auth erro
   ]) {
     const { client } = fixture(t, { fetch, requestTimeoutMs: 10 })
     await assert.rejects(client.listFiles(), error => {
-      assert.ok(['Google request failed. Try again or reconnect.', 'Google operation was cancelled.'].includes(error.message))
+      assert.ok(['Google request failed (HTTP 400). Try again or reconnect.',
+        'Google request failed (HTTP 200). Try again or reconnect.',
+        'Google network request failed. Try again.', 'Google operation was cancelled.'].includes(error.message))
       return true
     })
   }
