@@ -29,6 +29,10 @@
     {
       "name": "@local/dsh-web-firecrawl",
       "source": "../../packages/dsh-web-firecrawl"
+    },
+    {
+      "name": "@local/dsh-google-drive",
+      "source": "../../packages/dsh-google-drive"
     }
   ],
   "patch": "cordis.patch.yml"

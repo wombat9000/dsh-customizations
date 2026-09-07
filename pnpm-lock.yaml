@@ -30,6 +30,15 @@ importers:
         specifier: 5.0.0
         version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.1)(@vitest/browser-playwright@5.0.0)(@vitest/ui@5.0.0)(vite@8.2.2(@types/node@26.4.1)(yaml@2.9.0))
 
+  packages/dsh-google-drive:
+    dependencies:
+      '@deepseek-ai/schemastery':
+        specifier: 3.18.2
+        version: 3.18.2
+      react:
+        specifier: 18.3.1
+        version: 18.3.1
+
   packages/dsh-project-steward: {}
 
   packages/dsh-session-environment:
