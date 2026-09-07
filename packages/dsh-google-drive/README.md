@@ -17,7 +17,7 @@ Installation and profile application require explicit approval. Follow the repos
 1. Before applying the profile, check for an existing preset ID named `google-drive`. Resolve collisions without modifying shipped presets.
 2. After approval, install/apply Google auth and Google Drive. If your profile has custom preset roots, preserve those roots: Cordis replaces the roster's complete configuration rather than merging individual fields.
 3. Restart the existing DSH profile and refresh its Web page.
-4. Open **Settings → Plugins → Google accounts**, save the downloaded Desktop OAuth JSON in the write-only field, and choose **Connect Google Drive**. Follow **Continue with Google** to grant access.
+4. Open **Settings → Plugins → Google accounts** and save the downloaded Desktop OAuth JSON in the write-only field. If DSH runs in Docker Sandbox, enable **Use sandbox callback forwarding**; otherwise leave it off. Choose **Connect Google Drive**, then follow **Continue with Google**. See [callback routing prerequisites](../dsh-google-auth/README.md#callback-routing).
 5. Select **Google Drive** when creating a new session and confirm that it exposes `google_drive_list_files`.
 6. Ask the agent to list ten Drive files. The result contains names, IDs, types, safe Google links when available, and a next-page token when another page exists.
 

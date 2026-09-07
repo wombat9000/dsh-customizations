@@ -36,6 +36,7 @@ window.__ModuleLoader__.load({
     }
     function validStatus(value) {
       return value && ['configured', 'connected', 'pending'].every((key) => typeof value[key] === 'boolean')
+        && ['useSandbox', 'sandboxAvailable'].every((key) => value[key] === undefined || typeof value[key] === 'boolean')
         && Array.isArray(value.integrations) && value.integrations.every((item) => item && typeof item.id === 'string' && typeof item.label === 'string'
           && typeof item.authorized === 'boolean' && ['scopes', 'missingScopes'].every((key) => Array.isArray(item[key]) && item[key].every((scope) => typeof scope === 'string')))
     }
@@ -105,6 +106,38 @@ window.__ModuleLoader__.load({
           if (current === generation.current) { acting.current = false; setBusy(false); setRevision((value) => value + 1) }
         }
       }
+      const setCallbackMode = async (useSandbox) => {
+        if (acting.current || !status) return
+        if (status.pending && !window.confirm('Change callback mode? The pending Google connection will be canceled.')) return
+        const current = ++generation.current
+        acting.current = true; setBusy(true); setFailure(undefined)
+        let failed = false
+        try {
+          await request('callback-mode', { useSandbox })
+          if (current !== generation.current) return
+          setLink(undefined)
+        } catch {
+          if (current !== generation.current) return
+          failed = true
+          setFailure('Could not save callback mode. Check the local DSH GUI and retry.')
+        } finally {
+          if (current === generation.current) {
+            try {
+              const value = await request('status')
+              if (current === generation.current) {
+                if (!validStatus(value)) throw new Error()
+                setStatus(value)
+                if (!value.pending) setLink(undefined)
+              }
+            } catch {
+              if (current === generation.current && !failed) setFailure('Could not refresh callback mode status. Refresh status before connecting.')
+            } finally {
+              if (current === generation.current) { acting.current = false; setBusy(false); setRevision((value) => value + 1) }
+            }
+          }
+        }
+      }
+      const sandboxUnavailable = status?.useSandbox === true && status?.sandboxAvailable !== true
       const label = status === undefined ? 'Checking…' : status === null ? 'Unavailable' : status.pending ? 'Waiting for Google authorization' : status.connected ? 'Connected' : status.configured ? 'Not connected' : 'Not configured'
       const button = (label, method, disabled = false, integrationId) => h('button', {
         type: 'button', style: styles.button, disabled: busy || disabled || (status?.pending && method !== 'cancel'), onClick: () => { void act(method, integrationId) },
@@ -121,6 +154,10 @@ window.__ModuleLoader__.load({
           h('p', { style: styles.hint }, 'This version supports one Google account per credential store, shared by all enabled integrations.'),
           h('p', { style: styles.hint }, 'Google sign-in also requests openid and email identity access to bind permissions to your account. Additional consent retains existing granted scopes.'),
           h('p', { style: styles.hint }, 'In Google Cloud Console, create an OAuth client of type Desktop app. Download its JSON and paste it below. DSH stores it on this host and never returns it to this page. Keep credentials out of Git. ', h('a', { ...external, href: 'https://developers.google.com/identity/protocols/oauth2/native-app' }, 'Google OAuth setup documentation')),
+          h('label', { style: styles.hint }, h('input', { type: 'checkbox', checked: status?.useSandbox === true, disabled: busy || !status,
+            onChange: (event) => { void setCallbackMode(event.target.checked) } }), 'Use sandbox callback forwarding'),
+          h('p', { style: styles.hint }, 'Off: receive the Google callback directly on the DSH host. On: forward the callback from Docker through the sandbox bridge.'),
+          sandboxUnavailable ? h('p', { role: 'alert', style: { ...styles.hint, color: '#ef4444' } }, 'Sandbox callback bridge unavailable. Restore the Docker sandbox bridge or turn off sandbox callback forwarding before connecting. DSH will not fall back to a direct host callback.') : null,
           h('label', { style: styles.hint, htmlFor: 'google-auth-client-json' }, 'Desktop OAuth client JSON'),
           h('textarea', { id: 'google-auth-client-json', value: draft, disabled: busy || status?.pending, maxLength: 32768, rows: 5, autoComplete: 'off', spellCheck: false,
             placeholder: status?.configured ? 'Paste new JSON to replace the stored configuration' : 'Paste downloaded Desktop OAuth client JSON',
@@ -131,7 +168,7 @@ window.__ModuleLoader__.load({
             h('p', { style: styles.hint }, 'Required scopes:'), h('ul', null, ...item.scopes.map((scope) => h('li', { key: scope }, scope))),
             item.authorized ? h('p', { style: styles.hint }, 'Granted / Ready') : h('div', null,
               h('p', { style: styles.hint }, 'Missing permissions:'), h('ul', null, ...item.missingScopes.map((scope) => h('li', { key: scope }, scope))),
-              status.pending ? null : button(status.connected ? `Grant additional permissions for ${item.label}` : `Connect ${item.label}`, 'connect', !status.configured, item.id)))),
+              status.pending ? null : button(status.connected ? `Grant additional permissions for ${item.label}` : `Connect ${item.label}`, 'connect', !status.configured || sandboxUnavailable, item.id)))),
           status && !status.integrations.length ? h('p', { style: styles.hint }, 'Install and enable a Google integration first. No integrations are registered.') : null,
           status?.pending ? h('p', { style: styles.hint }, 'Pending integration: ', typeof pendingLabel === 'string' ? pendingLabel : 'Google integration') : null,
           status?.pending && !link ? h('p', { style: styles.hint }, 'Complete authorization in the Google tab you already opened, or cancel and connect again to get a new link.') : null,

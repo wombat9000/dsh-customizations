@@ -1,5 +1,8 @@
 # One shared host provider owns Google accounts, grants, and token refresh.
 # Integrations register their permission requirements without starting login.
 - insert:
+    # Lazy optional adapter: no bridge import or port publication in direct mode.
+    - id: local-google-sandbox-publisher
+      name: '@local/dsh-google-auth/sandbox'
     - id: local-google-auth
       name: '@local/dsh-google-auth'
