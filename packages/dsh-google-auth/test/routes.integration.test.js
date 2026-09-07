@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -16,7 +16,7 @@ const installed = name => import(pathToFileURL(cli.resolve(name)).href)
 const { Context } = await installed('@deepseek-ai/cordis')
 const { default: WebServer } = await installed('@deepseek-ai/dsh-host-webserver')
 const scope = 'https://www.googleapis.com/auth/drive.metadata.readonly'
-const actions = ['status', 'connect', 'cancel', 'disconnect', 'configure', 'clear-config']
+const actions = ['status', 'connect', 'cancel', 'disconnect', 'configure', 'clear-config', 'callback-mode']
 const clientJson = JSON.stringify({ installed: { client_id: 'fixture.apps.googleusercontent.com', client_secret: 'FIXTURE-ONLY' } })
 
 function requester(base) {
@@ -51,6 +51,7 @@ test('HTTP bodies are strict, consent accepts only integrationId and projections
     async cancel() { throw Error('PRIVATE commit in progress') },
     async disconnect() { calls.push(['disconnect']); return { refreshToken: 'PRIVATE' } },
     async clearConfig() { calls.push(['clear']); return {} },
+    async setCallbackMode(value) { calls.push(['mode', value]); if (!value) throw Error('PRIVATE https://callback.invalid/token'); return { secret: 'PRIVATE' } },
   }
   const server = createServer((req, res) => settingsHandler(service, req.url.split('/').at(-1), server.address().port)(req, res))
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
@@ -71,7 +72,7 @@ test('HTTP bodies are strict, consent accepts only integrationId and projections
   assert.equal(status.headers.get('cache-control'), 'no-store')
   assert.equal(status.headers.get('x-content-type-options'), 'nosniff')
   assert.equal(status.headers.get('referrer-policy'), 'no-referrer')
-  assert.deepEqual(await status.json(), { ok: true, value: { configured: true, connected: true, pending: true, expiresAt: 42,
+  assert.deepEqual(await status.json(), { ok: true, value: { configured: true, connected: true, pending: true, useSandbox: false, sandboxAvailable: false, expiresAt: 42,
     pendingIntegrationId: 'drive', account: { id: 'account-1', email: 'fixture@example.invalid' },
     integrations: [{ id: 'drive', label: 'Drive', scopes: [scope], authorized: true, missingScopes: [] }] } })
   for (const [action, body] of [['connect', { integrationId: 'unknown' }], ['cancel', {}]]) {
@@ -79,6 +80,16 @@ test('HTTP bodies are strict, consent accepts only integrationId and projections
     assert.equal(response.status, 400)
     assert.equal((await response.text()).includes('PRIVATE'), false)
   }
+  const beforeMode = calls.length
+  for (const body of [{}, null, [], { useSandbox: 'true' }, { useSandbox: 1 }, { useSandbox: null }, { useSandbox: true, scope }, { useSandbox: true, scopes: [scope] }, { useSandbox: true, callbackUrl: 'https://attacker.invalid' }, { useSandbox: true, redirectUri: 'http://localhost:42' }, { useSandbox: true, integrationId: 'drive' }]) {
+    assert.equal((await post('callback-mode', body)).status, 400, JSON.stringify(body))
+  }
+  assert.equal(calls.length, beforeMode)
+  assert.deepEqual(await (await post('callback-mode', { useSandbox: true })).json(), { ok: true, value: {} })
+  assert.deepEqual(calls.at(-1), ['mode', true])
+  const modeError = await post('callback-mode', { useSandbox: false })
+  assert.equal(modeError.status, 400)
+  assert.deepEqual(await modeError.json(), { ok: false, error: { message: 'Could not change callback mode. Sign-in may be finishing or settings may be read-only; retry after completion.' } })
   assert.deepEqual(await (await post('disconnect')).json(), { ok: true, value: {} })
   assert.equal((await post('status', {}, {}, 'GET')).status, 405)
   const count = calls.length
@@ -95,7 +106,8 @@ test('real Cordis SettingsFile/WebServer lifecycle serves Google namespace; Driv
     await ctx.plugin(module.default, {}).await()
   }
   const { default: Settings } = await installed('@deepseek-ai/dsh-settings-file')
-  await ctx.plugin(Settings, { path: join(directory, 'settings.yaml'), watch: false }).await()
+  const settingsFiber = ctx.plugin(Settings, { path: join(directory, 'settings.yaml'), watch: false })
+  await settingsFiber.await()
   const records = new Map(), reads = []
   await ctx.plugin({ name: 'test-google-credentials', apply(ctx) {
     ctx.provide('credentials', {
@@ -124,6 +136,10 @@ test('real Cordis SettingsFile/WebServer lifecycle serves Google namespace; Driv
   assert.deepEqual(ids, [['google-drive']])
   const initial = await (await post('status')).json()
   assert.equal(initial.value.configured, false)
+  assert.equal(initial.value.useSandbox, false)
+  assert.equal(initial.value.sandboxAvailable, false)
+  assert.deepEqual(await (await post('callback-mode', { useSandbox: true })).json(), { ok: true, value: {} })
+  assert.equal((await (await post('status')).json()).value.useSandbox, true)
   assert.deepEqual(initial.value.integrations[0].missingScopes, [scope])
   assert.deepEqual(await (await post('configure', { clientJson })).json(), { ok: true, value: {} })
   const configured = await (await post('status')).json()
@@ -131,6 +147,10 @@ test('real Cordis SettingsFile/WebServer lifecycle serves Google namespace; Driv
   assert.equal(configured.value.connected, false)
   assert.equal(JSON.stringify(configured).includes('FIXTURE-ONLY'), false)
   assert.equal(records.get(plugin.CLIENT_KEY).payload.clientSecret, 'FIXTURE-ONLY')
+  const persisted = await readFile(join(directory, 'settings.yaml'), 'utf8')
+  assert.match(persisted, /useSandbox: true/)
+  assert.equal(persisted.includes('FIXTURE-ONLY'), false)
+  assert.equal(persisted.includes('clientSecret'), false)
   assert.equal((await post('clear-config', {}, { Origin: 'https://attacker.invalid' })).status, 403)
   assert.equal(records.size, 1)
   for (const action of ['getAccessToken', 'token', 'refresh']) assert.equal((await post(action)).status, 404)
@@ -140,9 +160,14 @@ test('real Cordis SettingsFile/WebServer lifecycle serves Google namespace; Driv
   await first.dispose()
   assert.equal(ctx.get('googleAuth'), undefined)
   for (const action of actions) assert.equal((await post(action)).status, 404, action)
+  await settingsFiber.dispose()
+  await ctx.plugin(Settings, { path: join(directory, 'settings.yaml'), watch: false }).await()
   const second = ctx.plugin(plugin)
   await second.await()
   assert.equal((await (await post('status')).json()).value.configured, true)
+  assert.equal((await (await post('status')).json()).value.useSandbox, true, 'mode survives a fresh SettingsFile service')
+  await ctx.get('settings').update('google-auth', { useSandbox: false })
+  assert.equal(ctx.get('googleAuth').useSandbox, false, 'external settings update invokes the source hook')
   const secondDrive = ctx.plugin(drive)
   await secondDrive.await()
   assert.equal(ctx.get('googleAuth').integration('google-drive').id, 'google-drive')

@@ -8,6 +8,7 @@
   "exports": {
     ".": "./src/index.js",
     "./client": "./client.js",
+    "./sandbox": "./src/sandbox-publisher.js",
     "./package.json": "./package.json"
   },
   "files": ["src", "client.js", "cordis.patch.yml", "README.md"],

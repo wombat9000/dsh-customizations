@@ -51,6 +51,7 @@ export class GoogleOAuthClient {
     this.queue = Promise.resolve();
     this.tokenQueue = Promise.resolve();
     this.controllers = new Set();
+    this.cleanups = new Set();
     this.flow = null;
     this.refresh = null;
     this.disposed = false;
@@ -172,8 +173,37 @@ export class GoogleOAuthClient {
 
   closeFlow(flow) {
     clearTimeout(flow.timer);
+    if (flow.cleanup) return flow.cleanup;
     flow.server?.close();
-    flow.server?.closeAllConnections();
+    const cleanup = (async () => {
+      // Let the callback body flush before tearing down either TCP endpoint.
+      await flow.responseFinished;
+      flow.server?.closeAllConnections();
+      const lease = await flow.publication?.catch(() => undefined);
+      if (lease && typeof lease.dispose === 'function') await lease.dispose();
+    })().catch(() => {
+      this.cleanupError = 'Google callback forwarding cleanup failed. Restart before connecting again.';
+    });
+    flow.cleanup = cleanup;
+    this.cleanups.add(cleanup);
+    void cleanup.then(() => this.cleanups.delete(cleanup));
+    return cleanup;
+  }
+
+  // Collect asynchronous teardown without changing cancel's boolean contract.
+  async cleanup() {
+    while (this.cleanups.size) await Promise.all([...this.cleanups]);
+  }
+
+  async waitForFlow(flow, operation) {
+    let abort;
+    const cancelled = new Promise((_resolve, reject) => {
+      abort = () => reject(fail('Cancelled.'));
+      flow.controller.signal.addEventListener('abort', abort, { once: true });
+      if (flow.controller.signal.aborted) abort();
+    });
+    try { return await Promise.race([operation, cancelled]); }
+    finally { flow.controller.signal.removeEventListener('abort', abort); }
   }
 
   // Cancellation cannot undo an atomic write after its commit point.
@@ -187,9 +217,10 @@ export class GoogleOAuthClient {
     return true;
   }
 
-  async begin({ scopes: required } = {}) {
+  async begin({ scopes: required, publishCallback } = {}) {
     this.assertActive();
     required = scopes(required);
+    if (publishCallback !== undefined && typeof publishCallback !== 'function') throw fail('Invalid Google callback publisher.');
     if (!this.configured()) throw fail('Configure a Google Desktop OAuth client first.');
     if (this.flow) throw fail('Google sign-in is already pending.');
     this.error = null;
@@ -202,10 +233,14 @@ export class GoogleOAuthClient {
     const path = `/oauth/callback/${randomBytes(16).toString('hex')}`;
     const flow = { controller: new AbortController(), expiresAt: Date.now() + this.timeoutMs, accepted: false };
     this.flow = flow;
+    flow.timer = setTimeout(() => {
+      if (this.flow === flow && this.cancel()) this.error = 'Google sign-in timed out. Connect again.';
+    }, this.timeoutMs);
+    flow.timer.unref?.();
     let previous;
     let requested;
     try {
-      previous = await this.readCredentials();
+      previous = await this.waitForFlow(flow, this.readCredentials());
       this.assertActive(epoch);
       if (this.flow !== flow) throw fail('Cancelled.');
       if (!connected(previous)) previous = null;
@@ -227,27 +262,38 @@ export class GoogleOAuthClient {
       let url;
       try { url = new URL(req.url, flow.redirectUri); } catch { return reply(400, 'Invalid callback.'); }
       const redirect = new URL(flow.redirectUri);
-      if (req.url.split('?')[0] !== path || url.hash || req.headers.host !== redirect.host
+      if (req.url.split('?')[0] !== path || url.hash || req.headers.host !== flow.redirectUri.slice('http://'.length).split('/')[0]
         || url.origin !== redirect.origin || url.pathname !== path) return reply(404, 'Not found.');
       if (flow.accepted || this.flow !== flow) return reply(409, 'Sign-in is no longer pending.');
       if (url.searchParams.getAll('state').length !== 1 || !same(url.searchParams.get('state'), state)) {
         return reply(400, 'Invalid callback state.');
       }
+      const trackResponse = () => {
+        flow.responseFinished = new Promise((resolve) => {
+          // finish only reaches the internal kernel socket. Wait for TCP close
+          // and a bounded relay drain grace before force-closing a public lease.
+          const socket = req.socket;
+          const timer = setTimeout(resolve, 1000);
+          socket.once('close', () => {
+            clearTimeout(timer);
+            setTimeout(resolve, flow.publication ? 50 : 0);
+          });
+        });
+      };
       const code = url.searchParams.get('code');
       if (url.searchParams.has('error')) {
         flow.accepted = true;
         this.flow = null;
         this.error = 'Google sign-in was not authorized.';
         flow.controller.abort();
-        clearTimeout(flow.timer);
-        flow.server.close();
-        res.once('finish', () => this.closeFlow(flow));
-        res.once('close', () => this.closeFlow(flow));
+        trackResponse();
+        this.closeFlow(flow);
         reply(400, 'Google sign-in was not authorized.');
         return;
       }
       if (url.searchParams.getAll('code').length !== 1 || !text(code, 4096)) return reply(400, 'Invalid callback.');
       flow.accepted = true;
+      trackResponse();
       reply(200, 'Google sign-in received. You can close this tab.');
       flow.server.close();
       void (async () => {
@@ -296,11 +342,25 @@ export class GoogleOAuthClient {
       });
       this.assertActive(epoch);
       if (this.flow !== flow) throw fail('Cancelled.');
-      flow.redirectUri = `http://127.0.0.1:${flow.server.address().port}${path}`;
-      flow.timer = setTimeout(() => {
-        if (this.flow === flow && this.cancel()) this.error = 'Google sign-in timed out. Connect again.';
-      }, this.timeoutMs);
-      flow.timer.unref?.();
+      const port = flow.server.address().port;
+      let origin = `http://127.0.0.1:${port}`;
+      if (publishCallback !== undefined) {
+        // Retain the publication promise before calling user code: cancellation
+        // must also collect leases returned after a publisher ignores abort.
+        flow.publication = Promise.resolve().then(() => {
+          if (flow.controller.signal.aborted) throw fail('Cancelled.');
+          return publishCallback(port, flow.controller.signal);
+        });
+        const lease = await this.waitForFlow(flow, flow.publication);
+        const match = typeof lease?.origin === 'string' && /^http:\/\/127\.0\.0\.1:([1-9][0-9]{0,4})\/?$/.exec(lease.origin);
+        if (!match || match[0] !== lease.origin || Number(match[1]) > 65535 || typeof lease.dispose !== 'function') {
+          throw fail('Invalid Google callback publication.');
+        }
+        origin = lease.origin.replace(/\/$/, '');
+      }
+      this.assertActive(epoch);
+      if (this.flow !== flow) throw fail('Cancelled.');
+      flow.redirectUri = `${origin}${path}`;
       const url = new URL(AUTHORIZE);
       url.search = new URLSearchParams({ client_id: this.config.clientId, redirect_uri: flow.redirectUri,
         response_type: 'code', scope: requested.join(' '), state, code_challenge_method: 'S256',
@@ -323,7 +383,7 @@ export class GoogleOAuthClient {
     return { configured: this.configured(), connected: isConnected, pending: Boolean(this.flow),
       grantedScopes: isConnected ? normalizeScopes(record.scopes) : [],
       ...(isConnected ? { account: accountCopy(record.account) } : {}),
-      ...(this.flow ? { expiresAt: this.flow.expiresAt } : {}), ...(this.error ? { error: this.error } : {}) };
+      ...(this.flow ? { expiresAt: this.flow.expiresAt } : {}), ...((this.cleanupError || this.error) ? { error: this.cleanupError || this.error } : {}) };
   }
 
   async getAccessToken({ scopes: required } = {}) {
@@ -393,10 +453,11 @@ export class GoogleOAuthClient {
   }
 
   dispose() {
-    if (this.disposed) return;
+    if (this.disposed) return this.cleanup();
     this.disposed = true;
     this.epoch++;
     this.cancel({ force: true });
     for (const controller of this.controllers) controller.abort();
+    return this.cleanup();
   }
 }

@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { request as httpRequest } from 'node:http';
+import { createServer as tcpServer, connect } from 'node:net';
 import { GoogleOAuthClient, IDENTITY_SCOPES, normalizeScopes } from '../src/oauth.js';
 
 const A = 'https://www.googleapis.com/auth/calendar.readonly';
@@ -45,6 +46,167 @@ async function settled(client) {
   assert.fail('OAuth did not settle');
 }
 async function login(client, options = required) { const flow = await callback(client, options); await fetch(flow.url); await settled(client); return flow; }
+
+// A byte-for-byte TCP relay, not an HTTP proxy: incoming Host stays public.
+function publisherFixture(t) {
+  const state = { calls: 0, disposals: 0 };
+  state.publish = async (port, signal) => {
+    state.calls++; state.internalPort = port; state.signal = signal;
+    const sockets = new Set();
+    const server = tcpServer((incoming) => {
+      const outgoing = connect(port, '127.0.0.1');
+      for (const socket of [incoming, outgoing]) {
+        sockets.add(socket); socket.on('close', () => sockets.delete(socket));
+        socket.on('error', () => { incoming.destroy(); outgoing.destroy(); });
+      }
+      incoming.pipe(outgoing); outgoing.pipe(incoming);
+    });
+    await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
+    state.publicPort = server.address().port;
+    const stop = () => new Promise((resolve) => { server.close(resolve); for (const socket of sockets) socket.destroy(); });
+    t.after(stop);
+    return { origin: `http://127.0.0.1:${state.publicPort}/`, async dispose() { state.disposals++; await stop(); } };
+  };
+  return state;
+}
+
+const rawCallback = (url, host) => new Promise((resolve, reject) => {
+  const req = httpRequest(url, { headers: { Host: host } }, (res) => {
+    let body = ''; res.setEncoding('utf8'); res.on('data', (chunk) => { body += chunk; });
+    res.on('end', () => resolve({ status: res.statusCode, body }));
+  }); req.on('error', reject); req.end();
+});
+
+test('forwarded callback uses public Host and exact token redirect through real TCP relay', async (t) => {
+  const relay = publisherFixture(t), { client, calls } = fixture(t);
+  const { url, auth, started } = await callback(client, { ...required, publishCallback: relay.publish });
+  assert.notEqual(relay.internalPort, relay.publicPort);
+  assert.equal(url.port, String(relay.publicPort)); assert.equal(relay.calls, 1);
+  assert.deepEqual(Object.keys(started).sort(), ['authorizationUrl', 'expiresAt']);
+  assert.equal((await rawCallback(url, `127.0.0.1:${relay.internalPort}`)).status, 404);
+  assert.equal((await rawCallback(url, 'attacker.invalid')).status, 404);
+  assert.equal(calls.length, 0); assert.equal(relay.disposals, 0);
+  const response = await rawCallback(url, url.host);
+  assert.equal(response.status, 200); assert.match(response.body, /You can close this tab/);
+  await settled(client); await client.cleanup();
+  assert.equal(calls[0].init.body.get('redirect_uri'), auth.searchParams.get('redirect_uri'));
+  assert.equal(relay.disposals, 1); client.cancel(); await client.dispose(); assert.equal(relay.disposals, 1);
+});
+
+test('direct callback does not publish and retains internal redirect', async (t) => {
+  const relay = publisherFixture(t), { client } = fixture(t);
+  const { url } = await callback(client);
+  assert.equal(url.port, String(client.flow.server.address().port));
+  await fetch(url); await settled(client); await client.cleanup(); assert.equal(relay.calls, 0);
+});
+
+test('publication rejects noncanonical origins and disposes invalid leases once', async (t) => {
+  for (const origin of ['https://127.0.0.1:1234', 'http://localhost:1234', 'http://127.1:1234',
+    'http://127.0.0.1', 'http://127.0.0.1:0', 'http://127.0.0.1:65536', 'http://127.0.0.1:0123',
+    'http://user@127.0.0.1:1234', 'http://127.0.0.1:1234/path', 'http://127.0.0.1:1234?',
+    'http://127.0.0.1:1234#', 'http://127.0.0.1:1234/../', ' http://127.0.0.1:1234', 'http://127.0.0.1:1234\n', null]) {
+    const { client, calls } = fixture(t); let disposals = 0;
+    await assert.rejects(client.begin({ ...required, publishCallback: async () => ({ origin, dispose() { disposals++; } }) }), /could not start/);
+    await client.cleanup(); assert.equal(disposals, 1); assert.equal(calls.length, 0);
+    assert.equal((await client.status()).pending, false);
+  }
+});
+
+test('publication accepts exact boundary ports and normalizes only the trailing slash', async (t) => {
+  for (const origin of ['http://127.0.0.1:1', 'http://127.0.0.1:80/', 'http://127.0.0.1:65535']) {
+    const { client } = fixture(t); let disposals = 0;
+    const result = await client.begin({ ...required, publishCallback: async () => ({ origin, dispose() { disposals++; } }) });
+    const redirect = new URL(result.authorizationUrl).searchParams.get('redirect_uri');
+    assert.ok(redirect.startsWith(`${origin.replace(/\/$/, '')}/oauth/callback/`));
+    client.cancel(); await client.cleanup(); assert.equal(disposals, 1);
+  }
+});
+
+test('missing lease disposer, malformed publisher and publication rejection fail closed', async (t) => {
+  for (const publishCallback of [null, 1, async () => undefined, async () => ({ origin: 'http://127.0.0.1:1234' }),
+    async () => { throw new Error('private forwarding details'); }]) {
+    const { client, calls } = fixture(t);
+    await assert.rejects(client.begin({ ...required, publishCallback }), /Invalid Google callback publisher|could not start/);
+    await client.cleanup(); assert.equal((await client.status()).pending, false); assert.equal(calls.length, 0);
+  }
+});
+
+test('cancel timeout and dispose reject pending publication and collect late abort-ignoring lease', async (t) => {
+  for (const action of ['cancel', 'timeout', 'dispose']) {
+    const entered = deferred(), late = deferred(); let signal, port, disposals = 0;
+    const { client, calls } = fixture(t, { timeoutMs: action === 'timeout' ? 30 : 300_000 });
+    const rejected = assert.rejects(client.begin({ ...required, publishCallback: (p, s) => {
+      port = p; signal = s; entered.resolve(); return late.promise;
+    } }), /could not start/);
+    await entered.promise;
+    let teardown;
+    if (action === 'timeout') await settled(client);
+    else { teardown = client[action](); if (action === 'cancel') assert.equal(teardown, true); }
+    await rejected; assert.equal(signal.aborted, true);
+    await assert.rejects(fetch(`http://127.0.0.1:${port}/`));
+    late.resolve({ origin: 'http://127.0.0.1:1234', dispose() { disposals++; } });
+    await teardown; await client.cleanup(); assert.equal(disposals, 1); assert.equal(calls.length, 0);
+  }
+});
+
+test('every forwarded terminal outcome disposes the lease once and flushes callback bodies', async (t) => {
+  for (const action of ['denial', 'failure', 'cancel', 'timeout', 'dispose', 'disconnect', 'listener-error']) {
+    const relay = publisherFixture(t);
+    const { client } = fixture(t, { timeoutMs: action === 'timeout' ? 40 : 300_000,
+      ...(action === 'failure' ? { fetch: () => { throw new Error('private'); } } : {}) });
+    const { url } = await callback(client, { ...required, publishCallback: relay.publish });
+    if (action === 'denial') {
+      url.searchParams.set('error', 'private');
+      const response = await rawCallback(url, url.host);
+      assert.equal(response.status, 400); assert.equal(response.body, 'Google sign-in was not authorized.');
+    } else if (action === 'failure') { await fetch(url); await settled(client); }
+    else if (action === 'timeout') await settled(client);
+    else if (action === 'listener-error') client.flow.server.emit('error', new Error('private'));
+    else await client[action]();
+    await client.cleanup(); assert.equal(relay.disposals, 1);
+    await assert.rejects(fetch(url)); await client.dispose(); assert.equal(relay.disposals, 1);
+  }
+});
+
+test('forwarding cleanup rejection is observed and reported without private details', async (t) => {
+  const { client } = fixture(t); let disposals = 0;
+  await client.begin({ ...required, publishCallback: async () => ({ origin: 'invalid', dispose() {
+    disposals++; return Promise.reject(new Error('private forwarding secret'));
+  } }) }).catch(() => {});
+  await client.cleanup(); assert.equal(disposals, 1);
+  assert.equal((await client.status()).error, 'Google callback forwarding cleanup failed. Restart before connecting again.');
+});
+
+test('forwarded cancel retains the boolean commit boundary and disposes only after commit finishes', async (t) => {
+  const relay = publisherFixture(t), committing = deferred(), flush = deferred();
+  const { client } = fixture(t, { credentials: {
+    async get() { return null; }, async delete() {},
+    async set(_record, isValid) { assert.equal(isValid(), true); committing.resolve(); await flush.promise; },
+  } });
+  const { url } = await callback(client, { ...required, publishCallback: relay.publish });
+  await fetch(url); await committing.promise;
+  assert.equal(client.cancel(), false); assert.equal(relay.disposals, 0);
+  flush.resolve(); await settled(client); await client.cleanup(); assert.equal(relay.disposals, 1);
+});
+
+test('late publication rejection after cancellation is collected without unhandled errors', async (t) => {
+  const entered = deferred(), release = deferred(); const { client } = fixture(t);
+  const rejected = assert.rejects(client.begin({ ...required, publishCallback: async () => {
+    entered.resolve(); await release.promise; throw new Error('private late rejection');
+  } }), /could not start/);
+  await entered.promise; client.cancel(); await rejected;
+  release.resolve(); await client.cleanup(); assert.equal((await client.status()).pending, false);
+});
+
+test('timeout includes credential reads before listener and publication', async (t) => {
+  const read = deferred(); let publications = 0;
+  const { client } = fixture(t, { timeoutMs: 20, credentials: { get: () => read.promise, async set() {}, async delete() {} } });
+  // Keep the test process alive while the unref'ed sign-in timeout runs.
+  const keepAlive = setTimeout(() => {}, 1000); t.after(() => clearTimeout(keepAlive));
+  await assert.rejects(client.begin({ ...required, publishCallback: () => { publications++; } }), /could not start/);
+  read.resolve(null); await client.cleanup(); assert.equal(publications, 0);
+  assert.match((await client.status()).error, /timed out/);
+});
 
 test('first login requests explicit identity union, PKCE, loopback and authenticated userinfo', async (t) => {
   const { client, calls, record } = fixture(t);

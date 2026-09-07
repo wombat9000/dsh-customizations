@@ -142,7 +142,7 @@ test('status derives per-integration missing permissions and projects only accou
   register(f.service)
   register(f.service, 'calendar', [otherScope, scope])
   assert.deepEqual(await f.service.status(), {
-    configured: true, connected: true, pending: false, account: tokens.account,
+    configured: true, connected: true, pending: false, useSandbox: false, sandboxAvailable: false, account: tokens.account,
     integrations: [
       { id: 'drive', label: 'drive', scopes: [scope], authorized: true, missingScopes: [] },
       { id: 'calendar', label: 'calendar', scopes: [otherScope, scope].sort(), authorized: false, missingScopes: [otherScope] },

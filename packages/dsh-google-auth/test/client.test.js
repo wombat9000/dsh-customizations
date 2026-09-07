@@ -35,6 +35,19 @@ test('all requests use the shared same-origin POST contract', async () => {
     assert.deepEqual(JSON.parse(options.body), body)
   }
 })
+test('callback mode saves exact boolean bodies through the same-origin transport', async () => {
+  const calls = []
+  const { api } = load(async (url, options) => { calls.push({ url, options }); return { ok: true, json: async () => ({ ok: true, value: {} }) } })
+  for (const useSandbox of [true, false]) {
+    await api('callback-mode', { useSandbox })
+    const { url, options } = calls.at(-1)
+    assert.equal(url, '/api/plugins/google-auth/callback-mode')
+    assert.equal(options.method, 'POST'); assert.equal(options.credentials, 'same-origin')
+    assert.equal(options.headers['X-DSH-Google-Auth'], '1')
+    assert.equal(options.headers['Content-Type'], 'application/json')
+    assert.deepEqual(JSON.parse(options.body), { useSandbox })
+  }
+})
 test('authorization links reject untrusted origins, credentials, paths, fragments and protocols', () => {
   const { plugin } = load()
   assert.equal(plugin.authorizationUrl('https://accounts.google.com/o/oauth2/v2/auth?state=fixture'), 'https://accounts.google.com/o/oauth2/v2/auth?state=fixture')

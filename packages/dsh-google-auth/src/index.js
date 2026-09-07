@@ -4,6 +4,7 @@ import { registerSettingsRoutes } from './routes.js'
 
 export const name = 'google-auth'
 export const inject = ['credentials', 'webServer', 'settings']
+export const Config = z.object({ useSandbox: z.boolean().default(false) })
 export const CLIENT_KEY = 'google-auth/client'
 export const CREDENTIAL_KEY = 'google-auth/default'
 const CONFIG_ERROR = 'Configure a Google Desktop OAuth client in Settings → Plugins → Google accounts.'
@@ -69,9 +70,15 @@ function integrationDefinition(value) {
 }
 
 export class GoogleAuthService {
-  constructor({ credentials, createClient = options => new GoogleOAuthClient(options) }) {
+  constructor({ credentials, createClient = options => new GoogleOAuthClient(options),
+    getCallbackMode = () => false, saveCallbackMode, getPublisher = () => undefined }) {
     this.credentials = credentials
     this.createClient = createClient
+    this.getCallbackMode = getCallbackMode
+    this.saveCallbackMode = saveCallbackMode
+    this.getPublisher = getPublisher
+    this.useSandbox = getCallbackMode() === true
+    this.modeRevision = 0
     this.client = undefined
     this.loading = undefined
     this.closed = false
@@ -80,6 +87,41 @@ export class GoogleAuthService {
     this.integrations = new Map()
     this.pendingIntegrationId = undefined
     this.accessOperations = new Set()
+  }
+
+  syncCallbackMode() {
+    const next = this.getCallbackMode() === true
+    if (this.useSandbox === next) return
+    this.useSandbox = next
+    this.modeRevision++
+    // External settings changes also invalidate a pending browser link. This
+    // does not revoke or erase the connected account's existing credential.
+    this.client?.cancel({ force: true })
+    this.pendingIntegrationId = undefined
+  }
+
+  sandboxAvailable() {
+    try { return this.getPublisher()?.available() === true } catch { return false }
+  }
+
+  async setCallbackMode(useSandbox) {
+    if (typeof useSandbox !== 'boolean') throw new Error('Choose a boolean sandbox callback mode.')
+    if (this.closed) throw new Error('Google auth plugin has stopped.')
+    this.syncCallbackMode()
+    if (useSandbox !== this.useSandbox) {
+      // Interrupt publication immediately instead of waiting behind begin().
+      if (this.client?.cancel() === false) throw new Error('Google sign-in is finishing. Wait before changing callback mode.')
+      this.modeRevision++
+      this.pendingIntegrationId = undefined
+    }
+    return this.serialize(async () => {
+      if (typeof this.saveCallbackMode !== 'function') throw new Error('Google callback settings are read-only.')
+      try { await this.saveCallbackMode(useSandbox) }
+      catch { throw new Error('Could not save Google callback settings.') }
+      this.syncCallbackMode()
+      await this.client?.cleanup?.()
+      return {}
+    })
   }
 
   invalidateAccess(integrationId) {
@@ -149,8 +191,9 @@ export class GoogleAuthService {
   async resetClient() {
     this.invalidateAccess()
     this.generation++
-    this.client?.dispose()
+    const previous = this.client
     this.client = undefined
+    await previous?.dispose()
     this.pendingIntegrationId = undefined
     if (this.loading) await this.loading.catch(() => {})
     await credentialAdapter(this.credentials, '').delete()
@@ -181,6 +224,7 @@ export class GoogleAuthService {
 
   async status() {
     await this.mutation
+    this.syncCallbackMode()
     let status
     try { status = await (await this.load()).status() }
     catch { status = { configured: false, connected: false, pending: false, grantedScopes: [], error: CONFIG_ERROR } }
@@ -188,6 +232,7 @@ export class GoogleAuthService {
     const granted = new Set(status.connected ? status.grantedScopes : [])
     return {
       configured: status.configured === true, connected: status.connected === true, pending: status.pending === true,
+      useSandbox: this.useSandbox, sandboxAvailable: this.sandboxAvailable(),
       ...(Number.isFinite(status.expiresAt) ? { expiresAt: status.expiresAt } : {}),
       ...(status.error ? { error: status.error } : {}),
       ...(status.account ? { account: { id: status.account.id, ...(status.account.email ? { email: status.account.email } : {}) } } : {}),
@@ -202,22 +247,40 @@ export class GoogleAuthService {
 
   async begin(integrationId) {
     const integration = this.integration(integrationId)
+    this.syncCallbackMode()
+    const modeRevision = this.modeRevision
     return this.serialize(async () => {
+      this.syncCallbackMode()
+      if (this.modeRevision !== modeRevision) throw new Error('Callback mode changed; connect again.')
+      const publisher = this.useSandbox ? this.getPublisher() : undefined
+      if (this.useSandbox && (!publisher || !this.sandboxAvailable())) {
+        throw new Error('Sandbox callback forwarding is unavailable. Start the sandbox bridge or turn off sandbox forwarding.')
+      }
       const client = await this.load()
       this.assertIntegration(integration)
+      if (this.modeRevision !== modeRevision) throw new Error('Callback mode changed; connect again.')
       this.invalidateAccess()
-      const result = await client.begin({ scopes: [...integration.scopes] })
+      const result = await client.begin({ scopes: [...integration.scopes],
+        ...(publisher ? { publishCallback: (port, signal) => publisher.publish({ port, signal }) } : {}),
+      })
       this.pendingIntegrationId = integration.id
-      try { this.assertIntegration(integration) }
-      catch (error) { client.cancel(); throw error }
+      try {
+        this.assertIntegration(integration)
+        if (this.modeRevision !== modeRevision) throw new Error('Callback mode changed; connect again.')
+      } catch (error) { client.cancel(); throw error }
       return result
     })
   }
 
   async cancel() {
-    return this.serialize(() => {
+    if (this.client?.cancel() === false) throw new Error('Google sign-in is finishing. Wait for completion, then disconnect if needed.')
+    // Invalidate begin() even while it is still loading configuration and has
+    // not created a client/listener yet. Recheck once queued mutations settle.
+    this.modeRevision++
+    this.pendingIntegrationId = undefined
+    return this.serialize(async () => {
       if (this.client?.cancel() === false) throw new Error('Google sign-in is finishing. Wait for completion, then disconnect if needed.')
-      this.pendingIntegrationId = undefined
+      await this.client?.cleanup?.()
       return {}
     })
   }
@@ -271,16 +334,25 @@ export class GoogleAuthService {
     this.invalidateAccess()
     this.closed = true
     this.generation++
-    this.client?.dispose()
+    const cleanup = this.client?.dispose()
     this.integrations.clear()
+    return cleanup
   }
 }
 
-export function apply(ctx) {
-  const service = new GoogleAuthService({ credentials: ctx.credentials })
+export function apply(ctx, config = {}) {
+  let source = () => ({ useSandbox: config.useSandbox === true })
+  const service = new GoogleAuthService({ credentials: ctx.credentials,
+    getCallbackMode: () => source().useSandbox,
+    saveCallbackMode: value => ctx.settings.update(name, { useSandbox: value }),
+    getPublisher: () => ctx.get('sandboxCallbackPublisher'),
+  })
   ctx.effect(() => () => service.dispose())
   ctx.provide('googleAuth', service)
   registerSettingsRoutes(ctx, service)
-  // Namespace existence makes the card discoverable. No credentials in settings.
-  ctx.settings.installSection(ctx, name, z.object({}), {}, { setSource() {}, onChange() {} })
+  // This non-secret preference belongs in settings, never in OAuth credentials.
+  ctx.settings.installSection(ctx, name, Config, { useSandbox: config.useSandbox === true }, {
+    setSource(current) { source = current },
+    onChange() { service.syncCallbackMode() },
+  })
 }

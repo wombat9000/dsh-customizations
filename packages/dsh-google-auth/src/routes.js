@@ -1,5 +1,5 @@
 const PREFIX = '/api/plugins/google-auth/'
-const ACTIONS = ['status', 'connect', 'cancel', 'disconnect', 'configure', 'clear-config']
+const ACTIONS = ['status', 'connect', 'cancel', 'disconnect', 'configure', 'clear-config', 'callback-mode']
 const LOOPBACK = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1'])
 
 function reply(res, status, value) {
@@ -35,6 +35,7 @@ async function readBody(req, action) {
     if (data === null || typeof data !== 'object' || Array.isArray(data)) return undefined
     if (action === 'configure') return Object.keys(data).length === 1 && typeof data.clientJson === 'string'
       && data.clientJson.length <= 32768 ? data : undefined
+    if (action === 'callback-mode') return Object.keys(data).length === 1 && typeof data.useSandbox === 'boolean' ? data : undefined
     if (action === 'connect') return Object.keys(data).length === 1 && typeof data.integrationId === 'string'
       && /^[a-z][a-z0-9-]{0,63}$/u.test(data.integrationId) ? data : undefined
     return Object.keys(data).length === 0 ? data : undefined
@@ -60,10 +61,12 @@ export function settingsHandler(service, action, port) {
     try {
       const value = await (action === 'connect' ? service.begin(body.integrationId)
         : action === 'configure' ? service.configure(body.clientJson)
-          : action === 'clear-config' ? service.clearConfig() : service[action]())
+          : action === 'clear-config' ? service.clearConfig()
+            : action === 'callback-mode' ? service.setCallbackMode(body.useSandbox) : service[action]())
       // Explicit projections keep credentials and future internal fields off wire.
       const safe = action === 'status' ? {
         configured: value.configured === true, connected: value.connected === true, pending: value.pending === true,
+        useSandbox: value.useSandbox === true, sandboxAvailable: value.sandboxAvailable === true,
         ...(Number.isFinite(value.expiresAt) ? { expiresAt: value.expiresAt } : {}),
         ...(typeof value.error === 'string' ? { error: value.error } : {}),
         ...(value.account ? { account: { id: value.account.id, ...(value.account.email ? { email: value.account.email } : {}) } } : {}),
@@ -76,8 +79,12 @@ export function settingsHandler(service, action, port) {
       reply(res, 200, { ok: true, value: safe })
     } catch {
       reply(res, 400, { ok: false, error: {
-        message: action === 'connect'
-          ? 'Could not start Google login. Check client configuration and the selected integration, then retry.'
+        message: action === 'callback-mode'
+          ? 'Could not change callback mode. Sign-in may be finishing or settings may be read-only; retry after completion.'
+          : action === 'connect'
+          ? service.useSandbox === true
+            ? 'Could not start Google login. Check client configuration and the sandbox bridge/helper. No direct callback fallback was used.'
+            : 'Could not start Google login. Check client configuration and the selected integration, then retry.'
           : action === 'configure'
             ? 'Could not save configuration. Paste downloaded Google Desktop client JSON and check credential storage access.'
             : action === 'cancel'
