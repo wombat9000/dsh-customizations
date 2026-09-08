@@ -1,2 +1,4 @@
 packages:
   - packages/*
+
+minimumReleaseAge: 5760 # 4 days in minutes

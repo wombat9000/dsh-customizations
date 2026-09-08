@@ -22,6 +22,12 @@ Draft template v1. Replace or remove all placeholders. Commands below are **unve
 3. Inspect package-manager settings and the selected cache without revealing credentials. A cache directory's existence does not prove locked packages are available for this platform. If the executable or cache is missing, report the limitation; do not download automatically.
 4. After explicit approval, use {{VERIFIED_LOCAL_PNPM_EXECUTABLE}} with `install --offline --frozen-lockfile --ignore-scripts`. This writes dependencies and metadata. Do not run this placeholder. If offline resolution fails, stop; no automatic online fallback, lockfile changes, upgrades, or lifecycle scripts. Obtain separate approval for any required scripts or cache population.
 
+### Release-age policy review
+
+Inspect existing `minimumReleaseAge` settings, `minimumReleaseAgeExclude` exceptions, configuration overrides, and support in the pinned pnpm version. Consider `minimumReleaseAge: 10080` (7 days in minutes) as a default; preserve deliberate policy choices unless a change is approved. A delay allows time to detect problems but is not a safety guarantee or a substitute for dependency review.
+
+If an urgent security fix needs a newer release, propose an explicitly approved, narrowly scoped package-and-version exception supported by the pinned version. Document its reason and review/removal condition. Do not globally disable the delay or add broad exclusions to bypass it. Policy changes require approval and do not authorize installs, provisioning, or upgrades.
+
 ## Validation evidence
 
 | Status | Exact command and working directory | Prerequisites and side effects | Evidence |

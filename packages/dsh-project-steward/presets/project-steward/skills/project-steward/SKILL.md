@@ -23,6 +23,10 @@ Improve the repository you find, not an assumed project layout. This skill is gu
 
 ## Dependency guidance when the repository uses pnpm
 
+Review the release-age policy as part of dependency setup. Inspect existing `minimumReleaseAge` settings, `minimumReleaseAgeExclude` exceptions, and configuration overrides. Verify support and behavior in the repository's pinned pnpm version before proposing changes; do not upgrade pnpm automatically. Recommend `minimumReleaseAge: 10080` (7 days in minutes) as a considered default, not a mandatory replacement for a deliberate policy. A delay gives maintainers and security researchers time to detect problems; it is not a safety guarantee or a substitute for dependency review.
+
+If an urgent security fix needs a newer release, propose an explicitly approved, narrowly scoped package-and-version exception supported by the pinned pnpm version. Document the reason and when to review or remove it. Do not globally disable the delay or add broad exclusions to make an install pass. Policy edits and exceptions require approval; they do not authorize installs or upgrades.
+
 Write a repo-owned procedure that establishes these prerequisites **before** an install:
 
 - Determine the exact pnpm pin and supported Node.js range from the repository. Locate the candidate executable without running it (`command -v pnpm` on POSIX; `Get-Command pnpm` on PowerShell). Inspect its link target and wrapper. A Corepack or package-manager shim can download the pinned executable even for `--version`; do not invoke it until local availability is established. If the exact executable is absent, stop and request an approved provisioning step. Do not use `npx`, Corepack preparation, or another downloader as an automatic fallback.
