@@ -20,6 +20,30 @@ function fixture({ chunks, prepareError, delay = 0, timeoutMs } = {}) {
 }
 
 const response = bullets => [{ type: 'text-delta', text: JSON.stringify({ bullets }) }, { type: 'finish', reason: { kind: 'stop' } }]
+test('headline schema accepts either key order and preserves legacy bullets', () => {
+  const headline = 'Google Drive: shared-file picker and invoice export'
+  for (const value of [{ headline, ...answer }, { ...answer, headline }]) {
+    const parsed = parseRecap(JSON.stringify(value))
+    assert.deepEqual(parsed, { headline, ...answer })
+    assert.ok(Object.isFrozen(parsed))
+  }
+  assert.deepEqual(parseRecap(JSON.stringify(answer)), answer)
+  assert.equal(parseRecap(JSON.stringify({ ...answer, headline: '  Google\nDrive:\tshared picker  ' })).headline, 'Google Drive: shared picker')
+  assert.equal(parseRecap(JSON.stringify({ ...answer, headline: 'x'.repeat(120) })).headline.length, 120)
+  for (const headline of [null, 42, [], {}, '', ' \n ', 'SECRET'.repeat(21)]) {
+    assert.throws(() => parseRecap(JSON.stringify({ ...answer, headline })), error => error.code === 'invalid-response' && !error.message.includes('SECRET'))
+  }
+})
+test('generated headline survives cache and bounded shortening without losing bullets', async () => {
+  const headline = 'Google Drive: shared-file picker and invoice export'
+  const recap = { headline, ...answer }
+  const { runtime, calls } = fixture({ chunks: n => [{ type: 'text-delta', text: JSON.stringify({ ...answer, headline: n === 1 ? 'x'.repeat(121) : headline }) }, { type: 'finish', reason: { kind: 'stop' } }] })
+  assert.deepEqual((await runtime.recap({ sessionId: 's' })).recap, recap)
+  assert.equal(calls.length, 2)
+  assert.match(calls[1].system, /Keep an existing headline/)
+  assert.deepEqual((await runtime.recap({ sessionId: 's' })).recap, recap)
+  assert.equal(calls.length, 2)
+})
 test('normalizes whitespace before size checks and accepts modest overruns without truncation', async () => {
   assert.deepEqual(parseRecap(JSON.stringify({ bullets: ['  First\r\n Second\t third.  '] })), { bullets: ['First Second third.'] })
   const bullets = ['x'.repeat(320), 'y'.repeat(280)]
@@ -226,7 +250,9 @@ test('one-shot uses exact route, no tools, no historical metadata', async () => 
   assert.deepEqual(calls[0].tools, [])
   assert.equal(calls[0].messages.length, 1)
   assert.equal(calls[0].sessionId, undefined)
-  assert.match(calls[0].system, /40–70 words total/u)
+  assert.match(calls[0].system, /40–70 words across the bullets/u)
+  assert.match(calls[0].system, /6–12 words/u)
+  assert.match(calls[0].system, /topic \+ outcome or direction phrase, not a full sentence/u)
   assert.match(calls[0].system, /especially user corrections/u)
   assert.match(calls[0].system, /Do not invent a next step/u)
   assert.match(calls[0].system, /untrusted data/u)

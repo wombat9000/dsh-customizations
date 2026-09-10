@@ -81,7 +81,7 @@ test('typing keeps the recap; another session send does not hide it', async () =
   await expect.element(page.getByRole('status')).toBeVisible()
   const panel = page.getByRole('complementary', { name: 'Session recap' }).element()
   expect(panel.querySelectorAll('li')).toHaveLength(3)
-  expect(panel.querySelector('button, svg, small, strong')).toBeNull()
+  expect(panel.querySelector('button, svg, small, strong, h2')).toBeNull()
   expect(panel.textContent).not.toMatch(/Earlier recap|Goal:|Latest outcome:|Next step:/)
   await fixture.sent()
   await expect.element(page.getByRole('status')).not.toBeInTheDocument()
@@ -122,6 +122,31 @@ test('header and dock share busy state and isolate pending responses across sess
   await expect.poll(statusText).toContain('Goal for second-session.')
   expect(statusText()).not.toContain('Goal for fixture-session.')
   expect(fixture.rpc.call.mock.calls.filter(([, method]) => method === 'recap').map(([, , payload]) => payload.sessionId)).toEqual(['fixture-session', 'second-session'])
+})
+
+test('headline is a single-line accessible heading above unchanged details at narrow widths', async () => {
+  const headline = 'Google Drive: shared-file picker and invoice export with preserved permissions'
+  fixture = await mountSlot('conversation.input.dock', { narrow: true, recapHeadline: headline })
+  await click(page.getByRole('button', { name: 'Recap', exact: true }))
+  const heading = page.getByRole('heading', { name: headline, level: 2 })
+  await expect.element(heading).toBeVisible()
+  await expect.element(heading).toHaveAttribute('title', headline)
+  const element = heading.element()
+  expect(element.nextElementSibling.tagName).toBe('UL')
+  expect(element.nextElementSibling.querySelectorAll('li')).toHaveLength(3)
+  expect(element.nextElementSibling.textContent).toContain('Add reliable screenshot coverage for Session recap.')
+  expect(getComputedStyle(element).whiteSpace).toBe('nowrap')
+  expect(getComputedStyle(element).textOverflow).toBe('ellipsis')
+  expect(element.scrollWidth).toBeGreaterThan(element.clientWidth)
+  const panel = page.getByRole('complementary', { name: 'Session recap' }).element()
+  expect(panel.scrollWidth).toBeLessThanOrEqual(panel.clientWidth)
+})
+test('headline stays plain text, never interpreted as markup', async () => {
+  const headline = '<img src=x onerror=alert(1)> Drive picker'
+  fixture = await mountSlot('conversation.input.dock', { recapHeadline: headline })
+  await click(page.getByRole('button', { name: 'Recap', exact: true }))
+  await expect.element(page.getByRole('heading', { name: headline, level: 2 })).toBeVisible()
+  expect(document.querySelector('.dsh-session-recap-card img')).toBeNull()
 })
 
 test('narrow recap panel wraps long text without horizontal overflow', async () => {
