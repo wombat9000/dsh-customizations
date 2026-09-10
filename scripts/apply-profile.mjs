@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 
 import { spawnSync } from 'node:child_process'
-import { existsSync, readFileSync, copyFileSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, copyFileSync, writeFileSync, mkdirSync, realpathSync, lstatSync } from 'node:fs'
+import { createRequire } from 'node:module'
 import { homedir } from 'node:os'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -26,7 +27,7 @@ Options:
   --help              Show this help
 
 Environment:
-  DSH_BIN             DSH executable to invoke; defaults to dsh
+  DSH_BIN             Only this checkout's node_modules/.bin/dsh is supported (default)
   DSH_HOME            Harness home; defaults to ~/.dsh`)
 }
 
@@ -204,17 +205,144 @@ validateRecipe(recipe, recipePath)
 const profile = options.profile ?? recipe.profile
 if (!/^[a-z0-9][a-z0-9-]*$/.test(profile)) fail(`invalid target profile name ${JSON.stringify(profile)}`)
 
-const dsh = process.env.DSH_BIN || 'dsh'
-for (const bundle of recipe.bundles) {
-  const source = resolveBundleSource(bundle, recipeDirectory)
-  console.log(`Applying ${bundle.name} to profile ${profile}`)
-  run(dsh, ['plugin', '--profile', profile, 'add', source], options)
-}
-
-const dshHome = process.env.DSH_HOME || join(homedir(), '.dsh')
+const version = '0.1.5-rc.1'
+const coreName = '@deepseek-ai/dsh-client-connection'
+const patchKey = `${coreName}@${version}`
+const corePatchName = `dsh-client-connection-${version}-rpc-owner.patch`
+const localDsh = join(repositoryRoot, 'node_modules', '.bin', 'dsh')
+const dsh = process.env.DSH_BIN || localDsh
+const dshHome = resolve(process.env.DSH_HOME || join(homedir(), '.dsh'))
 const profileDirectory = join(dshHome, 'profiles', profile)
 const patchSource = resolve(recipeDirectory, recipe.patch)
 if (!existsSync(patchSource)) fail(`recipe patch not found: ${patchSource}`)
+const sources = recipe.bundles.map(bundle => {
+  const source = resolveBundleSource(bundle, recipeDirectory)
+  if (!bundle.name.startsWith('@deepseek-ai/dsh')) return source
+  if (source !== bundle.name && source !== `${bundle.name}@${version}`) fail(`unsupported DSH bundle source ${source}; this migration requires ${version}`)
+  return `${bundle.name}@${version}`
+})
+const targetPatch = join(profileDirectory, 'cordis.patch.yml')
+// All read-only checks precede the first profile write or package-manager call.
+applyPatch({ source: patchSource, target: targetPatch, dryRun: true, forcePatch: options.forcePatch })
+
+function verifyCore(anchor) {
+  const web = createRequire(anchor).resolve('@deepseek-ai/dsh-web-app')
+  const core = createRequire(web).resolve(coreName)
+  if (anchor === join(profileDirectory, 'package.json') &&
+      (!web.startsWith(`${profileDirectory}/node_modules/`) || !core.startsWith(`${profileDirectory}/node_modules/`))) {
+    fail('profile must resolve its own Web and patched Connection packages, not launcher or NODE_PATH fallbacks')
+  }
+  const manifest = readJson(join(dirname(core), '..', 'package.json'), coreName)
+  const source = readFileSync(core, 'utf8')
+  if (manifest.version !== version || !source.includes('const owner = getTraceable(this.ctx, this.ctx);') ||
+      !/import \{[^}]*getTraceable[^}]*\} from "@deepseek-ai\/cordis"/.test(source)) {
+    fail(`required ${patchKey} RPC-owner patch is missing; install the pinned patched graph before applying`)
+  }
+}
+
+function assertOwnedPath(path) {
+  // Do not mutate a profile or dependency tree redirected to another installation.
+  for (let current = path; ; current = dirname(current)) {
+    try {
+      // existsSync follows symlinks and misses dangling links that writes follow.
+      if (lstatSync(current).isSymbolicLink()) fail(`unsupported symlinked profile path: ${current}`)
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error
+    }
+    if (dirname(current) === current) break
+  }
+}
+
+async function configureProfileDependencies() {
+  const { parseDocument } = await import('yaml')
+  const workspacePath = join(profileDirectory, 'pnpm-workspace.yaml')
+  assertOwnedPath(profileDirectory)
+  for (const name of ['node_modules', 'package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', 'pnpm-workspace.yaml.bak', 'patches', 'cordis.patch.yml', 'cordis.patch.yml.bak']) {
+    assertOwnedPath(join(profileDirectory, name))
+  }
+  const document = parseDocument(existsSync(workspacePath) ? readFileSync(workspacePath, 'utf8') : '{}')
+  if (document.errors.length) fail(`cannot parse ${workspacePath}: ${document.errors[0].message}`)
+  const config = document.toJS()
+  if (!config || typeof config !== 'object' || Array.isArray(config)) fail(`unsupported workspace configuration: ${workspacePath}`)
+  const destination = `patches/${corePatchName}`
+  const existing = config.patchedDependencies?.[patchKey]
+  if (existing && existing !== destination) fail(`conflicting ${patchKey} patch in ${workspacePath}; reconcile it manually`)
+  if (config.allowUnusedPatches === true || config.ignorePatchFailures === true) fail('profile must not ignore patch failures or allow unused patches')
+  const repositoryConfig = parseDocument(readFileSync(join(repositoryRoot, 'pnpm-workspace.yaml'), 'utf8')).toJS()
+  const targetPackages = repositoryConfig.minimumReleaseAgeExclude.filter(spec => spec.startsWith('@deepseek-ai/dsh') && spec.endsWith(`@${version}`))
+  for (const spec of targetPackages) {
+    const name = spec.slice(0, -version.length - 1)
+    if (config.overrides?.[name] && config.overrides[name] !== version) fail(`conflicting profile override for ${name}; reconcile it manually`)
+    document.setIn(['overrides', name], version)
+  }
+  document.set('minimumReleaseAgeExclude', [...new Set([...(config.minimumReleaseAgeExclude ?? []), ...targetPackages])])
+  document.setIn(['patchedDependencies', patchKey], destination)
+  document.set('allowUnusedPatches', false)
+  document.set('ignorePatchFailures', false)
+  mkdirSync(join(profileDirectory, 'patches'), { recursive: true })
+  const patchTarget = join(profileDirectory, destination)
+  assertOwnedPath(patchTarget)
+  const patchContent = readFileSync(join(repositoryRoot, 'patches', corePatchName), 'utf8')
+  if (existsSync(patchTarget) && readFileSync(patchTarget, 'utf8') !== patchContent) fail(`conflicting core patch: ${patchTarget}`)
+  writeFileSync(patchTarget, patchContent)
+  if (existsSync(workspacePath)) copyFileSync(workspacePath, `${workspacePath}.bak`)
+  writeFileSync(workspacePath, document.toString())
+}
+
+function profileBundles(manifest) {
+  const bundles = manifest.dsh?.profile?.bundles ?? []
+  if (!Array.isArray(bundles) || bundles.some(name => typeof name !== 'string')) fail('invalid profile bundle list')
+  return bundles
+}
+
+function restoreAddedBundleOrder(previousBundles) {
+  const manifestPath = join(profileDirectory, 'package.json')
+  assertOwnedPath(manifestPath)
+  const manifest = readJson(manifestPath, 'profile manifest')
+  const installed = profileBundles(manifest)
+  const previous = new Set(previousBundles)
+  const added = [...new Set(recipe.bundles.map(bundle => bundle.name))]
+    .filter(name => !previous.has(name) && installed.includes(name))
+  const addedNames = new Set(added)
+  let index = 0
+  // pnpm sorts dependencies and DSH appends in that order. Reorder only newly
+  // selected bundles; retained bundles and template layers keep their positions.
+  const ordered = installed.map(name => addedNames.has(name) ? added[index++] : name)
+  if (ordered.every((name, position) => name === installed[position])) return
+  manifest.dsh.profile.bundles = ordered
+  writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`)
+}
+
+let previousBundles = []
+if (options.dryRun) {
+  console.log(`Would verify checkout-local DSH ${version} launcher and required RPC-owner patch (other launchers unsupported).`)
+  console.log(`Would configure ${patchKey} in ${join(profileDirectory, 'pnpm-workspace.yaml')} and copy its patch.`)
+} else {
+  if (resolve(dsh) !== localDsh || !existsSync(localDsh)) fail('unsupported launcher; use this checkout’s installed node_modules/.bin/dsh; global DSH is never modified')
+  const launcherManifest = join(repositoryRoot, 'node_modules', '@deepseek-ai', 'dsh', 'package.json')
+  if (readJson(launcherManifest, 'launcher').version !== version) fail(`launcher must be DSH ${version}`)
+  verifyCore(realpathSync(launcherManifest))
+  const reported = run(dsh, ['--version'], { capture: true }).trim()
+  if (reported !== version) fail(`launcher reported unsupported version ${reported}`)
+  const pnpmVersion = run('pnpm', ['--version'], { capture: true }).trim()
+  if (pnpmVersion !== '11.9.0') fail(`pnpm 11.9.0 is required; found ${pnpmVersion}`)
+  await configureProfileDependencies()
+  const manifestPath = join(profileDirectory, 'package.json')
+  if (existsSync(manifestPath)) previousBundles = profileBundles(readJson(manifestPath, 'profile manifest'))
+}
+for (const [index, bundle] of recipe.bundles.entries()) console.log(`Applying ${bundle.name} to profile ${profile} from ${JSON.stringify(sources[index])}`)
+// Resolve the complete graph at once: a base-only intermediate graph has no core patch target.
+// Snapshot local bundles rather than symlinking to a different dependency graph.
+run(dsh, ['plugin', '--profile', profile, 'add',
+  ...sources.map(source => isLocalSource(source) ? `file:${source}` : source),
+  '--offline', '--ignore-scripts'], options)
+if (options.dryRun) {
+  console.log('Would restore recipe order for newly added bundles, preserving retained bundle positions.')
+} else {
+  restoreAddedBundleOrder(previousBundles)
+  run(dsh, ['plugin', '--profile', profile, 'install', '--offline', '--frozen-lockfile', '--ignore-scripts'], options)
+  verifyCore(join(profileDirectory, 'package.json'))
+}
 
 if (!options.dryRun && !existsSync(profileDirectory)) {
   fail(`DSH did not create the expected profile directory: ${profileDirectory}`)

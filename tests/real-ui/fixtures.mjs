@@ -1,4 +1,5 @@
 import { test as base, expect } from '@playwright/test'
+export { openSeededSession } from './session-navigation.mjs'
 
 export const test = base.extend({
   app: async ({ page, context }, use) => {

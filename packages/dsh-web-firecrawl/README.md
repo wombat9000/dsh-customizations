@@ -1,6 +1,6 @@
 # Local DSH Firecrawl Web Provider
 
-Local DSH `0.1.2-rc.1` bundle that uses Firecrawl API v2 behind DSH's existing
+Local DSH `0.1.5-rc.1` bundle that uses Firecrawl API v2 behind DSH's existing
 `web_search` and `web_fetch` tools.
 
 The package registers one provider (`firecrawl`) for both operations and adds a

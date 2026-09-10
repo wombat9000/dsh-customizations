@@ -2,7 +2,7 @@
 
 Project Steward is a selectable agent preset for inspecting repository setup, agent guidance, and development practices. It proposes concrete improvements, applies only approved changes, validates them, and summarizes the results. It keeps Standard's coding tools and adds no Creator runtime tools.
 
-This composition-only bundle targets DSH `0.1.2-rc.1`. It has no runtime entrypoint, new dependency, install hook, startup writer, or migration/sync engine. Selecting the preset does not create `AGENTS.md`, install dependencies, or require a directory structure. Approval rules are agent guidance, not a new security boundary; DSH's host sandbox and approval policy still govern tools.
+This composition-only bundle targets DSH `0.1.5-rc.1`. It has no runtime entrypoint, new dependency, install hook, startup writer, or migration/sync engine. Selecting the preset does not create `AGENTS.md`, install dependencies, or require a directory structure. Approval rules are agent guidance, not a new security boundary; DSH's host sandbox and approval policy still govern tools.
 
 ## Install and select
 
@@ -49,6 +49,6 @@ Tests use the actual pinned roster, loader, skill registry, and dormant host ser
 
 ## Attribution and compatibility
 
-`agent.cordis.yml` derives from Standard in the official `@deepseek-ai/dsh-agent-presets` `0.1.2-rc.1` package, from [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness). Copyright (c) 2026 DeepSeek; its MIT license is retained as `presets/project-steward/LICENSE.standard`. Original repository additions remain private (`UNLICENSED`).
+`agent.cordis.yml` derives from Standard in the official `@deepseek-ai/dsh-agent-presets` `0.1.5-rc.1` package, from [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness). Copyright (c) 2026 DeepSeek; its MIT license is retained as `presets/project-steward/LICENSE.standard`. Original repository additions remain private (`UNLICENSED`).
 
 Tests consume the repository's existing exact-pinned official DSH dependency graph; this package adds no third-party dependency or executable. Compare the complete Standard composition and review its license, tool graph, and resource-path behavior before changing the supported DSH version. Runtime or registry compatibility beyond this pin is unverified.

@@ -6,7 +6,7 @@ This private repository keeps DSH plugin bundles and reproducible profile recipe
 
 Install these tools before you use the repository:
 
-- DSH, with the `dsh` command available on `PATH`
+- The checkout-local, patched DSH `0.1.5-rc.1` launcher installed by the frozen dependency command below (a global DSH installation is not upgraded or used by `apply`)
 - Node.js `^22.19.0 || >=24.0.0`
 - pnpm 11.9.0, already available locally (not an unverified downloader shim)
 
@@ -16,7 +16,7 @@ Set `DSH_HOME` before applying a profile if your Harness home is not `~/.dsh`.
 
 ## Apply the starter profile
 
-The `personal-web` recipe selects the standard DSH base and Web bundles plus [Session Environment](packages/dsh-session-environment/README.md), [Session Recap](packages/dsh-session-recap/README.md), [Worktree workers](packages/dsh-worktree/README.md), [Project Steward](packages/dsh-project-steward/README.md), [Firecrawl](packages/dsh-web-firecrawl/README.md), [Google auth](packages/dsh-google-auth/README.md), and [Google Drive](packages/dsh-google-drive/README.md), targeting DSH `0.1.2-rc.1`. Configure the recap summary model in **Settings → Plugins → Plugin configuration → Session recap** and save your Firecrawl key in the collapsible **Firecrawl** card in that same list. Firecrawl replaces the profile's search/fetch providers; it requires a key before either web tool can run.
+The `personal-web` recipe selects the standard DSH base and Web bundles plus [Session Environment](packages/dsh-session-environment/README.md), [Session Recap](packages/dsh-session-recap/README.md), [Worktree workers](packages/dsh-worktree/README.md), [Project Steward](packages/dsh-project-steward/README.md), [Firecrawl](packages/dsh-web-firecrawl/README.md), [Google auth](packages/dsh-google-auth/README.md), and [Google Drive](packages/dsh-google-drive/README.md), targeting DSH `0.1.5-rc.1`. Configure the recap summary model in **Settings → Plugins → Plugin configuration → Session recap** and save your Firecrawl key in the collapsible **Firecrawl** card in that same list. Firecrawl replaces the profile's search/fetch providers; it requires a key before either web tool can run.
 
 Existing installations require **one DSH Web restart** after applying this update so the host-side `web-firecrawl` settings registration discovers the card. Refresh the page afterward. Subsequent key changes take effect on the next request without a restart. Keys stay in DSH's credential store (or the launching environment), never in this repository.
 
@@ -43,16 +43,20 @@ Existing installations require **one DSH Web restart** after applying this updat
 4. Start it:
 
    ```sh
-   dsh --profile personal-web
+   ./node_modules/.bin/dsh --profile personal-web
    ```
 
-The apply command adds every selected bundle in order. It does not remove bundles that are already installed but absent from the recipe.
+The apply command submits the selected bundles together in recipe order, using `file:` snapshots for local bundles. It does not remove bundles already installed but absent from the recipe. Existing bundle order is retained by DSH; inspect `--dump-config` after updates.
+
+**Required RC compatibility patch:** this repository pins the [RPC-owner fix](patches/dsh-client-connection-0.1.5-rc.1-rpc-owner.patch) through pnpm 11's `patchedDependencies` in `pnpm-workspace.yaml` and the lockfile. `apply` verifies the checkout-local launcher and patched Connection implementation before writing the profile, then copies the patch into the target profile, preserves its workspace YAML settings (with a `.bak` backup), and pins DSH bundle/transitive versions with exact release-age exceptions, and resolves the complete profile graph offline with lifecycle scripts disabled. Conflicting target-version overrides are refused. It finishes with a frozen offline install, verifies the profile's own patched Web/Connection graph, and dumps its configuration. Missing cache entries are a hard failure, never an automatic online retry. Review any partial profile changes after an install failure; application is not transactional.
+
+Other launchers, including global `dsh`, are deliberately unsupported by `apply`; `DSH_BIN` may only name this checkout's `node_modules/.bin/dsh`. Keep this checkout at a durable path when using its launcher. No global package, running process, credentials, or history is modified automatically. Restart through your usual service mechanism only after explicitly selecting the patched launcher. For a separately managed launcher, carry the same patch in that runtime's independent dependency graph and validate it separately. See [migration steps and limits](MIGRATION-0.1.5-rc.1.md), including existing preset/history cautions.
 
 Worktree workers bundles the **Worktree coordinator** agent preset with its host service. After updating and restarting the profile, select it for a new session to use worktree tools alongside Standard's coding and job tools. For the stock Web profile, installation keeps Standard as the default and preserves saved default IDs. Before installing, check the [preset-ID collision and custom-roster prerequisites](packages/dsh-worktree/README.md#install-and-select-the-preset): these can affect which preset a saved ID resolves to. No shipped preset files or running sessions are modified.
 
-Project Steward bundles a separate **Project Steward** preset for repository setup and guidance audits. It retains Standard's tools, proposes changes before writing, and carries optional versioned templates. The personal-web profile patch retains all three preset roots because bundle patches replace the entire roster configuration. Inspect [Project Steward's installation prerequisites](packages/dsh-project-steward/README.md#install-and-select) for ID collisions and custom roots. Selecting it performs no setup writes or installs.
+Project Steward bundles a separate **Project Steward** preset for repository setup and guidance audits. It retains Standard's tools, proposes changes before writing, and carries optional versioned templates. The personal-web profile patch retains both custom preset roots because bundle patches replace the entire roster configuration. Inspect [Project Steward's installation prerequisites](packages/dsh-project-steward/README.md#install-and-select) for ID collisions and custom roots. Selecting it performs no setup writes or installs.
 
-Google auth provides the shared **Google accounts** Settings card, client configuration, explicit consent, and token refresh. Google Drive adds a default-off **Google Drive** toggle in each top-level session's toolbar. With any preset, enabling it exposes `request_drive_access` and `request_sheets_edit_access` without granting file access. Its custom picker grants session-scoped reading or separate individual-spreadsheet editing access. Read grants expose listing, text-reading, and bounded Sheets range tools. Sheets edits require a local before/after preview and exact **Apply changes** approval. Use **Manage access** to revise or revoke a selection, or turn the toolbar toggle off to revoke both selections and remove all Google tools. Disabling cannot undo writes already sent. The optional Google Drive preset uses the same default-off toggle. After an approved profile update and restart, choose **Connect Google account** in **Settings → Plugins → Google accounts**. One OAuth flow requests all currently enabled integration scopes, including Drive reading and account-wide Sheets editing. Existing connections missing scopes use the single **Grant additional permissions** action. Credentials stay in DSH's credential store. Grants expire on session unload, account changes, or Host restart, and do not transfer to subagents. The stock Standard preset stays unchanged. Enable the Sheets API for spreadsheet reads. Combined account consent does not grant session access or approve writes; DSH enforces the selected-file restriction and per-write approval. This version includes no Gmail/GCP tools, general Drive file mutations, or `gws` execution. See the [shared auth contract](packages/dsh-google-auth/README.md) and [Drive setup and security boundary](packages/dsh-google-drive/README.md).
+Google auth provides the shared **Google accounts** Settings card, client configuration, explicit consent, and token refresh. Google Drive adds a default-off **Google Drive** toggle in each top-level session's toolbar. With any preset, enabling it exposes `request_drive_access` and `request_sheets_edit_access` without granting file access. Its custom picker grants session-scoped reading or separate individual-spreadsheet editing access. Read grants expose listing, text-reading, and bounded Sheets range tools. Sheets edits require a local before/after preview and exact **Apply changes** approval. Use **Manage access** to revise or revoke a selection, or turn the toolbar toggle off to revoke both selections and remove all Google tools. Disabling cannot undo writes already sent. Google Drive ships no agent preset and does not replace the preset roster; use the toolbar toggle with any remaining preset. After an approved profile update and restart, choose **Connect Google account** in **Settings → Plugins → Google accounts**. One OAuth flow requests all currently enabled integration scopes, including Drive reading and account-wide Sheets editing. Existing connections missing scopes use the single **Grant additional permissions** action. Credentials stay in DSH's credential store. Grants expire on session unload, account changes, or Host restart, and do not transfer to subagents. The stock Standard preset stays unchanged. Enable the Sheets API for spreadsheet reads. Combined account consent does not grant session access or approve writes; DSH enforces the selected-file restriction and per-write approval. This version includes no Gmail/GCP tools, general Drive file mutations, or `gws` execution. See the [shared auth contract](packages/dsh-google-auth/README.md) and [Drive setup and security boundary](packages/dsh-google-drive/README.md).
 
 ## Repository structure
 
@@ -60,7 +64,8 @@ Google auth provides the shared **Google accounts** Settings card, client config
 packages/                    Installable plugin and composition bundles
 profiles/<recipe>/           Ordered bundle selections and profile patches
 schemas/                     Recipe schema for editor support
-scripts/                     Dependency-free management commands
+scripts/                     Management commands (dry-run/check need no dependencies)
+patches/                     Exact-version required DSH compatibility patches
 templates/plugin-bundle/     Starter package to copy
 ```
 
@@ -83,7 +88,7 @@ Rename the package and plugin row before use. Then add it to a recipe with a pat
 }
 ```
 
-The apply script converts this path to an absolute local path before it calls `dsh plugin`. Each computer can therefore clone the repository at a different location.
+The apply script converts this path to an absolute `file:` snapshot source before it calls the checkout-local `dsh plugin`. Each computer can clone the repository at a different durable location; reapply after changing local bundle sources.
 
 ### Profile recipes
 
@@ -131,7 +136,7 @@ If dependencies are missing, follow the [repository setup skill](.agents/skills/
 There are two browser suites:
 
 - `pnpm run test:browser` runs fast Vitest Browser Mode interactions with real React and mocked RPC/slots. It checks generation, dismissal, errors, expansion, draft retention, and saving. Its simplified layout is **not** a visual baseline for DSH.
-- `pnpm run test:visual` runs Playwright against **one disposable DSH 0.1.2-rc.1 instance for the whole suite**. It loads the real plugin bundles, global styles, themes, settings panel, and RPC transport. Screenshots cover collapsed/expanded plugin settings in light/dark mode alongside built-in cards, plus the recap dock and its unconfigured-provider error. Assertions also check that a new blank session hides the dock. Worktrees screenshots cover light, dark, and narrow slot layouts in the real shell with fixed RPC data; they test appearance, not backend capability or Git behavior. Their committed baselines use `toHaveScreenshot`, so changes produce expected/actual/diff images under `artifacts/real-ui/`, uploaded by the existing CI failure-artifact step.
+- `pnpm run test:visual` runs Playwright against **one disposable DSH 0.1.5-rc.1 instance for the whole suite**. It loads the real plugin bundles, global styles, themes, settings panel, and RPC transport. Screenshots cover collapsed/expanded plugin settings in light/dark mode alongside built-in cards, plus the recap dock and its unconfigured-provider error. Assertions also check that a new blank session hides the dock. Worktrees screenshots cover light, dark, and narrow slot layouts in the real shell with fixed RPC data; they test appearance, not backend capability or Git behavior. Their committed baselines use `toHaveScreenshot`, so changes produce expected/actual/diff images under `artifacts/real-ui/`, uploaded by the existing CI failure-artifact step.
 
 The host uses unique temporary home, profile, and workspace directories. It receives an allowlisted environment without your provider credentials or DSH settings. A test-only host plugin seeds and flushes a completed user turn through DSH's session store; no prompt or provider request creates the fixture. The suite never configures a provider, submits a prompt, or calls a paid model. It authenticates through DSH's normal launch-token exchange outside Playwright, then uses only a cookie and tokenless URL. It does not read or modify a running DSH instance. Teardown terminates the host process group and removes its temporary state; lifecycle tests cover startup failures and descendant cleanup. Abrupt container or machine termination relies on the container/OS cleanup boundary.
 
@@ -158,7 +163,7 @@ To add a UI plugin, add its bundle to the `plugins` list in `tests/real-ui/globa
 
 ### Test dependency provenance
 
-The test dependencies are exact-pinned development dependencies. The DSH launcher is pinned to `0.1.2-rc.1`; its official [DeepSeek Harness repository](https://github.com/deepseek-ai/deepseek-harness) identifies the `@deepseek-ai/dsh` package (MIT). The lockfile pins the complete runtime graph. DSH is still pre-1.0; upgrades require reviewing the host fixture and regenerating baselines deliberately. `@playwright/test` matches the existing official Playwright `1.62.0` package and container. [Vitest's official Browser Mode guide](https://vitest.dev/guide/browser/) identifies `vitest` and `@vitest/browser-playwright`; [Microsoft's Playwright documentation](https://playwright.dev/docs/intro) and [Docker guide](https://playwright.dev/docs/docker) identify Playwright and its official container. [React's integration guide](https://react.dev/learn/add-react-to-an-existing-project) identifies `react` and `react-dom`. React stays at 18.3.1 to match the plugin's host peer dependency.
+The test dependencies are exact-pinned development dependencies. The DSH launcher is pinned to `0.1.5-rc.1`; its official [DeepSeek Harness repository](https://github.com/deepseek-ai/deepseek-harness) identifies the `@deepseek-ai/dsh` package (MIT). The lockfile pins the complete runtime graph. DSH is still pre-1.0; upgrades require reviewing the host fixture and regenerating baselines deliberately. `@playwright/test` matches the existing official Playwright `1.62.0` package and container. [Vitest's official Browser Mode guide](https://vitest.dev/guide/browser/) identifies `vitest` and `@vitest/browser-playwright`; [Microsoft's Playwright documentation](https://playwright.dev/docs/intro) and [Docker guide](https://playwright.dev/docs/docker) identify Playwright and its official container. [React's integration guide](https://react.dev/learn/add-react-to-an-existing-project) identifies `react` and `react-dom`. React stays at 18.3.1 to match the plugin's host peer dependency.
 
 Vitest and React use MIT licenses; Playwright uses Apache-2.0. Their canonical repositories are `vitest-dev/vitest`, `facebook/react`, and `microsoft/playwright`. These are actively maintained, widely adopted projects. The initial registry advisory check reports no vulnerabilities; this is not a guarantee against future advisories. Run `pnpm audit` when updating them.
 
@@ -170,4 +175,4 @@ Installs disable lifecycle scripts. Vitest's Vite dependency includes platform-s
 - Give inserted Cordis rows stable, scope-prefixed IDs.
 - Pin compatibility-sensitive DSH dependencies while DSH remains pre-1.0.
 - Keep host-wide services in profile bundles. Keep per-session tools, persona, and prompt composition in agent presets.
-- Review `dsh --profile <name> --dump-config` after changing bundle order or profile patches.
+- Review `pnpm exec dsh --profile <name> --dump-config` using this checkout's patched launcher after changing bundle order or profile patches.

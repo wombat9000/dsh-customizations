@@ -126,6 +126,7 @@ test('mounted service and installed host/browser RPC register the tab and load t
   ctx.provide('tools', { get: () => tool })
   ctx.provide('jobs', { list: () => [] })
   for (const service of ['sessions', 'sandboxPolicy', 'subagents']) ctx.provide(service, {})
+  ctx.provide('webServer', {})
   let f
   ctx.provide('connection', { rpc: { handle: (channel, handler) => {
     assert.equal(channel, CHANNEL)

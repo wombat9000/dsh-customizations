@@ -110,7 +110,12 @@ test('coordinator retains every Standard row and only adds its tool contribution
   else normalized.find(row => row.id === 'tool-jobs').config = structuredClone(jobsConfig)
   assert.deepEqual(normalized, standard, 'preserve exact Standard nesting and consumer realms')
   assert.ok(!actual.some(row => row.name.includes('tool-cordis')))
-  const persona = actual.find(row => row.id === 'persona').config.text
+  const personaConfig = actual.find(row => row.id === 'persona').config
+  assert.equal(personaConfig.text, undefined)
+  assert.equal(personaConfig.core, undefined, 'retain the default DSH persona core')
+  assert.equal(personaConfig.prefix, 'You are a coding agent powered by the {{model}} model.')
+  const persona = personaConfig.suffix
+  assert.ok(persona.includes('Your working directory is {{cwd}}.'))
   assert.match(persona, /Finish independent coordination work first/)
   assert.match(persona, /When only background workers remain, END your turn with a brief progress update/)
   assert.match(persona, /Yielding the turn is not reporting task completion/)
@@ -143,7 +148,7 @@ test('Creator skills resolve from a relocated preset and load official bodies on
   const officialRoot = join(dirname(local.resolve('@deepseek-ai/dsh-agent-presets/package.json')), 'presets/cordis/skills')
   assert.deepEqual(config, { customSkillDirs: [officialRoot] })
   const manifest = JSON.parse(await readFile(join(packageRoot, 'package.json'), 'utf8'))
-  assert.equal(manifest.dependencies['@deepseek-ai/dsh-agent-presets'], '0.1.2-rc.1')
+  assert.equal(manifest.dependencies['@deepseek-ai/dsh-agent-presets'], '0.1.5-rc.1')
   const { FileSystemSkillProvider } = await installed('@deepseek-ai/dsh-skill-filesystem')
   const ctx = new Context()
   t.after(() => ctx.fiber.dispose())

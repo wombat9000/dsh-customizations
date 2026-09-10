@@ -10,7 +10,7 @@ After an explicitly approved plugin update, Host restart, and Web refresh:
 
 1. Enable both the Google Drive API and Google Sheets API in the Cloud project that owns your Desktop OAuth client.
 2. In **Settings → Plugins → Google accounts**, review the required permissions and choose **Connect Google account**. One OAuth flow requests all currently enabled integration scopes, including `https://www.googleapis.com/auth/drive.readonly` and `https://www.googleapis.com/auth/spreadsheets`. For an existing connection missing scopes, choose **Grant additional permissions** instead. Existing Google file permissions still apply: the API cannot edit a spreadsheet your account cannot edit.
-3. Open a top-level session with any preset and enable **Google Drive** in the session toolbar. It defaults off, including for the Google Drive preset. Request read access through `request_drive_access`, or editing through `request_sheets_edit_access`. Neither the toggle nor account-wide OAuth consent grants session file access or write approval.
+3. Open a top-level session with any preset and enable **Google Drive** in the session toolbar. It defaults off; no Google Drive preset is needed or shipped. Request read access through `request_drive_access`, or editing through `request_sheets_edit_access`. Neither the toggle nor account-wide OAuth consent grants session file access or write approval.
 4. For editing, use our picker to select individual spreadsheets and allow editing for this session. Folders remain navigable but cannot be selected for recursive editing.
 
 Installing or merging this version does not enable APIs, start OAuth, change Google accounts, apply a profile, or deploy to a running GUI. Sheets adds no npm or native dependencies.

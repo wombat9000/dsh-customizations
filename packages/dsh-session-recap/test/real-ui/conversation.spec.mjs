@@ -1,4 +1,4 @@
-import { test, expect, pluginSettings } from '../../../../tests/real-ui/fixtures.mjs'
+import { test, expect, pluginSettings, openSeededSession } from '../../../../tests/real-ui/fixtures.mjs'
 
 for (const [theme, narrow] of [['light', false], ['dark', false], ['light', true]]) {
   test(`concise generated recap (${theme}${narrow ? ', narrow' : ''})`, async ({ app }) => {
@@ -16,8 +16,7 @@ for (const [theme, narrow] of [['light', false], ['dark', false], ['light', true
     })
     const settings = await pluginSettings(app, theme)
     await settings.getByRole('button', { name: 'Close', exact: true }).click()
-    await app.getByRole('treeitem', { name: 'Ungrouped', exact: true }).click()
-    await app.getByRole('treeitem', { name: /^workspace / }).click()
+    await openSeededSession(app)
     await app.getByRole('button', { name: 'Recap', exact: true }).click()
     const dock = app.getByRole('complementary', { name: 'Session recap' })
     await expect(dock.getByRole('listitem')).toHaveCount(3)
@@ -33,8 +32,7 @@ for (const theme of ['light', 'dark']) {
     const settings = await pluginSettings(app, theme)
     const prefix = theme === 'light' ? 'recap' : 'recap-dark'
     await settings.getByRole('button', { name: 'Close', exact: true }).click()
-    await app.getByRole('treeitem', { name: 'Ungrouped', exact: true }).click()
-    await app.getByRole('treeitem', { name: /^workspace / }).click()
+    await openSeededSession(app)
     await expect(app.getByText('Review the Session recap interface.', { exact: true })).toBeVisible()
     const dock = app.getByRole('complementary', { name: 'Session recap' })
     await expect(dock).toHaveCount(0)

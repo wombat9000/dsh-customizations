@@ -1,6 +1,6 @@
 # Google Drive
 
-`@local/dsh-google-drive` provides session-scoped Drive reading and Google Sheets reading and approved edits. Enable **Google Drive** in the session toolbar to expose `request_drive_access` and `request_sheets_edit_access`, regardless of the session's preset. The toggle defaults off, including in the **Google Drive** preset. Enabling it grants no file access. Both request tools use our private picker. Read grants expose Drive listing, text reading, and Sheets range reading. Separate edit grants expose a local Sheets preview; only **Apply changes** sends the exact reviewed write. See [Sheets setup, preview, and limits](docs/sheets.md).
+`@local/dsh-google-drive` provides session-scoped Drive reading and Google Sheets reading and approved edits. Enable **Google Drive** in the session toolbar to expose `request_drive_access` and `request_sheets_edit_access`, regardless of the session's preset. The toggle defaults off. This bundle ships no agent preset and leaves the preset roster unchanged. Enabling it grants no file access. Both request tools use our private picker. Read grants expose Drive listing, text reading, and Sheets range reading. Separate edit grants expose a local Sheets preview; only **Apply changes** sends the exact reviewed write. See [Sheets setup, preview, and limits](docs/sheets.md).
 
 ## Prerequisites and security boundary
 
@@ -18,11 +18,11 @@ The text reader supports Google Docs exported as plain text, plain text, Markdow
 
 Installation and profile application require explicit approval. Follow the repository's [setup procedure](../../README.md#apply-the-starter-profile). Keep OAuth configuration, tokens, and runtime state outside Git.
 
-1. Check for an existing preset ID named `google-drive` before applying the bundle. Resolve collisions without editing shipped presets.
-2. After approval, update both Google auth and Google Drive. Preserve custom preset roots: Cordis replaces the roster's entire configuration rather than merging individual fields.
+1. When upgrading from the removed Google Drive preset, select another preset for new sessions. Remove only this package's `presets` path from any custom roster override, retaining every other root and saved default that still resolves. If the saved default was `google-drive`, choose an available preset explicitly. Existing sessions or custom copies are not migrated automatically.
+2. After approval, update both Google auth and Google Drive. The Drive bundle no longer patches the roster; when updating the recipe override, preserve custom roots because Cordis replaces the roster's entire configuration rather than merging individual fields.
 3. Restart the existing DSH profile and refresh its Web page.
 4. In **Settings → Plugins → Google accounts**, configure the downloaded Desktop OAuth client JSON if needed. For Docker Sandbox, enable **Use sandbox callback forwarding**; otherwise leave it off. Choose **Connect Google account** (or **Grant additional permissions** for an existing connection) and approve the combined required scopes. See [callback prerequisites](../dsh-google-auth/README.md#callback-routing).
-5. Open a top-level session with any preset and enable **Google Drive** beside the session's **Recap** control. The toggle exposes the two access-request tools but grants no Drive resource access. The optional **Google Drive** preset remains available; it uses the same default-off toggle.
+5. Open a top-level session with any preset and enable **Google Drive** beside the session's **Recap** control. The toggle exposes the two access-request tools but grants no Drive resource access.
 6. Ask the agent to find or read Drive documents. Its `request_drive_access` card offers **Choose files and folders** and **Deny**.
 7. Open the picker, select resources, review the selection, and choose **Allow read access**. Opening or cancelling the modal grants nothing. **Cancel** closes the picker without denying the pending request; **Deny** settles it without access.
 8. Confirm that the card reports the grant. The agent loads `google-drive-read` before using the newly exposed tools.

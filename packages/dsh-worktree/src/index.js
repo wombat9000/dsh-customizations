@@ -187,7 +187,7 @@ export default class WorktreeService extends Service {
   constructor(ctx) {
     super(ctx, 'worktreeWorkers')
     this.manager = new WorktreeManager(ctx)
-    ctx.inject(['connection'], connectionCtx => {
+    ctx.inject(['connection', 'webServer'], connectionCtx => {
       connectionCtx.effect(() => connectionCtx.connection.rpc.handle(CHANNEL, createSnapshotRpcHandler(ctx, this.manager)))
     })
   }
