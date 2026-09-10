@@ -82,7 +82,7 @@ test('fresh source fixture runs dependency-free checks with no pnpm executable o
   const env = { PATH: emptyPath, HOME: emptyHome, DSH_HOME: join(emptyHome, '.dsh'), XDG_CACHE_HOME: join(emptyHome, '.cache') }
   const result = spawnSync(process.execPath, ['scripts/check.mjs'], { cwd: directory, env, encoding: 'utf8' })
   assert.equal(result.status, 0, result.stderr)
-  assert.match(result.stdout, /Checked 1 profile recipe\(s\) and 14 package reference\(s\)/)
+  assert.match(result.stdout, /Checked 1 profile recipe\(s\) and 20 package reference\(s\)/)
   const preview = spawnSync(process.execPath, ['scripts/apply-profile.mjs', 'personal-web', '--dry-run'], { cwd: directory, env, encoding: 'utf8' })
   assert.equal(preview.status, 0, preview.stderr)
   assert.match(preview.stdout, /dsh-project-steward/)

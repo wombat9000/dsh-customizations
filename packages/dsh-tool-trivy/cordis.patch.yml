@@ -1,0 +1,5 @@
+# Add local Trivy vulnerability-audit tooling and its bundled skill.
+
+- insert:
+    - id: local-tool-trivy
+      name: '@local/dsh-tool-trivy'

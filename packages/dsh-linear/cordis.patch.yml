@@ -1,0 +1,5 @@
+# Add workspace-scoped Linear issue tools and Settings UI.
+
+- insert:
+    - id: local-linear
+      name: '@local/dsh-linear'

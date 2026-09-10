@@ -1,0 +1,10 @@
+# Add Gemini-backed model-facing YouTube video tools.
+
+- insert:
+    - id: local-youtube-transcript-store
+      name: '@local/dsh-tool-youtube/transcript-store'
+      config:
+        path: !!js dshHomePath('archives/youtube-transcripts.sqlite')
+
+    - id: local-tool-youtube
+      name: '@local/dsh-tool-youtube'
