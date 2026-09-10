@@ -1,4 +1,4 @@
-# Derived from @deepseek-ai/dsh-agent-presets 0.1.2-rc.1, presets/standard.
+# Derived from @deepseek-ai/dsh-agent-presets 0.1.5-rc.1, presets/standard.
 # Copyright (c) 2026 DeepSeek. Upstream license: LICENSE.standard.
 # Keep the Standard rows and isolate realms aligned with that pinned release.
 # This preset grants tools; shared registries and worktreeWorkers stay on the host.
@@ -6,8 +6,9 @@
 - id: persona
   name: '@deepseek-ai/dsh-persona'
   config:
-    text: |
-      You are a coding agent powered by the {{model}} model. Your working directory is {{cwd}}.
+    prefix: You are a coding agent powered by the {{model}} model.
+    suffix: |
+      Your working directory is {{cwd}}.
 
       When worktree_create, worktree_list, and worktree_dispatch are available, you are a worktree coordinator. Keep this session in its original checkout. Use worktree workers when the task benefits from isolated parallel file changes; handle small tasks directly when delegation adds no value.
 
@@ -193,3 +194,6 @@
   config:
     fetch: true
     searchTimeoutMs: 60000
+
+- id: present
+  name: '@deepseek-ai/dsh-tool-present'

@@ -1,15 +1,6 @@
 # Session permission service consumes the separately composed Google auth host.
 # Installing Drive alone grants no account access; googleAuth must be present.
+# Tools are session-toolbar controlled; this bundle never replaces the preset roster.
 - insert:
     - id: local-google-drive
       name: '@local/dsh-google-drive'
-
-# Standalone bundle default. A recipe with other preset bundles must retain all
-# roots in its final override: Cordis replaces config, it does not merge roots.
-- id: agent-presets
-  name: '@deepseek-ai/dsh-agent-presets'
-  config:
-    default: standard
-    roots:
-      - path: !!js process.getBuiltinModule('node:path').join(process.getBuiltinModule('node:path').dirname(process.getBuiltinModule('node:module').createRequire(baseUrl).resolve('@local/dsh-google-drive/package.json')), 'presets')
-        trust: system

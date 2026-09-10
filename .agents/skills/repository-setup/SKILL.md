@@ -35,7 +35,7 @@ pnpm install --offline --frozen-lockfile --ignore-scripts
 
 Here `pnpm` means the already-inspected local 11.9.0 executable, not an unverified shim. The command writes the checkout's dependency tree and package-manager metadata. It must not update the lockfile. If offline resolution fails, stop and report the error. Do not remove `--offline`, relax `--frozen-lockfile`, upgrade dependencies, or enable lifecycle scripts automatically. Obtain separate approval for cache population/network access and any necessary lifecycle script or binary download.
 
-**Execution gap:** this procedure's fresh offline frozen install has not been executed as part of Project Steward v1. Tests use the existing pinned dependency graph. Fresh fixtures validate dependency-free checks and absence/ownership observations, not cache completeness or install success.
+A fresh checkout-owned offline frozen, scripts-disabled install was validated for this migration on macOS ARM64 with an already-populated pnpm 11 cache. This does not establish cache completeness on another computer or for Linux/browser binaries. Fresh setup fixtures still validate dependency-free checks and ownership observations, not cache population.
 
 ## Choose validation commands
 
@@ -54,6 +54,13 @@ The following command definitions are verified against repository files. Executi
 | `node scripts/apply-profile.mjs personal-web --dry-run` | Node.js and readable recipe/profile patch; prints intended actions without invoking DSH or writing a profile. A pre-existing nonempty patch can cause refusal. Actual apply installs bundles and writes runtime configuration; it requires separate approval. |
 
 For full browser/container prerequisites and artifact locations, read `README.md`. Do not update snapshots, download browsers, start a GUI server, or apply/restart a profile as an automatic validation fallback. Distinguish unsupported platform, missing executable/cache, missing built artifacts, and permission failures from test failures.
+
+## DSH 0.1.5-rc.1 migration and profile safety
+
+- Both the launcher runtime and standalone profile graph require the exact `@deepseek-ai/dsh-client-connection@0.1.5-rc.1` RPC-owner patch. pnpm 11 reads `patchedDependencies` from `pnpm-workspace.yaml`, not the legacy `package.json` field. Keep the patch file and lock hash together; never edit installed package files or shared store inodes.
+- The approved `apply` command defaults to and supports only this checkout's `node_modules/.bin/dsh`. Before profile writes it verifies the launcher version and patched implementation, resolves every recipe source, and refuses a nonempty profile patch unless explicitly overridden. An unrelated/global launcher fails closed and is never modified. Actual apply lazily loads the pinned YAML parser; dry-run remains dependency-free.
+- Apply copies the required core patch into the target profile, preserves existing YAML settings with a backup, snapshots local sources, adds the complete graph offline/scripts-disabled, then runs a frozen install and verifies the profile's own patched Web/Connection resolution. Conflicting core patches and symlinked target paths are refused. Installs are not transactional: after failure inspect the target before retrying. Existing dependency-directory ownership must still be checked manually; symlink detection does not establish bind-mount or hardlink ownership.
+- Validate with `NODE_PATH` unset to prevent Harness dependencies masking missing modules. On macOS use a canonical temporary directory, e.g. `env -u NODE_PATH TMPDIR=/private/tmp pnpm test`, to avoid `/var` versus `/private/var` assertions. Read the [migration guide](../../../MIGRATION-0.1.5-rc.1.md) before applying to retained profiles/histories. No restart or live deployment is implied by tests or a config dump; real Loader and authenticated RPC checks are separate evidence.
 
 ## Keep guidance accurate
 

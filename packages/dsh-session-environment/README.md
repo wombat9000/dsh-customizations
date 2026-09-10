@@ -1,6 +1,6 @@
 # @local/dsh-session-environment
 
-A local DSH Web bundle that shows the selected session's working directory and current Git state in a compact `shell.overlay` Environment card. It targets DSH `0.1.2-rc.1`.
+A local DSH Web bundle that shows the selected session's working directory and current Git state in a compact `shell.overlay` Environment card. It targets DSH `0.1.5-rc.1`.
 
 ## Behavior
 
@@ -60,7 +60,7 @@ Restart the target DSH Web process, then refresh its existing browser page. Type
 
 ## Dependency provenance
 
-The import retains exact pins from the existing plugin rather than introducing a replacement toolchain. [TypeScript's official download guide](https://www.typescriptlang.org/download/) identifies `typescript` (`microsoft/TypeScript`, Apache-2.0). [tsdown's installation guide](https://tsdown.dev/guide/getting-started) identifies `tsdown` (`rolldown/tsdown`, MIT). [Zod's documentation](https://zod.dev/) identifies `zod` (`colinhacks/zod`, MIT). Node and React type declarations come from `DefinitelyTyped/DefinitelyTyped` (MIT). DSH dependencies match the repository's pinned `0.1.2-rc.1` runtime.
+The import retains exact pins from the existing plugin rather than introducing a replacement toolchain. [TypeScript's official download guide](https://www.typescriptlang.org/download/) identifies `typescript` (`microsoft/TypeScript`, Apache-2.0). [tsdown's installation guide](https://tsdown.dev/guide/getting-started) identifies `tsdown` (`rolldown/tsdown`, MIT). [Zod's documentation](https://zod.dev/) identifies `zod` (`colinhacks/zod`, MIT). Node and React type declarations come from `DefinitelyTyped/DefinitelyTyped` (MIT). DSH dependencies match the repository's pinned `0.1.5-rc.1` runtime.
 
 Registry metadata confirms these owners, licenses, and maintained release lines. TypeScript and Zod are established ecosystem dependencies; tsdown is the existing plugin's newer bundler, maintained under the Rolldown project. The download-count endpoint was unavailable during this import, so current adoption counts were not verified. The registry advisory check reported no vulnerabilities in the resolved graph at import time; rerun `pnpm audit` when updating dependencies.
 

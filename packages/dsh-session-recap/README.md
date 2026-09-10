@@ -4,7 +4,7 @@ Session Recap shows 1–3 short bullets above the DSH Web composer when you retu
 
 ## Install and configure
 
-This bundle targets DSH `0.1.2-rc.1` and requires the standard base and Web bundles. It ships plain JavaScript; no build step is required.
+This bundle targets DSH `0.1.5-rc.1` and requires the standard base and Web bundles. It ships plain JavaScript; no build step is required. This RC also requires the repository's pinned RPC-owner patch; use the patched launcher/profile setup in the [migration guide](../../MIGRATION-0.1.5-rc.1.md), not an unpatched global launcher.
 
 1. From this repository, validate and preview the profile:
 

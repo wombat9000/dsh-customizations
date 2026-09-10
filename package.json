@@ -12,18 +12,19 @@
     "check": "node scripts/check.mjs",
     "build": "pnpm --filter @local/dsh-session-environment run build",
     "pretest": "pnpm run build",
-    "test": "node --test packages/dsh-google-auth/test/*.test.js packages/dsh-google-drive/test/*.test.js packages/dsh-project-steward/test/*.test.js packages/dsh-worktree/test/*.test.js packages/dsh-session-environment/test/*.test.js packages/dsh-session-recap/test/*.test.* packages/dsh-web-firecrawl/test/index.test.js packages/dsh-web-firecrawl/test/client.test.js packages/dsh-web-firecrawl/test/profile.integration.test.js tests/real-ui/*.test.mjs",
+    "test": "node --test scripts/*.test.mjs packages/dsh-google-auth/test/*.test.js packages/dsh-google-drive/test/*.test.js packages/dsh-project-steward/test/*.test.js packages/dsh-worktree/test/*.test.js packages/dsh-session-environment/test/*.test.js packages/dsh-session-recap/test/*.test.* packages/dsh-web-firecrawl/test/index.test.js packages/dsh-web-firecrawl/test/client.test.js packages/dsh-web-firecrawl/test/profile.integration.test.js tests/real-ui/*.test.mjs",
     "test:browser": "vitest run --config vitest.browser.config.mjs",
     "test:visual": "playwright test",
     "test:visual:update": "playwright test --update-snapshots"
   },
   "devDependencies": {
-    "@deepseek-ai/dsh": "0.1.2-rc.1",
+    "@deepseek-ai/dsh": "0.1.5-rc.1",
     "@playwright/test": "1.62.0",
     "@vitest/browser-playwright": "5.0.0",
     "playwright": "1.62.0",
     "react": "18.3.1",
     "react-dom": "18.3.1",
-    "vitest": "5.0.0"
+    "vitest": "5.0.0",
+    "yaml": "2.9.0"
   }
 }

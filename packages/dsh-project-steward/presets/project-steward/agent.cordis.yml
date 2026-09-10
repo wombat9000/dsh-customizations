@@ -1,4 +1,4 @@
-# Derived from @deepseek-ai/dsh-agent-presets 0.1.2-rc.1, presets/standard.
+# Derived from @deepseek-ai/dsh-agent-presets 0.1.5-rc.1, presets/standard.
 # Copyright (c) 2026 DeepSeek. Upstream license: LICENSE.standard.
 # Preserve all Standard tools, nesting, and realms. Only persona and skill
 # contributions differ. Registries and security policy remain host-owned.
@@ -6,8 +6,9 @@
 - id: persona
   name: '@deepseek-ai/dsh-persona'
   config:
-    text: |
-      You are Project Steward, a coding agent powered by the {{model}} model. Your working directory is {{cwd}}.
+    prefix: You are Project Steward, a coding agent powered by the {{model}} model.
+    suffix: |
+      Your working directory is {{cwd}}.
 
       Help improve repository setup, agent guidance, and development practices. Load the project-steward skill before repository stewardship work. Inspect the existing repository, propose a concrete plan, apply only approved changes, validate, and summarize. Preserve project-specific conventions. Do not impose a directory structure or write files merely because this preset starts.
 
@@ -175,3 +176,6 @@
   config:
     fetch: true
     searchTimeoutMs: 60000
+
+- id: present
+  name: '@deepseek-ai/dsh-tool-present'

@@ -6,26 +6,21 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import test from 'node:test'
 
-// Use existing pinned official dependencies and temporary dormant contexts.
-// No real profile, user credentials, OAuth, network, or tool execution.
+// Existing pinned DSH dependencies only; no live profile, credentials or network.
 const require = createRequire(import.meta.url)
 const cli = createRequire(require.resolve('@deepseek-ai/dsh/package.json'))
 const installed = name => import(pathToFileURL(cli.resolve(name)).href)
-const { Context } = await installed('@deepseek-ai/cordis')
-const { default: Loader, interpolate } = await installed('@deepseek-ai/cordis-plugin-loader')
-const { entryListSchema } = await installed('@deepseek-ai/cordis-plugin-include')
-const { default: yaml } = await installed('js-yaml')
-const { default: AgentPresets, discoverPresets, SHIPPED_PRESET_ROOT } = await installed('@deepseek-ai/dsh-agent-presets')
+const { interpolate } = await installed('@deepseek-ai/cordis-plugin-loader')
+const { discoverPresets, SHIPPED_PRESET_ROOT } = await installed('@deepseek-ai/dsh-agent-presets')
 const { loadOverlayPatches, composeEntries } = await installed('@deepseek-ai/dsh-app-boot')
 const packageRoot = fileURLToPath(new URL('../', import.meta.url))
 const repo = fileURLToPath(new URL('../../../', import.meta.url))
 const webPatch = join(dirname(cli.resolve('@deepseek-ai/dsh-web-app/package.json')), 'cordis.patch.yml')
 const json = async path => JSON.parse(await readFile(path, 'utf8'))
-const parse = text => yaml.load(text, { schema: entryListSchema })
 const flatten = rows => rows.flatMap(row => [row, ...(row.group ? flatten(row.config) : [])])
 
 async function fixture(t) {
-  const directory = await mkdtemp(join(tmpdir(), 'dsh-google-drive-preset-'))
+  const directory = await mkdtemp(join(tmpdir(), 'dsh-google-drive-roster-'))
   t.after(() => rm(directory, { recursive: true, force: true }))
   const local = join(directory, 'node_modules/@local')
   await mkdir(local, { recursive: true })
@@ -69,86 +64,39 @@ async function recipePatches() {
   return patches
 }
 
-test('published bundle discovers Google Drive; personal-web preserves all three roots', async t => {
+test('Drive adds no preset and personal-web preserves both other custom roots', async t => {
   const f = await fixture(t)
-  const manifest = await json(join(f.packaged, 'package.json'))
-  assert.equal(manifest.name, '@local/dsh-google-drive')
-  assert.equal(manifest.exports['./tools'], './src/tools.js')
-  assert.equal(manifest.exports['./package.json'], './package.json')
-  assert.equal(manifest.dependencies, undefined)
-  assert.equal(manifest.exports['./client'], './client.js')
+  const drivePatch = join(f.packaged, 'cordis.patch.yml')
+  const base = rosterConfig(f.baseUrl, [webPatch])
+  assert.deepEqual(rosterConfig(f.baseUrl, [webPatch, drivePatch]), base)
+  const shipped = await discoverPresets([{ path: SHIPPED_PRESET_ROOT, trust: 'system' }], f.baseUrl)
   for (const combined of [false, true]) {
-    const config = rosterConfig(f.baseUrl, combined ? await recipePatches() : [webPatch, join(f.packaged, 'cordis.patch.yml')])
+    const config = rosterConfig(f.baseUrl, combined ? await recipePatches() : [webPatch, drivePatch])
     assert.equal(config.default, 'standard')
     assert.equal(config.includeShippedRoot ?? true, true)
     assert.equal(config.includeUserRoot ?? true, true)
-    assert.equal(config.roots.length, combined ? 3 : 1)
-    const roster = await discoverPresets([{ path: SHIPPED_PRESET_ROOT, trust: 'system' }, ...config.roots], f.baseUrl)
-    for (const id of ['standard', 'minimal', 'cordis', 'google-drive', ...(combined ? ['worktree-coordinator', 'project-steward'] : [])]) {
+    const roots = config.roots ?? []
+    if (combined) assert.deepEqual(roots, ['dsh-worktree', 'dsh-project-steward'].map(name => ({
+      path: join(repo, 'packages', name, 'presets'), trust: 'system',
+    })))
+    const roster = await discoverPresets([{ path: SHIPPED_PRESET_ROOT, trust: 'system' }, ...roots], f.baseUrl)
+    for (const id of [...shipped.map(row => row.id), ...(combined ? ['worktree-coordinator', 'project-steward'] : [])]) {
       const row = roster.find(item => item.id === id)
       assert.ok(row, `missing ${id}`)
       assert.equal(row.broken, undefined)
       assert.equal(row.trust, 'system')
     }
-    const own = roster.find(row => row.id === 'google-drive')
-    assert.equal(own.name, 'Google Drive')
-    assert.equal(own.description, 'Standard coding tools with progressive session access to selected Google Drive files and folders.')
-    assert.equal(own.path, join(f.packaged, 'presets/google-drive/agent.cordis.yml'))
+    assert.equal(roster.some(row => row.id === 'google-drive'), false)
   }
 })
 
-test('preset preserves exact Standard configuration and appends only its consumer', async () => {
-  const standard = parse(await readFile(join(SHIPPED_PRESET_ROOT, 'standard/agent.cordis.yml'), 'utf8'))
-  const drive = parse(await readFile(join(packageRoot, 'presets/google-drive/agent.cordis.yml'), 'utf8'))
-  assert.deepEqual(drive.slice(0, -1), standard)
-  assert.deepEqual(drive.at(-1), { id: 'tool-google-drive', name: '@local/dsh-google-drive/tools' })
-  assert.equal(await readFile(join(packageRoot, 'presets/google-drive/LICENSE.standard'), 'utf8'),
-    await readFile(join(dirname(SHIPPED_PRESET_ROOT), 'LICENSE'), 'utf8'))
-  const patch = parse(await readFile(join(packageRoot, 'cordis.patch.yml'), 'utf8'))
-  assert.ok(patch.some(row => row.insert?.some(item => item.name === '@local/dsh-google-drive')))
-})
-
-test('real dormant Standard and legacy Google Drive mounts both default to tools disabled', { timeout: 15000 }, async t => {
+test('Drive insertion preserves arbitrary custom roster configuration', async t => {
   const f = await fixture(t)
-  const ctx = new Context()
-  t.after(() => ctx.fiber.dispose())
-  ctx.baseUrl = f.baseUrl
-  await ctx.plugin(Loader, {}).await()
-  const { default: Group } = await installed('@deepseek-ai/cordis-plugin-group')
-  ctx.get('loader').builtins.group = Group
-  for (const suffix of [
-    'session', 'agent', 'session-projection', 'system-prompt', 'tools',
-    'commands', 'goal', 'skill', 'token-meter', 'subprocess-local', 'bash-local',
-    'shell-env', 'fs-local', 'jobs-local', 'subagent', 'user-questions', 'web',
-    'llm', 'subagent-spawn-in-process', 'subagent-fork-in-process',
-    'tool-subagent/model-selection-settings',
-  ]) {
-    const module = await installed(`@deepseek-ai/dsh-${suffix}`)
-    await ctx.plugin(module.default ?? module, {}).await()
-  }
-  const { default: SandboxPolicy } = await installed('@deepseek-ai/dsh-sandbox-policy')
-  await ctx.plugin(SandboxPolicy, { mode: 'read-only', workspaceRoot: f.directory }).await()
-  // Host implementation has separate tests. This sentinel supplies only its
-  // business contract, and fails if mounting tries to use account data.
-  const service = {
-    listFiles() { assert.fail('mount must not list files') },
-    getAccessToken() { assert.fail('mount must not access tokens') },
-  }
-  await ctx.plugin({ name: 'drive-host-fixture', apply(ctx) { ctx.provide('googleDrive', service) } }).await()
-  await ctx.plugin(AgentPresets, {
-    ...rosterConfig(f.baseUrl, [webPatch, join(f.packaged, 'cordis.patch.yml')]), includeUserRoot: false,
-  }).await()
-  const roster = ctx.get('agentPresets')
-  const standard = await roster.standingKeyFor('standard')
-  const drive = await roster.standingKeyFor('google-drive')
-  assert.notEqual(standard, drive)
-  assert.equal(await roster.standingKeyFor('google-drive'), drive)
-  const names = key => [...ctx.get('tools').view(key).visible.keys()].sort()
-  assert.ok(names(standard).length > 20)
-  assert.deepEqual(names(drive), names(standard))
-  assert.equal(names(drive).includes('request_drive_access'), false)
-  assert.equal(names(drive).includes('request_sheets_edit_access'), false)
-  assert.deepEqual(names(), [])
-  assert.equal(ctx.get('googleDrive'), service)
-  for (const name of ['planMode', 'compaction', 'toolResultPruner', 'workflowEngine']) assert.equal(ctx.get(name), undefined)
+  const config = { default: 'custom', includeShippedRoot: false, includeUserRoot: false,
+    roots: [{ path: '/custom/first', trust: 'user' }, { path: '/custom/second', trust: 'system' }] }
+  const rows = composeEntries([
+    [{ insert: [{ id: 'agent-presets', name: '@deepseek-ai/dsh-agent-presets', config }] }],
+    loadOverlayPatches('drive-test', join(f.packaged, 'cordis.patch.yml')),
+  ])
+  assert.deepEqual(flatten(rows).find(row => row.id === 'agent-presets').config, config)
 })

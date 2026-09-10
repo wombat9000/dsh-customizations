@@ -36,19 +36,28 @@ async function fixture(t, id) {
   return { root, writer, session }
 }
 function finish(session) {
-  session.append('assistant/message', { message: assistant }, { surfaceOp: 'append' })
+  session.append('assistant/message', { message: assistant, turn: 1, step: 0, stream: [] }, { surfaceOp: 'append' })
   session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
 }
 async function persisted(writer, session) {
-  assert.equal(await writer.sessions.flush(session), true)
+  // DSH 0.1.5 attaches persistence through the agent lifecycle, not SessionStore.
+  // This dormant fixture explicitly writes the real session snapshot via its handle.
+  const handle = await writer.persistence.create(session.header)
+  await handle.append(session.snapshotEvents())
+  await handle.flush()
+  await handle.close()
   const path = writer.persistence.locate(session.header).path
-  assert.match(path, /session\.jsonl\.zstd$/u)
+  assert.match(path, /session\.v3\.jsonl\.zstd$/u)
   const bytes = await readFile(path)
   assert.equal(bytes.readUInt32LE(0), 0xfd2fb528)
-  // The backend writes concatenated Zstandard frames; use its actual raw-storage
-  // reader rather than a one-frame decompressor or a second JSONL implementation.
-  const stored = await writer.persistence.loadStored(session.id)
-  return { path, bytes, records: stored.events }
+  // Retain the appended snapshot for comparison with a separate backend reopen.
+  // Unknown legacy events deliberately cannot pass the public read boundary.
+  return { path, bytes, records: session.snapshotEvents() }
+}
+async function load(persistence, id) {
+  const handle = await persistence.open(id, 'read')
+  try { return { meta: handle.header, events: (await handle.read()).events } }
+  finally { await handle.close() }
 }
 function runtimeFor(t, session) {
   const agent = { session }
@@ -88,7 +97,7 @@ test('legacy unmarked Drive audit append survives flush but real compressed hist
   assert.equal(Object.hasOwn(auditRecord, 'ignorable'), false)
   await writer.ctx.fiber.dispose()
   const reader = await store(t, root)
-  await assert.rejects(reader.persistence.load(session.id), error => {
+  await assert.rejects(load(reader.persistence, session.id), error => {
     assert.ok(error.message.includes(`session "${session.id}" contains event type "google-drive/access" (seq 2) unknown to this harness and not marked ignorable; refusing to interpret the log`))
     assert.ok(error.message.includes(artifact.path))
     return true
@@ -126,8 +135,8 @@ test('real Drive request, denial, grant, management and revocation reopen withou
   runtime.dispose()
   await writer.ctx.fiber.dispose()
   const reader = await store(t, root)
-  const loaded = await reader.persistence.load(session.id)
-  assert.deepEqual(loaded.meta, { version: 0, id: session.id, createdAt: time, cwd: root, isSeeded: false, delegationDepth: 0 })
+  const loaded = await load(reader.persistence, session.id)
+  assert.deepEqual(loaded.meta, { version: 3, id: session.id, createdAt: time, cwd: root, isSeeded: false, delegationDepth: 0 })
   assert.deepEqual(loaded.events, expectedEvents)
   const reopened = Session.create(loaded.meta.id, loaded.events, loaded.meta)
   assert.deepEqual(reopened.deriveMessages(), [user, assistant])

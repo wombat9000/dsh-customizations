@@ -3,7 +3,7 @@ import z from '@deepseek-ai/schemastery'
 import { DEFAULT_SETTINGS, normalizeSettings, RecapError, RecapRuntime } from './runtime.js'
 
 export const name = 'wombat9000-session-recap'
-export const inject = ['sessions', 'llm', 'connection', 'settings']
+export const inject = ['sessions', 'llm', 'connection', 'settings', 'webServer']
 export const CHANNEL = '/session-recap'
 export const Config = z.object({
   autoRecap: z.boolean().default(true),

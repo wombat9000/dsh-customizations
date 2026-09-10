@@ -13,7 +13,6 @@ import {
   finalAssistantOutput,
   resolveChildAgentOptions,
   resolveChildDepth,
-  seedDescriptorTurn,
   snapshotSubagentDescriptor,
 } from '@deepseek-ai/dsh-subagent'
 
@@ -131,19 +130,18 @@ export async function startWorker(ctx, { parent, cwd, mode, task, handoff, signa
     provider: suppliedDescriptor?.provider ?? 'worktree',
     label: suppliedDescriptor?.label ?? `Worktree ${mode} assignment`,
   })
-  const seed = seedDescriptorTurn(id, undefined, descriptor)
   const handle = await agents.create({
     sessionId: id,
     meta: { ...meta, cwd: root },
-    seed,
     inheritedEventCount: SessionLogOffset(0),
     agentOptions: options,
+    parentAgent: parent,
     signal,
-    setup(childCtx) {
+    setup(childCtx, child) {
       validateAuthority()
-      // AgentLoop exposes the unpublished Agent as context metadata, not a Service.
-      const child = childCtx.agent
+      // DSH supplies the unpublished Agent explicitly to the setup transaction.
       if (!child) throw new Error('agent factory did not expose the unpublished child')
+      child.session.append('subagent/descriptor', descriptor)
       appendDelegatedPolicyOverrides(child.session, { ...delegated, sandboxMode: childMode, approvalPolicy: 'never' })
       applyChildComposition(childCtx, parent, { toolFilter: { allow: allowed } })
       const childTools = required(childCtx, 'tools')

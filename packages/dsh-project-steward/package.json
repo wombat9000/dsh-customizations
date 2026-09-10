@@ -2,7 +2,7 @@
   "name": "@local/dsh-project-steward",
   "version": "0.1.0",
   "private": true,
-  "description": "Project Steward v1: approved repository setup improvements with Standard coding tools for DSH 0.1.2-rc.1",
+  "description": "Project Steward v1: approved repository setup improvements with Standard coding tools for DSH 0.1.5-rc.1",
   "type": "module",
   "exports": {
     "./package.json": "./package.json"
