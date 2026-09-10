@@ -117,7 +117,7 @@ test('repo guidance tracks source pins, script prerequisites, CI distinction, an
   assert.ok(skill.includes(manifest.engines.node))
   assert.equal(manifest.scripts.pretest, 'pnpm run build')
   assert.ok(manifest.scripts.test.includes('packages/dsh-project-steward/test/*.test.js'))
-  assert.match(skill, /fresh offline frozen install has not been executed/)
+  assert.match(skill, /fresh checkout-owned offline frozen, scripts-disabled install was validated/)
   for (const phrase of ['command -v pnpm', '--offline --frozen-lockfile --ignore-scripts', 'do not fall back online automatically', 'cache completeness', 'Node.js 24.20.0', 'does not change CI']) {
     assert.ok(skill.toLowerCase().includes(phrase.toLowerCase()), `missing ${phrase}`)
   }

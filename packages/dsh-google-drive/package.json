@@ -2,7 +2,7 @@
   "name": "@local/dsh-google-drive",
   "version": "0.1.0",
   "private": true,
-  "description": "Session-scoped Drive reading and Google Sheets previews with approved edits for DSH 0.1.2-rc.1",
+  "description": "Session-scoped Drive reading and Google Sheets previews with approved edits for DSH 0.1.5-rc.1",
   "type": "module",
   "main": "src/index.js",
   "exports": {
@@ -11,7 +11,7 @@
     "./client": "./client.js",
     "./package.json": "./package.json"
   },
-  "files": ["src", "client.js", "presets", "cordis.patch.yml", "README.md", "docs/pdf-runtime.md", "docs/sheets.md"],
+  "files": ["src", "client.js", "cordis.patch.yml", "README.md", "docs/pdf-runtime.md", "docs/sheets.md"],
   "scripts": { "test": "node --test test/*.test.js" },
   "engines": { "node": "^22.19.0 || >=24.0.0" },
   "dsh": {

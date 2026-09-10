@@ -114,13 +114,13 @@ async function host(t, fixture, config) {
   return ctx
 }
 
-test('published files discover independently and personal-web retains all three preset roots', async t => {
+test('published files discover independently and personal-web retains both preset roots', async t => {
   const f = await fixture(t)
   const manifest = await json(join(f.packaged, 'package.json'))
   assert.equal(manifest.name, '@local/dsh-project-steward')
   assert.equal(manifest.dsh.bundle.patch, './cordis.patch.yml')
   assert.equal(manifest.exports['./package.json'], './package.json')
-  assert.equal((await json(cli.resolve('@deepseek-ai/dsh/package.json'))).version, '0.1.2-rc.1')
+  assert.equal((await json(cli.resolve('@deepseek-ai/dsh/package.json'))).version, '0.1.5-rc.1')
   const lock = yaml.load(await readFile(join(repo, 'pnpm-lock.yaml'), 'utf8'))
   assert.deepEqual(lock.importers['packages/dsh-project-steward'], {}, 'dependency-free workspace importer stays explicit')
   assert.equal(manifest.dependencies, undefined, 'no new dependencies or runtime implementation')
@@ -131,9 +131,9 @@ test('published files discover independently and personal-web retains all three 
     assert.equal(config.default, 'standard')
     assert.equal(config.includeShippedRoot ?? true, true)
     assert.equal(config.includeUserRoot ?? true, true)
-    assert.equal(config.roots.length, combined ? 3 : 1)
+    assert.equal(config.roots.length, combined ? 2 : 1)
     const roster = await discoverPresets([{ path: SHIPPED_PRESET_ROOT, trust: 'system' }, ...config.roots], f.baseUrl)
-    for (const id of ['standard', 'minimal', 'cordis', presetId, ...(combined ? ['worktree-coordinator', 'google-drive'] : [])]) {
+    for (const id of ['standard', 'minimal', 'cordis', presetId, ...(combined ? ['worktree-coordinator'] : [])]) {
       const row = roster.find(item => item.id === id)
       assert.ok(row, `missing ${id}`)
       assert.equal(row.broken, undefined)
@@ -153,6 +153,12 @@ test('published files discover independently and personal-web retains all three 
 test('composition preserves exact Standard rows, configs, nesting, realms, and license', async () => {
   const standard = parse(await readFile(join(SHIPPED_PRESET_ROOT, 'standard/agent.cordis.yml'), 'utf8'))
   const steward = parse(await readFile(composition, 'utf8'))
+  const persona = steward.find(row => row.id === 'persona').config
+  assert.equal(persona.text, undefined)
+  assert.equal(persona.core, undefined, 'retain the default DSH persona core')
+  assert.equal(persona.prefix, 'You are Project Steward, a coding agent powered by the {{model}} model.')
+  assert.ok(persona.suffix.includes('Your working directory is {{cwd}}.'))
+  assert.match(persona.suffix, /Load the project-steward skill/)
   const extra = steward.filter(row => row.id === 'local-project-steward-skills')
   assert.equal(extra.length, 1)
   assert.equal(extra[0].name, '@deepseek-ai/dsh-skill-filesystem')

@@ -2,7 +2,9 @@
 
 Manage Git worktrees from a coordinating DSH session and dispatch fresh background workers into them. The coordinator stays in its original checkout. Workers use fixed creation-time directories; this package does not modify DSH internals, switch session directories, or create sidebar workspace records.
 
-Targets **DSH 0.1.2-rc.1**. Uses its public agent, subagent, sandbox-policy, tool, and background-job APIs. Git and Node.js 22.19 or newer must be available on the **DSH host**. Paths refer to that host's filesystem; remote filesystem or container-path translation is not implemented.
+Targets **DSH 0.1.5-rc.1**. Uses its public agent, subagent, sandbox-policy, tool, and background-job APIs. Git and Node.js 22.19 or newer must be available on the **DSH host**. Paths refer to that host's filesystem; remote filesystem or container-path translation is not implemented.
+
+For the 0.1.5-rc.1 Web transport, use the repository's patched launcher and profile setup; see the [migration guide](../../MIGRATION-0.1.5-rc.1.md). The compatibility patch is separate from this plugin and is not applied to a global DSH installation automatically.
 
 ## Install and select the preset
 
@@ -23,11 +25,11 @@ The coordinator adds the installed Creator skills to its normal skill catalog th
 
 This adds guidance, not Creator runtime tools: `tool-cordis` remains absent, and worker tool restrictions and permissions stay unchanged. Workers can read the relevant `SKILL.md` with their existing file tools. The plugin skill's plain-JavaScript-only restrictions (no imports, TypeScript, or JSX) and `cordis_inspect_*`/`cordis_define`/`cordis_run` workflow apply to dynamic plugins, not static packaged plugins. For static development and review, use repository API contracts, imports, TypeScript/JSX where supported, and normal build/test workflows. Report unavailable dynamic inspection, activation, or composition runtime operations separately; do not bypass restrictions or block static repository work.
 
-The path resolves `@local/dsh-worktree/package.json` from the root host context's deployment `baseUrl`, then resolves `@deepseek-ai/dsh-agent-presets/package.json` from that bundle's dependency scope. It does not resolve from the copied preset's directory or the session working directory. User-root copies therefore need no adjacent `node_modules`; keep the bundle installed in the deployment. The official package is pinned to **0.1.2-rc.1**; its internal `presets/cordis/skills` layout is compatibility-tested. If either package cannot resolve, preset mounting fails. If the directory disappears, the upstream filesystem provider omits those skills; the compatibility test fails. Normal skill precedence still applies, so project skills can shadow same-named custom skills.
+The path resolves `@local/dsh-worktree/package.json` from the root host context's deployment `baseUrl`, then resolves `@deepseek-ai/dsh-agent-presets/package.json` from that bundle's dependency scope. It does not resolve from the copied preset's directory or the session working directory. User-root copies therefore need no adjacent `node_modules`; keep the bundle installed in the deployment. The official package is pinned to **0.1.5-rc.1**; its internal `presets/cordis/skills` layout is compatibility-tested. If either package cannot resolve, preset mounting fails. If the directory disappears, the upstream filesystem provider omits those skills; the compatibility test fails. Normal skill precedence still applies, so project skills can shadow same-named custom skills.
 
 ### Custom profile configuration
 
-The automatic roster wiring targets the standard Web profile in **DSH 0.1.2-rc.1**. Apply this bundle after `@deepseek-ai/dsh-web-app`, which supplies the `agent-presets` row. The package exposes its `presets` directory as a configured system-trust root. DSH still discovers its shipped presets and the usual user preset root. This trust label controls preset authoring; it does not elevate worker permissions.
+The automatic roster wiring targets the standard Web profile in **DSH 0.1.5-rc.1**. Apply this bundle after `@deepseek-ai/dsh-web-app`, which supplies the `agent-presets` row. The package exposes its `presets` directory as a configured system-trust root. DSH still discovers its shipped presets and the usual user preset root. This trust label controls preset authoring; it does not elevate worker permissions.
 
 **Cordis replaces the entire roster `config`; it does not merge root arrays.** This bundle supplies `default: standard` and its own root. If your profile sets a different configuration default, additional roots, or discovery flags, retain them in a later profile override with the complete configuration and the worktree root. Likewise, a later override that replaces `config` without retaining the worktree root removes this preset from discovery. Copy the root expression from [`cordis.patch.yml`](cordis.patch.yml); it resolves the installed package from the profile's `baseUrl`, not from the session directory. A root with an earlier matching ID wins; check for an existing `worktree-coordinator` preset before installation.
 
@@ -107,7 +109,7 @@ No changes to the Environment plugin are necessary: it already reads the viewed 
 
 ## Development
 
-The bundled composition is a snapshot of `@deepseek-ai/dsh-agent-presets` **0.1.2-rc.1** Standard, with coordinator persona guidance, one worktree-tools row, an official Creator skill-directory reference, and explicit bounded completion-wake configuration. It does not dynamically inherit future Standard changes. The upstream MIT notice is retained in `presets/worktree-coordinator/LICENSE.standard`. When updating DSH, compare the Standard rows and their isolate realms before updating this snapshot.
+The bundled composition is a snapshot of `@deepseek-ai/dsh-agent-presets` **0.1.5-rc.1** Standard, with coordinator persona guidance, one worktree-tools row, an official Creator skill-directory reference, and explicit bounded completion-wake configuration. It does not dynamically inherit future Standard changes. The upstream MIT notice is retained in `presets/worktree-coordinator/LICENSE.standard`. When updating DSH, compare the Standard rows and their isolate realms before updating this snapshot.
 
 From the repository root:
 

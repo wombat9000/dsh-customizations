@@ -1,0 +1,21 @@
+diff --git a/lib/index.js b/lib/index.js
+--- a/lib/index.js
++++ b/lib/index.js
+@@ -2,7 +2,7 @@
+ import { Readable } from "node:stream";
+ import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+ import { credentialKey } from "@deepseek-ai/dsh-credentials";
+-import { Service } from "@deepseek-ai/cordis";
++import { Service, getTraceable } from "@deepseek-ai/cordis";
+ import { z as z$1 } from "zod";
+ //#region lib/types/api-path.js
+ /**
+@@ -538,7 +538,7 @@
+ 	}
+ 	/** Generic channel registry scoped to the Context reading this service. */
+ 	get rpc() {
+-		const owner = this.ctx;
++		const owner = getTraceable(this.ctx, this.ctx);
+ 		return {
+ 			handle: (channel, handler) => this.register(owner, channel, handler),
+ 			intercept: (channel, matches, handler) => this.registerInterceptor(owner, channel, matches, handler)
