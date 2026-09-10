@@ -1,0 +1,50 @@
+{
+  "name": "@local/dsh-tool-trivy",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Pre-installed Trivy vulnerability-audit tool and bundled skill for DSH",
+  "type": "module",
+  "main": "src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./client": "./client.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "assets",
+    "client.js",
+    "cordis.patch.yml",
+    "src/**/*.js"
+  ],
+  "scripts": {
+    "test": "node --test test/index.test.js test/client.test.js",
+    "test:integration": "node --test test/profile.integration.test.js"
+  },
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-settings"
+      ],
+      "platform": "web"
+    }
+  },
+  "dependencies": {
+    "@deepseek-ai/dsh-llm": "0.1.5-rc.1",
+    "@deepseek-ai/dsh-skill": "0.1.5-rc.1",
+    "@deepseek-ai/dsh-subprocess": "0.1.5-rc.1",
+    "@deepseek-ai/dsh-tools": "0.1.5-rc.1"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "4.0.2",
+    "@deepseek-ai/dsh-client-connection": "0.1.5-rc.1",
+    "@deepseek-ai/dsh-client-ui-settings": "0.1.5-rc.1",
+    "react": "18.3.1"
+  },
+  "license": "UNLICENSED"
+}

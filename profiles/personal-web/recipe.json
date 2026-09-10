@@ -37,6 +37,18 @@
     {
       "name": "@local/dsh-google-drive",
       "source": "../../packages/dsh-google-drive"
+    },
+    {
+      "name": "@local/dsh-linear",
+      "source": "../../packages/dsh-linear"
+    },
+    {
+      "name": "@local/dsh-tool-youtube",
+      "source": "../../packages/dsh-tool-youtube"
+    },
+    {
+      "name": "@local/dsh-tool-trivy",
+      "source": "../../packages/dsh-tool-trivy"
     }
   ],
   "patch": "cordis.patch.yml"

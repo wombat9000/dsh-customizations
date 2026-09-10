@@ -49,7 +49,6 @@ async function recipePatches() {
   const recipe = await json(join(directory, 'recipe.json'))
   const names = recipe.bundles.map(bundle => bundle.name)
   assert.equal(names.filter(name => name === '@local/dsh-google-drive').length, 1)
-  assert.equal(names.at(-1), '@local/dsh-google-drive')
   assert.equal(names.filter(name => name === '@local/dsh-google-auth').length, 1)
   assert.ok(names.indexOf('@local/dsh-google-auth') < names.indexOf('@local/dsh-google-drive'))
   const patches = []
