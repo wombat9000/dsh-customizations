@@ -161,6 +161,7 @@ window.__ModuleLoader__.load({
       .dsh-session-recap-action:disabled { color: var(--dsw-alias-label-tertiary, #888); cursor: default; }
       .dsh-session-recap-card { box-sizing: border-box; width: calc(100% - 2 * var(--dsh-composer-side-clearance, 16px) - 32px); max-width: var(--dsh-chat-content-width, 680px); min-width: 0; margin: 0 auto 8px; padding: 12px 16px; border: .5px solid var(--dsw-alias-border-l2, #8883); border-radius: 16px; background: var(--dsw-alias-bg-layer-2, #8881); color: var(--dsw-alias-label-primary, inherit); font-size: 13px; line-height: 1.6; }
       .dsh-session-recap-card__body { max-height: min(240px, 30vh); overflow-y: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+      .dsh-session-recap-card__headline { margin: 0 0 6px; font: inherit; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       .dsh-session-recap-card__list { margin: 0; padding-left: 18px; }
       .dsh-session-recap-card__row + .dsh-session-recap-card__row { margin-top: 4px; }
       .dsh-session-recap-card__loading { margin: 0; color: var(--dsw-alias-label-secondary, inherit); }
@@ -214,6 +215,7 @@ window.__ModuleLoader__.load({
         state.busy ? h('p', { role: 'status', className: 'dsh-session-recap-card__loading' }, 'Generating recap…') : null,
         state.error ? h('p', { role: 'alert', className: 'dsh-session-recap-card__error' }, state.error) : null,
         state.recap ? h('div', { role: state.busy ? undefined : 'status', tabIndex: 0, 'aria-label': 'Recap content', className: 'dsh-session-recap-card__body' },
+          typeof state.recap.headline === 'string' && state.recap.headline.trim() ? h('h2', { className: 'dsh-session-recap-card__headline', title: state.recap.headline }, state.recap.headline) : null,
           h('ul', { className: 'dsh-session-recap-card__list' }, ...state.recap.bullets.map((bullet, index) => h('li', { key: index, className: 'dsh-session-recap-card__row' }, bullet)))) : null)
     }
     // Match DSH's settings-card metrics using public theme tokens, not private CSS-module names.

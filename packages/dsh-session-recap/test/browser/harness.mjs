@@ -19,7 +19,7 @@ delete window.__ModuleLoader__
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 
 const h = React.createElement
-export async function mountSlot(name, { blank = false, narrow = false, dark = false, recapError = false, deferRecap = false, recapTopic = 'Add reliable screenshot coverage for Session recap.' } = {}) {
+export async function mountSlot(name, { blank = false, narrow = false, dark = false, recapError = false, deferRecap = false, recapHeadline, recapTopic = 'Add reliable screenshot coverage for Session recap.' } = {}) {
   const pending = new Map()
   let sessionId = 'fixture-session'
   localStorage.clear()
@@ -40,6 +40,7 @@ export async function mountSlot(name, { blank = false, narrow = false, dark = fa
         return { ok: true, value: {
         sessionId: payload.sessionId, generatedAt: '2026-01-02T03:04:05.000Z',
         recap: {
+          ...(recapHeadline === undefined ? {} : { headline: recapHeadline }),
           bullets: [typeof recapTopic === 'function' ? recapTopic(payload.sessionId) : recapTopic,
             'Use the registered React slots for the recap.',
             'We paused at the screenshot review.'],
