@@ -243,7 +243,12 @@ function verifyCore(anchor) {
 function assertOwnedPath(path) {
   // Do not mutate a profile or dependency tree redirected to another installation.
   for (let current = path; ; current = dirname(current)) {
-    if (existsSync(current) && lstatSync(current).isSymbolicLink()) fail(`unsupported symlinked profile path: ${current}`)
+    try {
+      // existsSync follows symlinks and misses dangling links that writes follow.
+      if (lstatSync(current).isSymbolicLink()) fail(`unsupported symlinked profile path: ${current}`)
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error
+    }
     if (dirname(current) === current) break
   }
 }
@@ -284,6 +289,31 @@ async function configureProfileDependencies() {
   writeFileSync(workspacePath, document.toString())
 }
 
+function profileBundles(manifest) {
+  const bundles = manifest.dsh?.profile?.bundles ?? []
+  if (!Array.isArray(bundles) || bundles.some(name => typeof name !== 'string')) fail('invalid profile bundle list')
+  return bundles
+}
+
+function restoreAddedBundleOrder(previousBundles) {
+  const manifestPath = join(profileDirectory, 'package.json')
+  assertOwnedPath(manifestPath)
+  const manifest = readJson(manifestPath, 'profile manifest')
+  const installed = profileBundles(manifest)
+  const previous = new Set(previousBundles)
+  const added = [...new Set(recipe.bundles.map(bundle => bundle.name))]
+    .filter(name => !previous.has(name) && installed.includes(name))
+  const addedNames = new Set(added)
+  let index = 0
+  // pnpm sorts dependencies and DSH appends in that order. Reorder only newly
+  // selected bundles; retained bundles and template layers keep their positions.
+  const ordered = installed.map(name => addedNames.has(name) ? added[index++] : name)
+  if (ordered.every((name, position) => name === installed[position])) return
+  manifest.dsh.profile.bundles = ordered
+  writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`)
+}
+
+let previousBundles = []
 if (options.dryRun) {
   console.log(`Would verify checkout-local DSH ${version} launcher and required RPC-owner patch (other launchers unsupported).`)
   console.log(`Would configure ${patchKey} in ${join(profileDirectory, 'pnpm-workspace.yaml')} and copy its patch.`)
@@ -297,6 +327,8 @@ if (options.dryRun) {
   const pnpmVersion = run('pnpm', ['--version'], { capture: true }).trim()
   if (pnpmVersion !== '11.9.0') fail(`pnpm 11.9.0 is required; found ${pnpmVersion}`)
   await configureProfileDependencies()
+  const manifestPath = join(profileDirectory, 'package.json')
+  if (existsSync(manifestPath)) previousBundles = profileBundles(readJson(manifestPath, 'profile manifest'))
 }
 for (const [index, bundle] of recipe.bundles.entries()) console.log(`Applying ${bundle.name} to profile ${profile} from ${JSON.stringify(sources[index])}`)
 // Resolve the complete graph at once: a base-only intermediate graph has no core patch target.
@@ -304,7 +336,10 @@ for (const [index, bundle] of recipe.bundles.entries()) console.log(`Applying ${
 run(dsh, ['plugin', '--profile', profile, 'add',
   ...sources.map(source => isLocalSource(source) ? `file:${source}` : source),
   '--offline', '--ignore-scripts'], options)
-if (!options.dryRun) {
+if (options.dryRun) {
+  console.log('Would restore recipe order for newly added bundles, preserving retained bundle positions.')
+} else {
+  restoreAddedBundleOrder(previousBundles)
   run(dsh, ['plugin', '--profile', profile, 'install', '--offline', '--frozen-lockfile', '--ignore-scripts'], options)
   verifyCore(join(profileDirectory, 'package.json'))
 }

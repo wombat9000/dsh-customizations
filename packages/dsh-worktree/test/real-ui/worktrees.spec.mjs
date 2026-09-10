@@ -1,4 +1,4 @@
-import { test, expect, pluginSettings } from '../../../../tests/real-ui/fixtures.mjs'
+import { test, expect, pluginSettings, openSeededSession } from '../../../../tests/real-ui/fixtures.mjs'
 import { execFileSync } from 'node:child_process'
 import { realpathSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -52,8 +52,7 @@ for (const [theme, narrow] of [['light', false], ['dark', false], ['light', true
     }
     const settings = await pluginSettings(app, theme)
     await settings.getByRole('button', { name: 'Close', exact: true }).click()
-    await app.getByRole('treeitem', { name: 'Ungrouped', exact: true }).click()
-    await app.getByRole('treeitem', { name: /^workspace / }).click()
+    await openSeededSession(app)
     await app.getByRole('tab', { name: 'Worktrees', exact: true }).click()
     const panel = app.getByRole('region', { name: 'Worktrees', exact: true })
     await expect(panel.getByRole('heading', { name: 'Full assignment', exact: true })).toBeVisible()

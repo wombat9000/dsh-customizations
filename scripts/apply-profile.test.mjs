@@ -23,8 +23,35 @@ function fixture(t, { patched = true } = {}) {
   put('node_modules/@deepseek-ai/dsh-web-app/index.js', '')
   put('node_modules/@deepseek-ai/dsh-client-connection/package.json', JSON.stringify({ name: '@deepseek-ai/dsh-client-connection', version, main: 'lib/index.js' }))
   put('node_modules/@deepseek-ai/dsh-client-connection/lib/index.js', patched ? 'import { Service, getTraceable } from "@deepseek-ai/cordis";\nconst owner = getTraceable(this.ctx, this.ctx);' : 'const owner = this.ctx;')
-  // The stub records calls and materializes a fixture graph only; it never runs pnpm or DSH.
-  put('node_modules/.bin/dsh', `#!${process.execPath}\nconst fs=require('fs'),p=require('path');const a=process.argv.slice(2);if(a[0]==='--version'){console.log('${version}');process.exit(0)}fs.appendFileSync(process.env.CALLS,JSON.stringify(a)+'\\n');if(a[0]==='plugin'){const d=p.join(process.env.DSH_HOME,'profiles',a[2]);fs.mkdirSync(d,{recursive:true});fs.writeFileSync(p.join(d,'package.json'),'{}');fs.cpSync(p.resolve(__dirname,'../@deepseek-ai'),p.join(d,'node_modules/@deepseek-ai'),{recursive:true});}`)
+  // Model pnpm's sorted dependencies and DSH's append-only reconciliation.
+  // The stub only writes fixtures; it never runs pnpm or DSH.
+  put('node_modules/.bin/dsh', `#!${process.execPath}
+const fs = require('fs'), p = require('path');
+const a = process.argv.slice(2);
+if (a[0] === '--version') { console.log('${version}'); process.exit(0); }
+fs.appendFileSync(process.env.CALLS, JSON.stringify(a) + '\\n');
+const d = p.join(process.env.DSH_HOME, 'profiles', a[0] === 'plugin' ? a[2] : a[1]);
+const manifestPath = p.join(d, 'package.json');
+if (a[0] === 'plugin') {
+  fs.mkdirSync(d, { recursive: true });
+  const manifest = fs.existsSync(manifestPath) ? JSON.parse(fs.readFileSync(manifestPath)) : {
+    name: 'fixture-profile', private: true,
+    dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app'], patchReload: 'startup' } },
+  };
+  const recipe = JSON.parse(fs.readFileSync(p.resolve(__dirname, '../../profiles/example/recipe.json')));
+  manifest.dependencies ??= {};
+  if (a[3] === 'add') for (const bundle of recipe.bundles) manifest.dependencies[bundle.name] = bundle.source;
+  manifest.dependencies = Object.fromEntries(Object.entries(manifest.dependencies).sort(([a], [b]) => a.localeCompare(b)));
+  manifest.dsh ??= {};
+  manifest.dsh.profile ??= {};
+  const bundles = manifest.dsh.profile.bundles ??= [];
+  for (const name of Object.keys(manifest.dependencies)) if (!bundles.includes(name)) bundles.push(name);
+  fs.writeFileSync(manifestPath, JSON.stringify(manifest));
+  fs.cpSync(p.resolve(__dirname, '../@deepseek-ai'), p.join(d, 'node_modules/@deepseek-ai'), { recursive: true });
+} else {
+  fs.copyFileSync(manifestPath, process.env.CALLS + '-dump-manifest');
+}
+`)
   put('bin/pnpm', `#!${process.execPath}\nconsole.log('11.9.0')`)
   chmodSync(join(dir, 'node_modules/.bin/dsh'), 0o755)
   chmodSync(join(dir, 'bin/pnpm'), 0o755)
@@ -79,6 +106,54 @@ test('apply preserves YAML settings and pins copied patch before one complete of
   assert.ok(calls[1].includes('--frozen-lockfile'))
   assert.ok(calls[2].includes('--dump-config'))
 })
+
+for (const retained of [[], ['@local/custom-z', '@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', '@local/middle', '@local/custom-a']]) {
+  test(`apply orders new bundles by recipe and preserves ${retained.length ? 'existing' : 'template'} layers`, t => {
+    const f = fixture(t)
+    const names = ['@deepseek-ai/dsh-web-app', '@local/zeta', '@local/middle', '@local/alpha']
+    f.put('profiles/example/recipe.json', JSON.stringify({
+      profile: 'example', patch: 'cordis.patch.yml',
+      bundles: names.map(name => ({ name, source: name })),
+    }))
+    if (retained.length) f.put('home/profiles/example/package.json', JSON.stringify({
+      name: 'retained-profile', private: true, custom: { untouched: true },
+      dsh: { profile: { bundles: retained, patchReload: 'startup' }, custom: 'keep' },
+    }))
+    const expected = retained.length
+      ? [...retained, '@local/zeta', '@local/alpha']
+      : ['@deepseek-ai/dsh-base', ...names]
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const result = f.run()
+      assert.equal(result.status, 0, result.stderr)
+      const manifest = JSON.parse(readFileSync(join(f.dir, 'calls-dump-manifest'), 'utf8'))
+      assert.deepEqual(manifest.dsh.profile.bundles, expected, 'dump sees recipe order after frozen reconciliation, including on reapply')
+      assert.equal(manifest.dsh.profile.patchReload, 'startup')
+      assert.equal(manifest.private, true)
+      if (retained.length) {
+        assert.deepEqual(manifest.custom, { untouched: true })
+        assert.equal(manifest.dsh.custom, 'keep')
+      }
+    }
+  })
+}
+
+for (const name of ['node_modules', 'package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', 'pnpm-workspace.yaml.bak', 'patches', `patches/${patchName}`, 'cordis.patch.yml', 'cordis.patch.yml.bak']) {
+  test(`dangling ${name} symlink is refused before profile writes or plugin calls`, t => {
+    const f = fixture(t)
+    const outside = join(f.dir, 'outside', 'missing-target')
+    mkdirSync(join(outside, '..'), { recursive: true })
+    const link = join(f.home, 'profiles/example', name)
+    mkdirSync(join(link, '..'), { recursive: true })
+    symlinkSync(outside, link)
+    const result = f.run()
+    assert.notEqual(result.status, 0)
+    assert.match(result.stderr, /symlinked profile path/)
+    assert.equal(existsSync(outside), false, 'must not create the external symlink target')
+    assert.equal(existsSync(join(f.dir, 'calls')), false)
+    assert.equal(existsSync(join(f.home, 'profiles/example/pnpm-workspace.yaml')), false)
+    assert.equal(existsSync(join(f.home, 'profiles/example/patches', patchName)), false)
+  })
+}
 
 test('nonempty profile patch is refused before dependency changes', t => {
   const f = fixture(t)
