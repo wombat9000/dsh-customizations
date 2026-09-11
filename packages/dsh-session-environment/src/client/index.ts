@@ -180,6 +180,54 @@ export function compactPath(path: string | null, home: string | null): string {
   return `…${separator}${parts.at(-1) ?? ''}`
 }
 
+export function CopyValue(props: {
+  label: string
+  value: string
+  children?: React.ReactNode
+}): React.ReactElement {
+  const [feedback, setFeedback] = React.useState('')
+  const [highlighted, setHighlighted] = React.useState(false)
+  const attempt = React.useRef(0)
+
+  React.useEffect(() => () => { attempt.current += 1 }, [])
+  React.useEffect(() => {
+    if (!feedback) return
+    const timer = window.setTimeout(() => setFeedback(''), 2_000)
+    return () => window.clearTimeout(timer)
+  }, [feedback])
+
+  const copy = async (): Promise<void> => {
+    const current = ++attempt.current
+    setFeedback('')
+    try {
+      await navigator.clipboard.writeText(props.value)
+      if (attempt.current === current) setFeedback(`${props.label} copied`)
+    } catch {
+      if (attempt.current === current) setFeedback(`Could not copy ${props.label}. Try again.`)
+    }
+  }
+
+  return React.createElement(React.Fragment, null,
+    React.createElement('button', {
+      type: 'button',
+      title: `Copy ${props.label}: ${props.value}`,
+      'aria-label': `Copy ${props.label}: ${props.value}`,
+      onClick: () => { void copy() },
+      onMouseEnter: () => setHighlighted(true),
+      onMouseLeave: () => setHighlighted(false),
+      style: {
+        ...styles.value, border: 0, padding: 0, margin: 0,
+        background: 'transparent', color: 'inherit', fontSize: 'inherit',
+        textAlign: 'left', cursor: 'pointer', borderRadius: 3,
+        textDecoration: highlighted ? 'underline' : 'none',
+      },
+    }, props.children),
+    React.createElement('span', {
+      role: 'status', 'aria-live': 'polite',
+      style: { gridColumn: '2', ...styles.muted, fontSize: 11, ...(feedback ? {} : { position: 'absolute', width: 1, height: 1, overflow: 'hidden', clipPath: 'inset(50%)' }) },
+    }, feedback))
+}
+
 function BranchIcon(): React.ReactElement {
   return React.createElement('svg', {
     style: styles.branchIcon,
@@ -371,12 +419,15 @@ export function createEnvironmentCard(
       React.createElement('h2', { style: styles.title }, 'Environment'),
       React.createElement('div', { style: styles.row },
         React.createElement('span', { style: styles.label }, 'CWD'),
-        React.createElement('span', { style: styles.value, title: fullCwd, 'aria-label': fullCwd }, shownCwd)),
+        (cwd ?? displayInfo.cwd)
+          ? React.createElement(CopyValue, { key: `${sessionId}:cwd:${fullCwd}`, label: 'CWD', value: fullCwd }, shownCwd)
+          : React.createElement('span', { style: styles.value }, shownCwd)),
       React.createElement('div', { style: styles.row },
         React.createElement('span', { style: styles.label }, 'Branch'),
-        React.createElement('span', { style: branchStyle, title: shownBranch },
-          showBranchIcon ? React.createElement(BranchIcon) : null,
-          shownBranch)),
+        showBranchIcon
+          ? React.createElement(CopyValue, { key: `${sessionId}:branch:${shownBranch}`, label: 'branch name', value: shownBranch },
+              React.createElement(BranchIcon), shownBranch)
+          : React.createElement('span', { style: branchStyle, title: shownBranch }, shownBranch)),
       React.createElement('div', { style: styles.row },
         React.createElement('span', { style: styles.label }, 'Sync'),
         React.createElement('span', { style: styles.value, title: syncTitle }, syncNode)),
