@@ -22,7 +22,8 @@ const fail = code => { throw new GitHubError(code, MESSAGES[code]) }
 export function sanitize(value) {
   return String(value)
     .replace(/\b(?:gh[pousr]_[A-Za-z0-9_]+|github_pat_[A-Za-z0-9_]+)\b/g, '[REDACTED]')
-    .replace(/\b(?:Bearer|token)\s+[^\s"'<>]+/gi, '[REDACTED]')
+    .replace(/\bBearer\s+[^\s"'<>]+/gi, '[REDACTED]')
+    .replace(/\bAuthorization\s*:\s*token\s+[^\s"'<>]+/gi, '[REDACTED]')
     .replace(/(https?:\/\/)[^\s/@]+(?::[^\s/@]*)?@/gi, '$1[REDACTED]@')
     .replace(/([?&](?:access_token|token|auth|key)=)[^&#\s]+/gi, '$1[REDACTED]')
 }
@@ -93,17 +94,46 @@ export function validateArguments(operation, args = {}) {
   return { ...args }
 }
 
+const unquiescentBackends = new WeakSet()
+export function isGitHubBackendFenced(subprocess) { return unquiescentBackends.has(subprocess) }
+function cleanupFailure(subprocess) {
+  unquiescentBackends.add(subprocess)
+  throw new GitHubError('CLEANUP_FAILED', 'The managed process range could not be confirmed stopped. This GitHub backend is fenced against further operations; verify and replace or restart the backend before proceeding.')
+}
+function awaitSignal(promise, signal) {
+  if (signal.aborted) { Promise.resolve(promise).catch(() => {}); return Promise.reject(new GitHubError('CANCELLED', MESSAGES.CANCELLED)) }
+  return new Promise((resolve, reject) => {
+    const abort = () => reject(new GitHubError('CANCELLED', MESSAGES.CANCELLED))
+    signal.addEventListener('abort', abort, { once: true })
+    Promise.resolve(promise).then(resolve, reject).finally(() => signal.removeEventListener('abort', abort))
+  })
+}
 // Reader output never includes spill paths, raw stderr, executable paths, or credentials.
-export async function runCollected(subprocess, { argv, cwd, signal, timeoutMs = 30000, maxOutputBytes = 1048576 }) {
+// Command completion does not prove provider-managed range quiescence.
+export async function runCollected(subprocess, { argv, cwd, signal, timeoutMs = 30000, maxOutputBytes = 1048576, stdinData, onDispatch, cleanupTimeoutMs = 5000 }) {
+  if (isGitHubBackendFenced(subprocess)) cleanupFailure(subprocess)
   if (signal?.aborted) fail('CANCELLED')
   const controller = new AbortController()
   let timedOut = false
   const abort = () => controller.abort()
   signal?.addEventListener('abort', abort, { once: true })
   const timer = setTimeout(() => { timedOut = true; controller.abort() }, timeoutMs)
+  let handle
   try {
-    const handle = subprocess.spawn({ argv, cwd, signal: controller.signal, graceMs: 1000, stdio: { stdin: 'ignore', stdout: { maxBytes: maxOutputBytes }, stderr: { maxBytes: 16384 } } })
-    const outcome = await handle.done
+    onDispatch?.()
+    handle = subprocess.spawn({ argv, cwd, signal: controller.signal, graceMs: 1000, stdio: { stdin: stdinData === undefined ? 'ignore' : { data: stdinData }, stdout: { maxBytes: maxOutputBytes }, stderr: { maxBytes: 16384 } } })
+    let outcome
+    try { outcome = await awaitSignal(handle.done, controller.signal) }
+    finally {
+      const cleanup = new AbortController()
+      const cleanupTimer = setTimeout(() => cleanup.abort(), Math.max(1, Math.min(10000, cleanupTimeoutMs)))
+      try {
+        if (typeof handle.terminate !== 'function' || typeof handle.waitForExit !== 'function') cleanupFailure(subprocess)
+        handle.terminate()
+        if (await awaitSignal(handle.waitForExit(cleanup.signal), cleanup.signal) !== true) cleanupFailure(subprocess)
+      } catch { cleanupFailure(subprocess) }
+      finally { clearTimeout(cleanupTimer) }
+    }
     if (signal?.aborted) fail('CANCELLED')
     if (timedOut) fail('TIMEOUT')
     const stdout = handle.collected?.stdout?.readFrom(0)
@@ -111,6 +141,9 @@ export async function runCollected(subprocess, { argv, cwd, signal, timeoutMs = 
     if (stdout?.lossy || Buffer.byteLength(stdout?.text ?? '') > maxOutputBytes) fail('OUTPUT_TOO_LARGE')
     return { exitCode: outcome.exitCode, stdout: stdout?.text ?? '', stderr: stderr?.text ?? '' }
   } catch (error) {
+    if (error?.code === 'CLEANUP_FAILED') throw error
+    // A provider that throws before publishing its handle leaves no observable range.
+    if (!handle && !(error instanceof GitHubError)) cleanupFailure(subprocess)
     if (signal?.aborted) fail('CANCELLED')
     if (timedOut) fail('TIMEOUT')
     if (error instanceof GitHubError) throw error
@@ -173,6 +206,7 @@ export function createGitHubRuntime(subprocess, config = {}) {
   const maxOutputBytes = Math.min(2097152, Math.max(1, config.maxOutputBytes ?? 1048576))
   const outputConfig = { maxResultBytes: Math.min(262144, Math.max(256, config.maxResultBytes ?? 196608)), maxTextChars: Math.min(16384, Math.max(1, config.maxTextChars ?? 8192)) }
   async function command(binary, argv, exec) {
+    if (isGitHubBackendFenced(subprocess)) cleanupFailure(subprocess)
     let executable
     const controller = new AbortController()
     const abort = () => controller.abort()

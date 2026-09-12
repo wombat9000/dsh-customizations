@@ -93,6 +93,12 @@ test('unknown API/shell/mutation fields and ambiguous nested continuations are r
   assert.equal(subprocess.specs.length, 0)
 })
 
+test('sanitization preserves normal token prose but removes authorization credential values', () => {
+  const text = 'Review token scopes and token refresh. The token budget remains bounded.'
+  assert.equal(sanitize(text), text)
+  assert.doesNotMatch(sanitize('Authorization: token synthetic-private-credential'), /synthetic-private-credential/)
+})
+
 test('sanitization strips known tokens, authorization headers, and credential URLs', () => {
   const secrets = ['ghp_abcdefghijklmnopqrstuvwxyz1234567890', 'github_pat_abcdefghijklmnopqrstuvwxyz_1234567890', 'fixture-bearer-token', 'fixture-password']
   const text = `\u001b[31mAuthorization: Bearer ${secrets[2]}\u001b[0m\n${secrets[0]} ${secrets[1]} https://user:${secrets[3]}@github.com/acme/example`
