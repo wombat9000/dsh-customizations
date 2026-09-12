@@ -71,7 +71,7 @@ test('network failures retry identical read-only argv within the configured hard
 
 test('spawn errors, malformed JSON, invalid connection payloads and absent resources fail closed', async () => {
   for (const [run, code] of [
-    [{ spawnError: new Error(secrets) }, 'READ_FAILED'],
+    [{ spawnError: new Error(secrets) }, 'CLEANUP_FAILED'],
     [{ stdout: secrets }, 'INVALID_RESPONSE'],
     [json([]), 'INVALID_RESPONSE'],
     [json(null), 'INVALID_RESPONSE'],

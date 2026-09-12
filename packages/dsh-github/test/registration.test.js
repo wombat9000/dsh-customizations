@@ -16,6 +16,10 @@ const names = [
   'list_projects', 'get_project', 'list_project_items', 'list_issues',
   'search_issues', 'get_issue', 'get_issue_comments',
 ].map(name => `github_${name}`).sort()
+const allNames = [...names, ...[
+  'create_project', 'update_project', 'link_project_repository', 'create_issue',
+  'add_project_item', 'set_project_item_field', 'add_issue_dependency',
+].map(name => `github_${name}`)].sort()
 const camel = name => name.replace(/^github_/, '').replace(/_([a-z])/g, (_, char) => char.toUpperCase())
 
 test('eleven plain definitions forward only the calling workspace and cancellation', async () => {
@@ -61,8 +65,8 @@ test('real pinned DSH registry exposes host tools across preset/session scopes a
   createScope(ctx, a, { parent: standard })
   createScope(ctx, b, { parent: minimal })
   for (const scope of [undefined, standard, minimal, a, b]) {
-    assert.deepEqual([...registry.view(scope).visible.keys()].sort(), names)
-    assert.equal(registry.schemas(scope).length, 11)
+    assert.deepEqual([...registry.view(scope).visible.keys()].sort(), allNames)
+    assert.equal(registry.schemas(scope).length, 18)
   }
   for (const agent of [a, b]) {
     const tool = registry.get('github_detect_repositories', agent)

@@ -35,8 +35,8 @@ export function fakeSubprocess(runs = [], options = {}) {
           if (spec.signal.aborted) finish()
           else spec.signal.addEventListener('abort', finish, { once: true })
         }) : Promise.resolve({ exitCode: run.exitCode ?? 0, signal: run.signal ?? null }),
-        terminate() {},
-        waitForExit: async () => true,
+        terminate() { run.onTerminate?.() },
+        waitForExit: async signal => run.waitForExit ? run.waitForExit(signal) : true,
       }
     },
   }

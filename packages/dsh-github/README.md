@@ -1,6 +1,6 @@
 # GitHub tools
 
-This host bundle adds eleven read-only GitHub tools to every DSH session, independent of preset. It targets DSH `0.1.5-rc.1` and `github.com`. It uses the GitHub CLI already available through DSH’s managed subprocess backend; it adds no SDK, login flow, credential store, or client UI.
+This host bundle adds eleven read tools and seven individually approved write tools to every DSH session, independent of preset. It targets DSH `0.1.5-rc.1` and `github.com`. It uses the GitHub CLI already available through DSH’s managed subprocess backend; it adds no SDK, login flow, credential store, or client UI.
 
 ## Access and execution
 
@@ -10,7 +10,7 @@ Tools can read what the configured account can access. There is no per-session t
 
 All subprocesses run through DSH’s managed backend. Do not assume a host process shares a sandbox’s `PATH`, home directory, or CLI credentials. The plugin never runs `gh auth token` or copies tokens into model output. GitHub titles, descriptions, READMEs, issue bodies, and comments are untrusted reference material, not instructions.
 
-## Tool inventory
+## Read tool inventory
 
 | Tool | Purpose |
 | --- | --- |
@@ -49,7 +49,46 @@ Discovery normalizes GitHub SSH and HTTPS remotes and reports ambiguity, includi
 - GitHub can hide inaccessible resources as nonexistent. Diagnostics retain that ambiguity rather than asserting the resource does not exist.
 - Template status is a project property, not a separate resource type.
 
-This layer does not create or modify GitHub data, persist planning state or workspace mappings, dispatch agents, or configure project views/workflows.
+## Write tool inventory
+
+| Tool | Purpose |
+| --- | --- |
+| `github_create_project` | Create a project with a title, optionally copying an explicitly selected template. |
+| `github_update_project` | Update project title, description, or README. |
+| `github_link_project_repository` | Link an explicit repository to a project. |
+| `github_create_issue` | Create an issue with a title and body in an explicit repository. |
+| `github_add_project_item` | Add an existing issue to a project. |
+| `github_set_project_item_field` | Set an item field using its actual project field definition. |
+| `github_add_issue_dependency` | Mark one issue as blocked by another, using the native GitHub relationship. |
+
+Write inputs use the same explicit project/repository identities as reads:
+
+- `github_create_project`: `owner`, `title`; optional `templateOwner`, `templateNumber`, and `includeDraftIssues`.
+- `github_update_project`: `owner`, `projectNumber`, and at least one of `title`, `description`, or `readme`. Empty description/README strings clear those fields.
+- `github_link_project_repository`: `owner`, `projectNumber`, `repositoryOwner`, and `repo`.
+- `github_create_issue`: `owner`, `repo`, `title`, and `body`.
+- `github_add_project_item`: `owner`, `projectNumber`, `repositoryOwner`, `repo`, and `issueNumber`.
+- `github_set_project_item_field`: `owner`, `projectNumber`, `itemId`, `fieldId`, and a `value` object with exactly one of `text`, `number`, `date`, `singleSelectOptionId`, or `iterationId`.
+- `github_add_issue_dependency`: `owner`, `repo`, `issueNumber`, `blockingOwner`, `blockingRepo`, and `blockingIssueNumber`. The first issue is blocked by the second.
+
+These tools do not grant standing write authority. Each call resolves explicit destinations, prepares an immutable payload, and asks through DSH’s approval pipeline. The preview includes the full proposed content or before/after change as serialized JSON. Escapes distinguish control characters and whitespace in the plain-text approval panel; the payload retains the approved original text. Titles are bounded to 256 characters, descriptions to 1,024, and issue bodies/README/text values to 20,000. The complete preview must also fit within 64 KiB. Credential-looking content fails closed rather than being silently rewritten. Denied or unavailable approval grants nothing. Changed arguments, caller context, or detected remote-state conflicts require a new call and approval. Direct execution without preparation and approval fails closed.
+
+Project creation and project text updates are separate calls. A project template is selected independently of the destination owner. Draft copying is explicit and defaults off; copying a template does not copy its ordinary issue/PR items, collaborators, or repository links. GitHub copies views, custom fields, and supported project configuration; see [GitHub’s project-copy documentation](https://docs.github.com/en/issues/planning-and-tracking-with-projects/creating-projects/copying-an-existing-project). The plugin does not configure those views or workflows itself.
+
+Field writes use IDs, not fuzzy name matching. Supported values are text, finite numbers, calendar dates, single-select option IDs, and iteration IDs. The selected field must belong to the selected project, and the item must belong to that project. Selection/iteration IDs must exist in that field definition. Unsupported field types or invalid values fail before a write; creating or changing field definitions is out of scope.
+
+### Outcomes and recovery
+
+- A confirmed result identifies the resource and provides its URL when available.
+- Preflight or approval failures dispatch no mutation.
+- Once dispatch starts, a timeout, cancellation, or unusable response can leave the outcome uncertain. Do not assume the resource was not created and do not blindly retry. Inspect GitHub using the read tools before deciding the next action.
+- Each tool performs its own approved operation. If a later call fails, earlier successful operations remain. There is no batch transaction, automatic rollback, durable recovery ledger, or exactly-once guarantee across crashes.
+- Remote-state checks are separate reads followed by writes, not server-side compare-and-swap. External collaborators can still change resources between those requests. Write execution is serialized within this host instance, not across other DSH processes or GitHub clients.
+- Each subprocess is terminated and its managed range is checked for quiescence before the operation releases its execution slot. If cleanup cannot confirm that the range stopped, the GitHub integration blocks further calls through that backend. Verify the process state and replace or restart the backend before proceeding; a dispatched mutation remains uncertain.
+- Preflight requires complete relevant collections within the first 100 entries. Larger project field/link/membership/dependency collections fail closed instead of approving from a partial snapshot. The read tools can still inspect those resources with pagination.
+- Existing links, project memberships (including archived items), dependencies, and unchanged field values are reported without another mutation. Closed projects and known insufficient permissions fail before approval.
+
+The bundle does not persist planning state or workspace mappings, dispatch agents, close/delete resources, edit existing issue specifications, remove dependencies, or configure project fields/views/workflows. Product mode is a separate preset; these tools do not implement its planning behavior.
 
 ## Packaging and validation
 
