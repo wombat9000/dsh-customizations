@@ -24,6 +24,6 @@ test('personal-web removes only the Drive root and retains default and other roo
   const patch = await text('../../profiles/personal-web/cordis.patch.yml')
   assert.match(patch, /default: standard/)
   const packages = [...patch.matchAll(/resolve\('(@local\/[^']+)\/package.json'\)/g)].map(match => match[1])
-  assert.deepEqual(packages, ['@local/dsh-worktree', '@local/dsh-project-steward'])
-  assert.equal((patch.match(/trust: system/g) ?? []).length, 2)
+  assert.deepEqual(packages, ['@local/dsh-worktree', '@local/dsh-project-steward', '@local/dsh-product-mode'])
+  assert.equal((patch.match(/trust: system/g) ?? []).length, 3)
 })

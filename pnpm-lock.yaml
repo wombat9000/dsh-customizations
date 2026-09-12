@@ -88,6 +88,8 @@ importers:
         specifier: 18.3.1
         version: 18.3.1
 
+  packages/dsh-product-mode: {}
+
   packages/dsh-project-steward: {}
 
   packages/dsh-session-environment:

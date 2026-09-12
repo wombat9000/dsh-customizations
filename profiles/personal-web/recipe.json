@@ -27,6 +27,10 @@
       "source": "../../packages/dsh-project-steward"
     },
     {
+      "name": "@local/dsh-product-mode",
+      "source": "../../packages/dsh-product-mode"
+    },
+    {
       "name": "@local/dsh-web-firecrawl",
       "source": "../../packages/dsh-web-firecrawl"
     },

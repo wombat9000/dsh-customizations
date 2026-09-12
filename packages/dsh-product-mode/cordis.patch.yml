@@ -1,0 +1,9 @@
+# Apply after the standard Web bundle. This replaces the complete roster config.
+# Profiles combining preset bundles must list ALL extra roots in a later patch.
+- id: agent-presets
+  name: '@deepseek-ai/dsh-agent-presets'
+  config:
+    default: standard
+    roots:
+      - path: !!js process.getBuiltinModule('node:path').join(process.getBuiltinModule('node:path').dirname(process.getBuiltinModule('node:module').createRequire(baseUrl).resolve('@local/dsh-product-mode/package.json')), 'presets')
+        trust: system

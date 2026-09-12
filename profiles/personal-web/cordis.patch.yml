@@ -9,3 +9,5 @@
         trust: system
       - path: !!js process.getBuiltinModule('node:path').join(process.getBuiltinModule('node:path').dirname(process.getBuiltinModule('node:module').createRequire(baseUrl).resolve('@local/dsh-project-steward/package.json')), 'presets')
         trust: system
+      - path: !!js process.getBuiltinModule('node:path').join(process.getBuiltinModule('node:path').dirname(process.getBuiltinModule('node:module').createRequire(baseUrl).resolve('@local/dsh-product-mode/package.json')), 'presets')
+        trust: system

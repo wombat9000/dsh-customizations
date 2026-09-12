@@ -30,7 +30,7 @@ async function fixture(t) {
   for (const file of ['package.json', ...manifest.files]) {
     await cp(join(packageRoot, file), join(packaged, file), { recursive: true })
   }
-  for (const name of ['dsh-worktree', 'dsh-project-steward']) {
+  for (const name of ['dsh-worktree', 'dsh-project-steward', 'dsh-product-mode']) {
     await symlink(join(repo, 'packages', name), join(local, name), 'dir')
   }
   await symlink(dirname(dirname(cli.resolve('@deepseek-ai/dsh/package.json'))), join(directory, 'node_modules/@deepseek-ai'), 'dir')
@@ -63,7 +63,7 @@ async function recipePatches() {
   return patches
 }
 
-test('Drive adds no preset and personal-web preserves both other custom roots', async t => {
+test('Drive adds no preset and personal-web preserves all custom roots', async t => {
   const f = await fixture(t)
   const drivePatch = join(f.packaged, 'cordis.patch.yml')
   const base = rosterConfig(f.baseUrl, [webPatch])
@@ -75,11 +75,11 @@ test('Drive adds no preset and personal-web preserves both other custom roots', 
     assert.equal(config.includeShippedRoot ?? true, true)
     assert.equal(config.includeUserRoot ?? true, true)
     const roots = config.roots ?? []
-    if (combined) assert.deepEqual(roots, ['dsh-worktree', 'dsh-project-steward'].map(name => ({
+    if (combined) assert.deepEqual(roots, ['dsh-worktree', 'dsh-project-steward', 'dsh-product-mode'].map(name => ({
       path: join(repo, 'packages', name, 'presets'), trust: 'system',
     })))
     const roster = await discoverPresets([{ path: SHIPPED_PRESET_ROOT, trust: 'system' }, ...roots], f.baseUrl)
-    for (const id of [...shipped.map(row => row.id), ...(combined ? ['worktree-coordinator', 'project-steward'] : [])]) {
+    for (const id of [...shipped.map(row => row.id), ...(combined ? ['worktree-coordinator', 'project-steward', 'product-mode'] : [])]) {
       const row = roster.find(item => item.id === id)
       assert.ok(row, `missing ${id}`)
       assert.equal(row.broken, undefined)

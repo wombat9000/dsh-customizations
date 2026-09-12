@@ -40,6 +40,7 @@ async function fixture(t) {
     await cp(join(packageRoot, file), join(packaged, file), { recursive: true })
   }
   await symlink(join(repo, 'packages/dsh-worktree'), join(local, 'dsh-worktree'), 'dir')
+  await symlink(join(repo, 'packages/dsh-product-mode'), join(local, 'dsh-product-mode'), 'dir')
   await symlink(join(repo, 'packages/dsh-google-drive'), join(local, 'dsh-google-drive'), 'dir')
   await symlink(dirname(dirname(cli.resolve('@deepseek-ai/dsh/package.json'))), join(directory, 'node_modules', '@deepseek-ai'), 'dir')
   return { directory, packaged, baseUrl: pathToFileURL(`${directory}/`).href }
@@ -114,7 +115,7 @@ async function host(t, fixture, config) {
   return ctx
 }
 
-test('published files discover independently and personal-web retains both preset roots', async t => {
+test('published files discover independently and personal-web retains all custom preset roots', async t => {
   const f = await fixture(t)
   const manifest = await json(join(f.packaged, 'package.json'))
   assert.equal(manifest.name, '@local/dsh-project-steward')
@@ -131,9 +132,9 @@ test('published files discover independently and personal-web retains both prese
     assert.equal(config.default, 'standard')
     assert.equal(config.includeShippedRoot ?? true, true)
     assert.equal(config.includeUserRoot ?? true, true)
-    assert.equal(config.roots.length, combined ? 2 : 1)
+    assert.equal(config.roots.length, combined ? 3 : 1)
     const roster = await discoverPresets([{ path: SHIPPED_PRESET_ROOT, trust: 'system' }, ...config.roots], f.baseUrl)
-    for (const id of ['standard', 'minimal', 'cordis', presetId, ...(combined ? ['worktree-coordinator'] : [])]) {
+    for (const id of ['standard', 'minimal', 'cordis', presetId, ...(combined ? ['worktree-coordinator', 'product-mode'] : [])]) {
       const row = roster.find(item => item.id === id)
       assert.ok(row, `missing ${id}`)
       assert.equal(row.broken, undefined)
