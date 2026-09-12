@@ -1,0 +1,4 @@
+# Register read-only GitHub tools globally, without changing presets.
+- insert:
+    - id: local-github
+      name: '@local/dsh-github'

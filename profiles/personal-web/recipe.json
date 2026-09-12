@@ -39,6 +39,10 @@
       "source": "../../packages/dsh-google-drive"
     },
     {
+      "name": "@local/dsh-github",
+      "source": "../../packages/dsh-github"
+    },
+    {
       "name": "@local/dsh-linear",
       "source": "../../packages/dsh-linear"
     },

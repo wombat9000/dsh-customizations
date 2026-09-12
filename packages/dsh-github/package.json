@@ -1,0 +1,17 @@
+{
+  "name": "@local/dsh-github",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Preset-neutral read-only GitHub tools through managed GitHub CLI execution",
+  "type": "module",
+  "main": "src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./runtime": "./src/runtime.js",
+    "./package.json": "./package.json"
+  },
+  "files": ["src/**/*.js", "cordis.patch.yml", "README.md"],
+  "engines": { "node": "^22.19.0 || >=24.0.0" },
+  "dsh": { "bundle": { "patch": "./cordis.patch.yml" } },
+  "license": "UNLICENSED"
+}

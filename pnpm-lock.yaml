@@ -36,6 +36,8 @@ importers:
         specifier: 2.9.0
         version: 2.9.0
 
+  packages/dsh-github: {}
+
   packages/dsh-google-auth:
     dependencies:
       '@deepseek-ai/schemastery':
