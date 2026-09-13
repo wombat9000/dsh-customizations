@@ -2,7 +2,7 @@
 
 Project Steward is a selectable agent preset for inspecting repository setup, agent guidance, and development practices. It proposes concrete improvements, applies only approved changes, validates them, and summarizes the results. It keeps Standard's coding tools and adds no Creator runtime tools.
 
-This composition-only bundle targets DSH `0.1.5-rc.1`. It has no runtime entrypoint, new dependency, install hook, startup writer, or migration/sync engine. Selecting the preset does not create `AGENTS.md`, install dependencies, or require a directory structure. Approval rules are agent guidance, not a new security boundary; DSH's host sandbox and approval policy still govern tools.
+This composition-only bundle targets DSH `0.1.5-rc.2`. It has no runtime entrypoint, new dependency, install hook, startup writer, or migration/sync engine. Selecting the preset does not create `AGENTS.md`, install dependencies, or require a directory structure. Approval rules are agent guidance, not a new security boundary; DSH's host sandbox and approval policy still govern tools.
 
 ## Install and select
 

@@ -2,7 +2,7 @@
   "name": "@local/dsh-google-drive",
   "version": "0.1.0",
   "private": true,
-  "description": "Session-scoped Drive reading and Google Sheets previews with approved edits for DSH 0.1.5-rc.1",
+  "description": "Session-scoped Drive reading and Google Sheets previews with approved edits for DSH 0.1.5-rc.2",
   "type": "module",
   "main": "src/index.js",
   "exports": {

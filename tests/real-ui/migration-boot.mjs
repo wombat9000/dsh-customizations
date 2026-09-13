@@ -9,6 +9,12 @@ const cleanup = await startDisposableHost({
     { name: '@local/dsh-project-steward', directory: 'packages/dsh-project-steward' },
     { name: '@local/dsh-google-auth', directory: 'packages/dsh-google-auth' },
     { name: '@local/dsh-google-drive', directory: 'packages/dsh-google-drive' },
+    { name: '@local/dsh-session-environment', directory: 'packages/dsh-session-environment' },
+    { name: '@local/dsh-product-mode', directory: 'packages/dsh-product-mode' },
+    { name: '@local/dsh-web-firecrawl', directory: 'packages/dsh-web-firecrawl' },
+    { name: '@local/dsh-linear', directory: 'packages/dsh-linear' },
+    { name: '@local/dsh-tool-youtube', directory: 'packages/dsh-tool-youtube' },
+    { name: '@local/dsh-tool-trivy', directory: 'packages/dsh-tool-trivy' },
   ],
   profilePatch: resolve(import.meta.dirname, '../../profiles/personal-web/cordis.patch.yml'),
 })
@@ -34,7 +40,7 @@ try {
     if (channel === '/session-recap') assert.equal(result.result.value.autoRecap, true)
     if (channel === '/local-worktrees') assert.equal(result.result.value.state, 'unavailable')
   }
-  console.log('PASS: five-plugin boot, seeded fixture, authentication, shell and read-only RPCs')
+  console.log('PASS: twelve-plugin boot, seeded fixture, authentication, shell and read-only RPCs')
 } finally {
   await cleanup()
 }

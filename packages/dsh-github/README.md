@@ -1,6 +1,6 @@
 # GitHub tools
 
-This bundle adds eleven read tools, seven write tools, and a session issue-management grant request to every DSH session, independent of preset. Writes require individual approval unless a live grant covers a supported field update or dependency addition. It targets DSH `0.1.5-rc.1` and `github.com`. It uses the GitHub CLI already available through DSH’s managed subprocess backend; it adds no SDK, login flow, or credential store. The Web conversation card shows grant scope, revocation, and recent change outcomes.
+This bundle adds eleven read tools, seven write tools, and a session issue-management grant request to every DSH session, independent of preset. Writes require individual approval unless a live grant covers a supported field update or dependency addition. It targets DSH `0.1.5-rc.2` and `github.com`. It uses the GitHub CLI already available through DSH’s managed subprocess backend; it adds no SDK, login flow, or credential store. The Web conversation card shows grant scope, revocation, and recent change outcomes.
 
 ## Access and execution
 
