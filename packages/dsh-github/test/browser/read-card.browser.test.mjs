@@ -37,7 +37,7 @@ test.each([
 ])('supported tool %s renders readable entries with zero HTTP calls', async (tool, data, expected) => {
   await mount(tool, data)
   expect(container.textContent).toContain(expected)
-  expect(container.textContent).toContain('returned')
+  if (tool !== 'github_get_issue') expect(container.textContent).toContain('returned')
   expect(container.querySelectorAll('a[href^="https://github.com/"]').length).toBeGreaterThan(0)
   expect(container.querySelectorAll('button')).toHaveLength(0)
 })
@@ -79,6 +79,58 @@ test('empty template page warns that filtering and totals apply to different sco
   expect(container.textContent).toContain('empty page does not imply no templates')
   expect(container.textContent).toContain('not complete')
 })
+const emptyIssue = { ...issue, repository: { nameWithOwner: 'acme/example' }, body: '', parent: null, labels: connection([]), assignees: connection([]), subIssues: connection([]), blockedBy: connection([]), blocking: connection([]) }
+test('single issue prioritizes description and hides only confirmed empty collections', async () => {
+  await mount('github_get_issue', emptyIssue)
+  const card = container.querySelector('.gh-grant')
+  expect(card.querySelector('h3')).toBeNull()
+  expect(card.querySelectorAll('.gh-issue-collection')).toHaveLength(0)
+  expect(card.textContent).not.toContain('1 entry returned')
+  expect(card.querySelector('[role="note"]')).toBeNull()
+  expect(card.textContent).toContain('No description.')
+})
+test.each([
+  undefined, null, { nodes: [] }, { ...connection([]), totalCount: 1 }, { ...connection([]), nextCursor: 'next' }, connection([], true), { ...connection([]), truncated: true }, { nodes: 'bad' },
+])('unknown/incomplete issue collections never disappear (%j)', async labels => {
+  await mount('github_get_issue', { ...emptyIssue, labels, body: null, parent: undefined })
+  const notes = [...container.querySelectorAll('[role="note"]')].map(node => node.textContent).join(' ')
+  expect(notes).toContain('Labels:')
+  expect(notes).toContain('Description unavailable')
+  expect(notes).toContain('Parent:')
+})
+test('outer truncation keeps otherwise empty sections visibly uncertain', async () => {
+  await mount('github_get_issue', emptyIssue, { block: block(emptyIssue, { truncated: true, truncations: [{ path: 'data.labels', reason: 'bounded' }] }) })
+  const notes = [...container.querySelectorAll('[role="note"]')]
+  expect(notes.some(node => node.textContent.includes('Labels: no entries returned; completeness unknown'))).toBe(true)
+  expect(notes.some(node => node.textContent.includes('bounded or incomplete'))).toBe(true)
+  expect(notes.every(node => !node.closest('details'))).toBe(true)
+})
+test.each(['github_list_issues', 'github_search_issues'])('%s handles empty results and unknown issue states without board status', async tool => {
+  await mount(tool, connection([]))
+  expect(container.textContent).toContain('0 entries returned')
+  expect(container.textContent).toContain('No entries returned on this page.')
+  await act(async () => root.unmount()); container.remove()
+  await mount(tool, connection([{ ...issue, state: { malformed: true } }]))
+  expect(container.querySelector('.gh-issue-state').getAttribute('aria-label')).toBe('Issue state: Unknown')
+  expect(container.querySelector('.gh-issue').textContent).not.toContain('board')
+})
+test('partial labels and body-only bounds do not unhide independently complete empty collections', async () => {
+  const value = { ...emptyIssue, labels: connection([{ name: 'partial' }], true) }
+  await mount('github_get_issue', value, { block: block(value, { truncated: true, truncations: [{ path: 'data.labels', kind: 'connection' }, { path: 'data.body', kind: 'text' }] }) })
+  const notes = [...container.querySelectorAll('[role="note"]')].map(node => node.textContent).join(' ')
+  expect(notes).toContain('data.labels')
+  for (const name of ['Assignees:', 'Sub-issues:', 'Blocked by:', 'Blocking:']) expect(container.querySelector('.gh-grant').innerText).not.toContain(name)
+  expect(container.querySelectorAll('.gh-issue-collection')).toHaveLength(1)
+})
+test('populated issue collections show compact chips and directed safe links', async () => {
+  await mount('github_get_issue', { ...emptyIssue, state: 'CLOSED', labels: connection([{ name: '<img src=x>' }]), assignees: connection([{ login: 'alice', url: 'https://github.com/alice' }]), blockedBy: connection([issue]), blocking: connection([{ ...issue, title: 'Unsafe link', url: 'javascript:alert(1)' }]) })
+  expect(container.querySelector('.gh-issue-state').getAttribute('aria-label')).toBe('Issue state: Closed')
+  expect(container.querySelectorAll('.gh-issue-chip')).toHaveLength(2)
+  expect(container.querySelectorAll('.gh-issue-related a')).toHaveLength(1)
+  expect(container.querySelector('img')).toBeNull()
+  expect(container.textContent).toContain('Blocked by:')
+  expect(container.textContent).toContain('Blocking:')
+})
 test('project README/options and issue relationships use expandable supplied details', async () => {
   await mount('github_get_project', detailedProject)
   await act(async () => page.getByText('Project README', { exact: true }).click())
@@ -102,12 +154,12 @@ test('all client-side nested truncation warnings remain outside collapsed bodies
 })
 test.each(['light', 'dark'])('hostile text, keyboard expansion and long titles fit narrow %s layout', async scheme => {
   document.documentElement.style.colorScheme = scheme
-  await mount('github_get_issue', { ...detailedIssue, title: '<script>unsafe</script>' + 'long'.repeat(200), url: 'https://github.com.evil.example/issue', body: '<img src=x onerror=alert(1)>' })
+  await mount('github_get_issue', { ...detailedIssue, title: '<script>unsafe</script>' + 'long'.repeat(200), url: 'https://github.com.evil.example/issue', body: '<img src=x onerror=alert(1)>' + 'long description '.repeat(60) })
   container.style.width = '320px'
   expect(container.scrollWidth).toBeLessThanOrEqual(320)
   expect(container.querySelector('script')).toBeNull()
   expect(container.querySelector('a[href*="evil.example"]')).toBeNull()
-  const summary = page.getByText('Issue description', { exact: true }).element()
+  const summary = page.getByText('Full description — preview shortened', { exact: true }).element()
   summary.focus()
   await act(async () => userEvent.keyboard('{Enter}'))
   expect(summary.parentElement.open).toBe(true)

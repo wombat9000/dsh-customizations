@@ -3,9 +3,9 @@ export const approvalNames = ['createProject', 'updateProject', 'linkProjectRepo
 export const approvalTool = operation => `github_${operation.replace(/[A-Z]/g, c => `_${c.toLowerCase()}`)}`
 export const issueBody = '# Review specification\n\n**Important** and *emphasis*, `code`.\n- First requirement\n- Second requirement\n\n[Safe](https://github.com/fixture/repo) [Unsafe](javascript:alert)\n<img src=x onerror=alert(1)>\n\n  two spaces\tand tab\r\n' + 'Long readable content. '.repeat(500) + '\nEND OF COMPLETE BODY'
 export function approvalValue(operation = 'createIssue') {
-  const project = { id: 'P', number: 7, title: 'Destination board', url: 'https://github.com/orgs/fixture/projects/7', readme: 'UNRELATED PROJECT README SENTINEL' }
+  const project = { owner: { login: 'fixture' }, id: 'P', number: 7, title: 'Destination board', url: 'https://github.com/orgs/fixture/projects/7', readme: 'UNRELATED PROJECT README SENTINEL' }
   const repository = { id: 'R', nameWithOwner: 'fixture/repo', url: 'https://github.com/fixture/repo' }
-  const issue = { id: 'I', number: 49, title: 'Readable approvals', url: 'https://github.com/fixture/repo/issues/49' }
+  const issue = { repository: { nameWithOwner: 'fixture/repo' }, id: 'I', number: 49, title: 'Readable approvals', url: 'https://github.com/fixture/repo/issues/49' }
   const blocking = { id: 'B', number: 12, title: 'Blocking requirement', url: 'https://github.com/fixture/repo/issues/12' }
   const field = { id: 'F', name: 'Status', dataType: 'SINGLE_SELECT' }
   const rows = {
