@@ -1,11 +1,17 @@
 // Test-only host plugin. Seed a completed user turn without invoking an agent or provider.
 import assert from 'node:assert/strict'
+import { registerApprovalFixture, approvalCommandSeed, commandWorkspace } from './github-approval-fixture.mjs'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { githubSessionSeed, githubWorkspaceName } from './github-grants-fixture.mjs'
 import { join } from 'node:path'
 
 export const inject = ['sessions', 'sessionPersistence']
 export async function apply(ctx) {
+  registerApprovalFixture(ctx)
+  const commandCwd = join(process.cwd(), '..', commandWorkspace)
+  await mkdir(commandCwd, { recursive: true })
+  const command = approvalCommandSeed(commandCwd)
+  await persistSession(ctx, ctx.sessions.prepare(command.id, command.options))
   const id = await seedSession(ctx)
   await seedGitHubSession(ctx)
   // The Web listener can become ready before async plugins finish applying.
