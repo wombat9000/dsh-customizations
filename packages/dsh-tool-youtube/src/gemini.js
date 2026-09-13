@@ -1049,7 +1049,7 @@ export class GeminiYoutubeClient {
     }
     if (signal?.aborted) throw providerError(undefined, operation, signal)
     if (typeof apiKey !== 'string' || apiKey.length === 0) {
-      throw new Error('GEMINI_API_KEY is not configured; save it in Settings → YouTube or export it in the launching environment')
+      throw new Error('GEMINI_API_KEY is not configured; save it in Settings → Plugins → Plugin configuration → YouTube or export it in the launching environment')
     }
     return this.options.clientFactory(apiKey)
   }

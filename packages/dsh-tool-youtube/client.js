@@ -16,8 +16,6 @@ window.__ModuleLoader__.load({
         gap: '16px',
         width: 'min(720px, 100%)',
       },
-      heading: { margin: 0, fontSize: '20px', fontWeight: 650 },
-      intro: { margin: 0, opacity: 0.72, lineHeight: 1.5 },
       card: {
         display: 'flex',
         flexDirection: 'column',
@@ -512,14 +510,14 @@ window.__ModuleLoader__.load({
       React.useEffect(() => {
         let active = true
         setFailure(undefined)
-        api.credentials.describe({ refs: [CREDENTIAL_REF] }).then((response) => {
+        Promise.resolve().then(() => api.credentials.describe([CREDENTIAL_REF])).then((response) => {
           if (!active) return
-          if (!response.result.ok) {
+          if (!response.ok) {
             setCredential(null)
-            setFailure(response.result.error.message)
+            setFailure(response.error.message)
             return
           }
-          setCredential(response.result.value.credentials[CREDENTIAL_REF] ?? {
+          setCredential(response.value[CREDENTIAL_REF] ?? {
             configured: false,
             writable: false,
           })
@@ -542,9 +540,9 @@ window.__ModuleLoader__.load({
         setFailure(undefined)
         setSuccess(undefined)
         try {
-          const response = await api.credentials.set({ ref: CREDENTIAL_REF, value: draft.trim() })
-          if (!response.result.ok) {
-            setFailure(response.result.error.message)
+          const response = await api.credentials.set(CREDENTIAL_REF, draft.trim())
+          if (!response.ok) {
+            setFailure(response.error.message)
             return
           }
           setDraft('')
@@ -563,9 +561,9 @@ window.__ModuleLoader__.load({
         setFailure(undefined)
         setSuccess(undefined)
         try {
-          const response = await api.credentials.unset({ ref: CREDENTIAL_REF })
-          if (!response.result.ok) {
-            setFailure(response.result.error.message)
+          const response = await api.credentials.unset(CREDENTIAL_REF)
+          if (!response.ok) {
+            setFailure(response.error.message)
             return
           }
           setDraft('')
@@ -589,11 +587,12 @@ window.__ModuleLoader__.load({
             ? `Configured${source === undefined ? '' : ` via ${source}`}`
             : 'Not configured'
 
-      return React.createElement('section', { style: styles.section, 'aria-labelledby': 'youtube-settings-title' },
-        React.createElement('h2', { id: 'youtube-settings-title', style: styles.heading }, 'YouTube'),
-        React.createElement('p', { style: styles.intro },
-          'Configure Gemini access used by the youtube_watch and youtube_transcript tools.'),
-        React.createElement('div', { style: styles.card, role: 'group', 'aria-labelledby': 'gemini-card-title' },
+      return React.createElement('details', { style: { ...styles.card, display: 'block' } },
+        React.createElement('summary', { style: { cursor: 'pointer' } },
+          React.createElement('span', { style: styles.title }, 'YouTube'),
+          React.createElement('p', { style: { ...styles.hint, marginTop: '4px' } },
+            'Configure Gemini access used by the youtube_watch and youtube_transcript tools.')),
+        React.createElement('div', { style: { ...styles.section, marginTop: '16px' }, role: 'group', 'aria-labelledby': 'gemini-card-title' },
           React.createElement('div', { style: styles.row },
             React.createElement('h3', { id: 'gemini-card-title', style: styles.title }, 'Gemini'),
             React.createElement('span', { style: styles.badge, role: 'status' },
@@ -641,7 +640,7 @@ window.__ModuleLoader__.load({
             : React.createElement('p', { style: styles.message(false), role: 'status' }, success)))
     }
 
-    const inject = ['slots', 'connection', 'remote']
+    const inject = ['slots', 'connection', 'remote', 'remote.credentials']
 
     function apply(ctx) {
       const connection = ctx.get('connection')
@@ -656,12 +655,11 @@ window.__ModuleLoader__.load({
           for (const dispose of disposers) dispose()
         }
       }
-      const injected = () => ({ api: connection.api, subscribe })
-      ctx.slots.inject('settings.section', () => ctx.slots.register({
-        name: 'settings.section',
-        id: 'youtube',
+      const injected = () => ({ api: ctx.remote, subscribe })
+      ctx.slots.inject('settings.plugin.item', () => ctx.slots.register({
+        name: 'settings.plugin.item',
+        key: 'youtube',
         order: 30,
-        label: 'YouTube',
         inject: injected,
       }, GeminiSettingsSection))
       ctx.slots.inject('tool.call.toolview', () => {

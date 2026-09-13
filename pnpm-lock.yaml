@@ -206,7 +206,7 @@ importers:
       '@deepseek-ai/dsh-client-connection':
         specifier: 0.1.5-rc.1
         version: 0.1.5-rc.1(patch_hash=375a4273536fe2b2e434e14f622052592a43e42f0496e47fffe8768887519fce)(@deepseek-ai/cordis@4.0.2)(@deepseek-ai/dsh-invariants@0.1.5-rc.1(@deepseek-ai/cordis@4.0.2))
-      '@deepseek-ai/dsh-client-ui-settings':
+      '@deepseek-ai/dsh-client-ui-settings-plugins':
         specifier: 0.1.5-rc.1
         version: 0.1.5-rc.1(@deepseek-ai/cordis@4.0.2)
       '@deepseek-ai/dsh-credentials':
