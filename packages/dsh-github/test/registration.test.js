@@ -18,7 +18,7 @@ const names = [
 ].map(name => `github_${name}`).sort()
 const allNames = [...names, ...[
   'create_project', 'update_project', 'link_project_repository', 'create_issue',
-  'add_project_item', 'set_project_item_field', 'add_issue_dependency',
+  'add_project_item', 'set_project_item_field', 'add_issue_dependency', 'request_issue_management',
 ].map(name => `github_${name}`)].sort()
 const camel = name => name.replace(/^github_/, '').replace(/_([a-z])/g, (_, char) => char.toUpperCase())
 
@@ -66,7 +66,7 @@ test('real pinned DSH registry exposes host tools across preset/session scopes a
   createScope(ctx, b, { parent: minimal })
   for (const scope of [undefined, standard, minimal, a, b]) {
     assert.deepEqual([...registry.view(scope).visible.keys()].sort(), allNames)
-    assert.equal(registry.schemas(scope).length, 18)
+    assert.equal(registry.schemas(scope).length, 19)
   }
   for (const agent of [a, b]) {
     const tool = registry.get('github_detect_repositories', agent)

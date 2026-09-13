@@ -1,4 +1,4 @@
-# Register read-only GitHub tools globally, without changing presets.
+# Register shared GitHub tools and session-bound grants without changing presets.
 - insert:
     - id: local-github
       name: '@local/dsh-github'

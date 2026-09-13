@@ -34,11 +34,28 @@ function assertRead(subprocess, operation, variables = {}) {
 }
 
 test('connection status reports effective login without claiming token scopes or write access', async () => {
-  const { runtime, subprocess } = fixture({ viewer: { login: 'fixture-user' } })
+  const { runtime, subprocess } = fixture({ viewer: { id: 'U_ACTOR', login: 'fixture-user' } })
   const result = await runtime.connectionStatus({}, exec)
   assert.deepEqual(result, { host: 'github.com', untrusted: true, data: { cliAvailable: true, authenticated: true, account: 'fixture-user', permissions: { tokenScopes: 'unknown', writeAccess: 'unknown' } }, truncated: false, truncations: [] })
   assertRead(subprocess, 'connectionStatus')
   assert.ok(!subprocess.specs.flatMap(spec => spec.argv).includes('auth'))
+})
+
+test('connection status observes verified immutable account identity without changing its public result', async () => {
+  const observations = []
+  const { runtime } = fixture({ viewer: { id: 'U_ACTOR', login: 'fixture-user' } }, { onAccount: actor => observations.push(actor) })
+  const result = await runtime.connectionStatus({}, exec)
+  assert.equal(result.data.account, 'fixture-user')
+  assert.deepEqual(observations, [{ id: 'U_ACTOR', login: 'fixture-user' }])
+  assert.equal(result.data.id, undefined)
+  for (const viewer of [{ login: 'fixture-user' }, { id: '', login: 'fixture-user' }, { id: 'U_ACTOR', login: '' }, { id: 'U_ACTOR', login: 'invalid/login' }]) {
+    const { runtime } = fixture({ viewer }, { onAccount: actor => observations.push(actor) })
+    assert.equal((await runtime.connectionStatus({}, exec)).data.diagnostic.code, 'INVALID_RESPONSE')
+  }
+  assert.equal(observations.length, 1, 'invalid responses never report account observations')
+  const failed = createGitHubRuntime(fakeSubprocess([{ exitCode: 1, stderr: 'HTTP 401 bad credentials' }]), { onAccount: actor => observations.push(actor) })
+  assert.equal((await failed.connectionStatus({}, exec)).data.authenticated, false)
+  assert.equal(observations.length, 1)
 })
 
 test('repository reads preserve fork identity and mark unknown permissions explicitly', async () => {

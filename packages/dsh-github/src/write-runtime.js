@@ -1,5 +1,6 @@
 import { GitHubError, runCollected, sanitize, isGitHubBackendFenced } from './runtime.js'
-import { WRITE_READS, MUTATIONS } from './write-queries.js'
+import { WRITE_READS, MUTATIONS, GRANT_READS } from './write-queries.js'
+import { validateGrantArguments, resolveGrantIdentities } from './grants.js'
 
 const str = description => ({ type: 'string', description })
 const num = description => ({ type: 'integer', description })
@@ -299,7 +300,7 @@ export function createGitHubWriteRuntime(subprocess, config = {}) {
     checkSignal(exec.signal)
     return runCollected(subprocess, { argv: [executable, 'api', 'graphql', '--hostname', 'github.com', '--method', 'POST', '--input', '-'], stdinData: JSON.stringify({ query: document, variables }), cwd: exec.cwd, signal: exec.signal, timeoutMs, maxOutputBytes, onDispatch })
   }
-  async function preflight(operation, args, exec) {
+  async function preflight(operation, args, exec, onAccount) {
     const read = operation === 'createProject' && args.templateNumber !== undefined ? 'copyProject' : operation
     const response = await transport(WRITE_READS[read], readVariables(operation, args), exec)
     if (response.exitCode !== 0) readError(response)
@@ -307,14 +308,15 @@ export function createGitHubWriteRuntime(subprocess, config = {}) {
     try { parsed = JSON.parse(response.stdout) } catch { fail('INVALID_RESPONSE') }
     if (parsed?.errors?.length) readError(response)
     record(parsed?.data)
+    onAccount?.(actor(parsed.data))
     const resolved = resolve(operation, args, parsed.data)
     return { ...resolved, snapshot: parsed.data }
   }
-  async function prepare(operation, input, exec = {}) {
+  async function prepare(operation, input, exec = {}, { onAccount } = {}) {
     const args = validateWriteArguments(operation, input)
     const caller = context(exec)
     return timed(exec, async current => {
-      const resolved = await preflight(operation, args, current)
+      const resolved = await preflight(operation, args, current, onAccount)
       const knownTargets = Object.fromEntries(Object.entries(resolved.targets).map(([key, value]) => [key, { id: value.id, ...(value.url ? { url: value.url } : {}) }]))
       const preview = renderWritePreview({ operation, host: 'github.com', actor: resolved.actor, caller, targets: resolved.targets, change: resolved.change, mutation: resolved.mutation, exactPayload: resolved.payload })
       const prepared = freeze({ operation, args, ...caller, ...resolved, knownTargets, preview })
@@ -322,7 +324,27 @@ export function createGitHubWriteRuntime(subprocess, config = {}) {
       return prepared
     })
   }
-  async function execute(prepared, exec = {}, { onDispatch } = {}) {
+  async function resolveGrantScope(input, exec = {}, { onAccount } = {}) {
+    const args = validateGrantArguments(input)
+    context(exec)
+    return timed(exec, async current => {
+      const issues = []; const projects = []
+      for (const [kind, targets, results] of [['issue', args.issues, issues], ['project', args.projects, projects]]) {
+        for (const target of targets) {
+          const response = await transport(GRANT_READS[kind], target, current)
+          if (response.exitCode !== 0) readError(response)
+          let parsed
+          try { parsed = JSON.parse(response.stdout) } catch { fail('INVALID_RESPONSE') }
+          if (parsed?.errors?.length) readError(response)
+          record(parsed?.data); clean(parsed.data)
+          onAccount?.(actor(parsed.data))
+          results.push(parsed.data)
+        }
+      }
+      return freeze(resolveGrantIdentities(args, issues, projects))
+    })
+  }
+  async function execute(prepared, exec = {}, { onDispatch, beforeDispatch, onPreflight, onAccount } = {}) {
     if (!prepared || !issued.has(prepared)) fail('APPROVAL_REQUIRED')
     issued.delete(prepared)
     const caller = context(exec)
@@ -331,13 +353,19 @@ export function createGitHubWriteRuntime(subprocess, config = {}) {
       const work = queue.then(async () => {
         checkSignal(current.signal)
         let fresh
-        try { fresh = await preflight(prepared.operation, prepared.args, current) }
+        try { fresh = await preflight(prepared.operation, prepared.args, current, onAccount) }
         catch (error) { if (['ALREADY_EXISTS', 'NOT_FOUND', 'PERMISSION_DENIED', 'INVALID_ARGUMENT'].includes(error?.code)) fail('CONFLICT'); throw error }
+        onPreflight?.(fresh)
         if (canonical(fresh.snapshot) !== canonical(prepared.snapshot) || canonical(fresh.payload) !== canonical(prepared.payload) || canonical(fresh.actor) !== canonical(prepared.actor)) fail('CONFLICT')
         let dispatched = false
         let observedData
         try {
-          const response = await transport(MUTATIONS[prepared.mutation], { input: prepared.payload }, current, () => { dispatched = true; onDispatch?.(prepared) })
+          const response = await transport(MUTATIONS[prepared.mutation], { input: prepared.payload }, current, () => {
+            // runCollected invokes this synchronously immediately before spawn, after
+            // executable resolution. A rejected guard must NOT mark dispatch uncertain.
+            beforeDispatch?.(prepared)
+            dispatched = true; onDispatch?.(prepared)
+          })
           let parsed
           try { parsed = JSON.parse(response.stdout) } catch { return uncertainWriteResult(prepared) }
           observedData = parsed?.data
@@ -353,5 +381,5 @@ export function createGitHubWriteRuntime(subprocess, config = {}) {
       return work
     })
   }
-  return Object.freeze({ prepare, execute })
+  return Object.freeze({ prepare, execute, resolveGrantScope })
 }
