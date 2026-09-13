@@ -1,5 +1,7 @@
 # DSH 0.1.5-rc.1 compatibility migration
 
+**Historical record:** this guide records the RC1 migration and its validation results. The repository now targets DSH `0.1.5-rc.2`; use the [current README](README.md) and [setup skill](.agents/skills/repository-setup/SKILL.md) for current pins and prerequisites. The RPC-owner patch remains byte-identical and retains its RC1 filename, but `patchedDependencies` now scopes it to RC2. The historical validation below does not establish RC2 compatibility or deployment readiness.
+
 This is a source/dependency compatibility update, not a deployment. Existing DSH installations, runtime state and sandboxes are not upgraded by pulling this branch.
 
 ## Compatibility changes

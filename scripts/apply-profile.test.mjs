@@ -7,8 +7,9 @@ import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 
 const root = fileURLToPath(new URL('../', import.meta.url))
-const version = '0.1.5-rc.1'
-const patchName = `dsh-client-connection-${version}-rpc-owner.patch`
+const version = '0.1.5-rc.2'
+// RC2 uses the unchanged RPC-owner patch under its historical RC1 filename.
+const patchName = 'dsh-client-connection-0.1.5-rc.1-rpc-owner.patch'
 function fixture(t, { patched = true } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'dsh-apply-'))
   t.after(() => rmSync(dir, { recursive: true, force: true }))
@@ -65,7 +66,7 @@ test('dry run remains dependency-free and never invokes launcher or writes home'
   rmSync(join(f.dir, 'node_modules'), { recursive: true })
   const result = f.run(['--dry-run'], { DSH_BIN: '/unsupported/launcher' })
   assert.equal(result.status, 0, result.stderr)
-  assert.match(result.stdout, /Would configure @deepseek-ai\/dsh-client-connection@0.1.5-rc.1/)
+  assert.match(result.stdout, /Would configure @deepseek-ai\/dsh-client-connection@0\.1\.5-rc\.2\b/)
   assert.match(result.stdout, /--offline/)
   assert.equal(existsSync(f.home), false)
   assert.equal(existsSync(join(f.dir, 'calls')), false)
@@ -77,6 +78,16 @@ test('unsupported global launcher fails without modifying profile', t => {
   assert.notEqual(result.status, 0)
   assert.match(result.stderr, /unsupported launcher/)
   assert.equal(existsSync(f.home), false)
+})
+
+test('historical RC1 launcher fails before profile writes or plugin calls', t => {
+  const f = fixture(t)
+  f.put('node_modules/@deepseek-ai/dsh/package.json', JSON.stringify({ name: '@deepseek-ai/dsh', version: '0.1.5-rc.1' }))
+  const result = f.run()
+  assert.notEqual(result.status, 0)
+  assert.match(result.stderr, /launcher must be DSH 0\.1\.5-rc\.2\b/)
+  assert.equal(existsSync(f.home), false)
+  assert.equal(existsSync(join(f.dir, 'calls')), false)
 })
 
 test('unpatched launcher fails before profile writes or plugin calls', t => {
@@ -96,8 +107,9 @@ test('apply preserves YAML settings and pins copied patch before one complete of
   const workspace = readFileSync(join(f.home, 'profiles/example/pnpm-workspace.yaml'), 'utf8')
   assert.match(workspace, /# preserve me/)
   assert.match(workspace, /react: 18.3.1/)
-  assert.match(workspace, /patchedDependencies:/)
+  assert.match(workspace, /patchedDependencies:\n\s+['"]?@deepseek-ai\/dsh-client-connection@0\.1\.5-rc\.2['"]?: patches\/dsh-client-connection-0\.1\.5-rc\.1-rpc-owner\.patch\s/)
   assert.match(workspace, /allowUnusedPatches: false/)
+  assert.match(workspace, /ignorePatchFailures: false/)
   assert.equal(readFileSync(join(f.home, 'profiles/example/patches', patchName), 'utf8'), readFileSync(join(root, 'patches', patchName), 'utf8'))
   const calls = readFileSync(join(f.dir, 'calls'), 'utf8').trim().split('\n').map(JSON.parse)
   assert.equal(calls.filter(a => a.includes('add')).length, 1)

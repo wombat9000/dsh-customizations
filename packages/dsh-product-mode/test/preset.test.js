@@ -22,7 +22,7 @@ test('published composition-only package discovers independently and final recip
   assert.equal(manifest.name, '@local/dsh-product-mode')
   assert.equal(manifest.exports['./package.json'], './package.json')
   assert.equal(manifest.dsh.bundle.patch, './cordis.patch.yml')
-  assert.equal((await json(cli.resolve('@deepseek-ai/dsh/package.json'))).version, '0.1.5-rc.1')
+  assert.equal((await json(cli.resolve('@deepseek-ai/dsh/package.json'))).version, '0.1.5-rc.2')
   assert.equal(manifest.main, undefined)
   assert.equal(manifest.dependencies, undefined)
   assert.equal(manifest.devDependencies, undefined)

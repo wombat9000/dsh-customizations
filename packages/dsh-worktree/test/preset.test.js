@@ -148,7 +148,7 @@ test('Creator skills resolve from a relocated preset and load official bodies on
   const officialRoot = join(dirname(local.resolve('@deepseek-ai/dsh-agent-presets/package.json')), 'presets/cordis/skills')
   assert.deepEqual(config, { customSkillDirs: [officialRoot] })
   const manifest = JSON.parse(await readFile(join(packageRoot, 'package.json'), 'utf8'))
-  assert.equal(manifest.dependencies['@deepseek-ai/dsh-agent-presets'], '0.1.5-rc.1')
+  assert.equal(manifest.dependencies['@deepseek-ai/dsh-agent-presets'], '0.1.5-rc.2')
   const { FileSystemSkillProvider } = await installed('@deepseek-ai/dsh-skill-filesystem')
   const ctx = new Context()
   t.after(() => ctx.fiber.dispose())

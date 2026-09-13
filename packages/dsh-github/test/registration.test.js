@@ -44,7 +44,7 @@ test('eleven plain definitions forward only the calling workspace and cancellati
 })
 
 test('real pinned DSH registry exposes host tools across preset/session scopes and disposes them', async t => {
-  assert.equal(require(cli.resolve('@deepseek-ai/dsh/package.json')).version, '0.1.5-rc.1')
+  assert.equal(require(cli.resolve('@deepseek-ai/dsh/package.json')).version, '0.1.5-rc.2')
   const ctx = new Context()
   t.after(() => ctx.fiber.dispose())
   for (const name of ['system-prompt', 'tools']) {

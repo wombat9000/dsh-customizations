@@ -2,7 +2,7 @@
 
 **Product mode** turns a conversation into a reviewed GitHub project and independently verifiable issues. It clarifies outcomes, inspects code and existing GitHub work, drafts project context and tasks, reviews dependencies and parallel-work conflicts, then publishes through individually approved GitHub calls.
 
-This composition-only `@local/dsh-product-mode` package targets DSH `0.1.5-rc.1`. It preserves Standard's tools and realms and adds a persona plus the bundled `product-planning` skill. It has no runtime entrypoint, dependency, install hook, new GitHub tools, persistent state, dispatch engine, or UI. Drafts stay in the conversation; no rigid schema, scratch files, or automatic labels are required. Selecting the preset does not implement code or dispatch tasks.
+This composition-only `@local/dsh-product-mode` package targets DSH `0.1.5-rc.2`. It preserves Standard's tools and realms and adds a persona plus the bundled `product-planning` skill. It has no runtime entrypoint, dependency, install hook, new GitHub tools, persistent state, dispatch engine, or UI. Drafts stay in the conversation; no rigid schema, scratch files, or automatic labels are required. Selecting the preset does not implement code or dispatch tasks.
 
 ## Install and select
 

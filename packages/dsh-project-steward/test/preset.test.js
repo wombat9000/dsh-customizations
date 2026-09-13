@@ -121,7 +121,7 @@ test('published files discover independently and personal-web retains all custom
   assert.equal(manifest.name, '@local/dsh-project-steward')
   assert.equal(manifest.dsh.bundle.patch, './cordis.patch.yml')
   assert.equal(manifest.exports['./package.json'], './package.json')
-  assert.equal((await json(cli.resolve('@deepseek-ai/dsh/package.json'))).version, '0.1.5-rc.1')
+  assert.equal((await json(cli.resolve('@deepseek-ai/dsh/package.json'))).version, '0.1.5-rc.2')
   const lock = yaml.load(await readFile(join(repo, 'pnpm-lock.yaml'), 'utf8'))
   assert.deepEqual(lock.importers['packages/dsh-project-steward'], {}, 'dependency-free workspace importer stays explicit')
   assert.equal(manifest.dependencies, undefined, 'no new dependencies or runtime implementation')
