@@ -39,9 +39,31 @@ If an existing project fits, discuss using it instead of creating a duplicate. I
 
 ## 4. Decompose into verifiable tasks
 
-For each proposed issue, explain its goal, scope, observable acceptance criteria, validation requirements, and genuine blockers. Include enough inspected context and interface decisions that another agent can work without repeating product decisions. Name relevant code areas when that helps bound ownership; distinguish inspected paths from proposed locations.
+Aim for one independently verifiable outcome per issue. Explain its goal, scope, observable acceptance criteria, validation requirements, and genuine blockers without repeating requirements across sections. Include enough inspected context and interface decisions that another agent can work without repeating product decisions. Name relevant code areas when that helps bound ownership; distinguish inspected paths from proposed locations.
 
-Prefer tasks that can be independently verified. Choose vertical slices when useful, but do not force every task through schema, API, and UI. Documentation, testing, migration, and refactoring tasks can have their own verifiable outcomes. State required fixtures, commands, manual checks, prerequisites, and expected results. A proposed command is not an executed test. Identify separately authorized live checks.
+Prefer tasks that can be independently verified. Choose vertical slices when useful, but do not force every task through schema, API, and UI. Documentation, testing, migration, and refactoring tasks can have their own verifiable outcomes. Include required fixtures, commands, manual checks, prerequisites, and expected results where they make verification actionable. A proposed command is not an executed test. Identify separately authorized live checks.
+
+### Write concise issues
+
+Inspect applicable repository issue templates and prefer them over this fallback. If no applicable template exists, use these lightweight sections, not a rigid schema:
+
+```markdown
+## Why
+The problem in one or two sentences.
+
+## Change
+The intended outcome and essential scope.
+
+## Acceptance criteria
+- Observable, testable outcomes.
+
+## Constraints
+Important task-specific boundaries; omit this section when unnecessary.
+```
+
+Aim for 150–300 words for routine issues, not a minimum or hard limit. Use fewer words when the task is already unambiguous and more when correctness requires technical detail, security constraints, or migration/recovery steps. State each requirement once. Link shared guidance instead of copying it; retain necessary task-specific security and technical constraints rather than shortening them away. Keep optional sections optional: add context, validation, or blockers only when useful, and omit empty sections or repeated boilerplate.
+
+Resolve scope decisions before publication; do not leave implementers to choose between materially different outcomes. Keep drafts conversational and adapt the format during review. See the [issue-writing examples](examples.md) for a routine issue, repository-template precedence, and justified length exceptions.
 
 Separate logical dependencies from likely editing conflicts. Explain why each blocker gates work; avoid cycles and speculative ordering. Identify tasks that can proceed in parallel and likely shared-file, interface, or integration conflicts. Propose bounded ownership or sequencing where needed, without dispatching work. Existing issues can serve as blockers; do not duplicate them.
 
