@@ -280,22 +280,47 @@ window.__ModuleLoader__.load({
         && (value.exactPreview === undefined || typeof value.exactPreview === 'string')
         && (value.change === undefined || object(value.change)) && (value.targets === undefined || object(value.targets))
     }
+    function validatedFieldResult(value) {
+      if (!object(value) || value.host !== 'github.com' || !(value.operation === 'setProjectItemField' || value.operation === undefined && value.outcome === 'failed' && object(value.error))) return undefined
+      if (value.outcome === 'no-change') return value.dispatched === false && value.reason === 'FIELD_VALUE_ALREADY_SET' ? value : undefined
+      return ['failed', 'confirmed', 'uncertain'].includes(value.outcome) ? value : undefined
+    }
+    function fieldSafeText(value) {
+      return text(value).slice(0, 4096).replace(/\b(?:gh[pousr]_[A-Za-z0-9_]+|github_pat_[A-Za-z0-9_]+)\b/g, '[REDACTED]')
+        .replace(/\bBearer\s+[^\s"'<>]+/gi, '[REDACTED]').replace(/\bAuthorization\s*:\s*token\s+[^\s"'<>]+/gi, '[REDACTED]')
+        .replace(/(https?:\/\/)[^\s/@]+(?::[^\s/@]*)?@/gi, '$1[REDACTED]@').replace(/([?&](?:access_token|token|auth|key)=)[^&#\s]+/gi, '$1[REDACTED]')
+    }
+    function fieldFailureReason(block, result) {
+      if (result?.outcome === 'failed') return fieldSafeText(result.error?.message || result.message)
+      if (block?.isError === true && !result && Array.isArray(block.content)) return fieldSafeText(block.content.filter(part => part?.type === 'text').map(part => text(part.text)).join('\n'))
+      return ''
+    }
+    function fieldRequestedTarget(block) {
+      try {
+        const args = JSON.parse(block?.call?.argsRaw ?? block?.argsRaw ?? '')
+        if (!object(args)) return ''
+        return [typeof args.owner === 'string' && `Owner: ${fieldSafeText(args.owner)}`, Number.isSafeInteger(args.projectNumber) && args.projectNumber > 0 && `Project number: ${args.projectNumber}`, id(args.itemId) && `Item ID: ${fieldSafeText(args.itemId)}`, id(args.fieldId) && `Field ID: ${fieldSafeText(args.fieldId)}`].filter(Boolean).join('; ')
+      } catch { return '' }
+    }
     function fieldResult(block) {
       if (block?.kind !== 'tool-result' || !Array.isArray(block.content)) return undefined
       const parts = block.content.filter(part => part?.type === 'text' && typeof part.text === 'string')
       if (parts.length !== 1 || parts[0].text.length > 262144) return undefined
-      try { const value = JSON.parse(parts[0].text); return object(value) && value.host === 'github.com' && (value.operation === 'setProjectItemField' || value.operation === undefined && value.outcome === 'failed' && object(value.error)) && ['failed', 'confirmed', 'uncertain'].includes(value.outcome) ? value : undefined } catch { return undefined }
+      try { return validatedFieldResult(JSON.parse(parts[0].text)) } catch { return undefined }
     }
     function fieldPhase(status, block, pending) {
-      const result = fieldResult(block), recorded = object(status?.result) ? status.result : undefined
+      const result = fieldResult(block), recorded = validatedFieldResult(status?.result)
       if (result?.outcome === 'uncertain' || recorded?.outcome === 'uncertain' || status?.phase === 'uncertain' || block?.isError === true && (result?.outcome === 'confirmed' || status?.phase === 'confirmed')) return 'uncertain'
+      if (block?.isError === true) return 'failed'
       if (result?.outcome) return result.outcome
+      if (recorded?.outcome === 'no-change' && block?.kind !== 'tool-result') return 'no-change'
+      if (status?.phase === 'no-change') return 'unknown'
       if (pending) return 'awaiting-approval'
-      if (block?.kind === 'tool-result' && !['confirmed', 'denied', 'failed', 'unattempted'].includes(status?.phase)) return 'unknown'
+      if (block?.kind === 'tool-result') return recorded?.outcome === 'confirmed' ? 'confirmed' : ['denied', 'failed', 'unattempted'].includes(status?.phase) ? status.phase : 'unknown'
       return status?.phase ?? 'unknown'
     }
     function fieldPhaseLabel(phase) {
-      return ({ prepared: 'Proposed change prepared', preparing: 'Preparing change', approved: 'Approved — write not yet confirmed', 'authorized-by-grant': 'Authorized by session grant — write not yet confirmed', running: 'Running — write not yet confirmed', 'awaiting-approval': 'Awaiting approval', denied: 'Denied — not executed', unattempted: 'Not executed', failed: 'Failed before execution', confirmed: 'GitHub confirmed the update', uncertain: 'Outcome uncertain — the write may have succeeded', expired: 'Prepared details expired — outcome unknown' })[phase] ?? 'Outcome unknown — no success is inferred'
+      return ({ prepared: 'Proposed change prepared', preparing: 'Preparing change', approved: 'Approved — write not yet confirmed', 'authorized-by-grant': 'Authorized by session grant — write not yet confirmed', running: 'Running — write not yet confirmed', 'awaiting-approval': 'Awaiting approval', denied: 'Denied — not executed', unattempted: 'Not executed', failed: 'Field change failed', 'no-change': 'No change needed', confirmed: 'GitHub confirmed the update', uncertain: 'Outcome uncertain — the write may have succeeded', expired: 'Prepared details expired — outcome unknown' })[phase] ?? 'Outcome unknown — no success is inferred'
     }
     function FieldChangeCard({ sessionId, callId, block, inspect, useSessionPendingInteraction, request = api }) {
       const pending = typeof useSessionPendingInteraction === 'function' ? useSessionPendingInteraction(map => {
@@ -328,24 +353,32 @@ window.__ModuleLoader__.load({
       }, [sessionId, callId, request, pending?.key, block?.kind])
       const change = status?.change, field = change?.field, project = status?.targets?.project, item = status?.targets?.item
       const content = item?.content, before = fieldValueModel(change, 'before'), after = fieldValueModel(change, 'after')
-      const phase = fieldPhase(status, block, pending), result = fieldResult(block) ?? status?.result
-      const target = content?.__typename === 'Issue' ? `Issue #${content.number ?? content.id ?? 'unknown'}` : content?.__typename === 'PullRequest' ? `Pull request #${content.number ?? content.id ?? 'unknown'}` : content?.__typename === 'DraftIssue' ? `Draft issue ${text(content.id)}` : `Item ${text(item?.id) || 'unavailable'}`
+      const phase = fieldPhase(status, block, pending), result = fieldResult(block) ?? validatedFieldResult(status?.result)
+      const reason = fieldFailureReason(block, result), requested = fieldRequestedTarget(block)
+      const showValues = phase !== 'no-change' && (before.available || after.available)
+      const target = content?.__typename === 'Issue' ? `Issue #${content.number ?? content.id ?? ''}` : content?.__typename === 'PullRequest' ? `Pull request #${content.number ?? content.id ?? ''}` : content?.__typename === 'DraftIssue' ? `Draft issue ${text(content.id)}` : text(item?.id) ? `Item ${item.id}` : ''
+      const identities = [['Project', project?.id], ['Item', item?.id], ['Field', field?.id]].filter(([, value]) => id(value)).map(([label, value]) => `${label} ID: ${value}`).join('; ')
+      const projectLabel = text(project?.title) || (project?.number ? `Project ${project.number}` : text(project?.id) ? `Project ${project.id}` : '')
+      const fieldLabel = text(field?.name) || (text(field?.id) ? `Field ${field.id}` : '')
       const exact = pending?.reason ?? status?.exactPreview
       return h('section', { className: 'gh-grant', 'aria-label': 'GitHub project field change' }, h('style', null, css),
         h('h3', null, 'GitHub · Project field change'), h('p', { role: 'status' }, fieldPhaseLabel(phase)),
-        error && h('p', { role: 'alert' }, error),
-        h('p', null, h(Link, { url: content?.url }, `${target}${text(content?.title) ? ` — ${content.title}` : ''}`)),
-        h('p', null, h(Link, { url: project?.url }, text(project?.title) || `Project ${project?.number ?? (text(project?.id) || 'unavailable')}`)),
-        h('p', null, h('strong', null, text(field?.name) || `Field ${text(field?.id) || 'unavailable'}`)),
-        h('small', null, `Project ID: ${text(project?.id) || 'unavailable'}; Item ID: ${text(item?.id) || 'unavailable'}; Field ID: ${text(field?.id) || 'unavailable'}`),
-        h('p', { className: 'gh-note' }, 'Prepared change (not a fresh read of the field):'),
-        h('pre', { tabIndex: 0, 'aria-label': 'Prepared before and after values' }, before.available && after.available ? `${before.label} → ${after.label}` : `Before: ${before.label}\nAfter: ${after.label}`),
-        [before, after].map((value, index) => value.identity && h('small', { key: index }, `${index ? 'After' : 'Before'} ID: ${value.identity}${value.detail ? `; ${value.detail}` : ''}`)),
+        phase === 'no-change' && h('p', null, 'The field already has the requested value. Nothing was changed.'),
+        reason && h('p', { role: 'alert' }, reason),
+        !reason && phase === 'unknown' && error && h('p', { role: 'alert' }, error),
+        target && h('p', null, h(Link, { url: content?.url }, `${target}${text(content?.title) ? ` — ${content.title}` : ''}`)),
+        projectLabel && h('p', null, h(Link, { url: project?.url }, projectLabel)),
+        fieldLabel && h('p', null, h('strong', null, fieldLabel)),
+        requested && !identities && h('p', { className: 'gh-note' }, `Requested target (call arguments, not verified resource metadata): ${requested}`),
+        showValues && h(React.Fragment, null,
+          h('p', { className: 'gh-note' }, 'Prepared change (not a fresh read of the field):'),
+          h('pre', { tabIndex: 0, 'aria-label': 'Prepared before and after values' }, before.available && after.available ? `${before.label} → ${after.label}` : before.available ? `Before: ${before.label}` : `After: ${after.label}`),
+          [before, after].map((value, index) => value.identity && h('small', { key: index }, `${index ? 'After' : 'Before'} ID: ${value.identity}${value.detail ? `; ${value.detail}` : ''}`))),
         pending && h('p', null, 'The native approval panel keeps the complete exact preview and Allow once / Reject controls. Approval is not confirmation that this write succeeded.'),
         phase === 'uncertain' && h('p', { role: 'alert' }, 'Do not retry automatically. Inspect the explicit GitHub targets before requesting a fresh change. No rollback is implied.'),
-        typeof result?.message === 'string' && h('p', null, result.message), typeof result?.cleanupWarning === 'string' && h('p', { role: 'alert' }, result.cleanupWarning),
+        !['no-change', 'failed'].includes(phase) && typeof result?.message === 'string' && h('p', null, fieldSafeText(result.message)), typeof result?.cleanupWarning === 'string' && h('p', { role: 'alert' }, fieldSafeText(result.cleanupWarning)),
         exact && h('details', null, h('summary', null, 'Complete exact approval preview'), h('pre', { tabIndex: 0 }, exact)),
-        h('details', null, h('summary', null, 'Raw tool details'), h('pre', { tabIndex: 0 }, rawDetails(block) || 'No raw tool result is available yet.'), typeof inspect === 'function' && h('button', { type: 'button', onClick: inspect }, 'Inspect tool call')))
+        h('details', null, h('summary', null, 'Technical details'), identities && h('p', null, `Verified preparation identifiers: ${identities}`), h('pre', { tabIndex: 0 }, rawDetails(block) || 'No raw tool result is available yet.'), typeof inspect === 'function' && h('button', { type: 'button', onClick: inspect }, 'Inspect tool call')))
     }
     const READ_TOOLS = ['github_list_projects', 'github_get_project', 'github_list_project_items', 'github_list_issues', 'github_search_issues', 'github_get_issue']
     const readTitles = { github_list_projects: 'Projects', github_get_project: 'Project details', github_list_project_items: 'Project items', github_list_issues: 'Issues', github_search_issues: 'Issue search', github_get_issue: 'Issue details' }

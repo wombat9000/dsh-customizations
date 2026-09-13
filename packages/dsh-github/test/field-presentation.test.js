@@ -62,6 +62,22 @@ test('native approval retains the exact payload and status reads never query Git
   assert.equal(JSON.parse(result.value).change, undefined, 'model-facing result remains unchanged')
   assert.equal(subprocess.specs.length, 3, 'only original preparation, recheck and mutation')
 })
+test('no-change bridge retains structured evidence and verified metadata without authority', async t => {
+  const host = await approvalHost(t)
+  const presentation = presentationFor(host.agent)
+  const subprocess = fakeSubprocess([json({ data: snapshot(operation) })])
+  registerGitHubWriteTools(host.ctx, createGitHubWriteRuntime(subprocess), { presentation })
+  await host.execute(FIELD_TOOL_NAME, { ...args[operation], value: { singleSelectOptionId: 'OPT_TODO' } })
+  const view = presentation.status({ sessionId: host.session.id, callId: 'write-call-1' })
+  assert.equal(view.phase, 'no-change')
+  assert.equal(view.result.outcome, 'no-change')
+  assert.equal(view.result.dispatched, false)
+  assert.equal(view.result.reason, 'FIELD_VALUE_ALREADY_SET')
+  assert.equal(view.change.before.name, 'Todo')
+  assert.equal(view.targets.project.id, 'P_TARGET')
+  assert.equal(subprocess.specs.length, 1)
+  assert.equal(host.requests.length, 0)
+})
 test('trusted denial, preflight failure and uncertain dispatch have distinct bridge evidence', async t => {
   for (const variant of ['denied', 'failed', 'uncertain']) await t.test(variant, async t => {
     const host = await approvalHost(t, { answer: variant === 'denied' ? 'rejected' : 'allowed-once' })

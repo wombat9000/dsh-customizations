@@ -88,6 +88,7 @@ Field writes use IDs, not fuzzy name matching. Supported values are text, finite
 ### Outcomes and recovery
 
 - A confirmed result identifies the resource and provides its URL when available.
+- If a field already has the requested value at preparation time, the result reports `outcome: "no-change"`, `dispatched: false`, and `reason: "FIELD_VALUE_ALREADY_SET"`. It dispatches no mutation or extra GitHub read and needs no write grant or approval from this bundle. Other policy guards still apply. This is a recorded observation, not a fresh read at display time or a confirmed update.
 - Preflight or approval failures dispatch no mutation.
 - Once dispatch starts, a timeout, cancellation, or unusable response can leave the outcome uncertain. Do not assume the resource was not created and do not blindly retry. Inspect GitHub using the read tools before deciding the next action.
 - Each tool performs its own approved operation. If a later call fails, earlier successful operations remain. There is no batch transaction, automatic rollback, durable recovery ledger, or exactly-once guarantee across crashes.
@@ -104,7 +105,7 @@ The bundle does not persist planning state or workspace mappings, dispatch agent
 
 The card reads a bounded session-and-call-scoped presentation record captured from the immutable backend preparation. It makes no additional GitHub request and does not reconstruct previous values from tool arguments. The existing native approval controls and complete exact preview remain accessible. The bridge does not change the approved payload, model-facing output, or mutation behavior.
 
-Approval is not confirmation of success. The card distinguishes preparation, approval, running, denial, failure before dispatch, confirmed updates, and uncertain outcomes when evidence is available. Unknown data never becomes success. Uncertain writes retain their warnings and have no retry action. Other write-tool cards keep their existing presentation.
+Approval is not confirmation of success. The card distinguishes preparation, approval, running, denial, failure, confirmed updates, and uncertain outcomes when evidence is available. A structured no-change result shows **No change needed**, not a completed update. Failures lead with an available sanitized reason; missing labels and unsupported before/after values are omitted. Requested targets from call arguments are labelled separately from verified metadata. Unknown data never becomes success. Uncertain writes retain their warnings and have no retry action. Raw arguments, results, and inspection controls remain under collapsed **Technical details**.
 
 The record expires on session/service unload or cache eviction. After restoration, the original tool result can still establish its reported outcome, but missing prepared details remain unavailable. Raw tool details are always accessible. This cache is informational and cannot authorize a write.
 

@@ -145,8 +145,8 @@ function fieldChange(project, item, args) {
   }
   const before = complete(item.fieldValues).find(value => value?.field?.id === field.id) ?? null
   const previousKey = key === 'singleSelectOptionId' ? 'optionId' : key
-  if (before && before[previousKey] === args.value[key]) fail('ALREADY_EXISTS')
-  return { field, before, after: args.value, selectedOption: option }
+  return { field, before, after: args.value, selectedOption: option,
+    ...(before && before[previousKey] === args.value[key] ? { noChange: true } : {}) }
 }
 function resolve(operation, args, data) {
   record(data); clean(data)
@@ -350,6 +350,14 @@ export function createGitHubWriteRuntime(subprocess, config = {}) {
     const caller = context(exec)
     if (caller.agentId !== prepared.agentId || caller.cwd !== prepared.cwd) fail('CONTEXT_CHANGED')
     return timed(exec, async current => {
+      // Equality is a verified preparation-time observation, not authorization to write.
+      // Consume the same caller-bound token, but do not re-read or dispatch a mutation.
+      if (prepared.operation === 'setProjectItemField' && prepared.change.noChange === true) {
+        checkSignal(current.signal)
+        return { host: 'github.com', operation: prepared.operation, outcome: 'no-change', dispatched: false,
+          reason: 'FIELD_VALUE_ALREADY_SET', knownTargets: prepared.knownTargets, untrusted: true,
+          message: 'The field already has the requested value. Nothing was changed.' }
+      }
       const work = queue.then(async () => {
         checkSignal(current.signal)
         let fresh

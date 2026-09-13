@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { registerApprovalFixture, approvalCommandSeed, commandWorkspace } from './github-approval-fixture.mjs'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { githubSessionSeed, githubWorkspaceName } from './github-grants-fixture.mjs'
+import { githubFieldSessionSeed, githubFieldWorkspaceName } from './github-field-fixture.mjs'
 import { join } from 'node:path'
 
 export const inject = ['sessions', 'sessionPersistence']
@@ -14,6 +15,10 @@ export async function apply(ctx) {
   await persistSession(ctx, ctx.sessions.prepare(command.id, command.options))
   const id = await seedSession(ctx)
   await seedGitHubSession(ctx)
+  const fieldCwd = join(process.cwd(), '..', githubFieldWorkspaceName)
+  await mkdir(fieldCwd, { recursive: true })
+  const field = githubFieldSessionSeed(fieldCwd)
+  await persistSession(ctx, ctx.sessions.prepare(field.id, field.options))
   // The Web listener can become ready before async plugins finish applying.
   await writeFile(join(process.cwd(), '.visual-fixture-ready'), id)
 }

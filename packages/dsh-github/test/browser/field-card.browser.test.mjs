@@ -34,7 +34,7 @@ test('verified field change retains native approval preview, stable identities, 
   expect(container.textContent).toContain('Project ID: P_TARGET; Item ID: ITEM; Field ID: F_STATUS')
   await click(page.getByText('Complete exact approval preview', { exact: true }))
   expect(Array.from(container.querySelectorAll('pre')).some(pre => pre.textContent === prepared.exactPreview)).toBe(true)
-  await click(page.getByText('Raw tool details', { exact: true }))
+  await click(page.getByText('Technical details', { exact: true }))
   expect(container.textContent).toContain('OPT_NEW')
   expect(container.querySelectorAll('button')).toHaveLength(0)
   expect(fixture.calls.every(call => call.action === 'status')).toBe(true)
@@ -57,7 +57,7 @@ test('confirmation and uncertainty use explicit result evidence and preserve war
 test('missing names and malformed values fall back without inferring before from requested after', async () => {
   await mount(() => ({ ...prepared, change: { field: { id: 'F_STATUS', dataType: 'SINGLE_SELECT' }, after: { singleSelectOptionId: 'OPT_NEW' }, selectedOption: { id: 'WRONG', name: 'Fake name' } }, targets: { project: { id: 'P_TARGET' }, item: { id: 'ITEM' } } }))
   expect(container.textContent).toContain('Field F_STATUS')
-  expect(container.textContent).toContain('Previous value unavailable')
+  expect(container.textContent).not.toContain('Previous value unavailable')
   expect(container.textContent).toContain('OPT_NEW')
   expect(container.textContent).not.toContain('Fake name')
   expect(container.textContent).not.toContain('→')
@@ -65,8 +65,40 @@ test('missing names and malformed values fall back without inferring before from
 test('expired bridge and malformed settled result do not imply success', async () => {
   await mount(() => ({ version: 1, phase: 'expired', grants: [], history: [] }), { block: { kind: 'tool-result', isError: false, content: [{ type: 'text', text: 'not JSON' }] } })
   expect(container.textContent).toContain('Outcome unknown')
-  expect(container.textContent).toContain('Previous value unavailable')
+  expect(container.textContent).not.toContain('Previous value unavailable')
   expect(container.textContent).not.toContain('GitHub confirmed')
+})
+test.each(['light', 'dark'])('no-change and failure summaries omit placeholders in narrow %s layout', async scheme => {
+  document.documentElement.style.colorScheme = scheme
+  let inspected = 0
+  const fixture = await mount(() => ({ version: 1, phase: 'expired' }), { block: settled('no-change', { dispatched: false, reason: 'FIELD_VALUE_ALREADY_SET' }), inspect: () => { inspected++ } })
+  container.style.width = '320px'
+  expect(container.textContent).toContain('No change needed')
+  expect(container.textContent).toContain('The field already has the requested value. Nothing was changed.')
+  expect(container.textContent).not.toContain('unavailable')
+  expect(container.querySelector('[aria-label="Prepared before and after values"]')).toBeNull()
+  const summary = page.getByText('Technical details', { exact: true }).element()
+  expect(summary.parentElement.open).toBe(false)
+  summary.focus()
+  await act(async () => userEvent.keyboard('{Enter}'))
+  expect(summary.parentElement.open).toBe(true)
+  await click(page.getByRole('button', { name: 'Inspect tool call' }))
+  expect(inspected).toBe(1)
+  await click(page.getByText('Technical details', { exact: true }))
+  const block = settled('failed', { error: { code: 'NOT_FOUND', message: 'The requested project was not found. ghp_syntheticsecret' } })
+  block.call.argsRaw = JSON.stringify({ owner: 'fixture', projectNumber: 7, itemId: 'PI_TARGET', fieldId: 'F_STATUS', value: { singleSelectOptionId: 'OPT_NEW' } })
+  await fixture.render({ block })
+  expect(container.querySelector('[role="alert"]').textContent).toBe('The requested project was not found. [REDACTED]')
+  expect(container.textContent).toContain('Requested target (call arguments, not verified resource metadata): Owner: fixture; Project number: 7; Item ID: PI_TARGET; Field ID: F_STATUS')
+  expect(container.textContent).not.toContain('unavailable')
+  expect(container.querySelector('[aria-label="Prepared before and after values"]')).toBeNull()
+  expect(container.scrollWidth).toBeLessThanOrEqual(320)
+})
+test('historical errors stay visible but never become structured no-change', async () => {
+  await mount(() => ({ version: 1, phase: 'expired' }), { block: { kind: 'tool-result', isError: true, content: [{ type: 'text', text: 'Error: The requested relationship or value already exists. No mutation was dispatched.' }] } })
+  expect(container.querySelector('[role="alert"]').textContent).toContain('already exists')
+  expect(container.querySelector('[role="status"]').textContent).toBe('Field change failed')
+  expect(container.textContent).not.toContain('No change needed')
 })
 test('session changes abort requests and discard late prepared names', async () => {
   let resolveOld

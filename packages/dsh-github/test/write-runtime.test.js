@@ -163,7 +163,7 @@ test('invalid field dates, shapes and non-finite numbers fail before target read
   assert.equal(subprocess.specs.length, 0)
 })
 
-test('field ownership, type, option membership, archival state and duplicate values fail closed', async t => {
+test('field ownership, type, option membership and archival state fail closed', async t => {
   const cases = [
     { label: 'foreign field', patchArgs: { fieldId: 'F_FOREIGN' }, code: 'NOT_FOUND' },
     { label: 'wrong type', patchArgs: { value: { text: 'Ready' } }, code: 'INVALID_ARGUMENT' },
@@ -173,7 +173,6 @@ test('field ownership, type, option membership, archival state and duplicate val
     { label: 'archived item', alter: data => { data.node.isArchived = true }, code: 'PERMISSION_DENIED' },
     { label: 'issue-owned field', alter: data => { data.repositoryOwner.projectV2.fields.nodes[3].isIssueField = true }, code: 'INVALID_ARGUMENT' },
     { label: 'unsupported field', alter: data => { data.repositoryOwner.projectV2.fields.nodes[3].dataType = 'ASSIGNEES' }, code: 'INVALID_ARGUMENT' },
-    { label: 'already set', patchArgs: { value: { singleSelectOptionId: 'OPT_TODO' } }, code: 'ALREADY_EXISTS' },
   ]
   for (const row of cases) await t.test(row.label, async () => {
     const before = snapshot('setProjectItemField')
