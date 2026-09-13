@@ -439,7 +439,7 @@ window.__ModuleLoader__.load({
       if (entries.length > 50) warnings.push('Only the first 50 returned entries are displayed by this card. Remaining entries are in raw details.')
       const count = toolName === 'github_search_issues' ? data.issueCount : data.totalCount
       const total = Number.isSafeInteger(count) && count >= 0 ? count : undefined
-      return { ...base, warnings, state: 'returned', kind, entries: entries.slice(0, 50), returnedCount: entries.length, total, totalMeaning: text(data.totalCountMeaning), scannedCount: data.scannedCount, templateOnly: data.templateOnly === true, singular }
+      return { ...base, warnings, truncationPaths: Array.isArray(envelope.truncations) ? envelope.truncations.map(notice => text(notice?.path)) : [], unlocalizedTruncation: envelope.truncated === true && (!Array.isArray(envelope.truncations) || !envelope.truncations.length || envelope.truncations.some(notice => !text(notice?.path).startsWith('data.'))), state: 'returned', kind, entries: entries.slice(0, 50), returnedCount: entries.length, total, totalMeaning: text(data.totalCountMeaning), scannedCount: data.scannedCount, templateOnly: data.templateOnly === true, singular }
     }
     function shortIdentity(value) { return text(value?.name) || text(value?.title) || text(value?.login) || text(value?.nameWithOwner) || text(value?.id) || 'Unnamed entry' }
     function TextSection({ title, value }) { return typeof value === 'string' && value.length > 0 ? h('details', null, h('summary', null, title), h('pre', { tabIndex: 0 }, value)) : null }
@@ -503,12 +503,32 @@ window.__ModuleLoader__.load({
           h(TextSection, { title: 'Item description', value: entry.content?.body }),
           h('details', null, h('summary', null, 'Technical details'), h('pre', { tabIndex: 0 }, JSON.stringify(entry, null, 2)))))
     }
-    const issueCss = `.gh-grant.gh-issues{container-type:inline-size}.gh-grant .gh-issue{padding:8px 0;min-width:0}.gh-grant .gh-issue-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px 16px}.gh-grant .gh-issue-head h4{margin:0;min-width:0}.gh-grant .gh-issue-state{font-size:12px;border:1px solid var(--dsw-alias-border-standard,#8885);border-radius:12px;padding:1px 8px;flex-shrink:0}.gh-grant .gh-issue p{margin:4px 0}@container(max-width:500px){.gh-grant .gh-issue-head{flex-direction:column;gap:4px}}`
+    const issueCss = `.gh-grant.gh-issues{container-type:inline-size}.gh-grant .gh-issue{padding:8px 0;min-width:0}.gh-grant .gh-issue-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px 16px}.gh-grant .gh-issue-head h4{margin:0;min-width:0}.gh-grant .gh-issue-state{font-size:12px;border:1px solid var(--dsw-alias-border-standard,#8885);border-radius:12px;padding:1px 8px;flex-shrink:0}.gh-grant .gh-issue p{margin:4px 0}.gh-grant .gh-issue-collection{margin:6px 0}.gh-grant .gh-issue-chips{display:inline-flex;flex-wrap:wrap;gap:4px}.gh-grant .gh-issue-chip{border:1px solid var(--dsw-alias-border-standard,#8885);border-radius:10px;padding:0 7px}.gh-grant .gh-issue-related{display:block}@container(max-width:500px){.gh-grant .gh-issue-head{flex-direction:column;gap:4px}}`
     function IssueRow({ entry, sharedRepository }) {
       const state = entry.state === 'OPEN' ? 'Open' : entry.state === 'CLOSED' ? 'Closed' : 'Unknown'
       return h('section', { className: 'gh-issue' },
         h('div', { className: 'gh-issue-head' }, h('h4', null, h(Link, { url: entry.url }, `#${entry.number} — ${entry.title}`)), h('span', { className: 'gh-issue-state', 'aria-label': `Issue state: ${state}` }, `Issue: ${state}`)),
         !sharedRepository && h('small', null, text(entry.repository?.nameWithOwner) || 'Repository unavailable'))
+    }
+    function IssueCollection({ title, connection, compact, incomplete }) {
+      if (!object(connection) || !Array.isArray(connection.nodes)) return h('p', { role: 'note' }, `${title}: details missing or malformed; completeness unknown.`)
+      const complete = !incomplete && connection.pageInfo?.hasNextPage === false && !connection.nextCursor && connection.truncated !== true && connection.totalCount === connection.nodes.length
+      if (!connection.nodes.length) return complete ? null : h('p', { role: 'note' }, `${title}: no entries returned; completeness unknown.`)
+      return h('div', { className: 'gh-issue-collection' }, h('strong', null, `${title}: `),
+        h('span', { className: compact ? 'gh-issue-chips' : '' }, connection.nodes.slice(0, 50).map((entry, index) => h('span', { key: index, className: compact ? 'gh-issue-chip' : 'gh-issue-related' }, object(entry) ? h(Link, { url: entry.url }, `${text(entry.repository?.nameWithOwner) ? `${entry.repository.nameWithOwner} ` : ''}${Number.isSafeInteger(entry.number) ? `#${entry.number} — ` : ''}${text(entry.name) || text(entry.login) || text(entry.title) || 'Name unavailable'}`) : 'Malformed entry — see raw details'))),
+        !complete && h('small', null, `${title}: completeness unknown; inspect pagination and raw details.`))
+    }
+    function IssueDetail({ entry, model }) {
+      // A partial description or one relationship does not invalidate other
+      // explicitly complete collections. Unlocalized bounds remain conservative.
+      const incomplete = key => model.unlocalizedTruncation || model.truncationPaths.some(path => path === 'data' || path === `data.${key}` || path.startsWith(`data.${key}.`)) || model.warnings.some(warning => warning.startsWith(`data.${key}:`) || warning.startsWith(`data.${key}.`) || warning.includes('inspection bound'))
+      const body = entry.body, long = typeof body === 'string' && body.length > 400
+      return h(React.Fragment, null, h(IssueRow, { entry }),
+        typeof body !== 'string' ? h('p', { role: 'note' }, 'Description unavailable.') : body === '' ? h('p', { className: 'gh-note' }, 'No description.') : h('div', { className: 'gh-issue-description' },
+          h('p', { style: { whiteSpace: 'pre-wrap' } }, long ? `${body.slice(0, 400)}…` : body),
+          long && h('details', null, h('summary', null, 'Full description — preview shortened'), h('div', { style: { whiteSpace: 'pre-wrap' } }, body))),
+        entry.parent === null ? null : object(entry.parent) ? h('p', null, 'Parent: ', h(Link, { url: entry.parent.url }, `${text(entry.parent.repository?.nameWithOwner) ? `${entry.parent.repository.nameWithOwner} ` : ''}${Number.isSafeInteger(entry.parent.number) ? `#${entry.parent.number} — ` : ''}${text(entry.parent.title) || 'Title unavailable'}`)) : h('p', { role: 'note' }, 'Parent: details missing or malformed.'),
+        [['Labels', 'labels', true], ['Assignees', 'assignees', true], ['Sub-issues', 'subIssues'], ['Blocked by', 'blockedBy'], ['Blocking', 'blocking']].map(([title, key, compact]) => h(IssueCollection, { key, title, connection: entry[key], compact, incomplete: incomplete(key) })))
     }
     function ReadEntry({ entry, kind }) {
       if (kind === 'items') return h(ProjectItem, { entry })
@@ -530,18 +550,19 @@ window.__ModuleLoader__.load({
     function ReadCard({ toolName, block, inspect }) {
       const model = readCardModel(toolName, block)
       const issueList = model.kind === 'issues' && !model.singular
+      const issueDetail = model.kind === 'issues' && model.singular
       const repositories = model.entries.map(entry => text(entry.repository?.nameWithOwner))
       const sharedRepository = repositories.length && repositories[0] && repositories.every(name => name === repositories[0]) ? repositories[0] : ''
-      return h('section', { className: `gh-grant${model.kind === 'items' ? ' gh-items' : issueList ? ' gh-issues' : ''}`, 'aria-label': `GitHub ${model.title}` }, h('style', null, css, model.kind === 'items' ? itemCss : issueList ? issueCss : ''),
+      return h('section', { className: `gh-grant${model.kind === 'items' ? ' gh-items' : model.kind === 'issues' ? ' gh-issues' : ''}`, 'aria-label': `GitHub ${model.title}` }, h('style', null, css, model.kind === 'items' ? itemCss : model.kind === 'issues' ? issueCss : ''),
         model.kind === 'items' && h('small', null, 'Historical tool result · no automatic refresh'),
-        h('h3', null, `GitHub · ${model.title}`),
-        h('p', { role: 'status' }, model.state === 'running' ? 'Reading…' : model.state === 'returned' ? `${model.returnedCount} ${model.singular ? 'entry' : 'entries'} returned${model.total === undefined ? '' : `; ${model.total} total reported${model.totalMeaning ? ` (${model.totalMeaning})` : ''}`}` : 'Result unavailable'),
+        !issueDetail && h('h3', null, `GitHub · ${model.title}`),
+        !issueDetail && h('p', { role: 'status' }, model.state === 'running' ? 'Reading…' : model.state === 'returned' ? `${model.returnedCount} ${model.singular ? 'entry' : 'entries'} returned${model.total === undefined ? '' : `; ${model.total} total reported${model.totalMeaning ? ` (${model.totalMeaning})` : ''}`}` : 'Result unavailable'),
         model.error && h('p', { role: 'alert' }, model.error),
         model.warnings.map((warning, index) => h('p', { key: index, role: 'note' }, warning)),
         model.templateOnly && h('p', null, `Template filtering applies only to this page${Number.isSafeInteger(model.scannedCount) ? `; ${model.scannedCount} projects scanned` : ''}. An empty page does not imply no templates exist.`),
         model.state === 'returned' && model.entries.length === 0 && h('p', null, 'No entries returned on this page.'),
         issueList && sharedRepository && h('p', { className: 'gh-note' }, sharedRepository),
-        model.entries.map((entry, index) => issueList ? h(IssueRow, { key: index, entry, sharedRepository }) : h(ReadEntry, { key: index, entry, kind: model.kind })),
+        model.entries.map((entry, index) => issueList ? h(IssueRow, { key: index, entry, sharedRepository }) : issueDetail ? h(IssueDetail, { key: index, entry, model }) : h(ReadEntry, { key: index, entry, kind: model.kind })),
         h('details', null, h('summary', null, 'Raw tool details'), h('pre', { tabIndex: 0 }, rawDetails(block) || 'No raw tool result is available yet.'), typeof inspect === 'function' && h('button', { type: 'button', onClick: inspect }, 'Inspect tool call')))
     }
     return { inject: ['slots'], approvalModel, selectApproval, ApprovalPreview, NativeApprovalDetail, api, safeUrl, validScope, validStatus, rawDetails, phaseLabel, Scope, GrantCard, fieldValueModel, validFieldStatus, fieldResult, fieldPhase, fieldPhaseLabel, FieldChangeCard, READ_TOOLS, readWarnings, readCardModel, itemFieldModel, projectItemModel, ReadCard,
