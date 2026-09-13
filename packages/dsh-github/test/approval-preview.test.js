@@ -49,8 +49,10 @@ test('membership keeps unrelated README only in collapsed complete details; dire
   value.targets.blockingIssue.number = value.targets.blockedIssue.number
   value.targets.blockingIssue.title = value.targets.blockedIssue.title
   const result = markup(value)
-  assert.match(result, /Blocked issue:.*one\/repo/)
-  assert.match(result, /Blocking issue:.*two\/repo/)
+  assert.match(result, /<small>Blocked issue<\/small>.*<small>one\/repo · #49<\/small>/)
+  assert.match(result, /<small>Blocking issue<\/small>.*<small>two\/repo · #49<\/small>/)
+  assert.doesNotMatch(primary, /exact source and whitespace/)
+  assert.doesNotMatch(primary, /Use the native approval buttons below/)
 })
 test('safe Markdown and exact source preserve all long text, whitespace and unsafe syntax without execution', () => {
   const html = markup(approvalValue())

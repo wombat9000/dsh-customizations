@@ -1,7 +1,7 @@
 import React, { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, expect, test } from 'vitest'
-import { page } from 'vitest/browser'
+import { page, userEvent } from 'vitest/browser'
 import source from '../../client.js?raw'
 import { approvalNames, approvalValue, approvalReason, approvalTool, issueBody } from '../approval-preview-fixtures.js'
 const h = React.createElement
@@ -59,6 +59,39 @@ test('native single-seat component correlates session and call, and retains RC2 
   nodes.get('node').data.root.kind = 'tool-result'
   await act(async () => root.render(h(plugin.NativeApprovalDetail, { sessionId: 'session', callId: 'call', useSessionPendingInteraction: select => select(pending), useChat: select => select({ nodes }) })))
   expect(container.textContent).toBe('')
+})
+test.each(['light', 'dark'])('membership resource cards distinguish roles with keyboard links in narrow %s layout', async scheme => {
+  await mount('addProjectItem')
+  const region = container.querySelector('.gh-approval-valid'); region.style.width = '320px'; region.style.colorScheme = scheme
+  expect(region.scrollWidth).toBeLessThanOrEqual(region.clientWidth + 1)
+  const resources = [...region.querySelectorAll('.gh-approval-resource')]
+  expect(resources.map(node => node.querySelector('small').textContent)).toEqual(['Destination project', 'Issue to add'])
+  expect(region.querySelectorAll('summary')).toHaveLength(1)
+  expect(region.textContent).not.toContain('Use the native approval buttons below.')
+  await act(async () => userEvent.keyboard('{Tab}'))
+  for (const resource of resources) {
+    const link = resource.querySelector('a'); expect(link).not.toBeNull()
+    expect(link.textContent).toContain('↗'); link.focus(); expect(document.activeElement).toBe(link)
+    expect(getComputedStyle(link).outlineStyle).not.toBe('none')
+  }
+  const summary = region.querySelector('summary'); summary.focus(); await act(async () => userEvent.keyboard('{Enter}'))
+  expect(summary.parentElement.open).toBe(true)
+})
+test('long and missing resource metadata remains bounded without invented names', async () => {
+  const value = approvalValue('addProjectItem')
+  value.targets.project.title = 'Project'.repeat(200)
+  value.targets.project.owner = { login: 'owner'.repeat(100) }
+  value.targets.issue.title = 'Issue'.repeat(200)
+  value.targets.issue.repository = { nameWithOwner: 'repo'.repeat(100) }
+  await mount('addProjectItem', approvalReason(value))
+  const region = container.querySelector('.gh-approval-valid'); region.style.width = '320px'
+  expect(region.scrollWidth).toBeLessThanOrEqual(region.clientWidth + 1)
+  expect(region.querySelectorAll('.gh-approval-resource small')).toHaveLength(4)
+  await act(async () => root.unmount()); container.remove()
+  delete value.targets.project.title; delete value.targets.project.owner; delete value.targets.project.number; delete value.targets.project.url
+  await mount('addProjectItem', approvalReason(value))
+  expect(container.querySelector('.gh-approval-resource').textContent).toContain('Name unavailable')
+  expect(container.querySelector('.gh-approval-resource').querySelector('a')).toBeNull()
 })
 test('adding an issue excludes unrelated project README from primary area', async () => {
   await mount('addProjectItem')
