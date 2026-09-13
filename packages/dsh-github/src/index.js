@@ -26,6 +26,6 @@ export function apply(ctx) {
   ctx.effect(() => () => { grants.dispose(); presentation.dispose() })
   ctx.on('agent/disposed', ({ agent }) => { grants.disposeSession(agent.session); presentation.disposeSession(agent.session) })
   registerGitHubGrantTools(ctx, grants, grantCaller, presentation)
-  registerGitHubWriteTools(ctx, writes, { grants, grantCaller })
+  registerGitHubWriteTools(ctx, writes, { grants, grantCaller, presentation })
   registerGitHubRoutes(ctx, presentation)
 }

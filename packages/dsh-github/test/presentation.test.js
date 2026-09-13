@@ -12,7 +12,7 @@ function fixture() {
   let current = agent
   let grantState = 'active'
   const grants = { list: () => [{ id: 'grant', state: grantState }], history: () => [{ id: 'attempt', outcome: 'uncertain' }], historyTruncated: () => true, revoke: id => { assert.equal(id, 'grant'); grantState = 'revoked' } }
-  const presentation = createGitHubPresentation({ agents: { get: id => id === 'root' ? current : undefined, roots: () => [current] }, grants, caller: exec => ({ session: exec.agent.session }) })
+  const presentation = createGitHubPresentation({ agents: { get: id => id === 'root' ? current : undefined, roots: () => [current] }, grants, caller: exec => ({ session: exec.agent.session, isSubagent: false }) })
   const exec = { agent, name: 'github_request_issue_management', callId: 'call' }
   return { presentation, exec, events, session, replace() { current = { session: { ...session } } } }
 }
