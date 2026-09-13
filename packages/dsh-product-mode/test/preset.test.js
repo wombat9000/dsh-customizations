@@ -106,6 +106,8 @@ test('real Standard and Product standing mounts share nineteen global GitHub too
   assert.equal(loaded.source, 'bundled')
   assert.equal(loaded.resourceBase.path, join(f.packaged, 'presets/product-mode/skills/product-planning'))
   assert.ok(loaded.content.includes('github_create_project'))
+  assert.ok(loaded.content.includes('[issue-writing examples](examples.md)'))
+  assert.equal(await readFile(join(loaded.resourceBase.path, 'examples.md'), 'utf8'), await readFile(join(presetRoot, presetId, 'skills/product-planning/examples.md'), 'utf8'))
   assert.equal(await skills.get(skillName, { scope: standard, cwd: f.directory }), undefined)
   assert.equal(await skills.get(skillName, { cwd: f.directory }), undefined)
   for (const scope of [standard, product]) {
@@ -133,6 +135,8 @@ test('copied Product preset resolves its bundled skill without the original pack
   const loaded = await ctx.get('skills').get(skillName, { scope: key, cwd: f.directory })
   assert.equal(loaded.resourceBase.path, join(userRoot, 'my-product/skills/product-planning'))
   assert.ok(loaded.content.includes('github_create_project'))
+  assert.ok(loaded.content.includes('[issue-writing examples](examples.md)'))
+  assert.equal(await readFile(join(loaded.resourceBase.path, 'examples.md'), 'utf8'), await readFile(join(presetRoot, presetId, 'skills/product-planning/examples.md'), 'utf8'))
   assert.equal(await readFile(join(loaded.resourceBase.path, 'LICENSE.matt-pocock'), 'utf8'), await readFile(join(presetRoot, presetId, 'skills/product-planning/LICENSE.matt-pocock'), 'utf8'))
   assert.equal(await readFile(join(userRoot, 'my-product/LICENSE.standard'), 'utf8'), await readFile(join(dirname(SHIPPED_PRESET_ROOT), 'LICENSE'), 'utf8'))
   assert.deepEqual(subprocessCalls, [])

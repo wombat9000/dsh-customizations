@@ -33,6 +33,60 @@ test('bundled skill covers the six ordered planning stages without restarting ag
   ]) assert.match(text, pattern)
 })
 
+test('issue-writing fallback favors repository templates, concise outcomes and necessary constraints', async () => {
+  const text = await readFile(path, 'utf8')
+  const guidance = text.split('### Write concise issues\n')[1].split('\n## 5.')[0]
+  assert.match(text, /one independently verifiable outcome per issue/)
+  for (const pattern of [
+    /Inspect applicable repository issue templates and prefer them over this fallback/,
+    /not a rigid schema/,
+    /150–300 words for routine issues, not a minimum or hard limit/,
+    /Use fewer words.*more when correctness requires/,
+    /State each requirement once/,
+    /Link shared guidance instead of copying it/,
+    /retain necessary task-specific security and technical constraints/,
+    /Keep optional sections optional/,
+    /omit empty sections or repeated boilerplate/,
+    /Resolve scope decisions before publication/,
+    /Keep drafts conversational/,
+    /\[issue-writing examples\]\(examples\.md\)/,
+  ]) assert.match(guidance, pattern)
+  const template = guidance.match(/```markdown\n([\s\S]+?)\n```/)[1]
+  assert.deepEqual([...template.matchAll(/^## (.+)$/gm)].map(match => match[1]), ['Why', 'Change', 'Acceptance criteria', 'Constraints'])
+  assert.match(template, /problem in one or two sentences/)
+  assert.match(template, /intended outcome and essential scope/)
+  assert.match(template, /Observable, testable outcomes/)
+  assert.match(template, /omit this section when unnecessary/)
+})
+
+test('bundled examples demonstrate routine, short and justified long issues without rigid runtime limits', async () => {
+  const text = await readFile(join(root, 'examples.md'), 'utf8')
+  const bodies = [...text.matchAll(/```markdown\n([\s\S]+?)\n```/g)].map(match => match[1])
+  assert.equal(bodies.length, 3)
+  const counts = bodies.map(body => body.trim().split(/\s+/).length)
+  // These bounds check illustrative fixtures, not a schema or publication gate.
+  assert.ok(counts[0] >= 150 && counts[0] <= 300, `routine example: ${counts[0]} words`)
+  assert.ok(counts[1] < 150, `short example: ${counts[1]} words`)
+  assert.ok(counts[2] > 300, `long example: ${counts[2]} words`)
+  for (const body of bodies) {
+    for (const heading of ['Why', 'Change', 'Acceptance criteria']) assert.ok(body.includes(`## ${heading}\n`))
+    assert.doesNotMatch(body, /## (?:Blockers|Non-goals)\nNone/)
+  }
+  assert.doesNotMatch(bodies[1], /## Constraints/)
+  assert.match(text, /fewer than 150 words because its scope and verification are complete/)
+  assert.match(text, /exceeds 300 words because.*compatibility, interruption, and recovery/)
+  assert.match(bodies[2], /Unknown versions, malformed records, duplicate identifiers/)
+  assert.match(bodies[2], /Production execution.*require separate approval/)
+  assert.match(text, /use those headings rather than adding the fallback headings/)
+  assert.match(text, /Preserve required repository fields/)
+  assert.match(text, /Resolve a choice.*before publishing/)
+  assert.match(text, /conversational agreement is not approval for a GitHub write/)
+  assert.match(text, /publication does not authorize implementation/)
+  const readme = await readFile(join(packageRoot, 'README.md'), 'utf8')
+  assert.match(readme, /examples\.md#routine-issue/)
+  assert.doesNotMatch(readme, /## Blockers\\nNone/)
+})
+
 test('planning instructions preserve exact-call approval and built-in plan-mode boundaries', async () => {
   const text = await readFile(path, 'utf8')
   for (const pattern of [
@@ -87,7 +141,7 @@ test('selective adaptation avoids automatic dispatch, stores, scratch files and 
     /Publication is the end.*not authorization to start implementation/,
     /Only this local skill is needed at runtime/,
   ]) assert.match(text, pattern)
-  assert.deepEqual((await readdir(root)).sort(), ['LICENSE.matt-pocock', 'SKILL.md'], 'no imported skill collection, draft schema, scripts or setup dependency')
+  assert.deepEqual((await readdir(root)).sort(), ['LICENSE.matt-pocock', 'SKILL.md', 'examples.md'], 'only the local skill, attribution and illustrative examples; no draft schema, scripts or setup dependency')
 })
 
 test('adaptation records all three pinned sources and retains the full MIT attribution and disclaimer', async () => {
