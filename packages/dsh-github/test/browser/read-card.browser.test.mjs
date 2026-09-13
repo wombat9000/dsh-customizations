@@ -41,6 +41,30 @@ test.each([
   expect(container.querySelectorAll('a[href^="https://github.com/"]').length).toBeGreaterThan(0)
   expect(container.querySelectorAll('button')).toHaveLength(0)
 })
+test.each(['github_list_issues', 'github_search_issues'])('%s compact rows preserve shared and mixed repository context', async tool => {
+  const one = { ...issue, repository: { nameWithOwner: 'acme/one' } }
+  await mount(tool, connection([one, { ...one, id: 'I_2', number: 34, state: 'CLOSED' }]))
+  expect(container.querySelectorAll('.gh-issue-state')).toHaveLength(2)
+  expect(container.querySelector('.gh-issue-state').getAttribute('aria-label')).toBe('Issue state: Open')
+  expect(container.querySelectorAll('.gh-issue small')).toHaveLength(0)
+  expect(container.querySelector('.gh-note').textContent).toBe('acme/one')
+  expect(container.querySelector('.gh-issue').textContent).not.toContain('I_1')
+  await act(async () => root.unmount()); container.remove()
+  await mount(tool, connection([one, { ...one, id: 'I_2', repository: { nameWithOwner: 'acme/two' } }]))
+  expect([...container.querySelectorAll('.gh-issue small')].map(node => node.textContent)).toEqual(['acme/one', 'acme/two'])
+})
+test.each(['light', 'dark'])('compact issue lists fit narrow %s layout and retain keyboard raw access', async scheme => {
+  document.documentElement.style.colorScheme = scheme
+  await mount('github_search_issues', connection([{ ...issue, title: 'long'.repeat(200), url: 'javascript:alert(1)' }], true))
+  container.style.width = '320px'
+  expect(container.scrollWidth).toBeLessThanOrEqual(320)
+  expect(container.querySelector('a')).toBeNull()
+  const summary = page.getByText('Raw tool details', { exact: true }).element()
+  summary.focus(); await act(async () => userEvent.keyboard('{Enter}'))
+  expect(summary.parentElement.open).toBe(true)
+  expect(summary.parentElement.textContent).toContain('I_1')
+  expect(container.textContent).toContain('1,000')
+})
 test('issue state remains separate from board Status and single item continuation is supported', async () => {
   await mount('github_list_project_items', { ...projectItem, content: { ...projectItem.content, state: 'CLOSED' } })
   expect(container.textContent).toContain('Issue state: CLOSED')
