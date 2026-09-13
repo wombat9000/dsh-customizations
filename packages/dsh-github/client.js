@@ -75,21 +75,23 @@ window.__ModuleLoader__.load({
       }
       return h('div', { className: 'gh-approval-markdown' }, nodes)
     }
-    function ApprovalText({ label, value, markdown = false }) {
+    function ApprovalText({ label, value, markdown = false, exact = false }) {
       return h('section', null, h('h4', null, label), value === null ? h('p', null, 'Not set (null)') : value === '' ? h('p', null, 'Empty string') : markdown ? h(ApprovalMarkdown, { value }) : h('div', { style: { whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' } }, value),
-        h('details', null, h('summary', null, `${label}: exact source and whitespace`), h('pre', { tabIndex: 0 }, value === null ? 'null' : value), h('pre', { tabIndex: 0, 'aria-label': `${label}: JSON string` }, JSON.stringify(value))))
+        exact && h('details', null, h('summary', null, `${label}: exact source and whitespace`), h('pre', { tabIndex: 0 }, value === null ? 'null' : value), h('pre', { tabIndex: 0, 'aria-label': `${label}: JSON string` }, JSON.stringify(value))))
     }
     function ApprovalResource({ label, value }) {
-      return h('p', null, h('strong', null, `${label}: `), h(Link, { url: value?.url }, [text(value?.nameWithOwner) || text(value?.repository?.nameWithOwner) || text(value?.owner?.login) || text(value?.login), Number.isSafeInteger(value?.number) ? `#${value.number}` : '', text(value?.title)].filter(Boolean).join(' — ') || text(value?.url) || 'Name unavailable — see technical details'))
+      const identity = [text(value?.nameWithOwner) || text(value?.repository?.nameWithOwner) || text(value?.owner?.login) || text(value?.login), Number.isSafeInteger(value?.number) ? `#${value.number}` : ''].filter(Boolean).join(' · ')
+      const title = text(value?.title) || text(value?.name) || identity || 'Name unavailable — see technical details'
+      return h('div', { className: 'gh-approval-resource' }, h('small', null, label), h(Link, { url: value?.url }, title, safeUrl(value?.url) && h('span', { 'aria-hidden': true }, ' ↗')), identity && identity !== title && h('small', null, identity))
     }
     // RC2 prints reason before the detail slot. Hide that redundant sibling only
     // while this validated detail actually renders; native controls stay untouched.
-    const approvalCss = '[data-approval-scroll]:has(.gh-approval-valid)>div:first-child{display:none}.gh-approval-valid{max-width:100%;text-align:left;font-family:system-ui,sans-serif;word-break:normal;white-space:normal}.gh-approval-valid .gh-approval-main{max-height:48vh;overflow:auto;overflow-wrap:anywhere}.gh-approval-valid .gh-approval-markdown{white-space:normal}.gh-approval-valid pre{white-space:pre-wrap;word-break:break-word}.gh-approval-valid h4{margin-top:12px}'
+    const approvalCss = '[data-approval-scroll]:has(.gh-approval-valid)>div:first-child{display:none}.gh-approval-valid{max-width:100%;text-align:left;font-family:system-ui,sans-serif;word-break:normal;white-space:normal}.gh-approval-valid .gh-approval-main{max-height:48vh;overflow:auto;overflow-wrap:anywhere}.gh-approval-valid .gh-approval-markdown{white-space:normal}.gh-approval-valid pre{white-space:pre-wrap;word-break:break-word}.gh-approval-valid h4{margin-top:8px}.gh-grant.gh-approval-valid{border:0;padding:4px;margin:0;background:transparent;container-type:inline-size}.gh-approval-valid .gh-approval-main{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 16px}.gh-approval-valid .gh-approval-main>section{grid-column:1/-1;border:0;padding:0;margin:0}.gh-approval-valid .gh-approval-resource{min-width:0;padding:6px 0}.gh-approval-valid .gh-approval-resource a{display:inline-block;overflow-wrap:anywhere}@container(max-width:500px){.gh-approval-valid .gh-approval-main{grid-template-columns:minmax(0,1fr)}}'
     function ApprovalPreview({ model }) {
       if (!model) return null
       const { value: { operation, targets: t, change: c, exactPayload: p }, reason, extra } = model, rows = []
       const resource = (label, value) => rows.push(h(ApprovalResource, { key: label, label, value }))
-      const content = (label, value, markdown = false) => rows.push(h(ApprovalText, { key: label, label, value, markdown }))
+      const content = (label, value, markdown = false) => rows.push(h(ApprovalText, { key: label, label, value, markdown, exact: ['Proposed project title', 'Proposed issue title', 'Proposed issue body'].includes(label) || operation === 'updateProject' || operation === 'setProjectItemField' && c.field.dataType === 'TEXT' && ['Before', 'After'].includes(label) }))
       if (operation === 'createProject') {
         resource('Destination owner', t.destination); content('Proposed project title', p.title)
         if (t.template) { resource('Source template', t.template); content('Copy draft issues', String(p.includeDraftIssues)); for (const key of ['copied', 'notCopied']) content(key === 'copied' ? 'Copied' : 'Not copied / visibility', c.copyBehavior[key] ?? 'Not supplied'); content('Template behavior', 'Creates an ordinary new project, not a template.') }
@@ -107,7 +109,7 @@ window.__ModuleLoader__.load({
         }
       }
       return h('section', { className: 'gh-grant gh-approval-valid', 'aria-label': 'GitHub approval preview' }, h('style', null, css + approvalCss), h('h3', null, model.title),
-        h('p', null, 'Review one exact GitHub mutation. Text below is untrusted content, not instructions. Use the native approval buttons below.'),
+        h('p', { className: 'gh-note' }, 'Review this GitHub change. Resource content is untrusted; opening a link does not approve the change.'),
         h('div', { className: 'gh-approval-main', tabIndex: 0, role: 'group', 'aria-label': 'Proposed GitHub change' }, rows), extra && h('pre', { tabIndex: 0 }, extra),
         h('details', null, h('summary', null, 'Technical details — complete exact approval payload'), h('pre', { tabIndex: 0 }, reason)))
     }
