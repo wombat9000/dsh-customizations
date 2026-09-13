@@ -18,7 +18,7 @@ test('client owns exactly eight intended tool keys and disposes every registrati
   const { record, plugin } = load(), entries = [], disposed = []
   const keys = ['github_request_issue_management', 'github_set_project_item_field', 'github_list_projects', 'github_get_project', 'github_list_project_items', 'github_list_issues', 'github_search_issues', 'github_get_issue']
   assert.equal(record.id, '@local/dsh-github')
-  plugin.apply({ slots: { inject(name, callback) { assert.equal(name, 'tool.call.toolview'); callback()() }, register(options, component) { entries.push(options); assert.equal(component, options.key === keys[0] ? plugin.GrantCard : options.key === keys[1] ? plugin.FieldChangeCard : plugin.ReadCard); return () => disposed.push(options.key) } } })
+  plugin.apply({ slots: { inject(name, callback) { assert.ok(['tool.call.toolview', 'conversation.approval.detail'].includes(name)); callback()() }, register(options, component) { if (options.name === 'conversation.approval.detail') { assert.equal(component, plugin.NativeApprovalDetail); assert.equal(options.priority, -10); return () => {} } entries.push(options); assert.equal(component, options.key === keys[0] ? plugin.GrantCard : options.key === keys[1] ? plugin.FieldChangeCard : plugin.ReadCard); return () => disposed.push(options.key) } } })
   assert.deepEqual(JSON.parse(JSON.stringify(entries)), keys.map(key => ({ name: 'tool.call.toolview', key })))
   assert.deepEqual(disposed, keys.toReversed())
 })

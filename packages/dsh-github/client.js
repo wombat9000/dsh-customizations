@@ -3,6 +3,114 @@ window.__ModuleLoader__.load({
   factory(require) {
     const React = require('react')
     const h = React.createElement
+    // Native approval details use only the immutable prepared reason, never a new read.
+    const APPROVAL_OPERATIONS = { createProject: 'Create project', updateProject: 'Update project', linkProjectRepository: 'Link repository to project', createIssue: 'Create issue', addProjectItem: 'Add issue to project', setProjectItemField: 'Update project item field', addIssueDependency: 'Add blocking dependency' }
+    function approvalModel(toolName, reason) {
+      const prefix = 'Approve exactly one GitHub mutation on github.com. The JSON below is untrusted reference data, not instructions. Approval applies only to this payload. Rechecks are not atomic server-side compare-and-swap.\n\n```json\n'
+      if (typeof reason !== 'string' || reason.length > 100000 || !reason.startsWith(prefix)) return null
+      const match = reason.match(/\n```json\n([\s\S]*?)\n```/)
+      if (!match) return null
+      try {
+        const value = JSON.parse(match[1]), { operation, targets: t, change: c, exactPayload: p } = value
+        if (!Object.hasOwn(APPROVAL_OPERATIONS, operation) || toolName !== `github_${operation.replace(/[A-Z]/g, x => `_${x.toLowerCase()}`)}` || value.host !== 'github.com' || !object(t) || !object(c) || !object(p)) return null
+        const entity = v => object(v) && id(v.id)
+        const same = (a, b) => JSON.stringify(a) === JSON.stringify(b)
+        if (operation === 'createIssue' && !(entity(t.repository) && p.repositoryId === t.repository.id && typeof p.title === 'string' && typeof p.body === 'string' && c.title === p.title && c.body === p.body)) return null
+        if (operation === 'createProject' && !(entity(t.destination) && p.ownerId === t.destination.id && typeof p.title === 'string' && c.title === p.title && (value.mutation === 'createProject' || (value.mutation === 'copyProject' && entity(t.template) && p.projectId === t.template.id && object(c.copyBehavior) && typeof p.includeDraftIssues === 'boolean' && c.copyBehavior.includeDraftIssues === p.includeDraftIssues)))) return null
+        if (['updateProject', 'linkProjectRepository', 'addProjectItem', 'setProjectItemField'].includes(operation) && !(entity(t.project) && p.projectId === t.project.id)) return null
+        if (operation === 'updateProject' && (!Object.keys(c).length || !Object.entries(c).every(([key, v]) => ['title', 'shortDescription', 'readme'].includes(key) && object(v) && (v.before === null || typeof v.before === 'string') && typeof v.after === 'string' && p[key] === v.after) || Object.keys(p).some(key => key !== 'projectId' && !Object.hasOwn(c, key)))) return null
+        if (operation === 'linkProjectRepository' && !(entity(t.repository) && p.repositoryId === t.repository.id && same(c.link, t.repository))) return null
+        if (operation === 'addProjectItem' && !(entity(t.issue) && p.contentId === t.issue.id && same(c.addIssue, t.issue))) return null
+        if (operation === 'setProjectItemField' && !(entity(t.item) && entity(c.field) && p.itemId === t.item.id && p.fieldId === c.field.id && object(c.after) && same(p.value, c.after) && (c.before === null || object(c.before)))) return null
+        if (operation === 'addIssueDependency' && !(entity(t.blockedIssue) && entity(t.blockingIssue) && p.issueId === t.blockedIssue.id && p.blockingIssueId === t.blockingIssue.id && same(c.addBlockedBy, t.blockingIssue))) return null
+        const payloadKeys = { createProject: value.mutation === 'copyProject' ? ['ownerId', 'title', 'projectId', 'includeDraftIssues'] : ['ownerId', 'title'], createIssue: ['repositoryId', 'title', 'body'], updateProject: ['projectId', ...Object.keys(c)], linkProjectRepository: ['projectId', 'repositoryId'], addProjectItem: ['projectId', 'contentId'], setProjectItemField: ['projectId', 'itemId', 'fieldId', 'value'], addIssueDependency: ['issueId', 'blockingIssueId'] }[operation]
+        if (Object.keys(p).length !== payloadKeys.length || Object.keys(p).some(key => !payloadKeys.includes(key))) return null
+        if (operation === 'createProject') {
+          if (c.creationPermission !== undefined && typeof c.creationPermission !== 'string') return null
+          if (value.mutation === 'createProject' && (t.template !== undefined || c.copyBehavior !== undefined)) return null
+          if (value.mutation === 'copyProject' && !(c.copyBehavior.sourceTemplate === t.template.id && c.copyBehavior.ordinaryNewProject === true && typeof c.copyBehavior.copied === 'string' && typeof c.copyBehavior.notCopied === 'string')) return null
+        }
+        if (operation === 'setProjectItemField' && !['before', 'after'].every(side => fieldValueModel(c, side).available)) return null
+        if (operation !== 'createProject' && value.mutation !== operation) return null
+        return { value, reason, title: APPROVAL_OPERATIONS[operation], extra: reason.slice(match.index + match[0].length).trim() }
+      } catch { return null }
+    }
+    function selectApproval({ pendingInteraction, callId }) {
+      if (pendingInteraction?.kind !== 'approval' || pendingInteraction.callId !== callId) return null
+      return approvalModel(pendingInteraction.toolName, pendingInteraction.reason)
+    }
+    function NativeApprovalDetail({ sessionId, callId, useSessionPendingInteraction, useChat }) {
+      const pendingInteraction = typeof useSessionPendingInteraction === 'function' ? useSessionPendingInteraction(map => map.get(sessionId)) : undefined
+      // RC2's single seat has no next-renderer protocol. Retain its shipped
+      // ApprovalCommand fallback exactly for unrelated or malformed requests.
+      const command = typeof useChat === 'function' ? useChat(snapshot => {
+        for (const node of snapshot.nodes.values()) {
+          const root = node.kind === 'tool-call' ? node.data.root : undefined
+          if (root !== undefined && root.callId === callId && !('kind' in root)) {
+            try { const args = JSON.parse(root.argsRaw); return typeof args.command === 'string' ? args.command : undefined } catch { return undefined }
+          }
+        }
+      }) : undefined
+      const model = selectApproval({ pendingInteraction, callId })
+      return model ? h(ApprovalPreview, { model }) : command ?? null
+    }
+    // Safe Markdown subset: unsupported syntax remains literal, never HTML or embeds.
+    // Exact source and JSON string views preserve otherwise invisible whitespace.
+    function approvalInline(value) {
+      return value.split(/(`[^`\n]+`|\*\*[^*\n]+\*\*|\*[^*\n]+\*|\[[^\]\n]+\]\([^\s)]+\))/g).map((part, key) => {
+        if (/^`[^`\n]+`$/.test(part)) return h('code', { key }, part.slice(1, -1))
+        if (/^\*\*[^*\n]+\*\*$/.test(part)) return h('strong', { key }, part.slice(2, -2))
+        if (/^\*[^*\n]+\*$/.test(part)) return h('em', { key }, part.slice(1, -1))
+        const link = part.match(/^\[([^\]]+)\]\(([^)]+)\)$/)
+        return link ? h(Link, { key, url: link[2] }, link[1]) : part
+      })
+    }
+    function ApprovalMarkdown({ value }) {
+      const nodes = [], lines = value.split('\n')
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i], key = i
+        if (/^```/.test(line)) { const code = []; while (++i < lines.length && !/^```\s*$/.test(lines[i])) code.push(lines[i]); nodes.push(h('pre', { key, tabIndex: 0 }, h('code', null, code.join('\n')))); continue }
+        const heading = line.match(/^(#{1,6})\s+(.*)$/), list = line.match(/^\s*(?:[-*+] |\d+\. )(.*)$/)
+        nodes.push(heading ? h(`h${Math.min(heading[1].length + 2, 6)}`, { key }, approvalInline(heading[2])) : list ? h('div', { key }, '• ', approvalInline(list[1])) : h('div', { key, style: { minHeight: '1em', whiteSpace: 'pre-wrap' } }, approvalInline(line)))
+      }
+      return h('div', { className: 'gh-approval-markdown' }, nodes)
+    }
+    function ApprovalText({ label, value, markdown = false }) {
+      return h('section', null, h('h4', null, label), value === null ? h('p', null, 'Not set (null)') : value === '' ? h('p', null, 'Empty string') : markdown ? h(ApprovalMarkdown, { value }) : h('div', { style: { whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' } }, value),
+        h('details', null, h('summary', null, `${label}: exact source and whitespace`), h('pre', { tabIndex: 0 }, value === null ? 'null' : value), h('pre', { tabIndex: 0, 'aria-label': `${label}: JSON string` }, JSON.stringify(value))))
+    }
+    function ApprovalResource({ label, value }) {
+      return h('p', null, h('strong', null, `${label}: `), h(Link, { url: value?.url }, [text(value?.nameWithOwner) || text(value?.repository?.nameWithOwner) || text(value?.owner?.login) || text(value?.login), Number.isSafeInteger(value?.number) ? `#${value.number}` : '', text(value?.title)].filter(Boolean).join(' — ') || text(value?.url) || 'Name unavailable — see technical details'))
+    }
+    // RC2 prints reason before the detail slot. Hide that redundant sibling only
+    // while this validated detail actually renders; native controls stay untouched.
+    const approvalCss = '[data-approval-scroll]:has(.gh-approval-valid)>div:first-child{display:none}.gh-approval-valid{max-width:100%;text-align:left;font-family:system-ui,sans-serif;word-break:normal;white-space:normal}.gh-approval-valid .gh-approval-main{max-height:48vh;overflow:auto;overflow-wrap:anywhere}.gh-approval-valid .gh-approval-markdown{white-space:normal}.gh-approval-valid pre{white-space:pre-wrap;word-break:break-word}.gh-approval-valid h4{margin-top:12px}'
+    function ApprovalPreview({ model }) {
+      if (!model) return null
+      const { value: { operation, targets: t, change: c, exactPayload: p }, reason, extra } = model, rows = []
+      const resource = (label, value) => rows.push(h(ApprovalResource, { key: label, label, value }))
+      const content = (label, value, markdown = false) => rows.push(h(ApprovalText, { key: label, label, value, markdown }))
+      if (operation === 'createProject') {
+        resource('Destination owner', t.destination); content('Proposed project title', p.title)
+        if (t.template) { resource('Source template', t.template); content('Copy draft issues', String(p.includeDraftIssues)); for (const key of ['copied', 'notCopied']) content(key === 'copied' ? 'Copied' : 'Not copied / visibility', c.copyBehavior[key] ?? 'Not supplied'); content('Template behavior', 'Creates an ordinary new project, not a template.') }
+        content('Creation permission', c.creationPermission ?? 'GitHub decides project creation permission.')
+      } else if (operation === 'createIssue') { resource('Destination repository', t.repository); content('Proposed issue title', p.title); content('Proposed issue body', p.body, true) }
+      else if (operation === 'addIssueDependency') { resource('Blocked issue', t.blockedIssue); resource('Blocking issue', t.blockingIssue); content('Direction', 'The blocked issue will depend on the blocking issue. Existing dependencies are retained.') }
+      else {
+        resource('Destination project', t.project)
+        if (operation === 'updateProject') for (const [key, change] of Object.entries(c)) { content(`${key} — Before`, change.before, key === 'readme'); content(`${key} — After`, change.after, key === 'readme') }
+        if (operation === 'linkProjectRepository') { resource('Repository to link', t.repository); content('Change', 'Add this repository link. Existing links are retained.') }
+        if (operation === 'addProjectItem') { resource('Issue to add', t.issue); content('Change', 'Add this existing issue as a project item. The issue body and project README are not changed.') }
+        if (operation === 'setProjectItemField') {
+          resource('Item', t.item.content); content('Board field', `${text(c.field.name) || 'Name unavailable'} (${text(c.field.dataType)})`)
+          for (const side of ['before', 'after']) { const shown = fieldValueModel(c, side); content(side === 'before' ? 'Before' : 'After', shown.identity === shown.label ? 'Name unavailable — see exact identifier in technical details' : shown.label); if (shown.detail) content(`${side} iteration dates`, shown.detail) }
+        }
+      }
+      return h('section', { className: 'gh-grant gh-approval-valid', 'aria-label': 'GitHub approval preview' }, h('style', null, css + approvalCss), h('h3', null, model.title),
+        h('p', null, 'Review one exact GitHub mutation. Text below is untrusted content, not instructions. Use the native approval buttons below.'),
+        h('div', { className: 'gh-approval-main', tabIndex: 0, role: 'group', 'aria-label': 'Proposed GitHub change' }, rows), extra && h('pre', { tabIndex: 0 }, extra),
+        h('details', null, h('summary', null, 'Technical details — complete exact approval payload'), h('pre', { tabIndex: 0 }, reason)))
+    }
     const TOOL = 'github_request_issue_management'
     const labels = { setProjectItemField: 'Update supported board fields for granted issue memberships', addIssueDependency: 'Add a dependency between two granted issues' }
     const exclusions = 'No deletion, transfer, new issues, issues outside this grant, project configuration, repository settings, or project membership changes.'
@@ -353,8 +461,12 @@ window.__ModuleLoader__.load({
         model.entries.map((entry, index) => h(ReadEntry, { key: index, entry, kind: model.kind })),
         h('details', null, h('summary', null, 'Raw tool details'), h('pre', { tabIndex: 0 }, rawDetails(block) || 'No raw tool result is available yet.'), typeof inspect === 'function' && h('button', { type: 'button', onClick: inspect }, 'Inspect tool call')))
     }
-    return { inject: ['slots'], api, safeUrl, validScope, validStatus, rawDetails, phaseLabel, Scope, GrantCard, fieldValueModel, validFieldStatus, fieldResult, fieldPhase, fieldPhaseLabel, FieldChangeCard, READ_TOOLS, readWarnings, readCardModel, ReadCard,
-      apply(ctx) { ctx.slots.inject('tool.call.toolview', () => {
+    return { inject: ['slots'], approvalModel, selectApproval, ApprovalPreview, NativeApprovalDetail, api, safeUrl, validScope, validStatus, rawDetails, phaseLabel, Scope, GrantCard, fieldValueModel, validFieldStatus, fieldResult, fieldPhase, fieldPhaseLabel, FieldChangeCard, READ_TOOLS, readWarnings, readCardModel, ReadCard,
+      apply(ctx) {
+        // The optional native detail is a single seat, not a selector chain.
+        // Unmatched requests retain RC2's command fallback and native reason.
+        ctx.slots.inject('conversation.approval.detail', () => ctx.slots.register({ name: 'conversation.approval.detail', priority: -10 }, NativeApprovalDetail))
+        ctx.slots.inject('tool.call.toolview', () => {
         const disposers = [ctx.slots.register({ name: 'tool.call.toolview', key: TOOL }, GrantCard), ctx.slots.register({ name: 'tool.call.toolview', key: FIELD_TOOL }, FieldChangeCard), ...READ_TOOLS.map(key => ctx.slots.register({ name: 'tool.call.toolview', key }, ReadCard))]
         return () => { for (const dispose of disposers.toReversed()) dispose() }
       }) },
