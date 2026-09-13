@@ -49,6 +49,14 @@ Discovery normalizes GitHub SSH and HTTPS remotes and reports ambiguity, includi
 - GitHub can hide inaccessible resources as nonexistent. Diagnostics retain that ambiguity rather than asserting the resource does not exist.
 - Template status is a project property, not a separate resource type.
 
+### Project and issue read cards
+
+Six existing tools have compact conversation cards: `github_list_projects`, `github_get_project`, `github_list_project_items`, `github_list_issues`, `github_search_issues`, and `github_get_issue`. Cards link resource titles and expand supplied descriptions, README content, field definitions, and dependencies. Project-item cards also support the single-item result used to continue nested field values.
+
+Returned counts are separate from reported totals. Template-page counts retain their unfiltered meaning, and search cards show GitHub’s 1,000-match limit. Continuation, truncation, missing pagination metadata, and card display-limit warnings remain visible when details are collapsed. A partial page is not presented as a complete result.
+
+Issue state and project board fields have separate labels. Cards never infer one from the other. GitHub text renders as text, not executable markup; resource links accept only public HTTPS `github.com` URLs without credentials or custom ports. Missing or malformed results retain raw details instead of inventing entries. Rendering performs no HTTP or GitHub requests and changes no tool schema, output, execution, or approval. Uncovered tools keep their existing presentation.
+
 ## Write tool inventory
 
 | Tool | Purpose |

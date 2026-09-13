@@ -239,9 +239,123 @@ window.__ModuleLoader__.load({
         exact && h('details', null, h('summary', null, 'Complete exact approval preview'), h('pre', { tabIndex: 0 }, exact)),
         h('details', null, h('summary', null, 'Raw tool details'), h('pre', { tabIndex: 0 }, rawDetails(block) || 'No raw tool result is available yet.'), typeof inspect === 'function' && h('button', { type: 'button', onClick: inspect }, 'Inspect tool call')))
     }
-    return { inject: ['slots'], api, safeUrl, validScope, validStatus, rawDetails, phaseLabel, Scope, GrantCard, fieldValueModel, validFieldStatus, fieldResult, fieldPhase, fieldPhaseLabel, FieldChangeCard,
+    const READ_TOOLS = ['github_list_projects', 'github_get_project', 'github_list_project_items', 'github_list_issues', 'github_search_issues', 'github_get_issue']
+    const readTitles = { github_list_projects: 'Projects', github_get_project: 'Project details', github_list_project_items: 'Project items', github_list_issues: 'Issues', github_search_issues: 'Issue search', github_get_issue: 'Issue details' }
+    function readWarnings(envelope, toolName) {
+      const warnings = new Set(), seen = new Set()
+      let budget = 10000
+      function visit(value, path, depth) {
+        if (--budget < 0 || depth > 20) { warnings.add('Additional nested data exceeds the card inspection bound; inspect raw details. Completeness is unknown.'); return }
+        if (!value || typeof value !== 'object' || seen.has(value)) return
+        seen.add(value)
+        if (Object.hasOwn(value, 'nodes') && (!Array.isArray(value.nodes) || !object(value.pageInfo) || typeof value.pageInfo.hasNextPage !== 'boolean')) warnings.add(`${path}: pagination metadata is missing or malformed; completeness is unknown.`)
+        if (value.pageInfo?.hasNextPage === true && !id(value.nextCursor) && !id(value.pageInfo.endCursor)) warnings.add(`${path}: continuation cursor is unavailable; inspect raw details.`)
+        if (value.truncated === true || value.pageInfo?.hasNextPage === true || typeof value.nextCursor === 'string' && value.nextCursor.length > 0) warnings.add(`${path}: more data or truncated output. Continue this exact target with its matching cursor where supplied; this view is not complete.`)
+        if (Array.isArray(value)) {
+          if (value.length > 50) warnings.add(`${path}: nested sections display at most 50 entries; inspect raw details for additional entries.`)
+          if (value.length > 100) warnings.add(`${path}: only the first 100 entries are inspected by this card.`)
+          value.slice(0, 100).forEach((entry, index) => visit(entry, `${path}[${index}]`, depth + 1))
+        } else {
+          const entries = Object.entries(value)
+          if (entries.length > 100) warnings.add(`${path}: additional properties exceed the card inspection bound.`)
+          for (const [key, entry] of entries.slice(0, 100)) visit(entry, `${path}.${key}`, depth + 1)
+        }
+      }
+      visit(envelope?.data, 'data', 0)
+      if (envelope?.truncated === true) warnings.add('GitHub returned bounded or incomplete output. See all continuation notices and raw details.')
+      if (Array.isArray(envelope?.truncations)) for (const notice of envelope.truncations.slice(0, 100)) {
+        if (object(notice)) warnings.add(`${text(notice.path) || 'Output'}: ${text(notice.reason) || text(notice.kind) || 'truncated'}. ${text(notice.continuation)}`)
+      }
+      if (envelope?.truncations?.length > 100) warnings.add('Additional truncation notices are available in raw details.')
+      if (toolName === 'github_search_issues') warnings.add('GitHub search exposes at most 1,000 matches. Narrow the query for exhaustive results.')
+      if (envelope?.data?.exhaustive === false) warnings.add('This search result is not exhaustive.')
+      return [...warnings]
+    }
+    // Pure readCardModel(toolName, frozen tool block): returns supplied entries, counts,
+    // rendering kind, conservative state, and always-visible incompleteness warnings.
+    // It parses only bounded owned tool JSON; it never reads a Host service or fetches.
+    function readCardModel(toolName, block) {
+      const base = { title: readTitles[toolName] ?? 'GitHub read', warnings: [], entries: [], kind: 'unknown' }
+      if (!READ_TOOLS.includes(toolName)) return { ...base, error: 'Unsupported card. Use raw tool details.' }
+      if (block?.kind !== 'tool-result') return { ...base, state: 'running' }
+      let envelope
+      try {
+        const parts = Array.isArray(block.content) ? block.content.filter(part => part?.type === 'text' && typeof part.text === 'string') : []
+        if (parts.length !== 1 || parts[0].text.length > 524288) throw new Error()
+        envelope = JSON.parse(parts[0].text)
+        if (!object(envelope) || envelope.host !== 'github.com' || envelope.untrusted !== true) throw new Error()
+      } catch { return { ...base, state: 'unknown', error: 'Readable result unavailable. Inspect raw tool details; no success or completeness is inferred.' } }
+      const warnings = readWarnings(envelope, toolName), data = envelope.data
+      if (!object(data)) return { ...base, warnings, state: 'unknown', error: 'Readable result unavailable. Inspect raw tool details; no success or completeness is inferred.' }
+      if (block.isError === true) return { ...base, warnings, state: 'failed', error: 'The tool reported an error. Inspect raw tool details.' }
+      const kind = toolName.includes('project_items') ? 'items' : toolName.includes('project') ? 'projects' : 'issues'
+      const singular = toolName === 'github_get_project' || toolName === 'github_get_issue' || kind === 'items' && data.nodes === undefined && id(data.id)
+      const entries = singular ? [data] : data.nodes
+      const validEntry = entry => object(entry) && id(entry.id) && (kind === 'items' ? (entry.content == null || object(entry.content)) && (entry.fieldValues === undefined || object(entry.fieldValues) && Array.isArray(entry.fieldValues.nodes)) : typeof entry.title === 'string' && Number.isSafeInteger(entry.number) && entry.number > 0)
+      if (!Array.isArray(entries) || entries.some(entry => !validEntry(entry))) return { ...base, warnings, state: 'unknown', error: 'Malformed result entries. Inspect raw tool details; no entries are inferred.' }
+      if (entries.length > 50) warnings.push('Only the first 50 returned entries are displayed by this card. Remaining entries are in raw details.')
+      const count = toolName === 'github_search_issues' ? data.issueCount : data.totalCount
+      const total = Number.isSafeInteger(count) && count >= 0 ? count : undefined
+      return { ...base, warnings, state: 'returned', kind, entries: entries.slice(0, 50), returnedCount: entries.length, total, totalMeaning: text(data.totalCountMeaning), scannedCount: data.scannedCount, templateOnly: data.templateOnly === true, singular }
+    }
+    function shortIdentity(value) { return text(value?.name) || text(value?.title) || text(value?.login) || text(value?.nameWithOwner) || text(value?.id) || 'Unnamed entry' }
+    function TextSection({ title, value }) { return typeof value === 'string' && value.length > 0 ? h('details', null, h('summary', null, title), h('pre', { tabIndex: 0 }, value)) : null }
+    function SuppliedList({ title, connection }) {
+      if (!object(connection)) return null
+      if (!Array.isArray(connection.nodes)) return h('p', null, `${title}: malformed supplied details; inspect raw data.`)
+      return h('details', null, h('summary', null, `${title} (${connection.nodes.length} returned${Number.isSafeInteger(connection.totalCount) ? `; ${connection.totalCount} total reported` : ''})`),
+        h('ul', null, connection.nodes.slice(0, 50).map((entry, index) => h('li', { key: index }, object(entry) ? h(Link, { url: entry.url }, `${Number.isSafeInteger(entry.number) ? `#${entry.number} — ` : ''}${shortIdentity(entry)}`) : 'Malformed entry — see raw details'))))
+    }
+    function FieldValue({ value }) {
+      if (!object(value)) return h('li', null, 'Malformed board field value — see raw details.')
+      let shown
+      if (typeof value.text === 'string') shown = JSON.stringify(value.text)
+      else if (typeof value.number === 'number' && Number.isFinite(value.number)) shown = String(value.number)
+      else if (typeof value.date === 'string') shown = value.date
+      else shown = text(value.name) || text(value.title) || text(value.optionId) || text(value.iterationId)
+      const connections = ['labels', 'users', 'pullRequests', 'reviewers'].filter(key => value[key] !== undefined)
+      return h('li', null, h('strong', null, `Board field ${text(value.field?.name) || text(value.field?.id) || 'unknown'}: `), shown || (connections.length ? 'Supplied entries below' : 'Value unavailable'),
+        connections.map(key => h(SuppliedList, { key, title: key, connection: value[key] })))
+    }
+    function ReadEntry({ entry, kind }) {
+      if (kind === 'items') {
+        const content = entry.content, type = content?.__typename
+        return h('section', null, h('h4', null, h(Link, { url: content?.url }, content ? `${type === 'Issue' ? 'Issue' : type === 'PullRequest' ? 'Pull request' : type === 'DraftIssue' ? 'Draft issue' : 'Item'}${Number.isSafeInteger(content.number) ? ` #${content.number}` : ''} — ${text(content.title) || text(content.id) || entry.id}` : `Item ${entry.id} — content unavailable`)),
+          h('small', null, `Item ID: ${entry.id}; Project ID: ${text(entry.project?.id) || 'unavailable'}`),
+          h('p', null, `Issue state: ${type === 'Issue' ? text(content.state) || 'not supplied' : 'not an issue'}; Board item: ${entry.isArchived === true ? 'archived' : entry.isArchived === false ? 'not archived' : 'archive state not supplied'}`),
+          h('ul', null, (entry.fieldValues?.nodes ?? []).slice(0, 50).map((value, index) => h(FieldValue, { key: index, value }))),
+          h(TextSection, { title: 'Item description', value: content?.body }))
+      }
+      const project = kind === 'projects'
+      return h('section', null,
+        h('h4', null, h(Link, { url: entry.url }, `${project ? 'Project' : 'Issue'} #${entry.number} — ${entry.title}`)),
+        h('small', null, `ID: ${entry.id}${text(entry.repository?.nameWithOwner) ? `; Repository: ${entry.repository.nameWithOwner}` : ''}${text(entry.owner?.login) ? `; Owner: ${entry.owner.login}` : ''}`),
+        h('p', null, project ? `Project: ${entry.closed === true ? 'closed' : entry.closed === false ? 'open' : 'state unavailable'}; ${entry.template === true ? 'template' : entry.template === false ? 'not a template' : 'template status unavailable'}` : `Issue state: ${text(entry.state) || 'unavailable'} (not board Status)`),
+        text(entry.shortDescription) && h('p', null, entry.shortDescription),
+        h(TextSection, { title: project ? 'Project README' : 'Issue description', value: project ? entry.readme : entry.body }),
+        project ? h(React.Fragment, null,
+          h(SuppliedList, { title: 'Linked repositories', connection: entry.repositories }),
+          entry.fields !== undefined && h('details', null, h('summary', null, 'Project field definitions'), Array.isArray(entry.fields?.nodes) ? entry.fields.nodes.slice(0, 50).map((field, index) => object(field) ? h('section', { key: index }, h('strong', null, `${shortIdentity(field)} (${text(field.dataType) || 'type unavailable'})`), h('small', null, `Field ID: ${text(field.id) || 'unavailable'}`),
+            Array.isArray(field.options) && h('ul', null, field.options.slice(0, 50).map((option, i) => h('li', { key: i }, `${shortIdentity(option)} — ID: ${text(option?.id) || 'unavailable'}`))),
+            ['iterations', 'completedIterations'].map(key => Array.isArray(field.configuration?.[key]) && h('div', { key }, h('p', null, key === 'iterations' ? 'Active iterations' : 'Completed iterations'), h('ul', null, field.configuration[key].slice(0, 50).map((iteration, i) => h('li', { key: i }, `${shortIdentity(iteration)}; ID: ${text(iteration?.id) || 'unavailable'}; ${text(iteration?.startDate)}`)))))) : h('p', { key: index }, 'Malformed field — inspect raw details')) : h('p', null, 'Field definitions unavailable.'))) : h(React.Fragment, null,
+          entry.parent && h('p', null, 'Parent: ', h(Link, { url: entry.parent.url }, `#${entry.parent.number ?? '?'} — ${shortIdentity(entry.parent)}`)),
+          [['Labels', 'labels'], ['Assignees', 'assignees'], ['Sub-issues', 'subIssues'], ['Blocked by', 'blockedBy'], ['Blocking', 'blocking']].map(([title, key]) => h(SuppliedList, { key, title, connection: entry[key] }))))
+    }
+    function ReadCard({ toolName, block, inspect }) {
+      const model = readCardModel(toolName, block)
+      return h('section', { className: 'gh-grant', 'aria-label': `GitHub ${model.title}` }, h('style', null, css),
+        h('h3', null, `GitHub · ${model.title}`),
+        h('p', { role: 'status' }, model.state === 'running' ? 'Reading…' : model.state === 'returned' ? `${model.returnedCount} ${model.singular ? 'entry' : 'entries'} returned${model.total === undefined ? '' : `; ${model.total} total reported${model.totalMeaning ? ` (${model.totalMeaning})` : ''}`}` : 'Result unavailable'),
+        model.error && h('p', { role: 'alert' }, model.error),
+        model.warnings.map((warning, index) => h('p', { key: index, role: 'note' }, warning)),
+        model.templateOnly && h('p', null, `Template filtering applies only to this page${Number.isSafeInteger(model.scannedCount) ? `; ${model.scannedCount} projects scanned` : ''}. An empty page does not imply no templates exist.`),
+        model.state === 'returned' && model.entries.length === 0 && h('p', null, 'No entries returned on this page.'),
+        model.entries.map((entry, index) => h(ReadEntry, { key: index, entry, kind: model.kind })),
+        h('details', null, h('summary', null, 'Raw tool details'), h('pre', { tabIndex: 0 }, rawDetails(block) || 'No raw tool result is available yet.'), typeof inspect === 'function' && h('button', { type: 'button', onClick: inspect }, 'Inspect tool call')))
+    }
+    return { inject: ['slots'], api, safeUrl, validScope, validStatus, rawDetails, phaseLabel, Scope, GrantCard, fieldValueModel, validFieldStatus, fieldResult, fieldPhase, fieldPhaseLabel, FieldChangeCard, READ_TOOLS, readWarnings, readCardModel, ReadCard,
       apply(ctx) { ctx.slots.inject('tool.call.toolview', () => {
-        const disposers = [ctx.slots.register({ name: 'tool.call.toolview', key: TOOL }, GrantCard), ctx.slots.register({ name: 'tool.call.toolview', key: FIELD_TOOL }, FieldChangeCard)]
+        const disposers = [ctx.slots.register({ name: 'tool.call.toolview', key: TOOL }, GrantCard), ctx.slots.register({ name: 'tool.call.toolview', key: FIELD_TOOL }, FieldChangeCard), ...READ_TOOLS.map(key => ctx.slots.register({ name: 'tool.call.toolview', key }, ReadCard))]
         return () => { for (const dispose of disposers.toReversed()) dispose() }
       }) },
     }
