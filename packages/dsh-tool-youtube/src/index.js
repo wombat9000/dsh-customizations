@@ -771,6 +771,13 @@ export function registerYoutubeTools(ctx, config, client, transcriptProgress) {
 }
 
 export function apply(ctx, config = {}) {
+  // Plugin cards require a served namespace; API keys stay in the credential store.
+  ctx.inject(['settings'], (settingsCtx) => {
+    settingsCtx.settings.installSection(ctx, 'youtube', z.object({}), {}, {
+      setSource: () => {},
+      onChange: () => {},
+    })
+  })
   const resolved = resolveConfig(config)
   const literalApiKey = resolved.apiKey
   const geminiClient = new GeminiYoutubeClient({

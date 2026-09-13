@@ -33,13 +33,13 @@ In the Web GUI, all four tools share a compact, expandable YouTube card. Cards l
 
 This bundle is maintained in `packages/dsh-tool-youtube` and selected by the `personal-web` recipe. Follow the [repository setup and profile application procedure](../../README.md#apply-the-starter-profile). Installing dependencies, applying a profile, and restarting DSH require separate approval; tests do not perform those actions.
 
-After an approved profile update, restart the existing DSH Web process and refresh its existing URL. Open Settings → YouTube to configure Gemini. Do not start a second Web server expecting it to replace the existing GUI.
+After an approved profile update, restart the existing DSH Web process and refresh its existing URL. Open Settings → Plugins → Plugin configuration → YouTube to configure Gemini. Do not start a second Web server expecting it to replace the existing GUI.
 
 The package includes the transcript archive as the `@local/dsh-tool-youtube/transcript-store` export. Its separate host row retains the `local-youtube-transcript-store` ID and `youtubeTranscriptStore` service. It uses Node's bundled `node:sqlite`; no SQLite package or separate companion installation is required. The archive remains shared across sessions at `$DSH_HOME/archives/youtube-transcripts.sqlite`, with the same schema and transcript IDs. Do not move this service into an agent preset.
 
 ## Credentials
 
-Open Settings → YouTube and save the Gemini API key in the Gemini card. The browser sends a new key only on save; DSH returns only configured, source, and writable status. The key is never read back into browser state, model-facing arguments, schemas, tool values, render output, or provider errors. Saved and rotated keys are used by the next YouTube operation without another restart.
+Open Settings → Plugins → Plugin configuration → YouTube and save the Gemini API key in the Gemini card. The browser sends a new key only on save; DSH returns only configured, source, and writable status. The key is never read back into browser state, model-facing arguments, schemas, tool values, render output, or provider errors. Saved and rotated keys are used by the next YouTube operation without another restart.
 
 For headless use, the provider also resolves GEMINI_API_KEY from the environment that launches DSH:
 

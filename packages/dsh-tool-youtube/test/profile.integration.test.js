@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { readFile, stat } from 'node:fs/promises'
 import test from 'node:test'
 import { createTranscriptProgressStore, registerTranscriptProgressRpc } from '../src/progress.js'
+import { apply } from '../src/index.js'
 
 const PACKAGE_ROOT = new URL('../', import.meta.url)
 const RECIPE = new URL('../../profiles/personal-web/recipe.json', PACKAGE_ROOT)
@@ -24,6 +25,35 @@ test('YouTube bundle ships its archive provider without a workspace dependency',
   assert.match(patch, /dshHomePath\('archives\/youtube-transcripts\.sqlite'\)/)
   assert.match(patch, /id: local-tool-youtube\s+name: '@local\/dsh-tool-youtube'/)
   assert.doesNotMatch(patch, /agentPresets|isolate:/)
+})
+
+test('host serves an empty YouTube namespace for the plugin card without storing secrets', () => {
+  let registration
+  const cleanups = []
+  const ctx = {
+    inject(dependencies, install) {
+      assert.deepEqual(dependencies, ['settings'])
+      install({ settings: { installSection(owner, namespace, schema, initial, options) {
+        registration = { owner, namespace, schema, initial, options }
+      } } })
+    },
+    get(name) {
+      assert.equal(name, 'connection')
+      return { rpc: { handle: () => () => {} } }
+    },
+    effect(setup) { cleanups.push(setup()) },
+    tools: { register() {} },
+    systemPrompt: { section() {} },
+    youtubeTranscriptStore: {},
+  }
+  apply(ctx, { apiKey: 'test-only-not-a-real-key' })
+  assert.equal(registration.owner, ctx)
+  assert.equal(registration.namespace, 'youtube')
+  assert.deepEqual(registration.schema.dict, {})
+  assert.deepEqual(registration.initial, {})
+  registration.options.setSource({})
+  registration.options.onChange({})
+  for (const cleanup of cleanups.reverse()) cleanup()
 })
 
 test('personal-web selects the portable YouTube source', async () => {
