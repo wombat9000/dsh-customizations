@@ -512,14 +512,14 @@ window.__ModuleLoader__.load({
       React.useEffect(() => {
         let active = true
         setFailure(undefined)
-        api.credentials.describe({ refs: [CREDENTIAL_REF] }).then((response) => {
+        Promise.resolve().then(() => api.credentials.describe([CREDENTIAL_REF])).then((response) => {
           if (!active) return
-          if (!response.result.ok) {
+          if (!response.ok) {
             setCredential(null)
-            setFailure(response.result.error.message)
+            setFailure(response.error.message)
             return
           }
-          setCredential(response.result.value.credentials[CREDENTIAL_REF] ?? {
+          setCredential(response.value[CREDENTIAL_REF] ?? {
             configured: false,
             writable: false,
           })
@@ -542,9 +542,9 @@ window.__ModuleLoader__.load({
         setFailure(undefined)
         setSuccess(undefined)
         try {
-          const response = await api.credentials.set({ ref: CREDENTIAL_REF, value: draft.trim() })
-          if (!response.result.ok) {
-            setFailure(response.result.error.message)
+          const response = await api.credentials.set(CREDENTIAL_REF, draft.trim())
+          if (!response.ok) {
+            setFailure(response.error.message)
             return
           }
           setDraft('')
@@ -563,9 +563,9 @@ window.__ModuleLoader__.load({
         setFailure(undefined)
         setSuccess(undefined)
         try {
-          const response = await api.credentials.unset({ ref: CREDENTIAL_REF })
-          if (!response.result.ok) {
-            setFailure(response.result.error.message)
+          const response = await api.credentials.unset(CREDENTIAL_REF)
+          if (!response.ok) {
+            setFailure(response.error.message)
             return
           }
           setDraft('')
@@ -641,7 +641,7 @@ window.__ModuleLoader__.load({
             : React.createElement('p', { style: styles.message(false), role: 'status' }, success)))
     }
 
-    const inject = ['slots', 'connection', 'remote']
+    const inject = ['slots', 'connection', 'remote', 'remote.credentials']
 
     function apply(ctx) {
       const connection = ctx.get('connection')
@@ -656,7 +656,7 @@ window.__ModuleLoader__.load({
           for (const dispose of disposers) dispose()
         }
       }
-      const injected = () => ({ api: connection.api, subscribe })
+      const injected = () => ({ api: ctx.remote, subscribe })
       ctx.slots.inject('settings.section', () => ctx.slots.register({
         name: 'settings.section',
         id: 'youtube',

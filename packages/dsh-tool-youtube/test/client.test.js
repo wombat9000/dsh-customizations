@@ -82,7 +82,7 @@ test('package exposes the Web Settings client bundle', async () => {
 test('client bundle registers the expected module and Settings section', async () => {
   const { record, exports } = await loadClient()
   assert.equal(record.id, '@local/dsh-tool-youtube')
-  assert.deepEqual(Array.from(exports.inject), ['slots', 'connection', 'remote'])
+  assert.deepEqual(Array.from(exports.inject), ['slots', 'connection', 'remote', 'remote.credentials'])
   assert.equal(exports.CREDENTIAL_REF, 'GEMINI_API_KEY')
 
   const registrations = []
@@ -91,7 +91,7 @@ test('client bundle registers the expected module and Settings section', async (
     remote: { $on: () => () => {} },
     get(service) {
       assert.equal(service, 'connection')
-      return { api: { credentials: {} }, rpc }
+      return { rpc }
     },
     on: () => () => {},
     slots: {
@@ -112,6 +112,7 @@ test('client bundle registers the expected module and Settings section', async (
   assert.equal(settings.options.order, 30)
   assert.equal(settings.options.label, 'YouTube')
   assert.equal(typeof settings.options.inject, 'function')
+  assert.equal(settings.options.inject().api, context.remote)
   assert.equal(typeof settings.component, 'function')
   const toolviews = registrations.filter((entry) => entry.options.name === 'tool.call.toolview')
   assert.deepEqual(toolviews.map((entry) => entry.options.key), [
@@ -199,13 +200,9 @@ test('Gemini card uses status-only describe and does not retain returned secrets
         async describe(request) {
           describeRequest = request
           return {
-            result: {
-              ok: true,
-              value: {
-                credentials: {
-                  GEMINI_API_KEY: { configured: true, writable: true, source: 'file' },
-                },
-              },
+            ok: true,
+            value: {
+              GEMINI_API_KEY: { configured: true, writable: true, source: 'file' },
             },
           }
         },
@@ -216,7 +213,8 @@ test('Gemini card uses status-only describe and does not retain returned secrets
   await Promise.resolve()
   await Promise.resolve()
 
-  assert.deepEqual(plain(describeRequest), { refs: ['GEMINI_API_KEY'] })
+  await new Promise((resolve) => setImmediate(resolve))
+  assert.deepEqual(plain(describeRequest), ['GEMINI_API_KEY'])
   const credentialUpdate = react.updates[0].find((value) => typeof value === 'object' && value !== null)
   assert.deepEqual(plain(credentialUpdate), { configured: true, writable: true, source: 'file' })
   assert.equal(Object.hasOwn(credentialUpdate, 'value'), false)
@@ -237,13 +235,13 @@ test('Gemini card sends write-only set and unset requests and clears the draft',
     api: {
       credentials: {
         async describe() { throw new Error('effect should not run') },
-        async set(request) {
-          calls.push(['set', request])
-          return { result: { ok: true, value: { configured: true } } }
+        async set(...args) {
+          calls.push(['set', ...args])
+          return { ok: true, value: { configured: true } }
         },
-        async unset(request) {
-          calls.push(['unset', request])
-          return { result: { ok: true, value: { configured: false } } }
+        async unset(...args) {
+          calls.push(['unset', ...args])
+          return { ok: true, value: { configured: false } }
         },
       },
     },
@@ -260,11 +258,63 @@ test('Gemini card sends write-only set and unset requests and clears the draft',
   await Promise.resolve()
 
   assert.deepEqual(plain(calls), [
-    ['set', { ref: 'GEMINI_API_KEY', value: 'AIza-secret-value' }],
-    ['unset', { ref: 'GEMINI_API_KEY' }],
+    ['set', 'GEMINI_API_KEY', 'AIza-secret-value'],
+    ['unset', 'GEMINI_API_KEY'],
   ])
   assert.ok(react.updates[1].includes(''))
   assert.equal(JSON.stringify(react.updates).includes('AIza-secret-value'), false)
+})
+
+test('registered Settings section loads credentials without the removed connection.api', async () => {
+  const react = fakeReact([], true)
+  const { exports } = await loadClient(react)
+  const registrations = []
+  const remote = {
+    $on: () => () => {},
+    credentials: {
+      async describe(refs) {
+        assert.deepEqual(plain(refs), ['GEMINI_API_KEY'])
+        return { ok: true, value: { GEMINI_API_KEY: { configured: false, writable: true } } }
+      },
+    },
+  }
+  exports.apply({
+    remote,
+    get: () => ({ rpc: {} }),
+    on: () => () => {},
+    slots: {
+      inject: (_name, callback) => callback(),
+      register(options, component) {
+        registrations.push({ options, component })
+        return () => {}
+      },
+    },
+  })
+  const section = registrations.find(({ options }) => options.name === 'settings.section')
+  const tree = section.component(section.options.inject())
+  assert.match(textOf(tree), /Configure Gemini access/)
+  await new Promise((resolve) => setImmediate(resolve))
+  assert.deepEqual(plain(react.updates[0]), [{ configured: false, writable: true }])
+  for (const cleanup of react.cleanups) cleanup()
+})
+
+test('Settings describe failures remain visible instead of escaping the effect', async () => {
+  for (const describe of [
+    () => { throw new Error('Credential service unavailable') },
+    async () => { throw new Error('Credential service unavailable') },
+    async () => ({ ok: false, error: { message: 'Credential service unavailable' } }),
+  ]) {
+    const react = fakeReact([], true)
+    const { exports } = await loadClient(react)
+    exports.GeminiSettingsSection({ api: { credentials: { describe } }, subscribe: () => () => {} })
+    await new Promise((resolve) => setImmediate(resolve))
+    assert.ok(react.updates[0].includes(null))
+    assert.ok(react.updates[3].some((value) => String(value).includes('Credential service unavailable')))
+    const rendered = fakeReact([null, '', false, 'Credential service unavailable'])
+    const tree = (await loadClient(rendered)).exports.GeminiSettingsSection({})
+    assert.equal(findElements(tree, (element) => element.props.role === 'alert').length, 1)
+    assert.match(textOf(tree), /Credential service unavailable/)
+  }
 })
 
 test('shared card renders honest accessible transcript progress', async () => {
