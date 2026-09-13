@@ -73,7 +73,9 @@ export async function startDisposableHost({ additionalPlugins = [], profilePatch
     // Resolve the existing pinned scope package from the checkout, without installs.
     await symlink(join(root, 'tests/real-ui/github-approval-fixture.mjs'), join(fixture, 'github-approval-fixture.mjs'))
     await copyFile(join(root, 'tests/real-ui/github-grants-fixture.mjs'), join(fixture, 'github-grants-fixture.mjs'))
+    await copyFile(join(root, 'tests/real-ui/github-items-fixture.mjs'), join(fixture, 'github-items-fixture.mjs'))
     await copyFile(join(root, 'tests/real-ui/github-field-fixture.mjs'), join(fixture, 'github-field-fixture.mjs'))
+    await copyFile(join(root, 'packages/dsh-github/test/project-items-fixture.js'), join(fixture, 'project-items-fixture.js'))
     await writeFile(join(fixture, 'package.json'), JSON.stringify({ name: 'dsh-visual-fixture', type: 'module', main: 'index.mjs', dsh: { bundle: { patch: 'cordis.patch.yml' } } }))
     await writeFile(join(fixture, 'cordis.patch.yml'), '- insert:\n    - id: visual-fixture\n      name: dsh-visual-fixture\n')
     await writeFile(join(profile, 'package.json'), JSON.stringify({

@@ -447,26 +447,62 @@ window.__ModuleLoader__.load({
       return h('details', null, h('summary', null, `${title} (${connection.nodes.length} returned${Number.isSafeInteger(connection.totalCount) ? `; ${connection.totalCount} total reported` : ''})`),
         h('ul', null, connection.nodes.slice(0, 50).map((entry, index) => h('li', { key: index }, object(entry) ? h(Link, { url: entry.url }, `${Number.isSafeInteger(entry.number) ? `#${entry.number} — ` : ''}${shortIdentity(entry)}`) : 'Malformed entry — see raw details'))))
     }
+    const itemCss = `.gh-grant .gh-item{padding:8px 0;margin:0;border-top:1px solid var(--dsw-alias-border-standard,#8885);min-width:0}.gh-grant .gh-item-head{display:grid;grid-template-columns:minmax(0,1fr) minmax(100px,.32fr) minmax(100px,.32fr);gap:4px 16px;align-items:start}.gh-grant .gh-item h4{margin:0;font-size:14px}.gh-grant .gh-item p{margin:2px 0}.gh-grant .gh-item details{margin:4px 0 0}.gh-grant .gh-item summary{font-size:12px}.gh-grant .gh-item-pr{font-size:12px}.gh-grant .gh-item-fields{margin:4px 0;padding-left:20px}.gh-grant .gh-item-fields li{margin:2px 0}.gh-grant.gh-items{container-type:inline-size}@container (max-width:500px){.gh-grant .gh-item-head{grid-template-columns:minmax(0,1fr);gap:2px}}`
+    function itemFieldModel(value) {
+      if (!object(value)) return { label: 'Malformed field', value: 'See technical details' }
+      const label = text(value.field?.name) || 'Unnamed field'
+      const leaf = object(value.issueFieldValue) ? value.issueFieldValue : value
+      const connections = ['labels', 'users', 'pullRequests', 'reviewers'].filter(key => Object.hasOwn(value, key))
+      if (Object.hasOwn(value, 'repository') || Object.hasOwn(value, 'milestone')) {
+        const entry = Object.hasOwn(value, 'repository') ? value.repository : value.milestone
+        return { label, value: entry === null ? 'Not set' : text(entry?.nameWithOwner) || text(entry?.title) || 'Value not supplied', url: entry?.url, connections }
+      }
+      for (const key of ['text', 'number', 'date', 'name', 'title', 'value']) {
+        if (!Object.hasOwn(leaf, key)) continue
+        const supplied = leaf[key]
+        if (supplied === null) return { label, value: 'Not set', connections }
+        if (typeof supplied === 'string') return { label, value: supplied === '' ? 'Empty string' : supplied, connections }
+        if (typeof supplied === 'number' && Number.isFinite(supplied)) return { label, value: String(supplied), connections }
+      }
+      return { label, value: connections.length ? '' : 'Value not supplied or unsupported', connections }
+    }
+    function projectItemModel(entry) {
+      const content = entry.content, type = text(content?.__typename) || text(entry.type)
+      const fields = (entry.fieldValues?.nodes ?? []).slice(0, 50)
+      // Status is the supplied board field named Status, never the issue state.
+      const statuses = fields.filter(value => value?.field?.name === 'Status')
+      const repositories = []
+      for (const repository of [content?.repository, ...fields.map(value => value?.repository)]) {
+        if (text(repository?.nameWithOwner) && !repositories.some(value => value.nameWithOwner === repository.nameWithOwner)) repositories.push({ nameWithOwner: repository.nameWithOwner, url: repository.url })
+      }
+      const prs = fields.filter(value => Object.hasOwn(value ?? {}, 'pullRequests'))
+      return { type, title: typeof content?.title === 'string' ? content.title || 'Empty title' : 'Title not supplied', number: Number.isSafeInteger(content?.number) ? content.number : undefined, url: content?.url,
+        issueState: type === 'Issue' ? text(content?.state) || 'Not supplied' : type === 'PullRequest' || type === 'DraftIssue' ? 'Not an issue' : 'Unknown item type',
+        boardStatus: statuses.length ? statuses.map(value => itemFieldModel(value).value).join(' · ') : 'Not supplied', repositories, prs,
+        fields: fields.filter(value => value?.field?.name !== 'Status' && !(value?.field?.name === 'Title' && value?.text === content?.title) && !Object.hasOwn(value ?? {}, 'pullRequests') && !text(value?.repository?.nameWithOwner)) }
+    }
     function FieldValue({ value }) {
-      if (!object(value)) return h('li', null, 'Malformed board field value — see raw details.')
-      let shown
-      if (typeof value.text === 'string') shown = JSON.stringify(value.text)
-      else if (typeof value.number === 'number' && Number.isFinite(value.number)) shown = String(value.number)
-      else if (typeof value.date === 'string') shown = value.date
-      else shown = text(value.name) || text(value.title) || text(value.optionId) || text(value.iterationId)
-      const connections = ['labels', 'users', 'pullRequests', 'reviewers'].filter(key => value[key] !== undefined)
-      return h('li', null, h('strong', null, `Board field ${text(value.field?.name) || text(value.field?.id) || 'unknown'}: `), shown || (connections.length ? 'Supplied entries below' : 'Value unavailable'),
-        connections.map(key => h(SuppliedList, { key, title: key, connection: value[key] })))
+      const model = itemFieldModel(value)
+      return h('li', null, h('strong', null, `${model.label}: `), h(Link, { url: model.url }, model.value),
+        model.connections?.map(key => h(SuppliedList, { key, title: ({ labels: 'Labels', users: 'People', reviewers: 'Reviewers', pullRequests: 'Pull requests' })[key], connection: value[key] })))
+    }
+    function ProjectItem({ entry }) {
+      const model = projectItemModel(entry)
+      return h('article', { className: 'gh-item' },
+        h('div', { className: 'gh-item-head' },
+          h('div', null, h('h4', null, h(Link, { url: model.url }, `${model.number === undefined ? '' : `#${model.number} — `}${model.title}`)),
+            model.repositories.map(repository => h('small', { key: repository.nameWithOwner }, h(Link, { url: repository.url }, repository.nameWithOwner))),
+            model.type !== 'Issue' && h('small', null, model.type || 'Content unavailable'), entry.isArchived === true && h('small', null, 'Archived')),
+          h('p', null, 'Issue state: ', model.issueState), h('p', null, 'Board status: ', model.boardStatus)),
+        model.prs.map((value, index) => h('div', { key: index, className: 'gh-item-pr' }, 'Linked PRs: ',
+          !Array.isArray(value.pullRequests?.nodes) ? 'Not supplied or malformed' : value.pullRequests.nodes.length === 0 ? 'None returned' : value.pullRequests.nodes.slice(0, 50).map((pr, i) => h(React.Fragment, { key: i }, i > 0 && ' · ', h(Link, { url: pr?.url }, `${Number.isSafeInteger(pr?.number) ? `#${pr.number} — ` : ''}${text(pr?.title) || 'Title not supplied'}`))))),
+        h('details', null, h('summary', { 'aria-label': `Additional fields for ${model.number === undefined ? model.title : `item #${model.number}`}` }, 'Additional fields'),
+          entry.fieldValues === undefined ? h('p', null, 'Fields not supplied.') : model.fields.length ? h('ul', { className: 'gh-item-fields' }, model.fields.map((value, index) => h(FieldValue, { key: index, value }))) : h('p', null, 'No additional fields returned.'),
+          h(TextSection, { title: 'Item description', value: entry.content?.body }),
+          h('details', null, h('summary', null, 'Technical details'), h('pre', { tabIndex: 0 }, JSON.stringify(entry, null, 2)))))
     }
     function ReadEntry({ entry, kind }) {
-      if (kind === 'items') {
-        const content = entry.content, type = content?.__typename
-        return h('section', null, h('h4', null, h(Link, { url: content?.url }, content ? `${type === 'Issue' ? 'Issue' : type === 'PullRequest' ? 'Pull request' : type === 'DraftIssue' ? 'Draft issue' : 'Item'}${Number.isSafeInteger(content.number) ? ` #${content.number}` : ''} — ${text(content.title) || text(content.id) || entry.id}` : `Item ${entry.id} — content unavailable`)),
-          h('small', null, `Item ID: ${entry.id}; Project ID: ${text(entry.project?.id) || 'unavailable'}`),
-          h('p', null, `Issue state: ${type === 'Issue' ? text(content.state) || 'not supplied' : 'not an issue'}; Board item: ${entry.isArchived === true ? 'archived' : entry.isArchived === false ? 'not archived' : 'archive state not supplied'}`),
-          h('ul', null, (entry.fieldValues?.nodes ?? []).slice(0, 50).map((value, index) => h(FieldValue, { key: index, value }))),
-          h(TextSection, { title: 'Item description', value: content?.body }))
-      }
+      if (kind === 'items') return h(ProjectItem, { entry })
       const project = kind === 'projects'
       return h('section', null,
         h('h4', null, h(Link, { url: entry.url }, `${project ? 'Project' : 'Issue'} #${entry.number} — ${entry.title}`)),
@@ -484,7 +520,8 @@ window.__ModuleLoader__.load({
     }
     function ReadCard({ toolName, block, inspect }) {
       const model = readCardModel(toolName, block)
-      return h('section', { className: 'gh-grant', 'aria-label': `GitHub ${model.title}` }, h('style', null, css),
+      return h('section', { className: `gh-grant${model.kind === 'items' ? ' gh-items' : ''}`, 'aria-label': `GitHub ${model.title}` }, h('style', null, css, model.kind === 'items' ? itemCss : ''),
+        model.kind === 'items' && h('small', null, 'Historical tool result · no automatic refresh'),
         h('h3', null, `GitHub · ${model.title}`),
         h('p', { role: 'status' }, model.state === 'running' ? 'Reading…' : model.state === 'returned' ? `${model.returnedCount} ${model.singular ? 'entry' : 'entries'} returned${model.total === undefined ? '' : `; ${model.total} total reported${model.totalMeaning ? ` (${model.totalMeaning})` : ''}`}` : 'Result unavailable'),
         model.error && h('p', { role: 'alert' }, model.error),
@@ -494,7 +531,7 @@ window.__ModuleLoader__.load({
         model.entries.map((entry, index) => h(ReadEntry, { key: index, entry, kind: model.kind })),
         h('details', null, h('summary', null, 'Raw tool details'), h('pre', { tabIndex: 0 }, rawDetails(block) || 'No raw tool result is available yet.'), typeof inspect === 'function' && h('button', { type: 'button', onClick: inspect }, 'Inspect tool call')))
     }
-    return { inject: ['slots'], approvalModel, selectApproval, ApprovalPreview, NativeApprovalDetail, api, safeUrl, validScope, validStatus, rawDetails, phaseLabel, Scope, GrantCard, fieldValueModel, validFieldStatus, fieldResult, fieldPhase, fieldPhaseLabel, FieldChangeCard, READ_TOOLS, readWarnings, readCardModel, ReadCard,
+    return { inject: ['slots'], approvalModel, selectApproval, ApprovalPreview, NativeApprovalDetail, api, safeUrl, validScope, validStatus, rawDetails, phaseLabel, Scope, GrantCard, fieldValueModel, validFieldStatus, fieldResult, fieldPhase, fieldPhaseLabel, FieldChangeCard, READ_TOOLS, readWarnings, readCardModel, itemFieldModel, projectItemModel, ReadCard,
       apply(ctx) {
         // The optional native detail is a single seat, not a selector chain.
         // Unmatched requests retain RC2's command fallback and native reason.
