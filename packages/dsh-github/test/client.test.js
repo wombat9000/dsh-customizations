@@ -14,11 +14,12 @@ const scope = { account: { id: 'U_1', login: 'fixture' }, operations: ['setProje
   projects: [{ id: 'P_1', ownerId: 'U_1', owner: 'fixture', projectNumber: 2 }], memberships: [{ id: 'ITEM_1', issueId: 'I_1', projectId: 'P_1' }] }
 const status = { version: 1, toolName: 'github_request_issue_management', callId: 'call', phase: 'active', scope, grants: [{ id: 'grant', scope, state: 'active' }], history: [] }
 
-test('client owns only the grant tool key and returns the slot disposer', () => {
-  const { record, plugin } = load(), entries = [], disposer = () => {}
+test('client owns only grant and field tool keys and disposes both registrations', () => {
+  const { record, plugin } = load(), entries = [], disposed = []
   assert.equal(record.id, '@local/dsh-github')
-  plugin.apply({ slots: { inject(name, callback) { assert.equal(name, 'tool.call.toolview'); assert.equal(callback(), disposer) }, register(options, component) { entries.push(options); assert.equal(component, plugin.GrantCard); return disposer } } })
-  assert.deepEqual(JSON.parse(JSON.stringify(entries)), [{ name: 'tool.call.toolview', key: 'github_request_issue_management' }])
+  plugin.apply({ slots: { inject(name, callback) { assert.equal(name, 'tool.call.toolview'); callback()() }, register(options, component) { entries.push(options); assert.equal(component, options.key === 'github_request_issue_management' ? plugin.GrantCard : plugin.FieldChangeCard); return () => disposed.push(options.key) } } })
+  assert.deepEqual(JSON.parse(JSON.stringify(entries)), [{ name: 'tool.call.toolview', key: 'github_request_issue_management' }, { name: 'tool.call.toolview', key: 'github_set_project_item_field' }])
+  assert.deepEqual(disposed, ['github_set_project_item_field', 'github_request_issue_management'])
 })
 test('scope/status validation fails closed on malformed and mismatched data', () => {
   const { plugin } = load()

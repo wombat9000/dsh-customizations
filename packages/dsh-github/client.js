@@ -146,8 +146,104 @@ window.__ModuleLoader__.load({
         h('button', { type: 'button', disabled: busy, onClick: () => refresh() }, 'Refresh status'),
         h('details', null, h('summary', null, 'Raw tool details'), h('pre', { tabIndex: 0 }, raw || 'No raw tool result is available yet.'), typeof inspect === 'function' && h('button', { type: 'button', onClick: inspect }, 'Inspect tool call')))
     }
-    return { inject: ['slots'], api, safeUrl, validScope, validStatus, rawDetails, phaseLabel, Scope, GrantCard,
-      apply(ctx) { ctx.slots.inject('tool.call.toolview', () => ctx.slots.register({ name: 'tool.call.toolview', key: TOOL }, GrantCard)) },
+    const FIELD_TOOL = 'github_set_project_item_field'
+    const fieldKeys = { TEXT: 'text', NUMBER: 'number', DATE: 'date', SINGLE_SELECT: 'singleSelectOptionId', ITERATION: 'iterationId' }
+    function fieldValueModel(change, side) {
+      const missing = { available: false, label: side === 'before' ? 'Previous value unavailable' : 'Proposed value unavailable' }
+      if (!object(change?.field) || !id(change.field.id) || !Object.hasOwn(fieldKeys, change.field.dataType)) return missing
+      const value = change[side], type = change.field.dataType
+      if (side === 'before' && value === null) return { available: true, label: 'Not set' }
+      if (!object(value) || (side === 'before' && value.field && (value.field.id !== change.field.id || value.field.dataType && value.field.dataType !== type))) return missing
+      const key = side === 'before' && type === 'SINGLE_SELECT' ? 'optionId' : fieldKeys[type]
+      if (side === 'after' && (Object.keys(value).length !== 1 || !Object.hasOwn(value, key))) return missing
+      const leaf = value[key]
+      if (type === 'TEXT') return typeof leaf === 'string' ? { available: true, label: JSON.stringify(leaf) } : missing
+      if (type === 'NUMBER') return typeof leaf === 'number' && Number.isFinite(leaf) ? { available: true, label: String(leaf) } : missing
+      if (type === 'DATE') return typeof leaf === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(leaf) && !Number.isNaN(Date.parse(leaf)) && new Date(leaf).toISOString().slice(0, 10) === leaf ? { available: true, label: leaf } : missing
+      if (!id(leaf)) return missing
+      const selected = side === 'before' ? value : change.selectedOption?.id === leaf ? change.selectedOption : null
+      const friendly = text(type === 'SINGLE_SELECT' ? selected?.name : selected?.title)
+      return { available: true, label: friendly || leaf, identity: leaf, ...(type === 'ITERATION' && selected ? { detail: [text(selected.startDate), Number.isFinite(selected.duration) ? `${selected.duration} days` : ''].filter(Boolean).join(' · ') } : {}) }
+    }
+    function validFieldStatus(value, callId) {
+      if (!object(value) || value.version !== 1 || !id(value.phase)) return false
+      if (value.toolName === undefined && value.callId === undefined) return value.phase === 'expired' && value.change === undefined && value.targets === undefined
+      return value.toolName === FIELD_TOOL && value.callId === callId
+        && (value.exactPreview === undefined || typeof value.exactPreview === 'string')
+        && (value.change === undefined || object(value.change)) && (value.targets === undefined || object(value.targets))
+    }
+    function fieldResult(block) {
+      if (block?.kind !== 'tool-result' || !Array.isArray(block.content)) return undefined
+      const parts = block.content.filter(part => part?.type === 'text' && typeof part.text === 'string')
+      if (parts.length !== 1 || parts[0].text.length > 262144) return undefined
+      try { const value = JSON.parse(parts[0].text); return object(value) && value.host === 'github.com' && (value.operation === 'setProjectItemField' || value.operation === undefined && value.outcome === 'failed' && object(value.error)) && ['failed', 'confirmed', 'uncertain'].includes(value.outcome) ? value : undefined } catch { return undefined }
+    }
+    function fieldPhase(status, block, pending) {
+      const result = fieldResult(block), recorded = object(status?.result) ? status.result : undefined
+      if (result?.outcome === 'uncertain' || recorded?.outcome === 'uncertain' || status?.phase === 'uncertain' || block?.isError === true && (result?.outcome === 'confirmed' || status?.phase === 'confirmed')) return 'uncertain'
+      if (result?.outcome) return result.outcome
+      if (pending) return 'awaiting-approval'
+      if (block?.kind === 'tool-result' && !['confirmed', 'denied', 'failed', 'unattempted'].includes(status?.phase)) return 'unknown'
+      return status?.phase ?? 'unknown'
+    }
+    function fieldPhaseLabel(phase) {
+      return ({ prepared: 'Proposed change prepared', preparing: 'Preparing change', approved: 'Approved — write not yet confirmed', 'authorized-by-grant': 'Authorized by session grant — write not yet confirmed', running: 'Running — write not yet confirmed', 'awaiting-approval': 'Awaiting approval', denied: 'Denied — not executed', unattempted: 'Not executed', failed: 'Failed before execution', confirmed: 'GitHub confirmed the update', uncertain: 'Outcome uncertain — the write may have succeeded', expired: 'Prepared details expired — outcome unknown' })[phase] ?? 'Outcome unknown — no success is inferred'
+    }
+    function FieldChangeCard({ sessionId, callId, block, inspect, useSessionPendingInteraction, request = api }) {
+      const pending = typeof useSessionPendingInteraction === 'function' ? useSessionPendingInteraction(map => {
+        const value = map.get(sessionId)
+        return value?.kind === 'approval' && value.callId === callId && value.toolName === FIELD_TOOL ? value : undefined
+      }) : undefined
+      const [loaded, setLoaded] = React.useState(null), [error, setError] = React.useState('')
+      const generation = React.useRef(0)
+      const status = loaded?.sessionId === sessionId && loaded?.callId === callId ? loaded.value : null
+      React.useEffect(() => {
+        const token = ++generation.current, controller = new AbortController()
+        let timer, failures = 0
+        setLoaded(null); setError('')
+        async function load() {
+          if (generation.current !== token) return
+          try {
+            const value = await request('status', { sessionId, callId }, controller.signal)
+            if (generation.current !== token) return
+            if (!validFieldStatus(value, callId)) throw new Error('Invalid prepared change')
+            setLoaded({ sessionId, callId, value }); setError(''); failures = 0
+            if (['preparing', 'prepared', 'approved', 'authorized-by-grant', 'running', 'awaiting-approval'].includes(value.phase)) timer = setTimeout(load, 1500)
+          } catch {
+            if (generation.current !== token || controller.signal.aborted) return
+            setLoaded(null); setError('Prepared change details are unavailable. See the native approval preview and raw tool details; no previous value or outcome is inferred.')
+            if (++failures <= 3) timer = setTimeout(load, 1500)
+          }
+        }
+        void load()
+        return () => { generation.current++; controller.abort(); clearTimeout(timer) }
+      }, [sessionId, callId, request, pending?.key, block?.kind])
+      const change = status?.change, field = change?.field, project = status?.targets?.project, item = status?.targets?.item
+      const content = item?.content, before = fieldValueModel(change, 'before'), after = fieldValueModel(change, 'after')
+      const phase = fieldPhase(status, block, pending), result = fieldResult(block) ?? status?.result
+      const target = content?.__typename === 'Issue' ? `Issue #${content.number ?? content.id ?? 'unknown'}` : content?.__typename === 'PullRequest' ? `Pull request #${content.number ?? content.id ?? 'unknown'}` : content?.__typename === 'DraftIssue' ? `Draft issue ${text(content.id)}` : `Item ${text(item?.id) || 'unavailable'}`
+      const exact = pending?.reason ?? status?.exactPreview
+      return h('section', { className: 'gh-grant', 'aria-label': 'GitHub project field change' }, h('style', null, css),
+        h('h3', null, 'GitHub · Project field change'), h('p', { role: 'status' }, fieldPhaseLabel(phase)),
+        error && h('p', { role: 'alert' }, error),
+        h('p', null, h(Link, { url: content?.url }, `${target}${text(content?.title) ? ` — ${content.title}` : ''}`)),
+        h('p', null, h(Link, { url: project?.url }, text(project?.title) || `Project ${project?.number ?? (text(project?.id) || 'unavailable')}`)),
+        h('p', null, h('strong', null, text(field?.name) || `Field ${text(field?.id) || 'unavailable'}`)),
+        h('small', null, `Project ID: ${text(project?.id) || 'unavailable'}; Item ID: ${text(item?.id) || 'unavailable'}; Field ID: ${text(field?.id) || 'unavailable'}`),
+        h('p', { className: 'gh-note' }, 'Prepared change (not a fresh read of the field):'),
+        h('pre', { tabIndex: 0, 'aria-label': 'Prepared before and after values' }, before.available && after.available ? `${before.label} → ${after.label}` : `Before: ${before.label}\nAfter: ${after.label}`),
+        [before, after].map((value, index) => value.identity && h('small', { key: index }, `${index ? 'After' : 'Before'} ID: ${value.identity}${value.detail ? `; ${value.detail}` : ''}`)),
+        pending && h('p', null, 'The native approval panel keeps the complete exact preview and Allow once / Reject controls. Approval is not confirmation that this write succeeded.'),
+        phase === 'uncertain' && h('p', { role: 'alert' }, 'Do not retry automatically. Inspect the explicit GitHub targets before requesting a fresh change. No rollback is implied.'),
+        typeof result?.message === 'string' && h('p', null, result.message), typeof result?.cleanupWarning === 'string' && h('p', { role: 'alert' }, result.cleanupWarning),
+        exact && h('details', null, h('summary', null, 'Complete exact approval preview'), h('pre', { tabIndex: 0 }, exact)),
+        h('details', null, h('summary', null, 'Raw tool details'), h('pre', { tabIndex: 0 }, rawDetails(block) || 'No raw tool result is available yet.'), typeof inspect === 'function' && h('button', { type: 'button', onClick: inspect }, 'Inspect tool call')))
+    }
+    return { inject: ['slots'], api, safeUrl, validScope, validStatus, rawDetails, phaseLabel, Scope, GrantCard, fieldValueModel, validFieldStatus, fieldResult, fieldPhase, fieldPhaseLabel, FieldChangeCard,
+      apply(ctx) { ctx.slots.inject('tool.call.toolview', () => {
+        const disposers = [ctx.slots.register({ name: 'tool.call.toolview', key: TOOL }, GrantCard), ctx.slots.register({ name: 'tool.call.toolview', key: FIELD_TOOL }, FieldChangeCard)]
+        return () => { for (const dispose of disposers.toReversed()) dispose() }
+      }) },
     }
   },
 })

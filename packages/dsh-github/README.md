@@ -90,6 +90,16 @@ Field writes use IDs, not fuzzy name matching. Supported values are text, finite
 
 The bundle does not persist planning state or workspace mappings, dispatch agents, close/delete resources, edit existing issue specifications, remove dependencies, or configure project fields/views/workflows. Product mode is a separate preset; these tools do not implement its planning behavior.
 
+## Project-field change card
+
+`github_set_project_item_field` has a conversation card with the verified project, item, field, and prepared before → after values. It supports text, number, date, single-select, and iteration fields. Missing names fall back to stable IDs; an absent previous value is not treated as an empty value. Issue, pull request, and draft content are labelled separately.
+
+The card reads a bounded session-and-call-scoped presentation record captured from the immutable backend preparation. It makes no additional GitHub request and does not reconstruct previous values from tool arguments. The existing native approval controls and complete exact preview remain accessible. The bridge does not change the approved payload, model-facing output, or mutation behavior.
+
+Approval is not confirmation of success. The card distinguishes preparation, approval, running, denial, failure before dispatch, confirmed updates, and uncertain outcomes when evidence is available. Unknown data never becomes success. Uncertain writes retain their warnings and have no retry action. Other write-tool cards keep their existing presentation.
+
+The record expires on session/service unload or cache eviction. After restoration, the original tool result can still establish its reported outcome, but missing prepared details remain unavailable. Raw tool details are always accessible. This cache is informational and cannot authorize a write.
+
 ## Session issue-management grants
 
 Use `github_request_issue_management` to request a finite scope:
