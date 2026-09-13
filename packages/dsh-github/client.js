@@ -501,6 +501,13 @@ window.__ModuleLoader__.load({
           h(TextSection, { title: 'Item description', value: entry.content?.body }),
           h('details', null, h('summary', null, 'Technical details'), h('pre', { tabIndex: 0 }, JSON.stringify(entry, null, 2)))))
     }
+    const issueCss = `.gh-grant.gh-issues{container-type:inline-size}.gh-grant .gh-issue{padding:8px 0;min-width:0}.gh-grant .gh-issue-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px 16px}.gh-grant .gh-issue-head h4{margin:0;min-width:0}.gh-grant .gh-issue-state{font-size:12px;border:1px solid var(--dsw-alias-border-standard,#8885);border-radius:12px;padding:1px 8px;flex-shrink:0}.gh-grant .gh-issue p{margin:4px 0}@container(max-width:500px){.gh-grant .gh-issue-head{flex-direction:column;gap:4px}}`
+    function IssueRow({ entry, sharedRepository }) {
+      const state = entry.state === 'OPEN' ? 'Open' : entry.state === 'CLOSED' ? 'Closed' : 'Unknown'
+      return h('section', { className: 'gh-issue' },
+        h('div', { className: 'gh-issue-head' }, h('h4', null, h(Link, { url: entry.url }, `#${entry.number} — ${entry.title}`)), h('span', { className: 'gh-issue-state', 'aria-label': `Issue state: ${state}` }, `Issue: ${state}`)),
+        !sharedRepository && h('small', null, text(entry.repository?.nameWithOwner) || 'Repository unavailable'))
+    }
     function ReadEntry({ entry, kind }) {
       if (kind === 'items') return h(ProjectItem, { entry })
       const project = kind === 'projects'
@@ -520,7 +527,10 @@ window.__ModuleLoader__.load({
     }
     function ReadCard({ toolName, block, inspect }) {
       const model = readCardModel(toolName, block)
-      return h('section', { className: `gh-grant${model.kind === 'items' ? ' gh-items' : ''}`, 'aria-label': `GitHub ${model.title}` }, h('style', null, css, model.kind === 'items' ? itemCss : ''),
+      const issueList = model.kind === 'issues' && !model.singular
+      const repositories = model.entries.map(entry => text(entry.repository?.nameWithOwner))
+      const sharedRepository = repositories.length && repositories[0] && repositories.every(name => name === repositories[0]) ? repositories[0] : ''
+      return h('section', { className: `gh-grant${model.kind === 'items' ? ' gh-items' : issueList ? ' gh-issues' : ''}`, 'aria-label': `GitHub ${model.title}` }, h('style', null, css, model.kind === 'items' ? itemCss : issueList ? issueCss : ''),
         model.kind === 'items' && h('small', null, 'Historical tool result · no automatic refresh'),
         h('h3', null, `GitHub · ${model.title}`),
         h('p', { role: 'status' }, model.state === 'running' ? 'Reading…' : model.state === 'returned' ? `${model.returnedCount} ${model.singular ? 'entry' : 'entries'} returned${model.total === undefined ? '' : `; ${model.total} total reported${model.totalMeaning ? ` (${model.totalMeaning})` : ''}`}` : 'Result unavailable'),
@@ -528,7 +538,8 @@ window.__ModuleLoader__.load({
         model.warnings.map((warning, index) => h('p', { key: index, role: 'note' }, warning)),
         model.templateOnly && h('p', null, `Template filtering applies only to this page${Number.isSafeInteger(model.scannedCount) ? `; ${model.scannedCount} projects scanned` : ''}. An empty page does not imply no templates exist.`),
         model.state === 'returned' && model.entries.length === 0 && h('p', null, 'No entries returned on this page.'),
-        model.entries.map((entry, index) => h(ReadEntry, { key: index, entry, kind: model.kind })),
+        issueList && sharedRepository && h('p', { className: 'gh-note' }, sharedRepository),
+        model.entries.map((entry, index) => issueList ? h(IssueRow, { key: index, entry, sharedRepository }) : h(ReadEntry, { key: index, entry, kind: model.kind })),
         h('details', null, h('summary', null, 'Raw tool details'), h('pre', { tabIndex: 0 }, rawDetails(block) || 'No raw tool result is available yet.'), typeof inspect === 'function' && h('button', { type: 'button', onClick: inspect }, 'Inspect tool call')))
     }
     return { inject: ['slots'], approvalModel, selectApproval, ApprovalPreview, NativeApprovalDetail, api, safeUrl, validScope, validStatus, rawDetails, phaseLabel, Scope, GrantCard, fieldValueModel, validFieldStatus, fieldResult, fieldPhase, fieldPhaseLabel, FieldChangeCard, READ_TOOLS, readWarnings, readCardModel, itemFieldModel, projectItemModel, ReadCard,
