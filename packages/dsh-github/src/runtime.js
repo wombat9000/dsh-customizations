@@ -251,7 +251,10 @@ export function createGitHubRuntime(subprocess, config = {}) {
     if (operation === 'connectionStatus') {
       try {
         const data = await graphql(operation, {}, exec)
-        if (typeof data.viewer?.login !== 'string') fail('INVALID_RESPONSE')
+        if (typeof data.viewer?.id !== 'string' || !/^[A-Za-z0-9_=-]{1,256}$/.test(data.viewer.id) || typeof data.viewer.login !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9-]{0,99}$/.test(data.viewer.login)) fail('INVALID_RESPONSE')
+        // Authentication observations invalidate grants independently of the
+        // caller's authority; a child or read-only call cannot create access.
+        config.onAccount?.({ id: data.viewer.id, login: data.viewer.login })
         return boundedResult({ cliAvailable: true, authenticated: true, account: data.viewer.login, permissions: { tokenScopes: 'unknown', writeAccess: 'unknown' } }, outputConfig)
       } catch (error) {
         if (!(error instanceof GitHubError) || ['CANCELLED', 'TIMEOUT'].includes(error.code)) throw error

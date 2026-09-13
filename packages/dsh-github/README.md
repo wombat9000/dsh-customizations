@@ -1,6 +1,6 @@
 # GitHub tools
 
-This host bundle adds eleven read tools and seven individually approved write tools to every DSH session, independent of preset. It targets DSH `0.1.5-rc.1` and `github.com`. It uses the GitHub CLI already available through DSH’s managed subprocess backend; it adds no SDK, login flow, credential store, or client UI.
+This bundle adds eleven read tools, seven write tools, and a session issue-management grant request to every DSH session, independent of preset. Writes require individual approval unless a live grant covers a supported field update or dependency addition. It targets DSH `0.1.5-rc.1` and `github.com`. It uses the GitHub CLI already available through DSH’s managed subprocess backend; it adds no SDK, login flow, or credential store. The Web conversation card shows grant scope, revocation, and recent change outcomes.
 
 ## Access and execution
 
@@ -71,7 +71,7 @@ Write inputs use the same explicit project/repository identities as reads:
 - `github_set_project_item_field`: `owner`, `projectNumber`, `itemId`, `fieldId`, and a `value` object with exactly one of `text`, `number`, `date`, `singleSelectOptionId`, or `iterationId`.
 - `github_add_issue_dependency`: `owner`, `repo`, `issueNumber`, `blockingOwner`, `blockingRepo`, and `blockingIssueNumber`. The first issue is blocked by the second.
 
-These tools do not grant standing write authority. Each call resolves explicit destinations, prepares an immutable payload, and asks through DSH’s approval pipeline. The preview includes the full proposed content or before/after change as serialized JSON. Escapes distinguish control characters and whitespace in the plain-text approval panel; the payload retains the approved original text. Titles are bounded to 256 characters, descriptions to 1,024, and issue bodies/README/text values to 20,000. The complete preview must also fit within 64 KiB. Credential-looking content fails closed rather than being silently rewritten. Denied or unavailable approval grants nothing. Changed arguments, caller context, or detected remote-state conflicts require a new call and approval. Direct execution without preparation and approval fails closed.
+Without a matching session grant, each write resolves explicit destinations, prepares an immutable payload, and asks through DSH’s approval pipeline. Matching grants skip only this bundle’s redundant approval prompt; other policy guards still apply. The preview includes the full proposed content or before/after change as serialized JSON. Escapes distinguish control characters and whitespace in the plain-text approval panel; the payload retains the approved original text. Titles are bounded to 256 characters, descriptions to 1,024, and issue bodies/README/text values to 20,000. The complete preview must also fit within 64 KiB. Credential-looking content fails closed rather than being silently rewritten. Denied or unavailable approval grants nothing. Changed arguments, caller context, or detected remote-state conflicts require a new call and approval. Direct execution without preparation and approval fails closed.
 
 Project creation and project text updates are separate calls. A project template is selected independently of the destination owner. Draft copying is explicit and defaults off; copying a template does not copy its ordinary issue/PR items, collaborators, or repository links. GitHub copies views, custom fields, and supported project configuration; see [GitHub’s project-copy documentation](https://docs.github.com/en/issues/planning-and-tracking-with-projects/creating-projects/copying-an-existing-project). The plugin does not configure those views or workflows itself.
 
@@ -89,6 +89,35 @@ Field writes use IDs, not fuzzy name matching. Supported values are text, finite
 - Existing links, project memberships (including archived items), dependencies, and unchanged field values are reported without another mutation. Closed projects and known insufficient permissions fail before approval.
 
 The bundle does not persist planning state or workspace mappings, dispatch agents, close/delete resources, edit existing issue specifications, remove dependencies, or configure project fields/views/workflows. Product mode is a separate preset; these tools do not implement its planning behavior.
+
+## Session issue-management grants
+
+Use `github_request_issue_management` to request a finite scope:
+
+```json
+{
+  "issues": [
+    { "owner": "acme", "repo": "example", "issueNumber": 12 },
+    { "owner": "acme", "repo": "example", "issueNumber": 13 }
+  ],
+  "projects": [{ "owner": "acme", "projectNumber": 4 }],
+  "operations": ["setProjectItemField", "addIssueDependency"]
+}
+```
+
+The request accepts 1–50 issues and at most 20 projects, with no wildcards. Select operations explicitly. Field updates require a selected project and an existing, non-archived membership; dependency addition requires both endpoints in the selected issues. The backend resolves and binds immutable account, repository, owner, issue, project, and membership identities. Friendly names and links supplement these identities.
+
+Review **Manage selected issues for this session** and use DSH’s existing **Allow once** or **Reject** controls. The complete readable scope appears in the native approval reason and the card. Approval does not start work, synchronize a board, or dispatch agents. Denied, unavailable, cancelled, or stale approval creates no access.
+
+The grant covers only the two existing supported operations. Issue title/body editing, labels, assignees, closing/reopening, and dependency removal remain unavailable. Deletion, transfer, creation, out-of-scope issues, project/repository configuration, and automatic project membership changes are excluded. Other supported writes retain exact-call approval.
+
+Grants belong to the exact live top-level session object. They do not transfer to subagents or restored sessions. Session unload, service disposal, host restart, and observed account changes invalidate authority. Every covered dispatch rechecks the live grant after queueing and executable resolution. GitHub account identity is observed during preflight, not through a background credential watcher; an unobserved external account change and reversal cannot be detected. Remote checks are not atomic with the GitHub mutation.
+
+Use **Revoke access** in the grant card to prevent future dispatch. Revocation cannot undo already-dispatched writes. An uncertain dispatched outcome marks active grants **Renewal required**; inspect GitHub before requesting fresh approval. The card never provides retry, approve, or automatic renewal actions.
+
+The session retains up to 50 grant records and 200 recent attempted changes in memory. A visible warning identifies truncated history. Outcomes distinguish unattempted, failed before dispatch, confirmed, and uncertain changes. The card’s presentation cache retains 100 calls per session. Evicted or restored cards show expired/unavailable data and require a fresh request; neither browser data nor saved tool results restore authority. Native approval audit and ordinary tool results remain in conversation history, but the recent-change list is not a durable recovery ledger.
+
+The browser bridge exposes only status and revocation, with same-origin, loopback, strict input, and no-store checks. It makes no GitHub requests and cannot approve or execute a mutation. Tools without a grant keep their existing behavior. Source changes require an approved profile update and restart before they affect the running GUI.
 
 ## Packaging and validation
 

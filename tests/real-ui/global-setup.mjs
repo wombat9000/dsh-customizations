@@ -11,6 +11,7 @@ const root = resolve(import.meta.dirname, '../..')
 const plugins = [
   { name: '@wombat9000/dsh-session-recap', directory: 'packages/dsh-session-recap' },
   { name: '@local/dsh-worktree', directory: 'packages/dsh-worktree' },
+  { name: '@local/dsh-github', directory: 'packages/dsh-github' },
 ]
 
 export async function waitForFixture(workspace, timeoutMs = 10000) {
@@ -69,6 +70,7 @@ export async function startDisposableHost({ additionalPlugins = [], profilePatch
     const fixture = join(profile, 'node_modules', 'dsh-visual-fixture')
     await mkdir(fixture, { recursive: true })
     await copyFile(join(root, 'tests/real-ui/session-fixture.mjs'), join(fixture, 'index.mjs'))
+    await copyFile(join(root, 'tests/real-ui/github-grants-fixture.mjs'), join(fixture, 'github-grants-fixture.mjs'))
     await writeFile(join(fixture, 'package.json'), JSON.stringify({ name: 'dsh-visual-fixture', type: 'module', main: 'index.mjs', dsh: { bundle: { patch: 'cordis.patch.yml' } } }))
     await writeFile(join(fixture, 'cordis.patch.yml'), '- insert:\n    - id: visual-fixture\n      name: dsh-visual-fixture\n')
     await writeFile(join(profile, 'package.json'), JSON.stringify({

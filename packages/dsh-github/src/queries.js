@@ -23,7 +23,7 @@ const values = `nodes { __typename
 const item = `id type isArchived createdAt updatedAt project { id } content { __typename ... on Issue { ${ISSUE} } ... on PullRequest { id number title url state repository { nameWithOwner } } ... on DraftIssue { id title body } } fieldValues(first:$fieldValuesLimit,after:$fieldValuesCursor) { ${values} }`
 const ownerProject = selection => `repositoryOwner(login:$owner) { ... on User { projectV2(number:$projectNumber) { ${selection} } } ... on Organization { projectV2(number:$projectNumber) { ${selection} } } }`
 export const QUERIES = Object.freeze({
- connectionStatus: 'query { viewer { login } }',
+ connectionStatus: 'query { viewer { id login } }',
  getRepository: `query($owner:String!,$repo:String!) { repository(owner:$owner,name:$repo) { ${REPOSITORY} } }`,
  listRepositories: `query($owner:String!,$limit:Int!,$cursor:String) { repositoryOwner(login:$owner) { repositories(first:$limit,after:$cursor,orderBy:{field:UPDATED_AT,direction:DESC}) { nodes { ${REPOSITORY} } ${PAGE} } } }`,
  listProjects: `query($owner:String!,$limit:Int!,$cursor:String) { repositoryOwner(login:$owner) { ... on User { projectsV2(first:$limit,after:$cursor) { nodes { ${PROJECT} } ${PAGE} } } ... on Organization { projectsV2(first:$limit,after:$cursor) { nodes { ${PROJECT} } ${PAGE} } } } }`,

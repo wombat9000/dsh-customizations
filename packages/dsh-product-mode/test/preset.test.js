@@ -13,7 +13,7 @@ const githubNames = [
   'list_projects', 'get_project', 'list_project_items', 'list_issues', 'search_issues',
   'get_issue', 'get_issue_comments', 'create_project', 'update_project',
   'link_project_repository', 'create_issue', 'add_project_item', 'set_project_item_field',
-  'add_issue_dependency',
+  'add_issue_dependency', 'request_issue_management',
 ].map(name => `github_${name}`).sort()
 
 test('published composition-only package discovers independently and final recipe retains all three custom roots', async t => {
@@ -74,7 +74,7 @@ test('Product mode preserves exact Standard tool rows, configurations, nesting, 
   assert.equal(await readFile(join(presetRoot, presetId, 'LICENSE.standard'), 'utf8'), await readFile(join(dirname(SHIPPED_PRESET_ROOT), 'LICENSE'), 'utf8'))
 })
 
-test('real Standard and Product standing mounts share eighteen global GitHub tools without any CLI or planning writes', { timeout: 15000 }, async t => {
+test('real Standard and Product standing mounts share nineteen global GitHub tools without any CLI or planning writes', { timeout: 15000 }, async t => {
   const f = await fixture(t)
   await mkdir(join(f.directory, '.git'))
   const setupPath = join(f.directory, '.agents/skills/repository-setup/SKILL.md')

@@ -3,7 +3,7 @@ const actor = 'viewer { id login }'
 const page = 'pageInfo { hasNextPage endCursor }'
 const repo = 'id nameWithOwner url isArchived isDisabled hasIssuesEnabled viewerCanCreateIssues viewerPermission'
 const project = 'id number title url shortDescription readme updatedAt template public closed viewerCanUpdate owner { ... on User { id login } ... on Organization { id login } }'
-const issue = 'id number title url updatedAt viewerCanUpdate repository { id nameWithOwner url }'
+const issue = 'id number title url updatedAt viewerCanUpdate repository { id nameWithOwner url owner { id login } }'
 const fieldIdentity = '... on ProjectV2FieldCommon { id name dataType }'
 const fieldDefinitions = `fields(first:100) { nodes { __typename ${fieldIdentity} ... on ProjectV2Field { isIssueField } ... on ProjectV2SingleSelectField { isIssueField options { id name color description } } ... on ProjectV2IterationField { configuration { duration startDay iterations { id title startDate duration } completedIterations { id title startDate duration } } } } ${page} }`
 const fieldValues = `fieldValues(first:100) { nodes { __typename ... on ProjectV2ItemFieldTextValue { text field { ${fieldIdentity} } } ... on ProjectV2ItemFieldNumberValue { number field { ${fieldIdentity} } } ... on ProjectV2ItemFieldDateValue { date field { ${fieldIdentity} } } ... on ProjectV2ItemFieldSingleSelectValue { optionId name field { ${fieldIdentity} } } ... on ProjectV2ItemFieldIterationValue { iterationId title startDate duration field { ${fieldIdentity} } } } ${page} }`
@@ -16,8 +16,13 @@ export const WRITE_READS = Object.freeze({
  linkProjectRepository: `query($owner:String!,$projectNumber:Int!,$repositoryOwner:String!,$repo:String!) { ${actor} ${projectOwner(`${project} repositories(first:100) { nodes { id nameWithOwner url } ${page} }`)} repository(owner:$repositoryOwner,name:$repo) { ${repo} } }`,
  createIssue: `query($owner:String!,$repo:String!) { ${actor} repository(owner:$owner,name:$repo) { ${repo} } }`,
  addProjectItem: `query($owner:String!,$projectNumber:Int!,$repositoryOwner:String!,$repo:String!,$issueNumber:Int!) { ${actor} ${projectOwner()} repository(owner:$repositoryOwner,name:$repo) { id nameWithOwner url issue(number:$issueNumber) { ${issue} projectItems(first:100,includeArchived:true) { nodes { id project { id } } ${page} } } } }`,
- setProjectItemField: `query($owner:String!,$projectNumber:Int!,$itemId:ID!) { ${actor} ${projectOwner(`${project} ${fieldDefinitions}`)} node(id:$itemId) { ... on ProjectV2Item { id updatedAt isArchived project { id } content { __typename ... on Issue { id number title url } ... on PullRequest { id number title url } ... on DraftIssue { id title } } ${fieldValues} } } }`,
+ setProjectItemField: `query($owner:String!,$projectNumber:Int!,$itemId:ID!) { ${actor} ${projectOwner(`${project} ${fieldDefinitions}`)} node(id:$itemId) { ... on ProjectV2Item { id updatedAt isArchived project { id } content { __typename ... on Issue { id number title url repository { id nameWithOwner url owner { id login } } } ... on PullRequest { id number title url } ... on DraftIssue { id title } } ${fieldValues} } } }`,
  addIssueDependency: `query($owner:String!,$repo:String!,$issueNumber:Int!,$blockingOwner:String!,$blockingRepo:String!,$blockingIssueNumber:Int!) { ${actor} repository(owner:$owner,name:$repo) { id nameWithOwner url issue(number:$issueNumber) { ${issue} blockedBy(first:100) { nodes { id number title url } ${page} } } } blockingRepository:repository(owner:$blockingOwner,name:$blockingRepo) { id nameWithOwner url issue(number:$blockingIssueNumber) { ${issue} } } }`,
+})
+// Grant resolution uses the same managed, bounded GraphQL transport as write preflight.
+export const GRANT_READS = Object.freeze({
+  issue: `query($owner:String!,$repo:String!,$issueNumber:Int!) { ${actor} repository(owner:$owner,name:$repo) { id nameWithOwner url owner { id login } issue(number:$issueNumber) { ${issue} projectItems(first:100,includeArchived:true) { nodes { id isArchived project { id number owner { ... on User { id login } ... on Organization { id login } } } } ${page} } } } }`,
+  project: `query($owner:String!,$projectNumber:Int!) { ${actor} ${projectOwner()} }`,
 })
 export const MUTATIONS = Object.freeze({
  createProject: `mutation($input:CreateProjectV2Input!) { createProjectV2(input:$input) { projectV2 { ${resultProject} } } }`,
