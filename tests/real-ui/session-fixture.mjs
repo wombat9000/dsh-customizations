@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { registerApprovalFixture, approvalCommandSeed, commandWorkspace } from './github-approval-fixture.mjs'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { githubSessionSeed, githubWorkspaceName } from './github-grants-fixture.mjs'
+import { githubItemsSeed, githubItemsWorkspace } from './github-items-fixture.mjs'
 import { githubFieldSessionSeed, githubFieldWorkspaceName } from './github-field-fixture.mjs'
 import { join } from 'node:path'
 
@@ -15,6 +16,10 @@ export async function apply(ctx) {
   await persistSession(ctx, ctx.sessions.prepare(command.id, command.options))
   const id = await seedSession(ctx)
   await seedGitHubSession(ctx)
+  const itemsCwd = join(process.cwd(), '..', githubItemsWorkspace)
+  await mkdir(itemsCwd, { recursive: true })
+  const items = githubItemsSeed(itemsCwd)
+  await persistSession(ctx, ctx.sessions.prepare(items.id, items.options))
   const fieldCwd = join(process.cwd(), '..', githubFieldWorkspaceName)
   await mkdir(fieldCwd, { recursive: true })
   const field = githubFieldSessionSeed(fieldCwd)

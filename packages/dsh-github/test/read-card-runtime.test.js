@@ -79,6 +79,6 @@ test('issue state and project Status stay distinct even when their values confli
   const result = wrap(connection([{ ...projectItem, content: { ...projectItem.content, state: 'CLOSED' }, fieldValues: connection([{ name: 'In Progress', optionId: 'O', field: { id: 'F', name: 'Status', dataType: 'SINGLE_SELECT' } }]) }]))
   const rendered = html('github_list_project_items', result)
   assert.match(rendered, /Issue state: CLOSED/)
-  assert.match(rendered, /Board field Status/)
+  assert.match(rendered, /Board status: In Progress/)
   assert.match(rendered, /In Progress/)
 })

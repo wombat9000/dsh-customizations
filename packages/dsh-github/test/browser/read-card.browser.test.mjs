@@ -44,7 +44,7 @@ test.each([
 test('issue state remains separate from board Status and single item continuation is supported', async () => {
   await mount('github_list_project_items', { ...projectItem, content: { ...projectItem.content, state: 'CLOSED' } })
   expect(container.textContent).toContain('Issue state: CLOSED')
-  expect(container.textContent).toContain('Board field Status: Ready')
+  expect(container.textContent).toContain('Board status: Ready')
   expect(container.textContent).toContain('fieldValues.nodes[1].labels')
   expect(container.querySelectorAll('[role="note"]:not(details *)').length).toBeGreaterThan(0)
 })
