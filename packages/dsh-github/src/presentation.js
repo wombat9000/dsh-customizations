@@ -45,7 +45,7 @@ export function createGitHubPresentation({ agents, grants, caller }) {
   }
   function settled(exec, value) {
     if (exec.name !== FIELD_TOOL_NAME) return
-    const result = { ...pick(value, ['host', 'operation', 'outcome', 'message', 'backendFenced', 'cleanupWarning']),
+    const result = { ...pick(value, ['host', 'operation', 'outcome', 'dispatched', 'reason', 'message', 'backendFenced', 'cleanupWarning']),
       ...(value.error ? { error: pick(value.error, ['code', 'message']) } : {}) }
     const state = records(exec.agent)
     const item = state?.get(exec.callId)

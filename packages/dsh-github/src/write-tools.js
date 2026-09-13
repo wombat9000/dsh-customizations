@@ -38,8 +38,9 @@ export function registerGitHubWriteTools(ctx, runtime, { grants, grantCaller, pr
       throw error
     }
     if (!active || exec.signal?.aborted) return { kind: 'deny', reason: 'GitHub write preparation was cancelled or unloaded.' }
-    const permit = eligible ? grants.check(value, owner) : null
-    const history = eligible ? grants.attempt(value, owner) : null
+    const noChange = operation === 'setProjectItemField' && value.change?.noChange === true
+    const permit = eligible && !noChange ? grants.check(value, owner) : null
+    const history = eligible && !noChange ? grants.attempt(value, owner) : null
     const entry = { value, agent: exec.agent, session: exec.agent.session, args: canonical(exec.arguments), operation, permit, history }
     presentation?.prepared(exec, value, permit ? 'authorized-by-grant' : 'prepared')
     preparations.set(exec.token, entry)
@@ -47,8 +48,8 @@ export function registerGitHubWriteTools(ctx, runtime, { grants, grantCaller, pr
       const downstream = await next()
       if (downstream.kind === 'deny') { presentation?.phase(exec, 'denied'); preparations.delete(exec.token); return downstream }
       if (!active) { presentation?.phase(exec, 'unattempted'); preparations.delete(exec.token); return { kind: 'deny', reason: 'GitHub write tools were unloaded.' } }
-      // A live scoped grant replaces only this plugin's one-shot ask, never another guard.
-      if (permit && downstream.kind !== 'ask') return downstream
+      // A live grant or verified no-op skips only this plugin's ask, never another guard.
+      if ((permit || noChange) && downstream.kind !== 'ask') return downstream
       // Preserve the complete exact preview when this or another policy asks.
       presentation?.phase(exec, 'prepared')
       return { kind: 'ask', reason: value.preview + (downstream.kind === 'ask' && downstream.reason ? `\nAdditional policy reason (untrusted JSON string): ${JSON.stringify(downstream.reason)}` : '') }

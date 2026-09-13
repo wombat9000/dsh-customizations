@@ -50,8 +50,25 @@ test('explicit uncertainty wins over confirmation; approval never becomes confir
   assert.equal(plugin.fieldPhase({ phase: 'running' }, result('confirmed')), 'confirmed')
   assert.equal(plugin.fieldPhase(undefined, { kind: 'tool-result', isError: false, content: [{ type: 'text', text: 'not JSON' }] }), 'unknown')
 })
+test('no-change requires its structured reason and explicit no-dispatch evidence', () => {
+  const block = payload => ({ kind: 'tool-result', content: [{ type: 'text', text: JSON.stringify(payload) }] })
+  const value = { host: 'github.com', operation: 'setProjectItemField', outcome: 'no-change', dispatched: false, reason: 'FIELD_VALUE_ALREADY_SET' }
+  assert.equal(plugin.fieldPhase(null, block(value)), 'no-change')
+  assert.equal(plugin.fieldPhase({ result: value, phase: 'no-change' }, {}), 'no-change')
+  assert.equal(plugin.fieldPhase(null, { ...block(value), isError: true }), 'failed')
+  for (const invalid of [{ ...value, reason: undefined }, { ...value, dispatched: undefined }, { ...value, dispatched: true }, { ...value, reason: 'already exists' }]) {
+    assert.equal(plugin.fieldResult(block(invalid)), undefined)
+    assert.equal(plugin.fieldPhase({ phase: 'no-change', result: invalid }, block(invalid)), 'unknown')
+  }
+  assert.equal(plugin.fieldPhase(null, { kind: 'tool-result', isError: true, content: [{ type: 'text', text: 'Error: The requested relationship or value already exists. No mutation was dispatched.' }] }), 'failed')
+  assert.equal(plugin.fieldPhaseLabel('failed'), 'Field change failed')
+})
 test('malformed or foreign result envelopes never imply success', () => {
   for (const payload of [{ outcome: 'confirmed' }, { host: 'github.com', operation: 'createIssue', outcome: 'confirmed' }, { host: 'github.com', outcome: 'confirmed' }]) assert.equal(plugin.fieldResult({ kind: 'tool-result', content: [{ type: 'text', text: JSON.stringify(payload) }] }), undefined)
+  const malformed = { kind: 'tool-result', content: [{ type: 'text', text: 'malformed' }] }
+  assert.equal(plugin.fieldPhase({ phase: 'confirmed' }, malformed), 'unknown')
+  assert.equal(plugin.fieldPhase({ phase: 'confirmed', result: { outcome: 'confirmed' } }, malformed), 'unknown')
+  assert.equal(plugin.fieldPhase({ phase: 'confirmed', result: { host: 'github.com', operation: 'setProjectItemField', outcome: 'confirmed' } }, malformed), 'confirmed')
   assert.equal(plugin.fieldResult(result('confirmed')).outcome, 'confirmed')
   assert.equal(plugin.fieldResult({ kind: 'tool-result', content: [{ type: 'text', text: JSON.stringify({ host: 'github.com', outcome: 'failed', error: { code: 'CONFLICT' } }) }] }).outcome, 'failed')
 })
