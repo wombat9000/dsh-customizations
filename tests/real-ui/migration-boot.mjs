@@ -15,6 +15,7 @@ const cleanup = await startDisposableHost({
     { name: '@local/dsh-linear', directory: 'packages/dsh-linear' },
     { name: '@local/dsh-tool-youtube', directory: 'packages/dsh-tool-youtube' },
     { name: '@local/dsh-tool-trivy', directory: 'packages/dsh-tool-trivy' },
+    { name: '@local/dsh-tool-imagegen', directory: 'packages/dsh-tool-imagegen' },
   ],
   profilePatch: resolve(import.meta.dirname, '../../profiles/personal-web/cordis.patch.yml'),
 })
@@ -40,7 +41,7 @@ try {
     if (channel === '/session-recap') assert.equal(result.result.value.autoRecap, true)
     if (channel === '/local-worktrees') assert.equal(result.result.value.state, 'unavailable')
   }
-  console.log('PASS: twelve-plugin boot, seeded fixture, authentication, shell and read-only RPCs')
+  console.log('PASS: thirteen-plugin boot, seeded fixture, authentication, shell and read-only RPCs')
 } finally {
   await cleanup()
 }
