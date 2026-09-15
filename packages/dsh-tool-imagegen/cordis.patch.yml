@@ -1,0 +1,5 @@
+# Add Gemini-backed model-facing image generation.
+
+- insert:
+    - id: local-tool-imagegen
+      name: '@local/dsh-tool-imagegen'
