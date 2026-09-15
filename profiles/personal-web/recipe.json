@@ -55,6 +55,10 @@
       "source": "../../packages/dsh-tool-youtube"
     },
     {
+      "name": "@local/dsh-tool-imagegen",
+      "source": "../../packages/dsh-tool-imagegen"
+    },
+    {
       "name": "@local/dsh-tool-trivy",
       "source": "../../packages/dsh-tool-trivy"
     }
