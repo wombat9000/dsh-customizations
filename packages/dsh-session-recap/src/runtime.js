@@ -44,39 +44,88 @@ export function boundedHistory(messages) {
     }
   }
   const selected = [...indices].sort((a, b) => a - b)
-  // Equal serialized budgets prevent a long assistant report crowding out other turns.
-  const rowBudget = Math.floor((LIMITS.inputBytes - 2) / selected.length) - 1
   let previous = -1
-  return selected.map(index => {
+  const rows = selected.map(index => {
     const message = eligible[index]
-    const parts = []
-    let remaining = rowBudget
-    let truncated = message.content.length > LIMITS.blocks
-    for (const block of message.content.slice(0, LIMITS.blocks)) {
-      if (block.type !== 'text' || typeof block.text !== 'string') continue
-      const part = block.text.slice(0, remaining)
-      if (part.length < block.text.length) truncated = true
-      if (part) parts.push(part)
-      remaining -= part.length
-    }
-    const row = { role: message.role, text: parts.join('\n') }
+    const row = { role: message.role, text: historyText(message) }
     if (index > previous + 1) row.omittedBefore = index - previous - 1
     previous = index
-    if (truncated) row.truncated = true
-    if (Buffer.byteLength(JSON.stringify(row)) > rowBudget) {
-      row.truncated = true
-      const original = row.text
-      let low = 0, high = original.length
-      while (low < high) {
-        const middle = Math.ceil((low + high) / 2)
-        row.text = original.slice(0, middle)
-        if (Buffer.byteLength(JSON.stringify(row)) <= rowBudget) low = middle
-        else high = middle - 1
-      }
-      row.text = original.slice(0, low).replace(/[\uD800-\uDBFF]$/u, '')
-    }
+    if (message.content.length > LIMITS.blocks) row.truncated = true
     return row
   })
+  // Reserve array delimiters/commas. All allocations include serialized metadata.
+  const available = LIMITS.inputBytes - 2 - (rows.length - 1)
+  const sizes = rows.map(serializedBytes)
+  const fairShare = Math.floor(available / rows.length)
+  const budgets = sizes.map(size => Math.min(size, fairShare))
+  let spare = available - budgets.reduce((sum, budget) => sum + budget, 0)
+  // Water-fill unused allowances; recent messages receive 1.5x the spare share.
+  // Every selected message retains its initial allowance, regardless of age.
+  while (spare > 0) {
+    const hungry = [...budgets.keys()].filter(i => budgets[i] < sizes[i])
+    if (!hungry.length) break
+    const weight = i => selected[i] >= eligible.length - 10 ? 3 : 2
+    const totalWeight = hungry.reduce((sum, i) => sum + weight(i), 0)
+    const pool = spare
+    for (const i of hungry) {
+      const extra = Math.min(spare, sizes[i] - budgets[i], Math.max(1, Math.floor(pool * weight(i) / totalWeight)))
+      budgets[i] += extra
+      spare -= extra
+    }
+  }
+  return rows.map((row, i) => fitHistoryRow(row, budgets[i]))
+}
+
+const serializedBytes = value => Buffer.byteLength(JSON.stringify(value))
+const MIDDLE_OMITTED = '\n[Middle omitted]\n'
+
+// Retain bounded character windows before serializing: giant text blocks must not
+// require a second unbounded copy. Each window alone exceeds any row's byte budget.
+function historyText(message) {
+  const cap = LIMITS.inputBytes
+  let head = '', tail = '', length = 0
+  for (const block of message.content.slice(0, LIMITS.blocks)) {
+    if (block.type !== 'text' || typeof block.text !== 'string' || !block.text) continue
+    for (const part of [length ? '\n' : '', block.text]) {
+      head += part.slice(0, Math.max(0, cap - head.length))
+      tail = part.length >= cap ? part.slice(-cap) : (tail + part).slice(-cap)
+      length += part.length
+    }
+  }
+  if (length <= cap) return head
+  return head + tail.slice(-Math.min(cap, length - cap))
+}
+
+function historyEdges(text, retained, natural = false) {
+  const headLength = Math.ceil(retained * 2 / 3)
+  const tailLength = retained - headLength
+  let head = text.slice(0, headLength).replace(/[\uD800-\uDBFF]$/u, '')
+  let tail = tailLength ? text.slice(-tailLength).replace(/^[\uDC00-\uDFFF]/u, '') : ''
+  if (natural) {
+    // Prefer a nearby paragraph/sentence boundary, but surrender at most 15% of
+    // either edge (and at most 80 characters). No boundary means a hard cut.
+    const headFloor = head.length - Math.min(80, Math.floor(head.length * .15))
+    const boundaries = [...head.matchAll(/\n\s*\n|[.!?](?=\s)/gu)]
+    const end = boundaries.at(-1)
+    if (end && end.index + end[0].length >= headFloor) head = head.slice(0, end.index + end[0].length)
+    const start = /\n\s*\n|[.!?]\s+/u.exec(tail)
+    if (start && start.index + start[0].length <= Math.min(80, Math.floor(tail.length * .15))) tail = tail.slice(start.index + start[0].length)
+  }
+  return head + MIDDLE_OMITTED + tail
+}
+
+function fitHistoryRow(row, budget) {
+  if (serializedBytes(row) <= budget) return row
+  const shortened = { ...row, truncated: true }
+  let low = 0, high = row.text.length
+  while (low < high) {
+    const middle = Math.ceil((low + high) / 2)
+    shortened.text = historyEdges(row.text, middle)
+    if (serializedBytes(shortened) <= budget) low = middle
+    else high = middle - 1
+  }
+  shortened.text = historyEdges(row.text, low, true)
+  return shortened
 }
 // Diagnostics contain only fixed reasons and numeric metadata, never model text.
 function invalidRecap(reason, index = null, count = null) {
