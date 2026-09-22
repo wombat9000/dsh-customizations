@@ -72,6 +72,10 @@ The GitHub conversation cards summarize six existing project/issue read tools an
 
 The recipe selects the GitHub bundle, but source changes do not update a running profile. Applying the profile and restarting DSH require separate approval. No GitHub SDK or other dependency is added.
 
+### Shared OpenRouter credentials
+
+[OpenRouter](packages/dsh-openrouter/README.md) adds one shared credential card under **Settings → Plugins → Plugin configuration → OpenRouter**. It reuses the built-in OpenRouter model route's existing credential reference or canonical provider record, rather than storing another copy. Replacing or removing the key affects all consumers of that source. The host service resolves credentials per request; the browser receives status only. Saving performs no network request. Install only trusted plugins: DSH host plugins share credential access.
+
 ### Linear, YouTube, and Trivy
 
 These bundles are maintained in this repository and selected by `personal-web`. Adding them to the recipe does not update a running profile; follow the approved apply and restart procedure above.

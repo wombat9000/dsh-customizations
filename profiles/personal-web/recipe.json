@@ -15,6 +15,10 @@
       "source": "../../packages/dsh-session-environment"
     },
     {
+      "name": "@local/dsh-openrouter",
+      "source": "../../packages/dsh-openrouter"
+    },
+    {
       "name": "@wombat9000/dsh-session-recap",
       "source": "../../packages/dsh-session-recap"
     },
