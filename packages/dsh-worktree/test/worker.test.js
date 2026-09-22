@@ -15,6 +15,9 @@ import SubagentRuntime, { foldSubagentDescriptor, settleRun } from '@deepseek-ai
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import Tools from '@deepseek-ai/dsh-tools'
 import { startRegisteredWorker, startWorker } from '../src/worker.js'
+import WorktreeService from '../src/index.js'
+import * as LegacyTools from '../src/tools.js'
+import { hasWorktreeCapability } from '../src/capability.js'
 
 function deferred() {
   let resolve
@@ -139,6 +142,48 @@ test('read-only worker excludes writes, delegation, and later child-local capabi
   assert.equal((await execute(f.ctx, child, 'rogue')).isError, true)
   assert.deepEqual(f.executed, ['read'])
   await run.dispose()
+})
+
+test('host worktree tools reach ordinary agents but not restricted workers', async t => {
+  const f = await runtime(t, { tools: ['read', 'write', 'subagent'] })
+  f.ctx.provide('jobs', { list() { return [] } })
+  const service = f.ctx.plugin(WorktreeService)
+  await service.await()
+  const names = ['worktree_create', 'worktree_dispatch', 'worktree_list']
+  assert.equal(hasWorktreeCapability(f.ctx, f.parent), true)
+  // Retained coordinator/custom preset rows do not add child-local definitions.
+  await f.parent.ctx.plugin(LegacyTools).await()
+  for (const name of names) {
+    assert.equal(f.ctx.get('tools').schemas(f.parent).filter(tool => tool.name === name).length, 1)
+    assert.equal(f.ctx.get('tools').get(name, f.parent), f.ctx.get('tools').get(name))
+  }
+  for (const mode of ['read-only', 'write']) {
+    const run = await startWorker(f.ctx, { ...f.args, mode })
+    await run.result
+    const child = run.localAgent
+    assert.equal(hasWorktreeCapability(f.ctx, child), false, 'no Worktrees tab on a filtered worker')
+    for (const name of names) {
+      assert.equal(f.ctx.get('tools').get(name, child), undefined)
+      assert.equal(f.ctx.get('tools').schemas(child).some(tool => tool.name === name), false)
+      assert.equal((await execute(f.ctx, child, name)).isError, true)
+    }
+    assert.equal((await execute(f.ctx, child, 'subagent')).isError, true)
+    await run.dispose()
+  }
+  const restore = f.parent.ctx.get('tools').restrict({ deny: names })
+  assert.equal(hasWorktreeCapability(f.ctx, f.parent), false)
+  restore()
+  assert.equal(hasWorktreeCapability(f.ctx, f.parent), true)
+  const unshadow = f.parent.ctx.get('tools').register({
+    name: 'worktree_list', description: 'unrelated look-alike', parameters: {},
+    output: { schema: { type: 'string' }, render: () => [] },
+    execute: async () => '',
+  })
+  assert.equal(hasWorktreeCapability(f.ctx, f.parent), false, 'a same-named local shadow is not integration authority')
+  unshadow()
+  assert.equal(hasWorktreeCapability(f.ctx, f.parent), true)
+  await service.dispose()
+  assert.equal(hasWorktreeCapability(f.ctx, f.parent), false, 'host removal revokes tab capability')
 })
 
 test('parent-local tool restrictions are intersected rather than lost on child composition', async t => {

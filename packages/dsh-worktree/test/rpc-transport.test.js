@@ -121,9 +121,12 @@ test('mounted service and installed host/browser RPC register the tab and load t
   const ctx = new Context()
   t.after(() => ctx.fiber.dispose())
   const agent = { session: { id: 'a', header: { cwd: '/repo' } } }
-  const tool = markIntegrationTool({})
+  const tools = new Map()
   ctx.provide('agents', { get: id => id === 'a' ? agent : undefined, list: () => [agent] })
-  ctx.provide('tools', { get: () => tool })
+  ctx.provide('tools', {
+    get: name => tools.get(name),
+    register: tool => { tools.set(tool.name, tool); return () => tools.delete(tool.name) },
+  })
   ctx.provide('jobs', { list: () => [] })
   for (const service of ['sessions', 'sandboxPolicy', 'subagents']) ctx.provide(service, {})
   ctx.provide('webServer', {})

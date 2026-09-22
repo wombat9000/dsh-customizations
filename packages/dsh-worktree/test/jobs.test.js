@@ -2,21 +2,24 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { Context } from '@deepseek-ai/cordis'
 import LocalJobRegistry from '@deepseek-ai/dsh-jobs-local'
+import SessionProjections from '@deepseek-ai/dsh-session-projection'
+import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
+import Tools from '@deepseek-ai/dsh-tools'
 import WorktreeService, { WorktreeManager } from '../src/index.js'
 
 const deferred = () => { let resolve; const promise = new Promise(r => { resolve = r }); return { promise, resolve } }
 
-async function fixture(t) {
+async function fixture(t, { controller = true } = {}) {
   const ctx = new Context()
   const owners = new Map()
   ctx.provide('agents', { get: id => owners.get(id), list: () => [...owners.values()] })
   ctx.provide('sessions', {})
-  ctx.provide('tools', {})
+  for (const Plugin of [SessionProjections, SystemPrompt, Tools]) await ctx.plugin(Plugin, {}).await()
   ctx.provide('subagents', {})
   ctx.provide('sandboxPolicy', { resolve: () => ({ mode: 'danger-full-access', workspaceRoot: '/repo' }) })
   await ctx.plugin(LocalJobRegistry, { maxConcurrentJobsPerOwner: 2 }).await()
   const jobs = ctx.get('jobs')
-  jobs.attachController('worktree-test-controller')
+  if (controller) jobs.attachController('worktree-test-controller')
   let parent
   const ownerFiber = ctx.plugin({ name: 'test-owner', apply(ownerCtx) {
     parent = { id: 'parent', session: { id: 'parent', header: { cwd: '/repo' } }, ctx: ownerCtx }
@@ -51,6 +54,18 @@ async function fixture(t) {
   return { ctx, jobs, parent, ownerFiber, serviceFiber, service, dependencies, workers, rows }
 }
 const args = path => ({ worktree: path, task: 'Implement and report', mode: 'write' })
+
+test('a preset without job controls cannot dispatch or retain a checkout fence', async t => {
+  const f = await fixture(t, { controller: false })
+  await assert.rejects(f.service.dispatch(f.parent, args(f.rows[0].path)), /controller/i)
+  assert.equal(f.workers.length, 0)
+  assert.deepEqual(f.jobs.list(f.parent), [])
+  assert.equal((await f.service.list(f.parent)).worktrees[0].busy, false)
+  f.jobs.attachController('late-controller')
+  const run = await f.service.dispatch(f.parent, args(f.rows[0].path))
+  f.jobs.kill(run.jobId, f.parent)
+  await f.jobs.wait(run.jobId, 2000, f.parent)
+})
 
 test('real job registry stores final report after disposal and emits owner completion once', async t => {
   const f = await fixture(t)

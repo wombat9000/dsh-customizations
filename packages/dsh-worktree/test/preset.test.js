@@ -295,8 +295,16 @@ test('full Standard and coordinator standing mounts coexist on an isolated host'
   const standardNames = [...ctx.get('tools').view(standard).visible.keys()].sort()
   const coordinatorNames = [...ctx.get('tools').view(coordinator).visible.keys()].sort()
   assert.ok(standardNames.length > 20)
-  assert.deepEqual(coordinatorNames, [...standardNames, 'worktree_create', 'worktree_dispatch', 'worktree_list'].sort())
-  assert.deepEqual([...ctx.get('tools').view().visible.keys()], [])
+  assert.deepEqual(coordinatorNames, standardNames)
+  const worktreeNames = ['worktree_create', 'worktree_dispatch', 'worktree_list']
+  assert.deepEqual([...ctx.get('tools').view().visible.keys()].sort(), worktreeNames)
+  for (const key of [standard, coordinator, copiedKey]) {
+    const names = ctx.get('tools').schemas(key).map(tool => tool.name)
+    for (const name of worktreeNames) {
+      assert.equal(names.filter(value => value === name).length, 1)
+      assert.equal(ctx.get('tools').get(name, key), ctx.get('tools').get(name), 'legacy rows do not shadow host definitions')
+    }
+  }
   const skills = ctx.get('skills')
   const catalog = await skills.list({ scope: coordinator, cwd: directory })
   for (const name of ['cordis-plugin-development', 'editing-cordis-compositions']) {
@@ -311,7 +319,7 @@ test('full Standard and coordinator standing mounts coexist on an isolated host'
   }
 })
 
-test('actual standing mount scopes the added tools without publishing a service', async t => {
+test('legacy tool row mounts without registering tools or publishing a service', async t => {
   const { directory, baseUrl } = await profile(t)
   // Mount the exact added tool row, not a fake plugin. Standard's whole host
   // dependency graph is outside this bounded fixture; baseline parity and full
@@ -335,7 +343,7 @@ test('actual standing mount scopes the added tools without publishing a service'
   const roster = ctx.get('agentPresets')
   const key = await roster.standingKeyFor('tool-contribution')
   assert.equal(await roster.standingKeyFor('tool-contribution'), key, 'standing composition is reused')
-  assert.deepEqual([...ctx.get('tools').view(key).visible.keys()].sort(), ['worktree_create', 'worktree_dispatch', 'worktree_list'])
-  assert.deepEqual([...ctx.get('tools').view().visible.keys()], [], 'tools must not leak into the host scope')
+  assert.deepEqual([...ctx.get('tools').view(key).visible.keys()], [], 'legacy row is inert; shared service owns tools')
+  assert.deepEqual([...ctx.get('tools').view().visible.keys()], [])
   assert.equal(ctx.get('worktreeWorkers'), manager, 'preset must not replace the host provider')
 })

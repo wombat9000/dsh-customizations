@@ -8,13 +8,15 @@ For the 0.1.5-rc.2 Web transport, use the repository's patched launcher and prof
 
 ## Install and select the preset
 
-The repository's `personal-web` recipe includes this bundle. It installs the shared `worktreeWorkers` service and makes **Worktree coordinator** (`worktree-coordinator`) available in the agent preset picker. The preset includes Standard's native coding tools, job controls, subagents, workflows, and coordination instructions. No separate worker preset is needed: workers inherit this composition, then receive the restricted tool set described below.
+The repository's `personal-web` recipe includes this bundle. Its shared `worktreeWorkers` service registers the worktree tools across presets, including **Standard**. You do not need a separate mode or changes to the shipped Standard preset. Normal session tool filters still apply; restricted worktree workers do not receive these tools or the tab.
+
+The bundle also makes **Worktree coordinator** (`worktree-coordinator`) available in the agent preset picker. This optional preset includes Standard's native coding tools, job controls, subagents, workflows, specialized coordination instructions, and a larger completion-wake budget. No separate worker preset is needed: workers inherit their coordinator's composition, then receive the restricted tool set described below.
 
 **Before installing, check for an existing preset with ID `worktree-coordinator`.** The bundled system root takes precedence over the usual user root. If a user preset already has this ID, the package shadows it after restart, including for saved sessions and a saved default naming that ID. Copy your existing preset to a different ID and use that copy for new sessions and your default before installing. Existing conversations retain their recorded preset ID; if they must keep resolving the old composition, do not install this bundled root yet. Profiles with customized roster configuration also need the override described below.
 
 1. Apply or update the `personal-web` recipe using the [repository setup instructions](../../README.md#apply-the-starter-profile). For an existing standard Web profile, you can instead run `dsh plugin --profile <profile> add /absolute/path/to/packages/dsh-worktree`, replacing both placeholders.
 2. Restart that DSH profile and refresh the page to load the Worktrees tab.
-3. Start a new session and select **Worktree coordinator** before sending its first message.
+3. Start a **Standard** session. You can optionally select **Worktree coordinator** for its specialized coordination instructions and larger completion-wake budget.
 4. Confirm that `worktree_create`, `worktree_list`, `worktree_dispatch`, `job_output`, `job_list`, and `job_kill` are available.
 
 Installation does not write a preset selection, write user settings, modify shipped preset files, or change running sessions. Standard remains the stock default, and a default ID saved in Settings still takes precedence. The ID collision above is an exception to preserving which composition that ID resolves to. Package updates replace this bundled preset for new mounts after restart. To customize it, copy it through DSH's preset copy facility into a new user-authored preset; never edit the installed package copy. User copies do not receive later package changes automatically. Removing the bundle removes its preset root on the next profile start; saved sessions that name this preset then cannot mount it. Keep the bundle installed while those sessions still need it.
@@ -33,15 +35,15 @@ The automatic roster wiring targets the standard Web profile in **DSH 0.1.5-rc.2
 
 **Cordis replaces the entire roster `config`; it does not merge root arrays.** This bundle supplies `default: standard` and its own root. If your profile sets a different configuration default, additional roots, or discovery flags, retain them in a later profile override with the complete configuration and the worktree root. Likewise, a later override that replaces `config` without retaining the worktree root removes this preset from discovery. Copy the root expression from [`cordis.patch.yml`](cordis.patch.yml); it resolves the installed package from the profile's `baseUrl`, not from the session directory. A root with an earlier matching ID wins; check for an existing `worktree-coordinator` preset before installation.
 
-The bundle's service belongs in the host composition. Its tool row belongs in the agent preset and consumes that shared service; do not isolate it from the service or move the service into a preset.
+The bundle's service and shared tool registration belong in the host composition. Do not move the service into a preset. Existing coordinator and custom-preset tool rows remain compatible dependency consumers; they do not register duplicate tools.
 
-### Add the tools to another preset
+### Use another preset
 
-To keep using an existing customized native-tool preset, copy it into a new user-authored preset, add [`agent.cordis.example.yml`](agent.cordis.example.yml), and retain its `@deepseek-ai/dsh-tool-jobs` row. Mount-validate the result before starting a real session. PTC-only presets are not supported. The bundled [coordinator composition](presets/worktree-coordinator/agent.cordis.yml) also provides reusable coordination guidance.
+Custom native-tool presets receive the shared tools without an additional worktree row. Keep the preset's `@deepseek-ai/dsh-tool-jobs` row so you can collect and cancel assignments. Session tool filters can hide the integration. Worker dispatch still requires supported native file or shell tools; PTC-only presets are not supported. The bundled [coordinator composition](presets/worktree-coordinator/agent.cordis.yml) provides optional reusable coordination guidance.
 
 ## Read-only Worktrees tab
 
-The **Worktrees** conversation tab appears only when the viewed live session has this integration's registered capability. Copied presets work if they retain the integration; the preset name alone does not enable the tab. The tab lists repository Git worktrees, shows worker status separately from Git changes, and lets you copy the selected checkout path. It provides no create, dispatch, cancel, merge, delete, or other mutation controls.
+The **Worktrees** conversation tab appears when the viewed live session can access this integration's registered `worktree_list` tool. This includes Standard and compatible custom presets when the host bundle is loaded. The preset name does not control visibility; session tool filters still apply. The tab lists repository Git worktrees, shows worker status separately from Git changes, and lets you copy the selected checkout path. It provides no create, dispatch, cancel, merge, delete, or other mutation controls.
 
 Assignments, reports, and recorded run counts belong only to the viewed session. History is process-local and retains at most 100 runs per live session, with reports limited to 32,000 characters. Restarting the harness or unloading the session loses this history. Counts are not lifetime totals. Repository-wide worker status can indicate another session's activity, but does not reveal its assignments or reports.
 
@@ -93,7 +95,7 @@ The plugin retains at most 100 recent reports per live coordinator, bounded to 3
 
 ## Job lifecycle and limitations
 
-Jobs use DSH's existing `job_list`, `job_output`, and `job_kill`. The bundled preset explicitly sets `tool-jobs` to `completionDelivery: wakeup` and `maxConsecutiveWakes: 10`, instead of the upstream default budget of three. An idle coordinator receives up to ten consecutive completion-driven followup turns. A busy coordinator receives an injected notice without a duplicate followup turn. Claiming a human user message from the inbox resets the budget; merely inserting a message or claiming a plugin notice does not. After budget exhaustion, completions remain queued for a later turn rather than waking the coordinator. This uses the existing upstream controller, not an unbounded scheduler or a core DSH change, and grants no broader tools or permissions.
+Jobs use DSH's existing `job_list`, `job_output`, and `job_kill`. The bundled preset explicitly sets `tool-jobs` to `completionDelivery: wakeup` and `maxConsecutiveWakes: 10`, instead of the upstream default budget of three. An idle coordinator receives up to ten consecutive completion-driven followup turns. A busy coordinator receives an injected notice without a duplicate followup turn. Claiming a human user message from the inbox resets the budget; merely inserting a message or claiming a plugin notice does not. After budget exhaustion, completions remain queued for a later turn rather than waking the coordinator. Standard retains its own completion-wake configuration; exposing the worktree tools does not increase its wake budget. This uses the existing upstream controller, not an unbounded scheduler or a core DSH change, and grants no broader worker tools or permissions.
 
 Yielding ends the current turn, not the task. Give a brief progress update rather than a completion report while workers remain. Do not create an automatic goal solely to supervise workers. Keep existing goals truthful: pending workers alone do not justify marking a goal complete or blocked.
 

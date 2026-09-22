@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises'
 import vm from 'node:vm'
 import { createSnapshotRpcHandler } from '../src/snapshot.js'
 import { markIntegrationTool } from '../src/capability.js'
-import { apply as applyTools } from '../src/tools.js'
+import { registerWorktreeTools } from '../src/tools.js'
 let plugin
 vm.runInNewContext(await readFile(new URL('../client.js', import.meta.url), 'utf8'), {
   window: { __ModuleLoader__: { load: ({ factory }) => { plugin = factory(() => ({})) } } },
@@ -119,7 +119,7 @@ test('reader reports failed and malformed responses without stale data or raw er
 
 test('copied-preset tab follows real integration definitions and same-session capability changes', async () => {
   const tools = new Map()
-  const install = () => applyTools({ tools: { register: tool => { tools.set(tool.name, tool); return () => tools.delete(tool.name) } }, worktreeWorkers: {} })
+  const install = () => registerWorktreeTools({ tools: { register: tool => { tools.set(tool.name, tool); return () => tools.delete(tool.name) } } }, {})
   const copy = { session: { id: 'copy', header: { agentPreset: 'my-copy' } } }
   const standard = { session: { id: 'standard', header: { agentPreset: 'worktree-coordinator' } } }
   const agents = new Map([['copy', copy], ['standard', standard]])

@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import test from 'node:test'
-import { apply, inject } from '../src/tools.js'
+import { apply, inject, registerWorktreeTools } from '../src/tools.js'
 import { hasWorktreeCapability } from '../src/capability.js'
 
 function fixture() {
@@ -13,11 +13,11 @@ function fixture() {
     calls.push({ method, args })
     return { method }
   }]))
-  apply({ tools: { register(tool) { tools.set(tool.name, tool); return () => tools.delete(tool.name) } }, worktreeWorkers: service })
+  registerWorktreeTools({ tools: { register(tool) { tools.set(tool.name, tool); return () => tools.delete(tool.name) } } }, service)
   return { tools, calls }
 }
 
-test('preset contributes exactly three tools and consumes the host service', async () => {
+test('host contributes exactly three tools that call its service', async () => {
   assert.deepEqual(inject, ['tools', 'worktreeWorkers'])
   const { tools, calls } = fixture()
   assert.deepEqual([...tools.keys()], ['worktree_create', 'worktree_list', 'worktree_dispatch'])
@@ -43,7 +43,11 @@ test('actual integration definitions grant copied presets visibility and removal
   assert.equal(hasWorktreeCapability(ctx, agent), false)
 })
 
-test('bundle keeps worktree tools out of the host and remains in the portable recipe', async () => {
+test('legacy preset entrypoint registers no duplicate definitions', () => {
+  apply({ tools: { register() { assert.fail('compatibility row must not register tools') } } })
+})
+
+test('bundle owns tools through its service and remains in the portable recipe', async () => {
   const json = async path => JSON.parse(await readFile(new URL(path, import.meta.url), 'utf8'))
   const manifest = await json('../package.json')
   const recipe = await json('../../../profiles/personal-web/recipe.json')

@@ -5,6 +5,9 @@ import { pathToFileURL } from 'node:url'
 import { Context } from '@deepseek-ai/cordis'
 import WorktreeService from '../src/index.js'
 import { CHANNEL } from '../src/snapshot.js'
+import SessionProjections from '@deepseek-ai/dsh-session-projection'
+import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
+import Tools from '@deepseek-ai/dsh-tools'
 
 const require = createRequire(import.meta.url)
 const cli = createRequire(require.resolve('@deepseek-ai/dsh/package.json'))
@@ -13,7 +16,8 @@ const { HostConnectionService } = await import(pathToFileURL(cli.resolve('@deeps
 test('real host RPC mounts optional Worktree channel without GUI startup', async t => {
   const ctx = new Context()
   t.after(() => ctx.fiber.dispose())
-  for (const service of WorktreeService.inject) ctx.provide(service, {})
+  for (const Plugin of [SessionProjections, SystemPrompt, Tools]) await ctx.plugin(Plugin, {}).await()
+  for (const service of WorktreeService.inject) if (service !== 'tools') ctx.provide(service, {})
   const mounted = ctx.plugin(WorktreeService)
   await mounted.await()
   assert.ok(ctx.get('worktreeWorkers'), 'agent service works without Web services')
@@ -26,4 +30,10 @@ test('real host RPC mounts optional Worktree channel without GUI startup', async
   assert.deepEqual([...routes].map(route => route.path), [CHANNEL])
   await mounted.dispose()
   assert.equal(routes.size, 0, 'optional channel belongs to Worktree lifetime')
+  assert.deepEqual(ctx.get('tools').schemas(), [], 'tool definitions dispose with the host service')
+  const reloaded = ctx.plugin(WorktreeService)
+  await reloaded.await()
+  assert.deepEqual(ctx.get('tools').schemas().map(tool => tool.name).sort(), ['worktree_create', 'worktree_dispatch', 'worktree_list'])
+  await reloaded.dispose()
+  assert.deepEqual(ctx.get('tools').schemas(), [])
 })

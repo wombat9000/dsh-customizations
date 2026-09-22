@@ -3,6 +3,7 @@ import { settleRun } from '@deepseek-ai/dsh-subagent'
 import * as git from './git.js'
 import { startRegisteredWorker } from './worker.js'
 import { CHANNEL, createSnapshotRpcHandler } from './snapshot.js'
+import { registerWorktreeTools } from './tools.js'
 
 export const name = 'worktree-workers'
 const MAX_REPORTS = 100
@@ -187,6 +188,9 @@ export default class WorktreeService extends Service {
   constructor(ctx) {
     super(ctx, 'worktreeWorkers')
     this.manager = new WorktreeManager(ctx)
+    // Preset-neutral inherited contributions, owned by this service's Fiber.
+    // DSH applies each agent's restrictions before lookup or execution.
+    registerWorktreeTools(ctx, this)
     ctx.inject(['connection', 'webServer'], connectionCtx => {
       connectionCtx.effect(() => connectionCtx.connection.rpc.handle(CHANNEL, createSnapshotRpcHandler(ctx, this.manager)))
     })
