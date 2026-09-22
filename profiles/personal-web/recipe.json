@@ -19,6 +19,10 @@
       "source": "../../packages/dsh-openrouter"
     },
     {
+      "name": "@local/dsh-jev",
+      "source": "../../packages/dsh-jev"
+    },
+    {
       "name": "@wombat9000/dsh-session-recap",
       "source": "../../packages/dsh-session-recap"
     },

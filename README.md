@@ -76,6 +76,10 @@ The recipe selects the GitHub bundle, but source changes do not update a running
 
 [OpenRouter](packages/dsh-openrouter/README.md) adds one shared credential card under **Settings → Plugins → Plugin configuration → OpenRouter**. It reuses the built-in OpenRouter model route's existing credential reference or canonical provider record, rather than storing another copy. Replacing or removing the key affects all consumers of that source. The host service resolves credentials per request; the browser receives status only. Saving performs no network request. Install only trusted plugins: DSH host plugins share credential access.
 
+### Jev decisions
+
+[Jev](packages/dsh-jev/README.md) provides host-side typed evaluations through OpenRouter's Decisions API, using the shared OpenRouter credential. Its **Jev** plugin-settings card selects the model and reports credential status; it has no second key field. The default is `typesafe/jev-1.13`. Saving settings makes no paid call. The integration adds no agent tool or browser evaluation endpoint. Consumers opt into sending bounded context to OpenRouter/TypeSafe. Requests use native HTTP, strict validation, bounded responses, cancellation, and no automatic retries.
+
 ### Linear, YouTube, and Trivy
 
 These bundles are maintained in this repository and selected by `personal-web`. Adding them to the recipe does not update a running profile; follow the approved apply and restart procedure above.
