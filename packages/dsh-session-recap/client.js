@@ -41,15 +41,19 @@ window.__ModuleLoader__.load({
       }
       async function recap(sessionId, automatic = false) {
         const s = state(sessionId)
-        if (s.pending) return s.pending
+        if (s.pending) {
+          if (!automatic) publish(s, { ...s.value, openOnReady: true })
+          return s.pending
+        }
         const generation = s.generation
-        publish(s, { ...s.value, busy: true, error: undefined })
+        publish(s, { ...s.value, busy: true, error: undefined, unread: false, open: false, openOnReady: !automatic })
         const pending = Promise.resolve().then(() => rpc.call(CHANNEL, 'recap', { sessionId, automatic })).then(unwrap).then((result) => {
           if (generation !== s.generation) return
           if (result.sessionId !== sessionId) throw new Error('Session recap returned a different session.')
-          publish(s, { busy: false, recap: result.recap })
+          const open = s.value.openOnReady === true
+          publish(s, { busy: false, recap: result.recap, open, unread: !open, openOnReady: false })
         }).catch((error) => {
-          if (generation === s.generation) publish(s, { ...s.value, busy: false, error: error.message || String(error) })
+          if (generation === s.generation) publish(s, { ...s.value, busy: false, open: s.value.openOnReady === true, openOnReady: false, error: error.message || String(error) })
         }).finally(() => { if (s.pending === pending) s.pending = null })
         s.pending = pending
         return pending
@@ -134,8 +138,33 @@ window.__ModuleLoader__.load({
           for (const [target, event, handler] of handlers) target.removeEventListener(event, handler)
         }
       }
+      function discard(sessionId) {
+        const s = states.get(sessionId)
+        if (!s) return
+        s.generation++
+        s.pending = null
+        publish(s, {})
+      }
       return {
         mount, recap,
+        click(sessionId) {
+          const s = state(sessionId)
+          if (s.value.busy) { publish(s, { ...s.value, openOnReady: true }); return s.pending }
+          if (s.value.recap && !s.value.error) { publish(s, { ...s.value, open: !s.value.open, unread: false }); return }
+          return recap(sessionId)
+        },
+        turnStarted: discard,
+        observeSession(sessionId, observation) {
+          const s = state(sessionId)
+          const previous = s.observation
+          // Keep the last loaded baseline through dock remounts/history reloads.
+          if (!observation.ready) return
+          if (previous && (
+            (!previous.running && observation.running) ||
+            (observation.latestTurn !== undefined && (previous.latestTurn === undefined || observation.latestTurn > previous.latestTurn))
+          )) discard(sessionId)
+          s.observation = observation
+        },
         getSnapshot(sessionId) { return state(sessionId).value },
         subscribe(sessionId, listener) {
           const s = state(sessionId)
@@ -144,11 +173,7 @@ window.__ModuleLoader__.load({
         },
         invalidateSettings() { settingsPromise = undefined },
         humanMessageSent(sessionId) {
-          const s = states.get(sessionId)
-          if (!s) return
-          s.generation++
-          s.pending = null
-          publish(s, {})
+          discard(sessionId)
           // A successful send counts as activity even without a mounted dock.
           void settings().then((config) => touch(key(config, sessionId)), () => {})
         },
@@ -158,7 +183,16 @@ window.__ModuleLoader__.load({
       .dsh-session-recap-action { appearance: none; display: inline-flex; align-items: center; justify-content: center; gap: 6px; flex: none; font: inherit; font-size: 13px; line-height: 20px; color: var(--dsw-alias-label-secondary, inherit); background: transparent; border: 0; border-radius: 8px; padding: 5px 8px; cursor: pointer; }
       .dsh-session-recap-action:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover, #8882); color: var(--dsw-alias-label-primary, inherit); }
       .dsh-session-recap-action:focus-visible, .dsh-session-recap-card__body:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary, #6b9cff); outline-offset: 2px; }
-      .dsh-session-recap-action:disabled { color: var(--dsw-alias-label-tertiary, #888); cursor: default; }
+      .dsh-session-recap-action { position: relative; overflow: hidden; width: 30px; height: 30px; padding: 6px; }
+      .dsh-session-recap-action[data-unread="true"] { color: var(--dsw-alias-brand-primary, #6b9cff); }
+      .dsh-session-recap-action[data-unread="true"] .dsh-session-recap-action__icon { filter: drop-shadow(0 0 4px currentColor); }
+      .dsh-session-recap-action[data-unread="true"]::before { content: ''; position: absolute; top: 3px; right: 3px; width: 4px; height: 4px; border-radius: 50%; background: currentColor; }
+      .dsh-session-recap-action[data-open="true"] { color: var(--dsw-alias-brand-primary, #6b9cff); background: var(--dsw-alias-interactive-bg-hover, #8882); }
+      .dsh-session-recap-action__warning { position: absolute; top: 0; right: 2px; font-size: 11px; font-weight: 700; color: var(--dsw-alias-label-error, #d55); }
+      .dsh-session-recap-action[data-busy="true"] { color: var(--dsw-alias-brand-primary, #6b9cff); }
+      .dsh-session-recap-action[data-busy="true"]::after { content: ''; position: absolute; inset: 0; pointer-events: none; background: linear-gradient(110deg, transparent 25%, currentColor 50%, transparent 75%); opacity: .25; transform: translateX(-140%); animation: dsh-session-recap-shimmer 1.8s linear infinite; }
+      @keyframes dsh-session-recap-shimmer { to { transform: translateX(140%); } }
+      @media (prefers-reduced-motion: reduce) { .dsh-session-recap-action[data-busy="true"]::after { animation: none; transform: none; background: none; opacity: 1; border-bottom: 2px solid currentColor; } }
       .dsh-session-recap-card { box-sizing: border-box; width: calc(100% - 2 * var(--dsh-composer-side-clearance, 16px) - 32px); max-width: var(--dsh-chat-content-width, 680px); min-width: 0; margin: 0 auto 8px; padding: 12px 16px; border: .5px solid var(--dsw-alias-border-l2, #8883); border-radius: 16px; background: var(--dsw-alias-bg-layer-2, #8881); color: var(--dsw-alias-label-primary, inherit); font-size: 13px; line-height: 1.6; }
       .dsh-session-recap-card__body { max-height: min(240px, 30vh); overflow-y: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
       .dsh-session-recap-card__headline { margin: 0 0 6px; font: inherit; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -168,15 +202,15 @@ window.__ModuleLoader__.load({
       .dsh-session-recap-card__error { margin: 4px 0; color: var(--dsw-alias-label-error, #d55); overflow-wrap: anywhere; }
       @media (max-width: 600px) { .dsh-session-recap-card { padding: 10px 12px; border-radius: 12px; } }
     `
-    function useRecapStyles() {
+    function useRecapStyles(enabled = true) {
       React.useEffect(() => {
-        if (typeof document === 'undefined') return
+        if (!enabled || typeof document === 'undefined') return
         const style = document.createElement('style')
         style.dataset.pluginCss = `${ID}/recap`
         style.textContent = recapStyles
         document.head.appendChild(style)
         return () => style.remove()
-      }, [])
+      }, [enabled])
     }
     function useRecapState(controller, sessionId) {
       return React.useSyncExternalStore(
@@ -190,26 +224,63 @@ window.__ModuleLoader__.load({
         h('rect', { x: 5, y: 3, width: 14, height: 18, rx: 3 }),
         h('path', { d: 'M9 8h6M9 12h6M9 16h3' }))
     }
-    function RecapAction({ sessionId, useSession, controller }) {
-      const blank = useSession((session) => session.blank) !== false
-      const state = useRecapState(controller, sessionId)
-      useRecapStyles()
-      if (blank) return null
-      return React.createElement('button', {
-        type: 'button', className: 'dsh-session-recap-action', disabled: state.busy,
-        title: 'Generate a recap of this session',
-        onClick: () => { void controller.recap(sessionId) },
-      }, recapIcon(), state.busy ? 'Recapping…' : 'Recap')
+    // RC2 chat/contract/{slots,snapshot,chat-nodes}.d.ts: assistant-actions is a
+    // session-scoped list (owner: messageId), not a selector chain. Returning null
+    // removes only our entry; native actions remain. Session standard props inject
+    // useChat/useSession/useConversation. Read live nodes INSIDE the selector:
+    // nodes/locations are stable readers, not immutable React dependencies. The
+    // latest timeline Turn must be closed; its turn-tail owns the canonical closing
+    // assistant, unlike the last rendered row (pagination/folds/hidden tool steps).
+    function latestClosingMessage(chat) {
+      const turn = chat.timeline.turnOrder.at(-1)
+      if (turn === undefined || chat.timeline.turns.get(turn)?.status !== 'closed') return undefined
+      for (const key of chat.locations.getTurn(turn)) {
+        const node = chat.nodes.get(key)
+        if (node?.kind === 'turn-tail' && node.data.closing?.status === 'settled') {
+          return node.data.closing.finalNode.messageId
+        }
+      }
+      return undefined
     }
-    function RecapCard({ sessionId, session, controller }) {
+    function RecapAction({ sessionId, messageId, useSession, useChat, controller }) {
+      const blank = useSession((session) => session.blank) !== false
+      const closingMessageId = useChat(latestClosingMessage)
       const state = useRecapState(controller, sessionId)
-      const blank = session?.blank !== false
+      const visible = !blank && !!messageId && messageId === closingMessageId
+      // Historical action seats must not each install a duplicate stylesheet.
+      useRecapStyles(visible)
+      if (!visible) return null
+      const label = state.busy ? 'Open recap when ready' : state.error ? 'Retry recap' : state.recap ? (state.open ? 'Hide recap' : 'Show recap') : 'Generate recap'
+      return React.createElement('button', {
+        type: 'button', className: 'dsh-session-recap-action',
+        'data-busy': !!state.busy, 'data-unread': !!state.unread, 'data-open': !!state.open,
+        title: state.busy ? 'Generating recap…' : state.error ? `Retry recap: ${state.error}` : label,
+        'aria-label': label, 'aria-expanded': !!state.open,
+        onClick: () => { void controller.click(sessionId) },
+      }, recapIcon('dsh-session-recap-action__icon'),
+      state.error ? React.createElement('span', { className: 'dsh-session-recap-action__warning', 'aria-hidden': true }, '!') : null)
+    }
+    function RecapCard({ sessionId, useSession, useConversation, useChat, controller }) {
+      const state = useRecapState(controller, sessionId)
+      const blank = useSession((session) => session.blank) !== false
+      const ready = useSession((session) => session.openState === 'open')
+      const running = useSession((session) => session.running)
+      const hasChat = useConversation((conversation) => conversation.activeTargets.has('chat'))
+      const latestTurn = useChat((chat) => chat.timeline.turnOrder.at(-1))
       useRecapStyles()
-      // Only the dock owns activity tracking. The header is a passive subscriber.
+      // The always-mounted dock observes delegated/resumed turns too. RC2
+      // Session.running covers early starts; Chat timeline catches complete turns
+      // between renders/remounts. Conversation.activeTargets means visible CONTENT
+      // (chat isActive tests non-command nodes), NOT busy. Together with openState
+      // it gates the initial loaded baseline. Pagination only adds older turns.
+      React.useEffect(() => {
+        controller.observeSession(sessionId, { ready: ready && (hasChat || blank), running, latestTurn })
+      }, [controller, sessionId, ready, hasChat, blank, running, latestTurn])
+      // Card visibility never controls this subscription or idle-return tracking.
       React.useEffect(() => {
         if (!blank) return controller.mount(sessionId, { document, window }, () => {})
       }, [controller, sessionId, blank])
-      if (blank || !(state.busy || state.error || state.recap)) return null
+      if (blank || running || !state.open || !(state.error || state.recap)) return null
       const h = React.createElement
       return h('aside', { 'aria-label': 'Session recap', className: 'dsh-session-recap-card' },
         state.busy ? h('p', { role: 'status', className: 'dsh-session-recap-card__loading' }, 'Generating recap…') : null,
@@ -327,8 +398,8 @@ window.__ModuleLoader__.load({
         name: 'conversation.input.dock', id: ID, order: 10,
         inject: (sessionId) => ({ sessionId, controller }),
       }, RecapCard))
-      ctx.slots.inject('conversation.session.header.utilities', () => ctx.slots.register({
-        name: 'conversation.session.header.utilities', id: `${ID}-action`, order: 10,
+      ctx.slots.inject('conversation.chat.assistant-actions', () => ctx.slots.register({
+        name: 'conversation.chat.assistant-actions', id: `${ID}-action`, order: 10,
         inject: (sessionId) => ({ sessionId, controller }),
       }, RecapAction))
       ctx.slots.inject('settings.plugin.item', () => ctx.slots.register({

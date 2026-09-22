@@ -1,6 +1,8 @@
 # Session Recap
 
-Session Recap shows 1–3 short bullets above the DSH Web composer when you return to a session: the topic, key direction, and where the discussion paused. It targets 40–70 words, with less text for simple threads. The card has no header or controls and disappears after your next message is saved to the conversation. Typing or a failed send does not hide it. Select **Recap** in the session header to request it again. Recaps do not add messages to the transcript.
+Session Recap prepares a short headline and 1–3 bullets when you return after the configured inactivity interval. It keeps the card hidden until you select the recap icon beneath the latest completed assistant response. A steady glow marks an unread recap. Selecting the icon opens or hides the card above the composer without generating it again. If no recap exists, selecting the icon generates one and opens it when ready. Recaps do not add messages to the transcript.
+
+While generation runs, a highlight shimmers across the fixed icon; it does not rotate or pulse. Reduced-motion users see a static indicator. Selecting the icon during automatic generation requests opening when ready without starting another call. If generation fails, the icon shows a warning and lets you retry. Continuing the thread discards the recap and clears its indicator; typing or a failed send does not.
 
 ## Install and configure
 
@@ -33,11 +35,11 @@ To install independently, select `@wombat9000/dsh-session-recap` from `packages/
 
 - Recaps run on return, not while you are away. The plugin uses the browser's recorded activity timestamp when available. On a first visit, it uses the latest persisted human message, assistant message, or turn-end event time instead. Session metadata changes do not reset this fallback. Old sessions can therefore recap automatically in a new browser; recent or empty sessions do not.
 - Automatic checks wait for loaded session history and a closed agent turn, retrying once per second while the session remains visible and focused. No automatic request runs without a configured provider/model or when automatic recaps are disabled. Manual generation also rejects an open agent turn.
-- A persisted human-message activity event clears the recap and invalidates any pending response for that session. Queued messages hide it when they enter the conversation, not merely when accepted into the queue. **Recap** requests it again and can reuse the host cache.
+- A persisted human-message activity event or a new agent turn clears the recap and invalidates pending responses for that session. Queued messages clear it when they enter the conversation, not merely when accepted into the queue. The icon appears only on the latest completed assistant response. It replaces the former session-header button.
 - Identical session revisions and settings share an in-flight request and an in-memory cached result. The cache holds at most 100 entries and resets when DSH restarts. A changed session or configuration invalidates reuse.
 - Each request includes at most 40 visible messages, with a 24,000-byte budget for serialized history. Longer threads retain the first and last 10 eligible messages plus adjacent pairs sampled across the middle. Equal per-message budgets prevent long reports from excluding other turns. Gaps and shortened text are marked explicitly. Sampling can still miss important decisions.
 - History excludes tool results, reasoning, attachments, and system or injected messages. Message framing adds a small amount of overhead. The model summarizes the discussion rather than reporting task status; it must not invent agreement, completed work, or next steps. Essential completion claims remain qualified because tools are excluded.
-- Output validation requires 1–3 nonempty, single-line bullets, at most 240 characters each and 600 characters combined. The 40–70-word target is a prompt instruction, not a language-dependent word-count check.
+- Output validation accepts a headline of up to 120 characters and requires 1–3 nonempty bullets, at most 320 characters each and 600 characters combined. Whitespace is normalized. The prompt targets 240 characters per bullet and 40–70 words overall; those targets are not hard validation limits. Older bullets-only recaps remain supported.
 - Requests use a 1,400-token output setting, a 45-second timeout, and a maximum of four concurrent generations. Provider billing and cancellation behavior still depend on the adapter.
 - Summary text stays in host/browser memory. Browser storage contains activity timestamps, scoped by an opaque hash of the Harness home, host working directory, and plugin namespace, plus the session ID. This is not a distinct profile identity.
 - The selected provider receives conversation text. Choose a provider appropriate for your session's privacy requirements. A recap is generated text, not an authoritative record.
@@ -52,6 +54,6 @@ pnpm test
 pnpm run check
 ```
 
-The host registers `/session-recap` RPC handlers and the `wombat9000-session-recap` settings namespace. The client registers the existing `conversation.input.dock` and `settings.plugin.item` slots. It does not patch DSH core, replace transcript renderers, or start a web server.
+The host registers `/session-recap` RPC handlers and the `wombat9000-session-recap` settings namespace. The client registers the existing `conversation.chat.assistant-actions`, `conversation.input.dock`, and `settings.plugin.item` slots. It does not patch DSH core, replace transcript renderers, or start a web server.
 
 Tests cover model routing, input/output bounds, caching, concurrent requests, failure handling, and browser return detection without making model calls. Live provider generation and visual behavior require installation in a DSH Web profile and a browser smoke test.

@@ -45,6 +45,42 @@ function setup(overrides = {}) {
   }
 }
 const recaps = (f) => f.calls.filter((call) => call.method === 'recap')
+test('automatic recap stays hidden and unread until clicked, then toggles without another request', async () => {
+  const f = setup({ autoRecap: false })
+  await f.controller.recap('a', true)
+  assert.equal(f.controller.getSnapshot('a').open, false)
+  assert.equal(f.controller.getSnapshot('a').unread, true)
+  await f.controller.click('a')
+  assert.equal(f.controller.getSnapshot('a').open, true)
+  assert.equal(f.controller.getSnapshot('a').unread, false)
+  await f.controller.click('a')
+  assert.equal(f.controller.getSnapshot('a').open, false)
+  await f.controller.click('a')
+  assert.equal(f.controller.getSnapshot('a').open, true)
+  assert.equal(recaps(f).length, 1)
+})
+test('manual and busy clicks open only on readiness and never duplicate generation', async () => {
+  for (const automatic of [false, true]) {
+    const f = setup({ autoRecap: false }); const original = f.rpc.call
+    let resolve
+    f.rpc.call = (channel, method, payload) => method === 'recap'
+      ? new Promise(done => { f.calls.push({ method, payload }); resolve = done })
+      : original(channel, method, payload)
+    const pending = automatic ? f.controller.recap('a', true) : f.controller.click('a')
+    await flush()
+    assert.equal(f.controller.getSnapshot('a').busy, true)
+    assert.equal(f.controller.getSnapshot('a').open, false)
+    const again = f.controller.click('a'); const third = f.controller.click('a')
+    await flush()
+    assert.equal(recaps(f).length, 1)
+    assert.equal(f.controller.getSnapshot('a').openOnReady, true)
+    resolve({ ok: true, value: { sessionId: 'a', recap: { bullets: ['Ready'] } } })
+    await Promise.all([pending, again, third])
+    assert.equal(f.controller.getSnapshot('a').open, true)
+    assert.equal(f.controller.getSnapshot('a').unread, false)
+    assert.equal(f.controller.getSnapshot('a').busy, false)
+  }
+})
 test('first visit to old persisted conversation recaps once across repeated mounts', async () => {
   const f = setup(); f.activity.latestActivity = 1
   const stop = f.mount(); await flush()
@@ -158,6 +194,54 @@ test('late activity and settings failures cannot resurrect a cleared card', asyn
     stop()
   }
 })
+test('new turns invalidate unread and open recaps and suppress late completion', async () => {
+  for (const automatic of [false, true]) {
+    const f = setup({ autoRecap: false })
+    await f.controller.recap('a', automatic)
+    f.controller.turnStarted('b')
+    assert.ok(f.controller.getSnapshot('a').recap)
+    f.controller.turnStarted('a')
+    assert.equal(Object.keys(f.controller.getSnapshot('a')).length, 0)
+    let resolve
+    f.rpc.call = () => new Promise(done => { resolve = done })
+    const pending = f.controller.recap('a', automatic); await flush()
+    f.controller.turnStarted('a')
+    resolve({ ok: true, value: { sessionId: 'a', recap: { bullets: ['Stale'] } } })
+    await pending
+    assert.equal(Object.keys(f.controller.getSnapshot('a')).length, 0)
+  }
+})
+test('loaded observations survive remounts and ignore loading or older-page changes', async () => {
+  const f = setup({ autoRecap: false })
+  const observe = (next) => f.controller.observeSession('a', { ready: true, running: false, latestTurn: 2, ...next })
+  observe({})
+  const stop = f.mount(); await flush()
+  await f.controller.recap('a', true)
+  const unread = f.controller.getSnapshot('a')
+  stop(); const cleanup = f.mount(); await flush()
+  observe({ ready: false, latestTurn: undefined })
+  observe({})
+  assert.equal(f.controller.getSnapshot('a'), unread)
+  observe({ latestTurn: 1 })
+  assert.equal(f.controller.getSnapshot('a'), unread)
+  observe({ ready: false, latestTurn: 3 })
+  assert.equal(f.controller.getSnapshot('a'), unread)
+  observe({ latestTurn: 3 })
+  assert.equal(Object.keys(f.controller.getSnapshot('a')).length, 0)
+  await f.controller.recap('a')
+  observe({ latestTurn: 3, running: true })
+  assert.equal(Object.keys(f.controller.getSnapshot('a')).length, 0)
+  cleanup()
+})
+test('automatic failures stay hidden while a requested retry opens the error', async () => {
+  const f = setup({ autoRecap: false }); f.fail()
+  await f.controller.recap('a', true)
+  assert.equal(f.controller.getSnapshot('a').open, false)
+  assert.equal(f.controller.getSnapshot('a').error, 'Provider failed')
+  await f.controller.click('a')
+  assert.equal(f.controller.getSnapshot('a').open, true)
+  assert.equal(recaps(f).length, 2)
+})
 test('typing does not clear a generated recap', async () => {
   const f = setup({ autoRecap: false }); const stop = f.mount(); await flush()
   await f.controller.recap('a')
@@ -188,12 +272,12 @@ test('unmount removes all listeners and settings completion cannot trigger a dep
   f.advance(31); f.show(); await flush(); assert.equal(recaps(f).length, 0)
   for (const target of [f.document, f.window]) for (const handlers of target.handlers.values()) assert.equal(handlers.size, 0)
 })
-test('registers dock, header utility, and Plugins slots with one controller', () => {
+test('registers dock, additive assistant action, and Plugins slots with one controller', () => {
   const { exports } = load()
   const entries = []
   const events = new Map()
   exports.apply({ get: (name) => name === 'remote' ? { $on: (event, handler) => events.set(event, handler) } : { rpc: {} }, slots: { inject: (_name, register) => register(), register: (entry, component) => entries.push({ entry, component }) } })
-  assert.deepEqual(entries.map(({ entry }) => entry.name), ['conversation.input.dock', 'conversation.session.header.utilities', 'settings.plugin.item'])
+  assert.deepEqual(entries.map(({ entry }) => entry.name), ['conversation.input.dock', 'conversation.chat.assistant-actions', 'settings.plugin.item'])
   assert.equal(entries[2].entry.key, 'wombat9000-session-recap')
   const dock = entries[0].entry.inject('session-1')
   const header = entries[1].entry.inject('session-1')
@@ -248,12 +332,23 @@ test('Plugins card loads advisory models and saves an exact route without recap'
   assert.equal(closed.children[0].props['aria-expanded'], false)
   assert.equal(closed.children[1], null)
 })
+// Minimal RC2 public Chat snapshot; selection reads live node/location indexes.
+function chatFixture({ turnOrder = [1, 2], status = 'closed', closing = 'settled', messageId = 'latest' } = {}) {
+  const node = { kind: 'turn-tail', data: { closing: { status: closing, finalNode: { messageId } } } }
+  return { timeline: { turnOrder, turns: new Map(turnOrder.map(id => [id, { status }])) },
+    locations: { getTurn: () => ['tail'] }, nodes: { get: () => node } }
+}
+function componentProps(session = { blank: false, openState: 'open', running: false }, chat = chatFixture()) {
+  return { sessionId: 'a', messageId: 'latest', useSession: select => select(session || {}),
+    useConversation: select => select({ activeTargets: new Set(['chat']) }), useChat: select => select(chat) }
+}
 function componentFixture(state = {}) {
   const effects = []; const subscriptions = []; const calls = []
   const react = {
     createElement: (type, props, ...children) => ({ type, props, children }),
     useEffect: (effect) => effects.push(effect),
     useCallback: (callback) => callback,
+    useRef: (value) => ({ current: value }),
     useSyncExternalStore(subscribe, getSnapshot) {
       const listener = () => {}; subscriptions.push(subscribe(listener))
       return getSnapshot()
@@ -263,7 +358,9 @@ function componentFixture(state = {}) {
     getSnapshot(id) { assert.equal(id, 'a'); return state },
     subscribe(id, listener) { assert.equal(id, 'a'); assert.equal(typeof listener, 'function'); return () => {} },
     mount(...args) { calls.push(['mount', ...args]); return () => {} },
-    recap(id) { calls.push(['recap', id]) },
+    click(id) { calls.push(['click', id]) },
+    turnStarted(id) { calls.push(['turnStarted', id]) },
+    observeSession() {},
 
   }
   return { ...load(react).exports, controller, effects, subscriptions, calls }
@@ -271,9 +368,9 @@ function componentFixture(state = {}) {
 const nodes = (tree) => !tree || typeof tree !== 'object' ? [] : [tree, ...(tree.children || []).flatMap(nodes)]
 test('blank or unavailable sessions hide both surfaces without activity mounts', () => {
   const f = componentFixture()
-  for (const session of [undefined, { blank: true }]) {
-    assert.equal(f.RecapCard({ sessionId: 'a', session, controller: f.controller }), null)
-    assert.equal(f.RecapAction({ sessionId: 'a', useSession: (select) => select(session || { blank: true }), controller: f.controller }), null)
+  for (const session of [null, { blank: true }]) {
+    assert.equal(f.RecapCard({ ...componentProps(session), controller: f.controller }), null)
+    assert.equal(f.RecapAction({ ...componentProps(session), controller: f.controller }), null)
   }
   for (const effect of f.effects) effect()
   assert.deepEqual(f.calls, [])
@@ -281,12 +378,12 @@ test('blank or unavailable sessions hide both surfaces without activity mounts',
 test('empty cards leave no panel', () => {
   for (const state of [{}]) {
     const f = componentFixture(state)
-    assert.equal(f.RecapCard({ sessionId: 'a', session: { blank: false }, controller: f.controller }), null)
+    assert.equal(f.RecapCard({ ...componentProps(), controller: f.controller }), null)
   }
 })
 test('card renders only escaped bullets without header, metadata or controls', () => {
-  const f = componentFixture({ recap: { bullets: ['<script>bad()</script>', 'Direction', 'Paused'] }, generatedAt: '2026-01-01' })
-  const tree = f.RecapCard({ sessionId: 'a', session: { blank: false }, controller: f.controller })
+  const f = componentFixture({ open: true, recap: { bullets: ['<script>bad()</script>', 'Direction', 'Paused'] }, generatedAt: '2026-01-01' })
+  const tree = f.RecapCard({ ...componentProps(), controller: f.controller })
   assert.equal(tree.type, 'aside'); assert.equal(tree.props['aria-label'], 'Session recap')
   assert.ok(nodes(tree).some(node => node.props?.role === 'status'))
   assert.match(JSON.stringify(tree), /<script>bad\(\)<\/script>/)
@@ -297,27 +394,49 @@ test('card renders only escaped bullets without header, metadata or controls', (
   assert.equal(nodes(tree).filter(node => ['svg', 'small', 'strong'].includes(node.type)).length, 0)
   assert.doesNotMatch(JSON.stringify(tree), /Earlier recap|2026-01-01|Latest outcome|Next step/)
 })
-test('busy and error cards expose accessible feedback', () => {
-  for (const [state, role, text] of [[{ busy: true }, 'status', 'Generating recap…'], [{ error: 'Provider failed' }, 'alert', 'Provider failed']]) {
+test('hidden ready and generating states leave no panel; requested errors expose alerts', () => {
+  for (const state of [{ busy: true, openOnReady: true }, { recap: { bullets: ['Hidden'] }, unread: true, open: false }]) {
     const f = componentFixture(state)
-    const tree = f.RecapCard({ sessionId: 'a', session: { blank: false }, controller: f.controller })
-    const feedback = nodes(tree).find(node => node.props?.role === role)
-    assert.ok(feedback); assert.ok(JSON.stringify(feedback).includes(text))
-    assert.equal(nodes(tree).filter(node => node.type === 'button').length, 0)
+    assert.equal(f.RecapCard({ ...componentProps(), controller: f.controller }), null)
   }
+  const f = componentFixture({ open: true, error: 'Provider failed' })
+  const tree = f.RecapCard({ ...componentProps(), controller: f.controller })
+  assert.ok(nodes(tree).find(node => node.props?.role === 'alert').children.includes('Provider failed'))
 })
-test('header selects blank state, subscribes without activity mounting, and generates', () => {
-  for (const busy of [false, true]) {
-    const f = componentFixture({ busy })
-    const tree = f.RecapAction({ sessionId: 'a', controller: f.controller, useSession(select) { assert.equal(select({ blank: true }), true); return select({ blank: false }) } })
+test('icon-only assistant action stays clickable while busy and toggles ready content', () => {
+  for (const [state, label] of [[{}, 'Generate recap'], [{ busy: true }, 'Open recap when ready'],
+    [{ recap: {}, open: true }, 'Hide recap'], [{ recap: {}, unread: true, open: false }, 'Show recap']]) {
+    const f = componentFixture(state)
+    const tree = f.RecapAction({ ...componentProps(), controller: f.controller })
     const button = nodes(tree).find(node => node.type === 'button')
-    assert.equal(button.props.disabled, busy)
-    assert.ok(button.children.includes(busy ? 'Recapping…' : 'Recap'))
+    assert.notEqual(button.props.disabled, true)
+    assert.equal(button.props['aria-label'], label)
+    assert.equal(button.props.title, state.busy ? 'Generating recap…' : label)
+    assert.equal(button.props['aria-expanded'], !!state.open)
+    assert.equal(button.props['data-busy'], !!state.busy)
+    assert.equal(button.props['data-unread'], !!state.unread)
+    assert.equal(button.children.filter(Boolean).length, 1)
+    assert.equal(button.children[0].type, 'svg')
+    assert.equal(button.children[0].props['aria-hidden'], true)
     assert.equal(f.subscriptions.length, 1)
     for (const effect of f.effects) effect()
     assert.deepEqual(f.calls, [])
-    if (!busy) { button.props.onClick(); assert.deepEqual(f.calls, [['recap', 'a']]) }
+    button.props.onClick(); assert.deepEqual(f.calls, [['click', 'a']])
   }
+})
+test('assistant action accepts only the latest completed closing message', () => {
+  for (const [options, messageId] of [[{}, 'older'], [{ turnOrder: [] }, 'latest'],
+    [{ status: 'running' }, 'latest'], [{ closing: 'pending' }, 'latest']]) {
+    const f = componentFixture()
+    assert.equal(f.RecapAction({ ...componentProps(undefined, chatFixture(options)), messageId, controller: f.controller }), null)
+  }
+  const f = componentFixture()
+  const chat = chatFixture()
+  assert.ok(f.RecapAction({ ...componentProps(undefined, chat), controller: f.controller }))
+  // An immutable snapshot can contain stable live readers; read them on each selection.
+  chat.nodes.get = () => ({ kind: 'turn-tail', data: { closing: { status: 'settled', finalNode: { messageId: 'newest' } } } })
+  assert.equal(f.RecapAction({ ...componentProps(undefined, chat), controller: f.controller }), null)
+  assert.ok(f.RecapAction({ ...componentProps(undefined, chat), messageId: 'newest', controller: f.controller }))
 })
 test('controller snapshots and independent subscriptions isolate sessions', async () => {
   const f = setup({ autoRecap: false }); const a = []; const b = []
