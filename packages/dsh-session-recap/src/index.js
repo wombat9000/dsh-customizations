@@ -7,6 +7,7 @@ export const inject = ['sessions', 'llm', 'connection', 'settings', 'webServer']
 export const CHANNEL = '/session-recap'
 export const Config = z.object({
   autoRecap: z.boolean().default(true),
+  useJev: z.boolean().default(false),
   inactivityMinutes: z.number().step(1).min(1).max(10080).default(30),
   provider: z.string().default(''),
   model: z.string().default(''),
@@ -18,7 +19,7 @@ export function apply(ctx, config = {}) {
     setSource(current) { source = current },
     onChange() {},
   })
-  const runtime = new RecapRuntime({ sessions: ctx.sessions, llm: ctx.llm, settings: () => source() })
+  const runtime = new RecapRuntime({ sessions: ctx.sessions, llm: ctx.llm, settings: () => source(), getJev: () => ctx.get('jev') })
   // This scope is opaque and contains no provider credentials.
   const storageScope = createHash('sha256').update(JSON.stringify([process.env.DSH_HOME ?? '', process.cwd(), name])).digest('hex').slice(0, 24)
   const settings = () => ({ ...normalizeSettings(source()), storageScope })

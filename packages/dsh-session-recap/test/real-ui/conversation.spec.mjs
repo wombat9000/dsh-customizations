@@ -66,6 +66,37 @@ test('automatic recap stays hidden, shimmers while pending, and glows when unrea
 })
 
 for (const [theme, narrow] of [['light', false], ['dark', false], ['light', true]]) {
+  test(`Jev-selected visual recap cards (${theme}${narrow ? ', narrow' : ''})`, async ({ app }) => {
+    await app.route('**/session-recap/*', async route => {
+      const request = route.request().postDataJSON()
+      if (request.method !== 'recap') return route.fallback()
+      await route.fulfill({ json: { type: 'server-response', rpcId: request.rpcId, result: { ok: true, value: {
+        sessionId: request.payload.sessionId, selection: { mode: 'jev' },
+        recap: { headline: 'Visual recaps with conversation-specific cards', cards: [
+          { label: 'direction', text: 'Replace long recap bullets with compact cards that highlight the most useful parts of the conversation.' },
+          { label: 'decision', text: 'Choose headings from a fixed vocabulary, with consistent icons and subtle accent colors.' },
+          { label: 'question', text: 'Which categories best help you remember the thread when you return?' },
+        ] },
+      } } } })
+    })
+    const settings = await pluginSettings(app, theme)
+    await settings.getByRole('button', { name: 'Close', exact: true }).click()
+    await openSeededSession(app)
+    await app.getByRole('button', { name: 'Generate recap', exact: true }).click()
+    const dock = app.getByRole('complementary', { name: 'Session recap' })
+    await expect(dock.locator('[data-recap-card]')).toHaveCount(3)
+    await expect(dock.getByRole('heading', { name: 'Decision', exact: true })).toBeVisible()
+    if (narrow) await dock.evaluate(element => { element.style.width = '300px' })
+    const boxes = await dock.locator('[data-recap-card]').evaluateAll(elements => elements.map(el => { const rect = el.getBoundingClientRect(); return { top: rect.top, left: rect.left } }))
+    if (narrow) expect(boxes[1].top).toBeGreaterThan(boxes[0].top)
+    else expect(boxes[1].top).toBe(boxes[0].top)
+    expect(await dock.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true)
+    await app.evaluate(() => document.fonts.ready)
+    await expect(dock).toHaveScreenshot(`recap-cards-${theme}${narrow ? '-narrow' : ''}.png`)
+  })
+}
+
+for (const [theme, narrow] of [['light', false], ['dark', false], ['light', true]]) {
   test(`concise generated recap (${theme}${narrow ? ', narrow' : ''})`, async ({ app }) => {
     await app.route('**/session-recap/*', async route => {
       const request = route.request().postDataJSON()

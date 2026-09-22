@@ -1,6 +1,6 @@
 import { act } from 'react'
 import { afterEach, expect, test } from 'vitest'
-import { page } from 'vitest/browser'
+import { page, userEvent } from 'vitest/browser'
 import { mountSlot } from './harness.mjs'
 
 // Fast component interactions use mocked RPC. Visual assertions belong to test/real-ui.
@@ -284,6 +284,73 @@ test('recap panel inherits chat width and composer clearance and removes its sty
   expect(document.querySelector(selector)).toBeNull()
 })
 
+for (const [width, columns] of [[760, 3], [530, 2], [390, 1]]) test(`visual cards form ${columns} columns at ${width}px with fixed titles and safe content`, async () => {
+  const malicious = '<img src=x onerror=alert(1)> **plain**'
+  fixture = await mountSlot('conversation.input.dock', { dark: width === 530, recapHeadline: 'Review the plan', selection: { mode: 'jev' }, recapCards: [
+    { label: 'direction', text: malicious }, { label: 'decision', text: 'Keep the current API.' }, { label: 'paused', text: 'Review next.' }, { label: 'provider_status', text: 'Do not display' },
+  ] })
+  page.getByTestId('fixture').element().style.width = `${width}px`
+  await click(page.getByRole('button', { name: 'Generate recap', exact: true }))
+  const list = page.getByRole('list', { name: 'Recap cards' }).element()
+  expect(getComputedStyle(list).gridTemplateColumns.split(' ')).toHaveLength(columns)
+  expect(list.children).toHaveLength(3)
+  expect([...list.querySelectorAll('h3')].map(el => el.textContent)).toEqual(['Direction', 'Decision', 'Where we paused'])
+  expect(list.querySelectorAll('svg[aria-hidden="true"][focusable="false"]')).toHaveLength(3)
+  expect(list.textContent).toContain(malicious)
+  expect(list.querySelector('img, script, strong')).toBeNull()
+  expect(list.textContent).not.toContain('Do not display')
+  expect(list.previousElementSibling.textContent).toBe('Review the plan')
+  expect(document.querySelector('.dsh-session-recap-card__caption')).toBeNull()
+  const panel = page.getByRole('complementary', { name: 'Session recap' }).element()
+  expect(panel.scrollWidth).toBeLessThanOrEqual(panel.clientWidth)
+  expect(panel.getBoundingClientRect().width).toBeLessThanOrEqual(680)
+})
+
+for (const [selection, caption] of [[{ mode: 'standard', reason: 'unavailable' }, 'Jev unavailable'], [{ mode: 'standard', reason: 'no-labels' }, 'No suitable categories'], [{ mode: 'standard' }, null]]) test(`legacy recap fallback caption: ${caption}`, async () => {
+  fixture = await mountSlot('conversation.input.dock', { selection })
+  await click(page.getByRole('button', { name: 'Generate recap', exact: true }))
+  const panel = page.getByRole('complementary', { name: 'Session recap' }).element()
+  expect(panel.querySelectorAll('li')).toHaveLength(3)
+  expect(panel.querySelector('.dsh-session-recap-card__caption')?.textContent ?? null).toBe(caption)
+  expect(panel.querySelector('[data-recap-card]')).toBeNull()
+})
+
+test('visual recap keyboard toggle reuses the ready result', async () => {
+  fixture = await mountSlot('conversation.input.dock', { recapCards: [{ label: 'next_step', text: 'Review the changes.' }] })
+  page.getByRole('button', { name: 'Generate recap', exact: true }).element().focus()
+  await act(async () => userEvent.keyboard('{Enter}'))
+  await expect.element(page.getByRole('heading', { name: 'Next step', level: 3 })).toBeVisible()
+  await act(async () => userEvent.keyboard(' '))
+  await expect.element(page.getByRole('complementary', { name: 'Session recap' })).not.toBeInTheDocument()
+  await act(async () => userEvent.keyboard('{Enter}'))
+  await expect.element(page.getByRole('heading', { name: 'Next step', level: 3 })).toBeVisible()
+  expect(fixture.rpc.call.mock.calls.filter(([, method]) => method === 'recap')).toHaveLength(1)
+})
+
+test('unknown card labels alone create no generated labels or status tiles', async () => {
+  fixture = await mountSlot('conversation.input.dock', { recapCards: [{ label: '<img src=x>', text: 'Injected label' }, { label: 'provider_status', text: 'Running tool' }, { label: 'constructor', text: 'Inherited' }] })
+  await click(page.getByRole('button', { name: 'Generate recap', exact: true }))
+  const panel = page.getByRole('complementary', { name: 'Session recap' }).element()
+  expect(panel.querySelector('[data-recap-card], img')).toBeNull()
+  expect(panel.textContent).toBe('')
+})
+
+test('Jev setting is default-off with privacy description and saves without generating', async () => {
+  fixture = await mountSlot('settings.plugin.item')
+  await click(page.getByRole('button', { name: 'Expand: Session recap' }))
+  const checkbox = page.getByRole('checkbox', { name: 'Use Jev to choose recap cards', exact: true })
+  await expect.element(checkbox).not.toBeChecked()
+  const description = document.getElementById(checkbox.element().getAttribute('aria-describedby')).textContent
+  expect(description).toContain('same bounded history through OpenRouter to TypeSafe')
+  expect(description).toContain('requires the Jev plugin')
+  expect(description).toContain('shared key and model in the OpenRouter and Jev settings cards')
+  await click(checkbox)
+  await click(page.getByRole('button', { name: 'Save', exact: true }))
+  expect(fixture.rpc.call).toHaveBeenCalledWith('/session-recap', 'configure', { autoRecap: false, useJev: true, inactivityMinutes: 30, provider: 'fixture-provider', model: 'fixture-model' })
+  expect(fixture.rpc.call.mock.calls.some(([, method]) => method === 'recap')).toBe(false)
+  expect(document.querySelector('input[type="password"]')).toBeNull()
+})
+
 test('settings starts collapsed and preserves the draft across expansion', async () => {
   fixture = await mountSlot('settings.plugin.item')
   const expand = page.getByRole('button', { name: 'Expand: Session recap' })
@@ -302,6 +369,6 @@ test('settings starts collapsed and preserves the draft across expansion', async
   await click(page.getByRole('button', { name: 'Save', exact: true }))
   await expect.element(page.getByRole('status')).toHaveTextContent('Session recap settings saved.')
   expect(fixture.rpc.call).toHaveBeenCalledWith('/session-recap', 'configure', {
-    autoRecap: false, inactivityMinutes: 30, provider: 'fixture-provider', model: 'edited-model',
+    autoRecap: false, useJev: false, inactivityMinutes: 30, provider: 'fixture-provider', model: 'edited-model',
   })
 })

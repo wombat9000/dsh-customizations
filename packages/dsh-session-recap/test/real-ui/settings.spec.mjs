@@ -26,6 +26,26 @@ async function focusMetrics(header) {
   })
 }
 
+test('Jev card selection is an explicit persisted opt-in with no key field', async ({ app }) => {
+  const dialog = await pluginSettings(app, 'light')
+  await dialog.getByRole('button', { name: 'Expand: Session recap', exact: true }).click()
+  const option = dialog.getByLabel('Use Jev to choose recap cards')
+  try {
+    await expect(option).not.toBeChecked()
+    await option.check()
+    await dialog.getByRole('button', { name: 'Save', exact: true }).click()
+    await expect(dialog.getByText('Session recap settings saved.')).toBeVisible()
+    await dialog.getByRole('button', { name: 'Close', exact: true }).click()
+    const reopened = await pluginSettings(app, 'light')
+    await reopened.getByRole('button', { name: 'Expand: Session recap', exact: true }).click()
+    await expect(reopened.getByLabel('Use Jev to choose recap cards')).toBeChecked()
+  } finally {
+    await app.getByLabel('Use Jev to choose recap cards').uncheck()
+    await app.getByRole('button', { name: 'Save', exact: true }).click()
+    await expect(app.getByText('Session recap settings saved.')).toBeVisible()
+  }
+})
+
 for (const scheme of ['light', 'dark']) {
   test(`real plugin settings in ${scheme} mode`, async ({ app }) => {
     const dialog = await pluginSettings(app, scheme)
@@ -37,8 +57,9 @@ for (const scheme of ['light', 'dark']) {
     await expect(dialog).toHaveScreenshot(`settings-${scheme}-collapsed.png`)
     await recap.click()
     await expect(dialog.getByLabel('Provider ID')).toHaveValue('')
-    await expect(dialog.getByLabel('Model ID')).toHaveValue('')
+    await expect(dialog.getByLabel('Model ID', { exact: true })).toHaveValue('')
     await expect(dialog.getByLabel('Automatic recap on return')).toBeChecked()
+    await expect(dialog.getByLabel('Use Jev to choose recap cards')).not.toBeChecked()
     await expect(dialog.getByLabel('Inactivity (minutes)')).toHaveValue('30')
     await dialog.getByRole('heading', { name: 'Plugins', exact: true }).click()
     await expect(dialog).toHaveScreenshot(`settings-${scheme}-expanded.png`)

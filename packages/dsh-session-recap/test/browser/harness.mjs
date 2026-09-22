@@ -19,7 +19,7 @@ delete window.__ModuleLoader__
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 
 const h = React.createElement
-export async function mountSlot(name, { blank = false, narrow = false, dark = false, recapError = false, deferRecap = false, autoRecap = false, recapHeadline, recapTopic = 'Add reliable screenshot coverage for Session recap.' } = {}) {
+export async function mountSlot(name, { blank = false, narrow = false, dark = false, recapError = false, deferRecap = false, autoRecap = false, recapCards, selection, recapHeadline, recapTopic = 'Add reliable screenshot coverage for Session recap.' } = {}) {
   const pending = new Map()
   let sessionId = 'fixture-session'
   localStorage.clear()
@@ -39,12 +39,12 @@ export async function mountSlot(name, { blank = false, narrow = false, dark = fa
       case 'recap': if (deferRecap) await new Promise(resolve => pending.set(payload.sessionId, resolve))
         if (recapError) return { ok: false, error: { code: 'fixture-error', details: {}, message: 'The fixture provider is unavailable. Try again.' } }
         return { ok: true, value: {
-        sessionId: payload.sessionId, generatedAt: '2026-01-02T03:04:05.000Z',
+        selection, sessionId: payload.sessionId, generatedAt: '2026-01-02T03:04:05.000Z',
         recap: {
           ...(recapHeadline === undefined ? {} : { headline: recapHeadline }),
-          bullets: [typeof recapTopic === 'function' ? recapTopic(payload.sessionId) : recapTopic,
+          ...(recapCards === undefined ? { bullets: [typeof recapTopic === 'function' ? recapTopic(payload.sessionId) : recapTopic,
             'Use the registered React slots for the recap.',
-            'We paused at the screenshot review.'],
+            'We paused at the screenshot review.'] } : { cards: recapCards }),
         },
       } }
       case 'configure': Object.assign(config, payload); return { ok: true, value: { ...config } }

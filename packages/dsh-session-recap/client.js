@@ -51,7 +51,7 @@ window.__ModuleLoader__.load({
           if (generation !== s.generation) return
           if (result.sessionId !== sessionId) throw new Error('Session recap returned a different session.')
           const open = s.value.openOnReady === true
-          publish(s, { busy: false, recap: result.recap, open, unread: !open, openOnReady: false })
+          publish(s, { busy: false, recap: result.recap, selection: result.selection, open, unread: !open, openOnReady: false })
         }).catch((error) => {
           if (generation === s.generation) publish(s, { ...s.value, busy: false, open: s.value.openOnReady === true, openOnReady: false, error: error.message || String(error) })
         }).finally(() => { if (s.pending === pending) s.pending = null })
@@ -179,6 +179,23 @@ window.__ModuleLoader__.load({
         },
       }
     }
+    // Only these local labels, paths and accents may shape a generated card.
+    const CARD_LABELS = Object.freeze({
+      direction: { title: 'Direction', path: 'm5 19 4-10 10-4-4 10-10 4Zm4-10 6 6', accent: '#628bc4' },
+      decision: { title: 'Decision', path: 'm5 12 4 4L19 6M5 21h14', accent: '#548d78' },
+      insight: { title: 'Key insight', path: 'M9 18h6m-5 3h4M8 14a6 6 0 1 1 8 0l-1 2H9l-1-2Z', accent: '#b18a48' },
+      question: { title: 'Open question', path: 'M9 8a3 3 0 1 1 5 2c-2 1-2 2-2 3m0 4h.01M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Z', accent: '#9680b8' },
+      next_step: { title: 'Next step', path: 'M4 12h16m-6-6 6 6-6 6', accent: '#588e9e' },
+      paused: { title: 'Where we paused', path: 'M8 5v14M16 5v14', accent: '#a38273' },
+    })
+    function visualCards(recap) {
+      const seen = new Set()
+      return (Array.isArray(recap?.cards) ? recap.cards : []).filter(card => {
+        if (!card || typeof card.label !== 'string' || !Object.hasOwn(CARD_LABELS, card.label) || typeof card.text !== 'string' || !card.text.trim() || seen.has(card.label)) return false
+        seen.add(card.label)
+        return true
+      }).slice(0, 3)
+    }
     const recapStyles = `
       .dsh-session-recap-action { appearance: none; display: inline-flex; align-items: center; justify-content: center; gap: 6px; flex: none; font: inherit; font-size: 13px; line-height: 20px; color: var(--dsw-alias-label-secondary, inherit); background: transparent; border: 0; border-radius: 8px; padding: 5px 8px; cursor: pointer; }
       .dsh-session-recap-action:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover, #8882); color: var(--dsw-alias-label-primary, inherit); }
@@ -196,6 +213,13 @@ window.__ModuleLoader__.load({
       .dsh-session-recap-card { box-sizing: border-box; width: calc(100% - 2 * var(--dsh-composer-side-clearance, 16px) - 32px); max-width: var(--dsh-chat-content-width, 680px); min-width: 0; margin: 0 auto 8px; padding: 12px 16px; border: .5px solid var(--dsw-alias-border-l2, #8883); border-radius: 16px; background: var(--dsw-alias-bg-layer-2, #8881); color: var(--dsw-alias-label-primary, inherit); font-size: 13px; line-height: 1.6; }
       .dsh-session-recap-card__body { max-height: min(240px, 30vh); overflow-y: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
       .dsh-session-recap-card__headline { margin: 0 0 6px; font: inherit; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .dsh-session-recap-card__body--cards { max-height: min(420px, 45vh); }
+      .dsh-session-recap-card__grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr)); gap: 8px; margin: 0; padding: 0; list-style: none; }
+      .dsh-session-recap-card__tile { min-width: 0; padding: 10px 12px; border: .5px solid var(--dsw-alias-border-l2, #8883); border-radius: 10px; background: var(--dsw-alias-bg-layer-3, #8881); }
+      .dsh-session-recap-card__title { display: flex; align-items: center; gap: 6px; margin: 0 0 4px; font: inherit; font-size: 12px; font-weight: 500; color: var(--dsw-alias-label-secondary, inherit); }
+      .dsh-session-recap-card__icon { flex: none; color: color-mix(in srgb, var(--recap-accent) 75%, var(--dsw-alias-label-primary, currentColor)); }
+      .dsh-session-recap-card__text { margin: 0; }
+      .dsh-session-recap-card__caption { margin: 6px 0 0; font-size: 11px; color: var(--dsw-alias-label-tertiary, inherit); }
       .dsh-session-recap-card__list { margin: 0; padding-left: 18px; }
       .dsh-session-recap-card__row + .dsh-session-recap-card__row { margin-top: 4px; }
       .dsh-session-recap-card__loading { margin: 0; color: var(--dsw-alias-label-secondary, inherit); }
@@ -282,12 +306,23 @@ window.__ModuleLoader__.load({
       }, [controller, sessionId, blank])
       if (blank || running || !state.open || !(state.error || state.recap)) return null
       const h = React.createElement
+      const cards = visualCards(state.recap)
+      const caption = state.selection?.mode === 'standard'
+        ? state.selection.reason === 'unavailable' ? 'Jev unavailable' : state.selection.reason === 'no-labels' ? 'No suitable categories' : null
+        : null
       return h('aside', { 'aria-label': 'Session recap', className: 'dsh-session-recap-card' },
         state.busy ? h('p', { role: 'status', className: 'dsh-session-recap-card__loading' }, 'Generating recap…') : null,
         state.error ? h('p', { role: 'alert', className: 'dsh-session-recap-card__error' }, state.error) : null,
-        state.recap ? h('div', { role: state.busy ? undefined : 'status', tabIndex: 0, 'aria-label': 'Recap content', className: 'dsh-session-recap-card__body' },
+        state.recap ? h('div', { role: state.busy ? undefined : 'status', tabIndex: 0, 'aria-label': 'Recap content', className: `dsh-session-recap-card__body${cards.length ? ' dsh-session-recap-card__body--cards' : ''}` },
           typeof state.recap.headline === 'string' && state.recap.headline.trim() ? h('h2', { className: 'dsh-session-recap-card__headline', title: state.recap.headline }, state.recap.headline) : null,
-          h('ul', { className: 'dsh-session-recap-card__list' }, ...state.recap.bullets.map((bullet, index) => h('li', { key: index, className: 'dsh-session-recap-card__row' }, bullet)))) : null)
+          cards.length ? h('ul', { role: 'list', 'aria-label': 'Recap cards', className: 'dsh-session-recap-card__grid' }, ...cards.map(card => {
+            const label = CARD_LABELS[card.label]
+            return h('li', { key: card.label, 'data-recap-card': card.label, className: 'dsh-session-recap-card__tile' },
+              h('h3', { className: 'dsh-session-recap-card__title' },
+                h('svg', { className: 'dsh-session-recap-card__icon', style: { '--recap-accent': label.accent }, 'aria-hidden': true, focusable: 'false', width: 14, height: 14, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.5, strokeLinecap: 'round', strokeLinejoin: 'round' }, h('path', { d: label.path })), label.title),
+              h('p', { className: 'dsh-session-recap-card__text' }, card.text.slice(0, 180)))
+          })) : h('ul', { className: 'dsh-session-recap-card__list' }, ...(Array.isArray(state.recap.bullets) ? state.recap.bullets : []).filter(bullet => typeof bullet === 'string').map((bullet, index) => h('li', { key: index, className: 'dsh-session-recap-card__row' }, bullet))),
+          caption ? h('p', { className: 'dsh-session-recap-card__caption' }, caption) : null) : null)
     }
     // Match DSH's settings-card metrics using public theme tokens, not private CSS-module names.
     const settingsStyles = `
@@ -352,7 +387,7 @@ window.__ModuleLoader__.load({
         setBusy(true); setError(''); setNotice('')
         try {
           const { autoRecap, inactivityMinutes, provider, model } = draft
-          const result = await rpc.call(CHANNEL, 'configure', { autoRecap, inactivityMinutes: Number(inactivityMinutes), provider, model })
+          const result = await rpc.call(CHANNEL, 'configure', { autoRecap, useJev: draft.useJev === true, inactivityMinutes: Number(inactivityMinutes), provider, model })
           if (!result.ok) throw new Error(result.error.message)
           setDraft(result.value)
           controller.invalidateSettings()
@@ -376,6 +411,8 @@ window.__ModuleLoader__.load({
         h('p', { style: { margin: 0 } }, 'Recaps use the selected model and never change the transcript.'),
         draft ? h(React.Fragment, null,
           row('Automatic recap on return', h('input', { type: 'checkbox', checked: draft.autoRecap, disabled: busy, onChange: (event) => change('autoRecap', event.target.checked) })),
+          row('Use Jev to choose recap cards', h('input', { type: 'checkbox', checked: draft.useJev === true, disabled: busy, 'aria-describedby': `${ID}-jev-privacy`, onChange: (event) => change('useJev', event.target.checked) })),
+          h('small', { id: `${ID}-jev-privacy`, className: 'dsh-session-recap-settings__hint' }, 'Optional; requires the Jev plugin. Sends the same bounded history through OpenRouter to TypeSafe to choose recap categories. Manage the shared key and model in the OpenRouter and Jev settings cards; no new key is needed.'),
           row('Inactivity (minutes)', h('input', { type: 'number', min: 1, value: draft.inactivityMinutes, disabled: busy, onChange: (event) => change('inactivityMinutes', event.target.value) })),
           row('Available models', h('select', { value: '', disabled: busy || providers.length === 0, onChange: (event) => { if (event.target.value) { const [provider, model] = JSON.parse(event.target.value); setDraft((draft) => ({ ...draft, provider, model })) } } },
             h('option', { value: '' }, 'Choose a model…'),
@@ -406,6 +443,6 @@ window.__ModuleLoader__.load({
         name: 'settings.plugin.item', key: ID, inject: () => ({ rpc: ctx.get('connection').rpc, controller }),
       }, SettingsCard))
     }
-    return { inject: ['slots', 'connection', 'remote'], apply, createController, RecapCard, RecapAction, SettingsCard, CHANNEL }
+    return { inject: ['slots', 'connection', 'remote'], apply, createController, RecapCard, RecapAction, SettingsCard, CARD_LABELS, CHANNEL }
   },
 })

@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { apply, CHANNEL, name } from '../src/index.js'
+import { apply, CHANNEL, inject, name } from '../src/index.js'
 
 function host() {
   let handler, current, installed, preparations = 0
@@ -31,11 +31,40 @@ test('registers schema-backed settings defaults and opaque storage scope', async
   const { rpc, installed } = host()
   assert.equal(installed.ns, 'wombat9000-session-recap')
   assert.equal(installed.entry.autoRecap, true)
+  assert.equal(installed.entry.useJev, false)
   assert.equal(installed.entry.inactivityMinutes, 30)
   const result = await rpc('settings')
   assert.equal(result.ok, true)
   assert.equal(result.value.provider, '')
   assert.match(result.value.storageScope, /^[a-f0-9]{24}$/)
+})
+test('optional Jev lookup wires the service without required injection or settings-time evaluation', async () => {
+  assert.ok(!inject.includes('jev'))
+  const { rpc, ctx } = host()
+  let evaluations = 0, lookups = 0
+  ctx.get = key => {
+    assert.equal(key, 'jev'); lookups++
+    return service
+  }
+  const service = {
+    settings: () => ({ model: 'typesafe/jev-1.13' }),
+    async evaluate() { evaluations++; throw Error('No credential') },
+  }
+  await rpc('configure', { provider: 'configured', model: 'model', useJev: true })
+  await rpc('settings')
+  assert.equal(evaluations, 0)
+  assert.equal(lookups, 0)
+  ctx.sessions.get = () => session
+  const session = { seq: 1, deriveMessages: () => [{ role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text: 'Visible conversation' }] }] }
+  ctx.llm.prepareCall = async config => ({ config, async *stream() {
+    yield { type: 'text-delta', text: '{"bullets":["Legacy recap"]}' }
+    yield { type: 'finish', reason: { kind: 'stop' } }
+  } })
+  const result = await rpc('recap', { sessionId: 's' })
+  assert.equal(result.ok, true)
+  assert.deepEqual(result.value.selection, { mode: 'standard', reason: 'unavailable' })
+  assert.equal(evaluations, 1)
+  assert.ok(lookups > 0)
 })
 test('provider catalog returns only public display metadata', async () => {
   const { rpc } = host()
@@ -53,7 +82,7 @@ test('configure validates exact custom route without catalog allowlist', async (
 })
 test('configure rejects unknown fields and invalid values without writing', async () => {
   const { rpc } = host()
-  for (const payload of [null, [], { apiKey: 'SECRET' }, { inactivityMinutes: 0 }, { provider: 'alone' }, { autoRecap: 0 }]) assert.equal((await rpc('configure', payload)).ok, false)
+  for (const payload of [null, [], { apiKey: 'SECRET' }, { inactivityMinutes: 0 }, { provider: 'alone' }, { autoRecap: 0 }, { useJev: 'true' }]) assert.equal((await rpc('configure', payload)).ok, false)
   assert.equal((await rpc('settings')).value.provider, '')
 })
 test('unconfigured recap returns a complete DSH RPC failure envelope', async () => {

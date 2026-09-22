@@ -319,12 +319,18 @@ test('Plugins card loads advisory models and saves an exact route without recap'
   const tree = render()
   assert.equal(tree.children[0].props['aria-expanded'], true)
   const nodes = []; const walk = (node) => { if (!node || typeof node !== 'object') return; nodes.push(node); for (const child of node.children || []) walk(child) }; walk(tree)
+  const jev = nodes.find(node => node.type === 'label' && node.children.includes('Use Jev to choose recap cards')).children[1]
+  assert.equal(jev.props.checked, false)
+  assert.match(JSON.stringify(tree), /same bounded history through OpenRouter to TypeSafe/)
+  assert.match(JSON.stringify(tree), /shared key and model/)
+  jev.props.onChange({ target: { checked: true } })
   const select = nodes.find((node) => node.type === 'select')
   select.props.onChange({ target: { value: '["custom","uncataloged"]' } })
   const updated = render(); const flat = []; const visit = (node) => { if (!node || typeof node !== 'object') return; flat.push(node); for (const child of node.children || []) visit(child) }; visit(updated)
   flat.find((node) => node.type === 'button' && node.children.includes('Save')).props.onClick(); await flush()
   assert.equal(invalidations, 1)
   const saved = calls.find((call) => call.method === 'configure')
+  assert.equal(saved.payload.useJev, true)
   assert.equal(saved.payload.provider, 'custom'); assert.equal(saved.payload.model, 'uncataloged')
   assert.equal(calls.some((call) => call.method === 'recap'), false)
   render().children[0].props.onClick()
@@ -393,6 +399,47 @@ test('card renders only escaped bullets without header, metadata or controls', (
   assert.equal(nodes(tree).filter(node => node.type === 'li').length, 3)
   assert.equal(nodes(tree).filter(node => ['svg', 'small', 'strong'].includes(node.type)).length, 0)
   assert.doesNotMatch(JSON.stringify(tree), /Earlier recap|2026-01-01|Latest outcome|Next step/)
+})
+test('visual cards use fixed titles and decorative icons, skip unknowns and bound plain text', () => {
+  const expected = { direction: 'Direction', decision: 'Decision', insight: 'Key insight', question: 'Open question', next_step: 'Next step', paused: 'Where we paused' }
+  for (const [label, title] of Object.entries(expected)) {
+    const f = componentFixture({ open: true, recap: { headline: 'Headline', cards: [
+      { label: 'tool_status', text: 'Running' }, { label: '__proto__', text: 'Bad' },
+      { label, text: '<img onerror=bad()>', title: 'Injected', style: 'bad' },
+    ] } })
+    assert.deepEqual(Object.keys(f.CARD_LABELS), Object.keys(expected))
+    const tree = f.RecapCard({ ...componentProps(), controller: f.controller })
+    const flat = nodes(tree)
+    assert.equal(flat.filter(n => n.props?.['data-recap-card']).length, 1)
+    assert.ok(flat.find(n => n.type === 'h3').children.includes(title))
+    assert.equal(flat.find(n => n.type === 'svg').props['aria-hidden'], true)
+    assert.ok(flat.some(n => n.props?.role === 'list'))
+    assert.ok(flat.find(n => n.type === 'p').children.includes('<img onerror=bad()>'))
+    assert.doesNotMatch(JSON.stringify(tree), /Injected|tool_status|dangerouslySetInnerHTML/)
+  }
+  const f = componentFixture({ open: true, recap: { cards: Object.keys(expected).map(label => ({ label, text: 'x'.repeat(300) })) } })
+  const flat = nodes(f.RecapCard({ ...componentProps(), controller: f.controller }))
+  assert.equal(flat.filter(n => n.type === 'li').length, 3)
+  assert.ok(flat.filter(n => n.type === 'p').every(n => n.children[0].length === 180))
+})
+test('standard fallback footer uses only known reasons and legacy bullets remain', () => {
+  for (const [selection, caption] of [[{ mode: 'standard', reason: 'unavailable' }, 'Jev unavailable'], [{ mode: 'standard', reason: 'no-labels' }, 'No suitable categories'], [{ mode: 'standard' }, undefined], [{ mode: 'jev', reason: 'unavailable' }, undefined], [{ mode: 'standard', reason: '<script>' }, undefined]]) {
+    const f = componentFixture({ open: true, selection, recap: { cards: [{ label: 'unknown', text: 'skip' }], bullets: ['Legacy'] } })
+    const flat = nodes(f.RecapCard({ ...componentProps(), controller: f.controller }))
+    assert.equal(flat.find(n => n.type === 'li').children[0], 'Legacy')
+    assert.equal(flat.find(n => n.props?.className === 'dsh-session-recap-card__caption')?.children[0], caption)
+  }
+})
+test('controller keeps selection with the published result and clears it on a new turn', async () => {
+  const f = setup({ autoRecap: false })
+  const selection = { mode: 'standard', reason: 'no-labels' }
+  f.rpc.call = async () => ({ ok: true, value: { sessionId: 'a', selection, recap: { headline: 'Ready', cards: [{ label: 'paused', text: 'Review' }] } } })
+  await f.controller.recap('a')
+  assert.equal(f.controller.getSnapshot('a').selection, selection)
+  f.controller.click('a'); f.controller.click('a')
+  assert.equal(f.controller.getSnapshot('a').selection, selection)
+  f.controller.turnStarted('a')
+  assert.equal(f.controller.getSnapshot('a').selection, undefined)
 })
 test('hidden ready and generating states leave no panel; requested errors expose alerts', () => {
   for (const state of [{ busy: true, openOnReady: true }, { recap: { bullets: ['Hidden'] }, unread: true, open: false }]) {
