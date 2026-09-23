@@ -43,7 +43,8 @@ test('Jev runs first on the identical bounded excerpt; cards cache and in-flight
   const f = fixture()
   const [a, b] = await Promise.all([f.runtime.recap({ sessionId: 's' }), f.runtime.recap({ sessionId: 's' })])
   assert.deepEqual(a, b)
-  assert.deepEqual(a.selection, { mode: 'jev' })
+  assert.equal(a.selection.mode, 'jev')
+  assert.equal(a.selection.diagnostics.status, 'evaluated')
   assert.deepEqual(a.recap, { headline: draft.headline, cards: [{ label: 'direction', text: draft.cards.direction }] })
   assert.deepEqual(f.order, ['jev', 'prepare', 'write'])
   assert.deepEqual(f.evaluations[0].state, { conversation: boundedHistory(f.session.deriveMessages()) })
@@ -89,7 +90,9 @@ test('disabled, absent, getter errors, failed and no-label Jev fall back; enable
     if (mode === 'failure') f.service.evaluate = async () => { throw Error('SECRET') }
     if (mode === 'no-labels') f.service.evaluate = async () => answers([])
     const result = await f.runtime.recap({ sessionId: 's' })
-    assert.deepEqual(result.selection, { mode: 'standard', ...(mode === 'disabled' ? {} : { reason: mode === 'no-labels' ? mode : 'unavailable' }) })
+    const { diagnostics, ...selection } = result.selection
+    assert.deepEqual(selection, { mode: 'standard', ...(mode === 'disabled' ? {} : { reason: mode === 'no-labels' ? mode : 'unavailable' }) })
+    assert.equal(diagnostics?.status, mode === 'disabled' ? undefined : mode === 'no-labels' ? 'evaluated' : 'unavailable')
     assert.equal(f.calls.length, 1)
     assert.equal(f.runtime.cache.size, mode === 'disabled' ? 1 : 0)
     if (mode !== 'disabled') {

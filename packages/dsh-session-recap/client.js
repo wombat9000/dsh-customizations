@@ -213,6 +213,15 @@ window.__ModuleLoader__.load({
       .dsh-session-recap-card { box-sizing: border-box; width: calc(100% - 2 * var(--dsh-composer-side-clearance, 16px) - 32px); max-width: var(--dsh-chat-content-width, 680px); min-width: 0; margin: 0 auto 8px; padding: 12px 16px; border: .5px solid var(--dsw-alias-border-l2, #8883); border-radius: 16px; background: var(--dsw-alias-bg-layer-2, #8881); color: var(--dsw-alias-label-primary, inherit); font-size: 13px; line-height: 1.6; }
       .dsh-session-recap-card__body { max-height: min(240px, 30vh); overflow-y: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
       .dsh-session-recap-card__headline { margin: 0 0 6px; font: inherit; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .dsh-session-recap-card__diagnostics { margin-top: 8px; font-size: 12px; white-space: normal; }
+      .dsh-session-recap-card__diagnostics summary { cursor: pointer; }
+      .dsh-session-recap-card__diagnostics summary:focus-visible, .dsh-session-recap-card__diagnostics button:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary, #6b9cff); outline-offset: 2px; }
+      .dsh-session-recap-card__diagnostics p { margin: 6px 0; }
+      .dsh-session-recap-card__diagnostics pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 11px; }
+      .dsh-session-recap-card__diagnostics button { font: inherit; color: inherit; background: transparent; border: 1px solid var(--dsw-alias-border-l2, #8885); border-radius: 6px; padding: 4px 8px; margin-top: 8px; cursor: pointer; }
+      .dsh-session-recap-card__table-wrap { max-width: 100%; overflow-x: auto; margin: 8px 0; }
+      .dsh-session-recap-card__table-wrap table { border-collapse: collapse; min-width: 480px; width: 100%; }
+      .dsh-session-recap-card__table-wrap th, .dsh-session-recap-card__table-wrap td { padding: 4px 6px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--dsw-alias-border-l2, #8883); }
       .dsh-session-recap-card__body--cards { max-height: min(420px, 45vh); }
       .dsh-session-recap-card__grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr)); gap: 8px; margin: 0; padding: 0; list-style: none; }
       .dsh-session-recap-card__tile { min-width: 0; padding: 10px 12px; border: .5px solid var(--dsw-alias-border-l2, #8883); border-radius: 10px; background: var(--dsw-alias-bg-layer-3, #8881); }
@@ -284,6 +293,46 @@ window.__ModuleLoader__.load({
       }, recapIcon('dsh-session-recap-action__icon'),
       state.error ? React.createElement('span', { className: 'dsh-session-recap-action__warning', 'aria-hidden': true }, '!') : null)
     }
+    function SelectionDetails({ diagnostics }) {
+      const h = React.createElement
+      const [copyStatus, setCopyStatus] = React.useState('')
+      React.useEffect(() => { setCopyStatus('') }, [diagnostics])
+      if (diagnostics?.version !== 1) return null
+      // The host constructs this allowlisted snapshot without history or provider errors.
+      // Export this snapshot only, never the enclosing recap or session state.
+      const json = JSON.stringify(diagnostics, null, 2)
+      const thresholds = diagnostics.thresholds
+      const format = value => typeof value === 'number' && Number.isFinite(value) ? String(Number(value.toFixed(3))) : '—'
+      const reasons = {
+        support: `support below ${thresholds.support}`,
+        usefulness: `usefulness below ${thresholds.usefulness}`,
+        confidence: `confidence below ${thresholds.confidence}`,
+        'invalid-answer': 'answer incomplete or invalid',
+        'ranked-out': `outside the top ${thresholds.maxCards}`,
+      }
+      const copy = async () => {
+        try { await navigator.clipboard.writeText(json); setCopyStatus('Diagnostics copied.') }
+        catch { setCopyStatus('Clipboard unavailable. Expand the JSON and copy it manually.') }
+      }
+      return h('details', { className: 'dsh-session-recap-card__diagnostics' },
+        h('summary', null, 'Selection details'),
+        h('p', null, 'From this recap request. Opening or copying these details makes no model call. No conversation text or credentials are included.'),
+        h('p', null, `Model: ${diagnostics.model ?? 'Unavailable'} · Questions: ${diagnostics.questionSetVersion}`),
+        h('p', null, `Thresholds: support ≥ ${thresholds.support}; usefulness ≥ ${thresholds.usefulness}; confidence ≥ ${thresholds.confidence}. Up to ${thresholds.maxCards} cards.`),
+        diagnostics.status === 'unavailable' ? h('p', null, 'Jev evaluation was unavailable; no category scores were retained.') : h('p', null, 'Table values are rounded to three decimals. JSON keeps full precision. Selected categories go to the writer, which can still omit a card.'),
+        h('div', { className: 'dsh-session-recap-card__table-wrap', tabIndex: 0, 'aria-label': 'Category selection scores' },
+          h('table', null,
+            h('thead', null, h('tr', null, ...['Category', 'Support', 'Usefulness', 'Confidence', 'Outcome'].map(title => h('th', { key: title, scope: 'col' }, title)))),
+            h('tbody', null, ...diagnostics.categories.map(row => h('tr', { key: row.label },
+              h('th', { scope: 'row' }, CARD_LABELS[row.label]?.title ?? row.label),
+              h('td', null, format(row.support)), h('td', null, format(row.usefulness)), h('td', null, format(row.confidence)),
+              h('td', null, row.selected ? 'Selected' : row.reasons.length ? `Not selected: ${row.reasons.map(reason => reasons[reason] ?? 'not evaluated').join('; ')}` : 'Not evaluated')))))),
+        h('button', { type: 'button', onClick: copy }, 'Copy diagnostics JSON'),
+        copyStatus ? h('p', { role: 'status' }, copyStatus) : null,
+        h('details', null, h('summary', null, 'Questions, probabilities, and JSON'),
+          h('p', null, 'Question wording and rubric levels for this request, with full-precision values when evaluation succeeded:'),
+          h('pre', { tabIndex: 0, 'aria-label': 'Selection diagnostics JSON' }, json)))
+    }
     function RecapCard({ sessionId, useSession, useConversation, useChat, controller }) {
       const state = useRecapState(controller, sessionId)
       const blank = useSession((session) => session.blank) !== false
@@ -313,7 +362,8 @@ window.__ModuleLoader__.load({
       return h('aside', { 'aria-label': 'Session recap', className: 'dsh-session-recap-card' },
         state.busy ? h('p', { role: 'status', className: 'dsh-session-recap-card__loading' }, 'Generating recap…') : null,
         state.error ? h('p', { role: 'alert', className: 'dsh-session-recap-card__error' }, state.error) : null,
-        state.recap ? h('div', { role: state.busy ? undefined : 'status', tabIndex: 0, 'aria-label': 'Recap content', className: `dsh-session-recap-card__body${cards.length ? ' dsh-session-recap-card__body--cards' : ''}` },
+        state.recap ? h('div', { tabIndex: 0, 'aria-label': 'Recap content', className: `dsh-session-recap-card__body${cards.length ? ' dsh-session-recap-card__body--cards' : ''}` },
+          h('div', { role: state.busy ? undefined : 'status' },
           typeof state.recap.headline === 'string' && state.recap.headline.trim() ? h('h2', { className: 'dsh-session-recap-card__headline', title: state.recap.headline }, state.recap.headline) : null,
           cards.length ? h('ul', { role: 'list', 'aria-label': 'Recap cards', className: 'dsh-session-recap-card__grid' }, ...cards.map(card => {
             const label = CARD_LABELS[card.label]
@@ -322,7 +372,8 @@ window.__ModuleLoader__.load({
                 h('svg', { className: 'dsh-session-recap-card__icon', style: { '--recap-accent': label.accent }, 'aria-hidden': true, focusable: 'false', width: 14, height: 14, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.5, strokeLinecap: 'round', strokeLinejoin: 'round' }, h('path', { d: label.path })), label.title),
               h('p', { className: 'dsh-session-recap-card__text' }, card.text.slice(0, 180)))
           })) : h('ul', { className: 'dsh-session-recap-card__list' }, ...(Array.isArray(state.recap.bullets) ? state.recap.bullets : []).filter(bullet => typeof bullet === 'string').map((bullet, index) => h('li', { key: index, className: 'dsh-session-recap-card__row' }, bullet))),
-          caption ? h('p', { className: 'dsh-session-recap-card__caption' }, caption) : null) : null)
+          caption ? h('p', { className: 'dsh-session-recap-card__caption' }, caption) : null),
+          state.selection?.diagnostics ? h(SelectionDetails, { key: sessionId, diagnostics: state.selection.diagnostics }) : null) : null)
     }
     // Match DSH's settings-card metrics using public theme tokens, not private CSS-module names.
     const settingsStyles = `

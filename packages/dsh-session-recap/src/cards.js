@@ -19,14 +19,50 @@ export const CARD_QUESTIONS = Object.freeze(Object.fromEntries(CARD_LABELS.flatM
     '3: An essential supported point, explicit decision, user correction, or central unresolved issue needed to remember the conversation accurately.',
   ]) })],
 ])))
-export function selectCardLabels(result) {
-  const unit = n => typeof n === 'number' && Number.isFinite(n) && n >= 0 && n <= 1
+export const CARD_THRESHOLDS = Object.freeze({ support: .75, usefulness: 2, confidence: .3, maxCards: 3 })
+const unit = n => typeof n === 'number' && Number.isFinite(n) && n >= 0 && n <= 1
+// Read only own data properties: provider getters and toJSON never enter snapshots.
+const own = (value, key) => value && typeof value === 'object' ? Object.getOwnPropertyDescriptor(value, key)?.value : undefined
+function cardRows(result) {
+  const answers = own(result, 'answers')
   return CARD_LABELS.map((label, index) => {
-    const support = result?.answers?.[`support_${label}`]
-    const usefulness = result?.answers?.[`usefulness_${label}`]
-    return { label, index, support: support?.type === 'noul' ? support.noul : undefined, score: usefulness?.type === 'score' ? usefulness.score : undefined, confidence: usefulness?.confidence }
-  }).filter(row => unit(row.support) && row.support >= .75 && unit(row.confidence) && row.confidence >= .3 && Number.isFinite(row.score) && row.score >= 2 && row.score <= 3)
-    .sort((a, b) => b.score / 3 - a.score / 3 || b.support - a.support || a.index - b.index).slice(0, 3).map(row => row.label)
+    const support = own(answers, `support_${label}`)
+    const usefulness = own(answers, `usefulness_${label}`)
+    return { label, index, support: own(support, 'type') === 'noul' ? own(support, 'noul') : undefined, score: own(usefulness, 'type') === 'score' ? own(usefulness, 'score') : undefined, confidence: own(usefulness, 'confidence'), probabilities: own(usefulness, 'type') === 'score' ? own(usefulness, 'probabilities') : undefined }
+  })
+}
+function selectedLabels(rows) {
+  return rows.filter(row => unit(row.support) && row.support >= CARD_THRESHOLDS.support && unit(row.confidence) && row.confidence >= CARD_THRESHOLDS.confidence && Number.isFinite(row.score) && row.score >= CARD_THRESHOLDS.usefulness && row.score <= 3)
+    .sort((a, b) => b.score / 3 - a.score / 3 || b.support - a.support || a.index - b.index).slice(0, CARD_THRESHOLDS.maxCards).map(row => row.label)
+}
+export function selectCardLabels(result) { return selectedLabels(cardRows(result)) }
+export function cardSelectionDiagnostics(result, status = 'evaluated') { return evaluateCardSelection(result, status).diagnostics }
+export function evaluateCardSelection(result, status = 'evaluated') {
+  const rows = cardRows(status === 'evaluated' ? result : undefined)
+  const labels = selectedLabels(rows)
+  const model = status === 'evaluated' ? own(result, 'model') : undefined
+  const categories = rows.map(row => {
+    const support = unit(row.support) ? row.support : null
+    const usefulness = Number.isFinite(row.score) && row.score >= 0 && row.score <= 3 ? row.score : null
+    const confidence = unit(row.confidence) ? row.confidence : null
+    const probabilities = Object.fromEntries(['0', '1', '2', '3'].flatMap(key => {
+      const value = own(row.probabilities, key)
+      return unit(value) ? [[key, value]] : []
+    }))
+    const selected = labels.includes(row.label)
+    const reasons = []
+    if (status === 'evaluated' && !selected) {
+      if (support === null || usefulness === null || confidence === null) reasons.push('invalid-answer')
+      if (support !== null && support < CARD_THRESHOLDS.support) reasons.push('support')
+      if (usefulness !== null && usefulness < CARD_THRESHOLDS.usefulness) reasons.push('usefulness')
+      if (confidence !== null && confidence < CARD_THRESHOLDS.confidence) reasons.push('confidence')
+      if (!reasons.length) reasons.push('ranked-out')
+    }
+    return Object.freeze({ label: row.label, support, usefulness, confidence, probabilities: Object.keys(probabilities).length ? Object.freeze(probabilities) : null, selected, reasons: Object.freeze(reasons) })
+  })
+  // Bump questionSetVersion whenever CARD_QUESTIONS changes; version is the export schema.
+  const diagnostics = Object.freeze({ version: 1, questionSetVersion: 'recap-categories-v1', model: typeof model === 'string' && model.length <= 128 && /^typesafe\/jev-[a-zA-Z0-9][a-zA-Z0-9._-]{0,95}$/u.test(model) ? model : null, thresholds: CARD_THRESHOLDS, questions: CARD_QUESTIONS, categories: Object.freeze(categories), status })
+  return { labels, diagnostics }
 }
 export function cardPrompt(labels) {
   return `Help a returning user remember this conversation in ten seconds. ${safety}

@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { CARD_LABELS, CARD_LIMITS, CARD_QUESTIONS, cardPrompt, hasDuplicateKeys, selectCardLabels } from './cards.js'
+import { CARD_LABELS, CARD_LIMITS, CARD_QUESTIONS, cardPrompt, hasDuplicateKeys, cardSelectionDiagnostics, evaluateCardSelection } from './cards.js'
 
 export const DEFAULT_SETTINGS = Object.freeze({ autoRecap: true, useJev: false, inactivityMinutes: 30, provider: '', model: '' })
 export const LIMITS = Object.freeze({ inputBytes: 24000, messages: 40, blocks: 128, outputChars: 4000, fieldChars: 320, headlineChars: 120, recapChars: 600, cacheEntries: 100, concurrent: 4, timeoutMs: 45000 })
@@ -274,13 +274,15 @@ export class RecapRuntime {
       let selection = { mode: 'standard' }
       check()
       if (settings.useJev) {
-        selection = { mode: 'standard', reason: 'unavailable' }
+        selection = { mode: 'standard', reason: 'unavailable', diagnostics: cardSelectionDiagnostics(undefined, 'unavailable') }
         if (jev.service) {
           try {
             const evaluated = await jev.service.evaluate({ state: { conversation: history }, questions: CARD_QUESTIONS, signal: controller.signal })
             check()
-            labels = selectCardLabels(evaluated)
-            selection = labels.length ? { mode: 'jev' } : { mode: 'standard', reason: 'no-labels' }
+            const selected = evaluateCardSelection(evaluated)
+            const { diagnostics } = selected
+            labels = selected.labels
+            selection = labels.length ? { mode: 'jev', diagnostics } : { mode: 'standard', reason: 'no-labels', diagnostics }
           } catch (error) {
             check()
             // An evaluator reporting a lifecycle change must not trigger another paid call.

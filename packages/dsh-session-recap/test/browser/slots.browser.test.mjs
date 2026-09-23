@@ -1,7 +1,54 @@
 import { act } from 'react'
-import { afterEach, expect, test } from 'vitest'
+import { afterEach, expect, test, vi } from 'vitest'
 import { page, userEvent } from 'vitest/browser'
 import { mountSlot } from './harness.mjs'
+import { cardSelectionDiagnostics, CARD_LABELS } from '../../src/cards.js'
+
+const selectionDiagnostics = () => cardSelectionDiagnostics({
+  model: 'typesafe/jev-1.13',
+  answers: Object.fromEntries(CARD_LABELS.flatMap(label => [
+    [`support_${label}`, { type: 'noul', noul: .91 }],
+    [`usefulness_${label}`, { type: 'score', score: 2.4, confidence: .25, probabilities: { '0': 0, '1': 0, '2': .6, '3': .4 } }],
+  ])),
+})
+
+test('selection details expose rejection evidence and copy only diagnostics without another request', async () => {
+  const diagnostics = selectionDiagnostics()
+  fixture = await mountSlot('conversation.input.dock', { narrow: true, selection: { mode: 'standard', reason: 'no-labels', diagnostics }, recapTopic: 'PRIVATE CONVERSATION TEXT' })
+  const copied = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue(undefined)
+  try {
+    await click(page.getByRole('button', { name: 'Generate recap', exact: true }))
+    expect(document.querySelector('.dsh-session-recap-card__diagnostics').open).toBe(false)
+    await click(page.getByText('Selection details', { exact: true }))
+    await expect.element(page.getByText('Not selected: confidence below 0.3', { exact: true }).first()).toBeVisible()
+    await click(page.getByText('Questions, probabilities, and JSON', { exact: true }))
+    const json = page.getByLabelText('Selection diagnostics JSON').element().textContent
+    expect(JSON.parse(json)).toEqual(diagnostics)
+    expect(json).not.toContain('PRIVATE CONVERSATION TEXT')
+    await click(page.getByRole('button', { name: 'Copy diagnostics JSON', exact: true }))
+    expect(copied).toHaveBeenCalledWith(JSON.stringify(diagnostics, null, 2))
+    await expect.element(page.getByText('Diagnostics copied.', { exact: true })).toBeVisible()
+    expect(fixture.rpc.call.mock.calls.filter(([, method]) => method === 'recap')).toHaveLength(1)
+    const dock = document.querySelector('aside')
+    expect(dock.scrollWidth).toBe(dock.clientWidth)
+    await fixture.sent()
+    expect(document.querySelector('.dsh-session-recap-card__diagnostics')).toBeNull()
+  } finally { copied.mockRestore() }
+})
+
+test('selection details explain unavailable scores and offer manual copy when clipboard fails', async () => {
+  fixture = await mountSlot('conversation.input.dock', { selection: { mode: 'standard', reason: 'unavailable', diagnostics: cardSelectionDiagnostics(undefined, 'unavailable') } })
+  const copied = vi.spyOn(navigator.clipboard, 'writeText').mockRejectedValue(Error('PRIVATE CLIPBOARD ERROR'))
+  try {
+    await click(page.getByRole('button', { name: 'Generate recap', exact: true }))
+    await click(page.getByText('Selection details', { exact: true }))
+    await expect.element(page.getByText('Jev evaluation was unavailable; no category scores were retained.', { exact: true })).toBeVisible()
+    await click(page.getByRole('button', { name: 'Copy diagnostics JSON', exact: true }))
+    await expect.element(page.getByText('Clipboard unavailable. Expand the JSON and copy it manually.', { exact: true })).toBeVisible()
+    expect(document.body.textContent).not.toContain('PRIVATE CLIPBOARD ERROR')
+  } finally { copied.mockRestore() }
+})
+
 
 // Fast component interactions use mocked RPC. Visual assertions belong to test/real-ui.
 let fixture

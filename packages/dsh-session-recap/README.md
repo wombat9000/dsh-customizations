@@ -51,6 +51,16 @@ DSH `0.1.5-rc.2` does not expose a response-schema control on its LLM interface.
 
 If Jev is missing, unconfigured, fails, or finds no suitable categories, the existing writer produces standard bullets and the panel explains the fallback. Fallback results are not cached while Jev selection is enabled, so a later request can recover after configuration or service repair. Disabling Jev uses the standard recap without an additional provider call. Jev selection and writing share the recap's overall deadline and stale-session checks.
 
+### Inspect category selection
+
+For a recap generated with Jev selection enabled, expand **Selection details** in the recap panel. The table shows each category's support probability, usefulness score, confidence, and selection or rejection reason. A category can pass all thresholds but rank outside the top three. “Selected” means selected for the writer; the writer can still omit that card.
+
+The section also shows the returned model identifier, thresholds, and question-set version. Expand **Questions, probabilities, and JSON** to read the exact questions, rubric levels, and full-precision values. The table rounds numbers to three decimal places; threshold comparisons use the full values. Select **Copy diagnostics JSON** to copy the diagnostic snapshot. If clipboard access fails, expand the JSON and copy it manually.
+
+Opening or copying diagnostics makes no model call. The host retains a sanitized snapshot alongside that generation's recap in memory, including when a successful card recap is served from cache. The snapshot contains no conversation text, generated recap text, credentials, session identifiers, or raw provider errors. The plugin does not persist it to logs or browser storage. If you copy it, your clipboard receives that snapshot.
+
+Unavailable evaluations show no scores. Recaps generated before this feature, or with Jev selection disabled, have no **Selection details** section. The feature cannot recover scores from an earlier generation.
+
 ## Behavior and limits
 
 - Recaps run on return, not while you are away. The plugin uses the browser's recorded activity timestamp when available. On a first visit, it uses the latest persisted human message, assistant message, or turn-end event time instead. Session metadata changes do not reset this fallback. Old sessions can therefore recap automatically in a new browser; recent or empty sessions do not.

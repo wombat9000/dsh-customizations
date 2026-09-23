@@ -1,4 +1,45 @@
 import { test, expect, pluginSettings, openSeededSession } from '../../../../tests/real-ui/fixtures.mjs'
+import { cardSelectionDiagnostics, CARD_LABELS } from '../../src/cards.js'
+
+test('selection diagnostics expand and copy in the real shell without another evaluation', async ({ app }, testInfo) => {
+  let calls = 0
+  const diagnostics = cardSelectionDiagnostics({ model: 'typesafe/jev-1.13', answers: Object.fromEntries(CARD_LABELS.flatMap(label => [
+    [`support_${label}`, { type: 'noul', noul: .91 }],
+    [`usefulness_${label}`, { type: 'score', score: 2.4, confidence: .25, probabilities: { '0': 0, '1': 0, '2': .6, '3': .4 } }],
+  ])) })
+  await app.route('**/session-recap/*', async route => {
+    const request = route.request().postDataJSON()
+    if (request.method !== 'recap') return route.fallback()
+    calls++
+    await route.fulfill({ json: { type: 'server-response', rpcId: request.rpcId, result: { ok: true, value: {
+      sessionId: request.payload.sessionId, selection: { mode: 'standard', reason: 'no-labels', diagnostics },
+      recap: { headline: 'Diagnostics fixture', bullets: ['Private fixture conversation text.'] },
+    } } } })
+  })
+  await openSeededSession(app)
+  await app.evaluate(() => { Object.defineProperty(navigator.clipboard, 'writeText', { configurable: true, value: async text => { window.__copiedRecapDiagnostics = text } }) })
+  await app.getByRole('button', { name: 'Generate recap', exact: true }).click()
+  const dock = app.getByRole('complementary', { name: 'Session recap' })
+  const details = dock.locator('.dsh-session-recap-card__diagnostics')
+  await expect(details).not.toHaveAttribute('open', '')
+  await details.locator('summary').first().focus()
+  await app.keyboard.press('Enter')
+  await expect(details).toHaveAttribute('open', '')
+  await expect(details.getByText('Not selected: confidence below 0.3', { exact: true })).toHaveCount(6)
+  await details.getByRole('button', { name: 'Copy diagnostics JSON' }).click()
+  await expect(details.getByText('Diagnostics copied.', { exact: true })).toBeVisible()
+  const copied = await app.evaluate(() => window.__copiedRecapDiagnostics)
+  expect(JSON.parse(copied)).toEqual(diagnostics)
+  expect(copied).not.toContain('Private fixture conversation text.')
+  await dock.screenshot({ path: testInfo.outputPath('selection-details.png') })
+  expect(calls).toBe(1)
+  await dock.evaluate(el => { el.style.width = '300px' })
+  expect(await dock.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true)
+  await app.getByRole('button', { name: 'Hide recap', exact: true }).click()
+  await app.getByRole('button', { name: 'Show recap', exact: true }).click()
+  await expect(dock.locator('.dsh-session-recap-card__diagnostics')).not.toHaveAttribute('open', '')
+  expect(calls).toBe(1)
+})
 
 test('recap action mounts in the latest assistant footer and toggles without another request', async ({ app }) => {
   let calls = 0
