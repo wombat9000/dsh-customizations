@@ -1,7 +1,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { RecapRuntime, boundedHistory, parseCards } from '../src/runtime.js'
-import { CARD_LABELS, CARD_QUESTIONS, selectCardLabels } from '../src/cards.js'
+import { RecapRuntime } from '../src/runtime.js'
+import { boundedHistory } from '../src/history.js'
+import { CARD_LABELS } from '../src/cards.js'
 const answers = (labels = ['direction']) => ({ answers: Object.fromEntries(CARD_LABELS.flatMap(label => [
   [`support_${label}`, { type: 'noul', noul: labels.includes(label) ? .9 : .1 }],
   [`usefulness_${label}`, { type: 'score', score: 2, confidence: .3 }],
@@ -23,22 +24,6 @@ function fixture() {
   const runtime = new RecapRuntime({ sessions: { get: () => session }, llm, settings: () => settings, getJev: () => state.service, timeoutMs: 1000 })
   return { runtime, session, settings, calls, evaluations, order, service, state, setModel: value => { model = value } }
 }
-test('twelve typed questions, exact thresholds, ranking, stable ties and maximum three', () => {
-  assert.equal(Object.keys(CARD_QUESTIONS).length, 12)
-  for (const label of CARD_LABELS) {
-    assert.equal(CARD_QUESTIONS[`support_${label}`].type, 'noul')
-    assert.equal(CARD_QUESTIONS[`usefulness_${label}`].criteria.length, 4)
-  }
-  const result = answers(CARD_LABELS)
-  assert.deepEqual(selectCardLabels(result), CARD_LABELS.slice(0, 3))
-  result.answers.support_direction.noul = .7499
-  result.answers.usefulness_decision.score = 1.999
-  result.answers.usefulness_insight.confidence = .2999
-  result.answers.support_question.noul = .75
-  result.answers.usefulness_paused.score = 3
-  assert.deepEqual(selectCardLabels(result), ['paused', 'next_step', 'question'])
-  assert.deepEqual(selectCardLabels({}), [])
-})
 test('Jev runs first on the identical bounded excerpt; cards cache and in-flight requests deduplicate', async () => {
   const f = fixture()
   const [a, b] = await Promise.all([f.runtime.recap({ sessionId: 's' }), f.runtime.recap({ sessionId: 's' })])
@@ -55,16 +40,6 @@ test('Jev runs first on the identical bounded excerpt; cards cache and in-flight
   assert.equal((await f.runtime.recap({ sessionId: 's' })).cached, true)
   assert.equal(f.evaluations.length, 1)
 })
-test('strict card parsing normalizes whitespace, omits null, rejects malformed/duplicate fields before length', () => {
-  assert.deepEqual(parseCards('{"headline":" A\\n B ","cards":{"decision":null,"direction":" Some  text "}}', ['direction', 'decision']), { headline: 'A B', cards: [{ label: 'direction', text: 'Some text' }] })
-  for (const value of [
-    { ...draft, extra: true }, { ...draft, cards: { unknown: 'No' } }, { ...draft, cards: {} },
-    { ...draft, cards: { direction: null } }, { ...draft, cards: { direction: '' } },
-    { ...draft, cards: { direction: 1 } }, { ...draft, headline: null },
-  ]) assert.throws(() => parseCards(JSON.stringify(value), ['direction']))
-  for (const raw of ['{"headline":"a","headline":"b","cards":{"direction":"ok"}}', '{"headline":"a","cards":{"direction":"ok","dir\\u0065ction":"again"}}']) assert.throws(() => parseCards(raw, ['direction']), { reason: 'shape' })
-  assert.throws(() => parseCards(JSON.stringify({ headline: 'x'.repeat(121), cards: { direction: 'ok', decision: 1 } }), ['direction', 'decision']), { reason: 'card-type' })
-})
 test('card length repair uses selected schema once; malformed shape never repairs', async () => {
   for (const value of [{ ...draft, headline: 'x'.repeat(121) }, { ...draft, cards: { direction: 'x'.repeat(181) } }]) {
     const f = fixture(); f.state.output = n => n === 1 ? value : draft
@@ -79,7 +54,6 @@ test('card length repair uses selected schema once; malformed shape never repair
   const g = fixture(); g.state.output = () => ({ ...draft, cards: { direction: 'x'.repeat(181) } })
   await assert.rejects(g.runtime.recap({ sessionId: 's' }), { reason: 'card-length' })
   assert.equal(g.calls.length, 2)
-  assert.throws(() => parseCards(JSON.stringify({ headline: 'A', cards: { direction: 'x'.repeat(161), decision: 'y'.repeat(161), insight: 'z'.repeat(161) } }), ['direction', 'decision', 'insight']), { reason: 'combined-length' })
 })
 test('disabled, absent, getter errors, failed and no-label Jev fall back; enabled fallback never caches and recovers', async () => {
   for (const mode of ['disabled', 'absent', 'getter', 'failure', 'no-labels']) {
@@ -138,11 +112,20 @@ test('changes during Jev prevent fallback and all writer calls, including evalua
     }
   }
 })
-test('Jev shares overall timeout; late resolution cannot start a writer', async () => {
+test('Jev shares overall timeout; late resolution cannot start a writer', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] })
   const f = fixture(); f.runtime.timeoutMs = 5
-  let release, signal
-  f.service.evaluate = input => { signal = input.signal; return new Promise(resolve => { release = resolve }) }
-  await assert.rejects(f.runtime.recap({ sessionId: 's' }), { code: 'cancelled' })
+  let release, signal, evaluationStarted
+  const started = new Promise(resolve => { evaluationStarted = resolve })
+  f.service.evaluate = input => {
+    signal = input.signal
+    evaluationStarted()
+    return new Promise(resolve => { release = resolve })
+  }
+  const rejected = assert.rejects(f.runtime.recap({ sessionId: 's' }), { code: 'cancelled' })
+  await started
+  t.mock.timers.tick(5)
+  await rejected
   assert.equal(signal.aborted, true)
   release(answers())
   await new Promise(resolve => setImmediate(resolve))

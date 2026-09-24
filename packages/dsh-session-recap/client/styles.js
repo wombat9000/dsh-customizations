@@ -1,5 +1,7 @@
-// The style hook uses React from the factory and ID from rpc.js.
-const recapStyles = `
+import { useEffect } from 'react'
+import { ID } from './rpc.js'
+
+export const recapStyles = `
   .dsh-session-recap-action { appearance: none; display: inline-flex; align-items: center; justify-content: center; gap: 6px; flex: none; font: inherit; font-size: 13px; line-height: 20px; color: var(--dsw-alias-label-secondary, inherit); background: transparent; border: 0; border-radius: 8px; padding: 5px 8px; cursor: pointer; }
   .dsh-session-recap-action:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover, #8882); color: var(--dsw-alias-label-primary, inherit); }
   .dsh-session-recap-action:focus-visible, .dsh-session-recap-card__body:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary, #6b9cff); outline-offset: 2px; }
@@ -40,7 +42,7 @@ const recapStyles = `
 `
 
 // Match DSH's settings-card metrics using public theme tokens, not private CSS-module names.
-const settingsStyles = `
+export const settingsStyles = `
   .dsh-session-recap-settings { border: .5px solid var(--dsw-alias-border-l4); background: var(--dsw-alias-bg-layer-3); border-radius: 16px; list-style: none; transition: border-color .16s, background .16s; }
   .dsh-session-recap-settings:hover { border-color: var(--dsw-alias-label-dimmed); }
   .dsh-session-recap-settings[data-open="true"] { background: var(--dsw-alias-bg-layer-2); border-color: var(--dsw-alias-label-dimmed); }
@@ -67,8 +69,8 @@ const settingsStyles = `
   @media (prefers-reduced-motion: reduce) { .dsh-session-recap-settings, .dsh-session-recap-settings__chevron { transition: none; } }
 `
 
-function useRecapStyles(enabled = true) {
-  React.useEffect(() => {
+export function useRecapStyles(enabled = true) {
+  useEffect(() => {
     if (!enabled || typeof document === 'undefined') return
     const style = document.createElement('style')
     style.dataset.pluginCss = `${ID}/recap`

@@ -1,5 +1,9 @@
-// The only DSH plugin face: sibling fragments provide the controller and views.
-function apply(ctx) {
+import { ID } from './rpc.js'
+import { createController } from './controller.js'
+import { RecapAction, RecapCard } from './containers/recap.jsx'
+import { SettingsCard } from './containers/SettingsCard.jsx'
+
+export function apply(ctx) {
   let storage
   try {
     storage = window.localStorage

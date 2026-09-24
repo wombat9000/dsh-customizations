@@ -1,15 +1,15 @@
 // RPC response handling and the controller's retryable settings cache.
-const CHANNEL = '/session-recap'
-const ID = 'wombat9000-session-recap'
+export const CHANNEL = '/session-recap'
+export const ID = 'wombat9000-session-recap'
 
-function unwrap(result) {
+export function unwrap(result) {
   if (!result?.ok) {
     throw new Error(result?.error?.message || 'Session recap is unavailable.')
   }
   return result.value
 }
 
-function createSettingsReader(rpc) {
+export function createSettingsReader(rpc) {
   let pending
 
   function settings() {

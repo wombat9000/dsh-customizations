@@ -1,6 +1,7 @@
-// Uses ID, CHANNEL and unwrap from rpc.js; controller services are passed in.
+import { ID, CHANNEL, unwrap } from './rpc.js'
+
 // Only timestamps enter browser storage. Recap text stays in memory.
-function createActivityStore({ storage, now }) {
+export function createActivityStore({ storage, now }) {
   const memory = new Map()
 
   function key(config, sessionId) {
@@ -35,7 +36,7 @@ function createActivityStore({ storage, now }) {
 
 // Each dock mount owns its focus/visibility lifetime and its retry timer.
 // Controller generations independently invalidate in-flight session work.
-function createReturnTracker({ sessionId, document, window, rpc, settings, activityStore, now, state, publish, recap }) {
+export function createReturnTracker({ sessionId, document, window, rpc, settings, activityStore, now, state, publish, recap }) {
   const { key, read, touch } = activityStore
   let alive = true
   let active = false

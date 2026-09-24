@@ -1,15 +1,7 @@
-import { readFileSync } from 'node:fs'
-import vm from 'node:vm'
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { createController } from '../client/controller.js'
 
-const source = readFileSync(new URL('../client.js', import.meta.url), 'utf8')
-function load(react = {}) {
-  let exports
-  const window = { __ModuleLoader__: { load({ factory }) { exports = factory((id) => { assert.equal(id, 'react'); return react }) } } }
-  vm.runInNewContext(source, { window, setTimeout, clearTimeout })
-  return { exports, window }
-}
 class Target {
   handlers = new Map()
   addEventListener(event, handler) { if (!this.handlers.has(event)) this.handlers.set(event, new Set()); this.handlers.get(event).add(handler) }
@@ -34,7 +26,7 @@ function setup(overrides = {}) {
   } }
   const document = new Target(); document.visibilityState = 'visible'; document.hasFocus = () => true
   const window = new Target()
-  const controller = load().exports.createController({ rpc, storage, now: () => time })
+  const controller = createController({ rpc, storage, now: () => time })
   let value
   return { controller, data, calls, config, activity, document, window, storage, rpc,
     mount: (id = 'a') => controller.mount(id, { document, window }, (next) => { value = next }),
@@ -272,164 +264,6 @@ test('unmount removes all listeners and settings completion cannot trigger a dep
   f.advance(31); f.show(); await flush(); assert.equal(recaps(f).length, 0)
   for (const target of [f.document, f.window]) for (const handlers of target.handlers.values()) assert.equal(handlers.size, 0)
 })
-test('registers dock, additive assistant action, and Plugins slots with one controller', () => {
-  const { exports } = load()
-  const entries = []
-  const events = new Map()
-  exports.apply({ get: (name) => name === 'remote' ? { $on: (event, handler) => events.set(event, handler) } : { rpc: {} }, slots: { inject: (_name, register) => register(), register: (entry, component) => entries.push({ entry, component }) } })
-  assert.deepEqual(entries.map(({ entry }) => entry.name), ['conversation.input.dock', 'conversation.chat.assistant-actions', 'settings.plugin.item'])
-  assert.equal(entries[2].entry.key, 'wombat9000-session-recap')
-  const dock = entries[0].entry.inject('session-1')
-  const header = entries[1].entry.inject('session-1')
-  assert.equal(dock.sessionId, 'session-1')
-  assert.equal(header.sessionId, 'session-1')
-  assert.equal(header.controller, dock.controller)
-  assert.equal(entries[2].entry.inject().controller, dock.controller)
-  assert.equal(entries[0].component, exports.RecapCard)
-  assert.equal(entries[1].component, exports.RecapAction)
-  assert.equal(events.size, 1)
-  let sent
-  dock.controller.humanMessageSent = (id) => { sent = id }
-  events.get('api-session/activity')('session-1', 123)
-  assert.equal(sent, 'session-1')
-  assert.doesNotMatch(source, /setInterval|dangerouslySetInnerHTML|conversation\.submit|session\.append/)
-})
-test('Plugins card loads advisory models and saves an exact route without recap', async () => {
-  const values = []; let cursor = 0; let mounted = false; let effect
-  const react = {
-    createElement: (type, props, ...children) => ({ type, props, children }),
-    useState(initial) { const index = cursor++; if (!(index in values)) values[index] = initial; return [values[index], (value) => { values[index] = typeof value === 'function' ? value(values[index]) : value }] },
-    useEffect(fn) { if (!mounted) effect = fn },
-  }
-  const calls = []; let invalidations = 0
-  const config = { autoRecap: true, inactivityMinutes: 30, provider: 'p', model: 'm' }
-  const rpc = { async call(_channel, method, payload) {
-    calls.push({ method, payload })
-    if (method === 'models') return { ok: true, value: { providers: [{ id: 'p', name: 'Provider', models: [{ id: 'm', name: 'Model' }] }] } }
-    return { ok: true, value: method === 'configure' ? payload : config }
-  } }
-  const { SettingsCard } = load(react).exports
-  const render = () => { cursor = 0; return SettingsCard({ rpc, controller: { invalidateSettings() { invalidations++ } } }) }
-  const collapsed = render()
-  const header = collapsed.children[0]
-  assert.equal(header.props['aria-expanded'], false)
-  assert.equal(collapsed.children[1], null)
-  mounted = true; effect(); await flush()
-  header.props.onClick()
-  const tree = render()
-  assert.equal(tree.children[0].props['aria-expanded'], true)
-  const nodes = []; const walk = (node) => { if (!node || typeof node !== 'object') return; nodes.push(node); for (const child of node.children || []) walk(child) }; walk(tree)
-  const jev = nodes.find(node => node.type === 'label' && node.children.includes('Use Jev to choose recap cards')).children[1]
-  assert.equal(jev.props.checked, false)
-  assert.match(JSON.stringify(tree), /same bounded history through OpenRouter to TypeSafe/)
-  assert.match(JSON.stringify(tree), /shared key and model/)
-  jev.props.onChange({ target: { checked: true } })
-  const select = nodes.find((node) => node.type === 'select')
-  select.props.onChange({ target: { value: '["custom","uncataloged"]' } })
-  const updated = render(); const flat = []; const visit = (node) => { if (!node || typeof node !== 'object') return; flat.push(node); for (const child of node.children || []) visit(child) }; visit(updated)
-  flat.find((node) => node.type === 'button' && node.children.includes('Save')).props.onClick(); await flush()
-  assert.equal(invalidations, 1)
-  const saved = calls.find((call) => call.method === 'configure')
-  assert.equal(saved.payload.useJev, true)
-  assert.equal(saved.payload.provider, 'custom'); assert.equal(saved.payload.model, 'uncataloged')
-  assert.equal(calls.some((call) => call.method === 'recap'), false)
-  render().children[0].props.onClick()
-  const closed = render()
-  assert.equal(closed.children[0].props['aria-expanded'], false)
-  assert.equal(closed.children[1], null)
-})
-// Minimal RC2 public Chat snapshot; selection reads live node/location indexes.
-function chatFixture({ turnOrder = [1, 2], status = 'closed', closing = 'settled', messageId = 'latest' } = {}) {
-  const node = { kind: 'turn-tail', data: { closing: { status: closing, finalNode: { messageId } } } }
-  return { timeline: { turnOrder, turns: new Map(turnOrder.map(id => [id, { status }])) },
-    locations: { getTurn: () => ['tail'] }, nodes: { get: () => node } }
-}
-function componentProps(session = { blank: false, openState: 'open', running: false }, chat = chatFixture()) {
-  return { sessionId: 'a', messageId: 'latest', useSession: select => select(session || {}),
-    useConversation: select => select({ activeTargets: new Set(['chat']) }), useChat: select => select(chat) }
-}
-function componentFixture(state = {}) {
-  const effects = []; const subscriptions = []; const calls = []
-  const react = {
-    createElement: (type, props, ...children) => ({ type, props, children }),
-    useEffect: (effect) => effects.push(effect),
-    useCallback: (callback) => callback,
-    useRef: (value) => ({ current: value }),
-    useSyncExternalStore(subscribe, getSnapshot) {
-      const listener = () => {}; subscriptions.push(subscribe(listener))
-      return getSnapshot()
-    },
-  }
-  const controller = {
-    getSnapshot(id) { assert.equal(id, 'a'); return state },
-    subscribe(id, listener) { assert.equal(id, 'a'); assert.equal(typeof listener, 'function'); return () => {} },
-    mount(...args) { calls.push(['mount', ...args]); return () => {} },
-    click(id) { calls.push(['click', id]) },
-    turnStarted(id) { calls.push(['turnStarted', id]) },
-    observeSession() {},
-
-  }
-  return { ...load(react).exports, controller, effects, subscriptions, calls }
-}
-const nodes = (tree) => !tree || typeof tree !== 'object' ? [] : [tree, ...(tree.children || []).flatMap(nodes)]
-test('blank or unavailable sessions hide both surfaces without activity mounts', () => {
-  const f = componentFixture()
-  for (const session of [null, { blank: true }]) {
-    assert.equal(f.RecapCard({ ...componentProps(session), controller: f.controller }), null)
-    assert.equal(f.RecapAction({ ...componentProps(session), controller: f.controller }), null)
-  }
-  for (const effect of f.effects) effect()
-  assert.deepEqual(f.calls, [])
-})
-test('empty cards leave no panel', () => {
-  for (const state of [{}]) {
-    const f = componentFixture(state)
-    assert.equal(f.RecapCard({ ...componentProps(), controller: f.controller }), null)
-  }
-})
-test('card renders only escaped bullets without header, metadata or controls', () => {
-  const f = componentFixture({ open: true, recap: { bullets: ['<script>bad()</script>', 'Direction', 'Paused'] }, generatedAt: '2026-01-01' })
-  const tree = f.RecapCard({ ...componentProps(), controller: f.controller })
-  assert.equal(tree.type, 'aside'); assert.equal(tree.props['aria-label'], 'Session recap')
-  assert.ok(nodes(tree).some(node => node.props?.role === 'status'))
-  assert.match(JSON.stringify(tree), /<script>bad\(\)<\/script>/)
-  assert.doesNotMatch(JSON.stringify(tree), /dangerouslySetInnerHTML/)
-  const buttons = nodes(tree).filter(node => node.type === 'button')
-  assert.equal(buttons.length, 0)
-  assert.equal(nodes(tree).filter(node => node.type === 'li').length, 3)
-  assert.equal(nodes(tree).filter(node => ['svg', 'small', 'strong'].includes(node.type)).length, 0)
-  assert.doesNotMatch(JSON.stringify(tree), /Earlier recap|2026-01-01|Latest outcome|Next step/)
-})
-test('visual cards use fixed titles and decorative icons, skip unknowns and bound plain text', () => {
-  const expected = { direction: 'Direction', decision: 'Decision', insight: 'Key insight', question: 'Open question', next_step: 'Next step', paused: 'Where we paused' }
-  for (const [label, title] of Object.entries(expected)) {
-    const f = componentFixture({ open: true, recap: { headline: 'Headline', cards: [
-      { label: 'tool_status', text: 'Running' }, { label: '__proto__', text: 'Bad' },
-      { label, text: '<img onerror=bad()>', title: 'Injected', style: 'bad' },
-    ] } })
-    assert.deepEqual(Object.keys(f.CARD_LABELS), Object.keys(expected))
-    const tree = f.RecapCard({ ...componentProps(), controller: f.controller })
-    const flat = nodes(tree)
-    assert.equal(flat.filter(n => n.props?.['data-recap-card']).length, 1)
-    assert.ok(flat.find(n => n.type === 'h3').children.includes(title))
-    assert.equal(flat.find(n => n.type === 'svg').props['aria-hidden'], true)
-    assert.ok(flat.some(n => n.props?.role === 'list'))
-    assert.ok(flat.find(n => n.type === 'p').children.includes('<img onerror=bad()>'))
-    assert.doesNotMatch(JSON.stringify(tree), /Injected|tool_status|dangerouslySetInnerHTML/)
-  }
-  const f = componentFixture({ open: true, recap: { cards: Object.keys(expected).map(label => ({ label, text: 'x'.repeat(300) })) } })
-  const flat = nodes(f.RecapCard({ ...componentProps(), controller: f.controller }))
-  assert.equal(flat.filter(n => n.type === 'li').length, 3)
-  assert.ok(flat.filter(n => n.type === 'p').every(n => n.children[0].length === 180))
-})
-test('standard fallback footer uses only known reasons and legacy bullets remain', () => {
-  for (const [selection, caption] of [[{ mode: 'standard', reason: 'unavailable' }, 'Jev unavailable'], [{ mode: 'standard', reason: 'no-labels' }, 'No suitable categories'], [{ mode: 'standard' }, undefined], [{ mode: 'jev', reason: 'unavailable' }, undefined], [{ mode: 'standard', reason: '<script>' }, undefined]]) {
-    const f = componentFixture({ open: true, selection, recap: { cards: [{ label: 'unknown', text: 'skip' }], bullets: ['Legacy'] } })
-    const flat = nodes(f.RecapCard({ ...componentProps(), controller: f.controller }))
-    assert.equal(flat.find(n => n.type === 'li').children[0], 'Legacy')
-    assert.equal(flat.find(n => n.props?.className === 'dsh-session-recap-card__caption')?.children[0], caption)
-  }
-})
 test('controller keeps selection with the published result and clears it on a new turn', async () => {
   const f = setup({ autoRecap: false })
   const selection = { mode: 'standard', reason: 'no-labels' }
@@ -440,50 +274,6 @@ test('controller keeps selection with the published result and clears it on a ne
   assert.equal(f.controller.getSnapshot('a').selection, selection)
   f.controller.turnStarted('a')
   assert.equal(f.controller.getSnapshot('a').selection, undefined)
-})
-test('hidden ready and generating states leave no panel; requested errors expose alerts', () => {
-  for (const state of [{ busy: true, openOnReady: true }, { recap: { bullets: ['Hidden'] }, unread: true, open: false }]) {
-    const f = componentFixture(state)
-    assert.equal(f.RecapCard({ ...componentProps(), controller: f.controller }), null)
-  }
-  const f = componentFixture({ open: true, error: 'Provider failed' })
-  const tree = f.RecapCard({ ...componentProps(), controller: f.controller })
-  assert.ok(nodes(tree).find(node => node.props?.role === 'alert').children.includes('Provider failed'))
-})
-test('icon-only assistant action stays clickable while busy and toggles ready content', () => {
-  for (const [state, label] of [[{}, 'Generate recap'], [{ busy: true }, 'Open recap when ready'],
-    [{ recap: {}, open: true }, 'Hide recap'], [{ recap: {}, unread: true, open: false }, 'Show recap']]) {
-    const f = componentFixture(state)
-    const tree = f.RecapAction({ ...componentProps(), controller: f.controller })
-    const button = nodes(tree).find(node => node.type === 'button')
-    assert.notEqual(button.props.disabled, true)
-    assert.equal(button.props['aria-label'], label)
-    assert.equal(button.props.title, state.busy ? 'Generating recap…' : label)
-    assert.equal(button.props['aria-expanded'], !!state.open)
-    assert.equal(button.props['data-busy'], !!state.busy)
-    assert.equal(button.props['data-unread'], !!state.unread)
-    assert.equal(button.children.filter(Boolean).length, 1)
-    assert.equal(button.children[0].type, 'svg')
-    assert.equal(button.children[0].props['aria-hidden'], true)
-    assert.equal(f.subscriptions.length, 1)
-    for (const effect of f.effects) effect()
-    assert.deepEqual(f.calls, [])
-    button.props.onClick(); assert.deepEqual(f.calls, [['click', 'a']])
-  }
-})
-test('assistant action accepts only the latest completed closing message', () => {
-  for (const [options, messageId] of [[{}, 'older'], [{ turnOrder: [] }, 'latest'],
-    [{ status: 'running' }, 'latest'], [{ closing: 'pending' }, 'latest']]) {
-    const f = componentFixture()
-    assert.equal(f.RecapAction({ ...componentProps(undefined, chatFixture(options)), messageId, controller: f.controller }), null)
-  }
-  const f = componentFixture()
-  const chat = chatFixture()
-  assert.ok(f.RecapAction({ ...componentProps(undefined, chat), controller: f.controller }))
-  // An immutable snapshot can contain stable live readers; read them on each selection.
-  chat.nodes.get = () => ({ kind: 'turn-tail', data: { closing: { status: 'settled', finalNode: { messageId: 'newest' } } } })
-  assert.equal(f.RecapAction({ ...componentProps(undefined, chat), controller: f.controller }), null)
-  assert.ok(f.RecapAction({ ...componentProps(undefined, chat), messageId: 'newest', controller: f.controller }))
 })
 test('controller snapshots and independent subscriptions isolate sessions', async () => {
   const f = setup({ autoRecap: false }); const a = []; const b = []

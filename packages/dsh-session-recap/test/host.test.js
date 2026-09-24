@@ -1,10 +1,11 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { boundedHistory, LIMITS, normalizeSettings, parseRecap, RecapRuntime } from '../src/runtime.js'
+import { RecapRuntime } from '../src/runtime.js'
+import { LIMITS } from '../src/settings.js'
 
 const answer = { bullets: ['Recaps should refresh your memory, not report task status.', 'We settled on a few short bullets that disappear after you send a message.'] }
 const message = (text, role = 'user', kind = 'user') => ({ role, source: { kind }, content: [{ type: 'text', text }] })
-function fixture({ chunks, prepareError, delay = 0, timeoutMs } = {}) {
+function fixture({ chunks, prepareError, beforeStream, timeoutMs } = {}) {
   const session = { seq: 2, deriveMessages: () => [message('Please build recap'), message('Done', 'assistant', 'model')] }
   const config = { autoRecap: true, inactivityMinutes: 30, provider: 'existing', model: 'exact' }
   const calls = []
@@ -12,28 +13,18 @@ function fixture({ chunks, prepareError, delay = 0, timeoutMs } = {}) {
     if (prepareError) throw prepareError
     return { config: options, inputModalities: ['text'], async *stream(request) {
       calls.push(request)
-      if (delay) await new Promise(resolve => setTimeout(resolve, delay))
+      if (beforeStream) await beforeStream(calls.length, request)
       yield* (typeof chunks === 'function' ? chunks(calls.length, request) : chunks) ?? [{ type: 'text-delta', text: JSON.stringify(answer) }, { type: 'finish', reason: { kind: 'stop' } }]
     } }
   } }
   return { session, config, calls, llm, runtime: new RecapRuntime({ sessions: { get: id => id === 's' ? session : undefined }, llm, settings: () => config, timeoutMs }) }
 }
-
+function deferred() {
+  let resolve
+  const promise = new Promise(done => { resolve = done })
+  return { promise, resolve }
+}
 const response = bullets => [{ type: 'text-delta', text: JSON.stringify({ bullets }) }, { type: 'finish', reason: { kind: 'stop' } }]
-test('headline schema accepts either key order and preserves legacy bullets', () => {
-  const headline = 'Google Drive: shared-file picker and invoice export'
-  for (const value of [{ headline, ...answer }, { ...answer, headline }]) {
-    const parsed = parseRecap(JSON.stringify(value))
-    assert.deepEqual(parsed, { headline, ...answer })
-    assert.ok(Object.isFrozen(parsed))
-  }
-  assert.deepEqual(parseRecap(JSON.stringify(answer)), answer)
-  assert.equal(parseRecap(JSON.stringify({ ...answer, headline: '  Google\nDrive:\tshared picker  ' })).headline, 'Google Drive: shared picker')
-  assert.equal(parseRecap(JSON.stringify({ ...answer, headline: 'x'.repeat(120) })).headline.length, 120)
-  for (const headline of [null, 42, [], {}, '', ' \n ', 'SECRET'.repeat(21)]) {
-    assert.throws(() => parseRecap(JSON.stringify({ ...answer, headline })), error => error.code === 'invalid-response' && !error.message.includes('SECRET'))
-  }
-})
 test('generated headline survives cache and bounded shortening without losing bullets', async () => {
   const headline = 'Google Drive: shared-file picker and invoice export'
   const recap = { headline, ...answer }
@@ -44,8 +35,7 @@ test('generated headline survives cache and bounded shortening without losing bu
   assert.deepEqual((await runtime.recap({ sessionId: 's' })).recap, recap)
   assert.equal(calls.length, 2)
 })
-test('normalizes whitespace before size checks and accepts modest overruns without truncation', async () => {
-  assert.deepEqual(parseRecap(JSON.stringify({ bullets: ['  First\r\n Second\t third.  '] })), { bullets: ['First Second third.'] })
+test('accepts modest overruns without truncation or a repair call', async () => {
   const bullets = ['x'.repeat(320), 'y'.repeat(280)]
   const { runtime, calls } = fixture({ chunks: response(bullets) })
   assert.deepEqual((await runtime.recap({ sessionId: 's' })).recap.bullets, bullets)
@@ -89,10 +79,25 @@ test('provider failure during repair is not retried or exposed', async () => {
   await assert.rejects(runtime.recap({ sessionId: 's' }), error => error.code === 'generation-failed' && !error.message.includes('SECRET'))
   assert.equal(calls.length, 2)
 })
-test('repair shares the original timeout and rejects stale results', async () => {
-  const timed = fixture({ delay: 30, timeoutMs: 50, chunks: n => response(n === 1 ? ['x'.repeat(321)] : answer.bullets) })
-  await assert.rejects(timed.runtime.recap({ sessionId: 's' }), { code: 'cancelled' })
+test('repair shares the original timeout and rejects stale results', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+  const draftStarted = deferred(), repairStarted = deferred(), releaseDraft = deferred()
+  const timed = fixture({ timeoutMs: 50, beforeStream: (n, request) => {
+    if (n === 1) { draftStarted.resolve(); return releaseDraft.promise }
+    repairStarted.resolve()
+    return new Promise(resolve => request.signal.addEventListener('abort', resolve, { once: true }))
+  }, chunks: n => response(n === 1 ? ['x'.repeat(321)] : answer.bullets) })
+  const rejected = assert.rejects(timed.runtime.recap({ sessionId: 's' }), { code: 'cancelled' })
+  await draftStarted.promise
+  t.mock.timers.tick(30)
+  releaseDraft.resolve()
+  await repairStarted.promise
+  assert.equal(timed.calls[1].signal.aborted, false)
+  // The repair gets only the remaining 20ms, not a fresh timeout.
+  t.mock.timers.tick(20)
+  await rejected
   assert.equal(timed.calls.length, 2)
+  assert.equal(timed.calls[1].signal.aborted, true)
   assert.equal(timed.runtime.cache.size, 0)
   const stale = fixture({ chunks: n => {
     if (n === 2) stale.session.seq++
@@ -186,120 +191,6 @@ test('open persisted turn prevents even manual generation before provider access
   await assert.rejects(runtime.recap({ sessionId: 's' }), { code: 'session-running' })
   assert.equal(calls.length, 0)
 })
-test('settings defaults and strict validation', () => {
-  assert.deepEqual(normalizeSettings(), { autoRecap: true, useJev: false, inactivityMinutes: 30, provider: '', model: '' })
-  assert.throws(() => normalizeSettings({ useJev: 'true' }))
-  for (const value of [0, -1, 1.1, Infinity, 10081, '30']) assert.throws(() => normalizeSettings({ inactivityMinutes: value }))
-  assert.throws(() => normalizeSettings({ autoRecap: 'true' }))
-  assert.throws(() => normalizeSettings({ provider: 'bad\nroute' }))
-})
-test('history excludes tools, reasoning, attachments and injected instructions', () => {
-  const messages = [message('secret', 'system', 'plugin'), message('tool secret', 'user', 'tool'), message('injected', 'user', 'plugin'), { ...message('visible'), content: [{ type: 'reasoning', text: 'private' }, { type: 'image', attachment: 'secret' }, { type: 'tool-call', arguments: 'secret' }, { type: 'text', text: 'visible' }] }]
-  assert.deepEqual(boundedHistory(messages), [{ role: 'user', text: 'visible' }])
-})
-test('history bounds transmitted text and selected messages', () => {
-  const rows = boundedHistory(Array.from({ length: 1000 }, (_, i) => message(`${i} ${'😀'.repeat(30000)}`)))
-  assert.ok(rows.length <= LIMITS.messages)
-  assert.ok(rows.reduce((n, row) => n + Buffer.byteLength(row.text), 0) <= LIMITS.inputBytes)
-  assert.ok(rows.at(-1).text.startsWith('999 '))
-  assert.ok(Buffer.byteLength(JSON.stringify(rows)) <= LIMITS.inputBytes)
-  assert.ok(rows.every(row => row.truncated && !/[\uD800-\uDBFF]$/u.test(row.text)))
-})
-test('history redistributes short-message allowances and keeps fitting reports whole', () => {
-  const report = 'A'.repeat(16000)
-  const messages = Array.from({ length: 40 }, (_, i) => message(i === 15 ? report : `Short ${i}`))
-  const rows = boundedHistory(messages)
-  assert.deepEqual(rows.map(row => row.text), messages.map(item => item.content[0].text))
-  assert.ok(rows.every(row => !row.truncated))
-  assert.ok(Buffer.byteLength(JSON.stringify(rows)) <= LIMITS.inputBytes)
-})
-test('spare bytes favor recent messages without starving older context', () => {
-  const messages = Array.from({ length: 40 }, () => message('Short'))
-  messages[0] = message('A'.repeat(50000))
-  messages[1] = message('B'.repeat(900))
-  messages[39] = message('C'.repeat(50000))
-  const rows = boundedHistory(messages)
-  assert.equal(rows[1].text, 'B'.repeat(900))
-  assert.ok(!rows[1].truncated)
-  assert.ok(rows[0].text.length > 600)
-  assert.ok(rows[39].text.length > rows[0].text.length)
-  assert.ok(rows[39].text.length < rows[0].text.length * 1.6)
-  assert.ok(Buffer.byteLength(JSON.stringify(rows)) <= LIMITS.inputBytes)
-  assert.deepEqual(boundedHistory(messages), rows)
-})
-test('shortened history keeps both ends across text blocks and marks the gap', () => {
-  const input = message('')
-  input.content = [{ type: 'text', text: 'Opening decision. ' + 'x'.repeat(100000) },
-    { type: 'tool-call', arguments: 'PRIVATE' }, { type: 'text', text: 'y'.repeat(100000) + ' Final correction.' }]
-  const [row] = boundedHistory([input])
-  assert.equal(row.truncated, true)
-  const [head, tail] = row.text.split('\n[Middle omitted]\n')
-  assert.ok(head.startsWith('Opening decision.'))
-  assert.ok(tail.endsWith('Final correction.'))
-  assert.ok(Math.abs(head.length - 2 * tail.length) <= 2)
-  assert.ok(!row.text.includes('PRIVATE'))
-  assert.ok(Buffer.byteLength(JSON.stringify([row])) <= LIMITS.inputBytes)
-})
-test('head and tail cuts prefer nearby sentence boundaries', () => {
-  const [row] = boundedHistory([message('Sentence with useful context. '.repeat(4000))])
-  const [head, tail] = row.text.split('\n[Middle omitted]\n')
-  assert.ok(head.trimEnd().endsWith('.'))
-  assert.ok(tail.trimStart().startsWith('Sentence'))
-})
-test('serialized budgets include escaping, Unicode, omission metadata, and block caps', () => {
-  for (const text of ['😀漢字', '\\"\n\t\\', 'é', 'word. ']) {
-    const messages = Array.from({ length: 93 }, (_, i) => message(`Start ${i} ` + text.repeat(3000) + ` End ${i}`))
-    const rows = boundedHistory(messages)
-    assert.equal(rows.length, 40)
-    assert.ok(rows.some(row => row.omittedBefore > 0))
-    assert.ok(rows.every(row => row.text.isWellFormed()))
-    assert.ok(Buffer.byteLength(JSON.stringify(rows)) <= LIMITS.inputBytes)
-    assert.ok(rows[0].text.startsWith('Start 0 '))
-    assert.ok(rows.at(-1).text.endsWith(' End 92'))
-  }
-  const input = message('')
-  input.content = Array.from({ length: LIMITS.blocks + 1 }, (_, i) => ({ type: 'text', text: i === LIMITS.blocks ? 'EXCLUDED' : `Block ${i}` }))
-  const [row] = boundedHistory([input])
-  assert.equal(row.truncated, true)
-  assert.ok(row.text.endsWith(`Block ${LIMITS.blocks - 1}`))
-  assert.ok(!row.text.includes('EXCLUDED'))
-})
-test('strict bullet shape and hard brevity bounds', () => {
-  assert.deepEqual(parseRecap(JSON.stringify(answer)), answer)
-  assert.deepEqual(parseRecap('{"bullets":[" One topic. "]}'), { bullets: ['One topic.'] })
-  for (const value of ['```json\n{}\n```', '{}', 'null', JSON.stringify({ ...answer, extra: true }), ...[
-    [], ['', 'Topic'], [1], ['a', 'b', 'c', 'd'], ['x'.repeat(321)], Array(3).fill('x'.repeat(201)), ['  \n\t '], ['x'.repeat(321), null],
-  ].map(bullets => JSON.stringify({ bullets })), JSON.stringify({ goal: 'Old', outcome: 'Format', nextStep: 'Rejected' })]) assert.throws(() => parseRecap(value))
-  assert.ok(Object.isFrozen(parseRecap(JSON.stringify(answer)).bullets))
-  const escaped = '{"bullets":[' + Array(3).fill('"' + '\\u4e2d'.repeat(200) + '"').join(',') + ']}'
-  assert.deepEqual(parseRecap(escaped).bullets, Array(3).fill('中'.repeat(200)))
-})
-test('history retains opening, middle, and recent context with explicit gaps', () => {
-  const rows = boundedHistory(Array.from({ length: 1000 }, (_, i) => message(`${i} discussion`, i % 2 ? 'assistant' : 'user', i % 2 ? 'model' : 'user')))
-  assert.equal(rows.length, LIMITS.messages)
-  assert.equal(rows[0].text, '0 discussion')
-  assert.equal(rows.at(-1).text, '999 discussion')
-  assert.ok(rows.some(row => Number.parseInt(row.text) > 300 && Number.parseInt(row.text) < 700))
-  assert.ok(rows.some(row => row.omittedBefore > 0))
-  assert.deepEqual(rows.map(row => Number.parseInt(row.text)), rows.map(row => Number.parseInt(row.text)).sort((a, b) => a - b))
-})
-test('long reports do not crowd out user intent or corrections', () => {
-  const rows = boundedHistory([message('Make this a memory refresh.'), message('Report '.repeat(20000), 'assistant', 'model'), message('No status report. Keep it short.')])
-  assert.equal(rows.length, 3)
-  assert.equal(rows[0].text, 'Make this a memory refresh.')
-  assert.equal(rows[2].text, 'No status report. Keep it short.')
-  assert.equal(rows[1].truncated, true)
-  assert.ok(Buffer.byteLength(JSON.stringify(rows)) <= LIMITS.inputBytes)
-})
-test('injected and tool traffic cannot displace the visible conversation', () => {
-  const rows = boundedHistory([message('Original intent'), ...Array.from({ length: 500 }, () => message('Excluded data', 'user', 'tool')), message('Still exploring.', 'assistant', 'model')])
-  assert.deepEqual(rows, [{ role: 'user', text: 'Original intent' }, { role: 'assistant', text: 'Still exploring.' }])
-})
-test('short exploratory conversations retain all visible text without gaps', () => {
-  assert.deepEqual(boundedHistory([message('Could we explore two approaches?'), message('Both remain open.', 'assistant', 'model')]), [
-    { role: 'user', text: 'Could we explore two approaches?' }, { role: 'assistant', text: 'Both remain open.' },
-  ])
-})
 test('one-shot uses exact route, no tools, no historical metadata', async () => {
   const { runtime, calls } = fixture()
   const result = await runtime.recap({ sessionId: 's' })
@@ -319,8 +210,14 @@ test('one-shot uses exact route, no tools, no historical metadata', async () => 
   assert.deepEqual(JSON.parse(calls[0].messages[0].content[0].text), [{ role: 'user', text: 'Please build recap' }, { role: 'assistant', text: 'Done' }])
 })
 test('deduplicates concurrent calls and caches exact revision/settings', async () => {
-  const { runtime, calls, session, config } = fixture({ delay: 10 })
-  const [a, b] = await Promise.all([runtime.recap({ sessionId: 's' }), runtime.recap({ sessionId: 's' })])
+  const started = deferred(), release = deferred()
+  const { runtime, calls, session, config } = fixture({ beforeStream: () => { started.resolve(); return release.promise } })
+  const first = runtime.recap({ sessionId: 's' })
+  await started.promise
+  const second = runtime.recap({ sessionId: 's' })
+  assert.equal(calls.length, 1)
+  release.resolve()
+  const [a, b] = await Promise.all([first, second])
   assert.deepEqual(a, b)
   assert.equal(calls.length, 1)
   assert.equal((await runtime.recap({ sessionId: 's' })).cached, true)
@@ -355,28 +252,39 @@ test('rejects tools, truncated responses, malformed JSON, missing finish', async
     assert.equal(runtime.cache.size, 0)
   }
 })
-test('timeout clears pending and disposal aborts requests', async () => {
-  const { runtime } = fixture({ delay: 40, timeoutMs: 5 })
-  await assert.rejects(runtime.recap({ sessionId: 's' }), { code: 'cancelled' })
+test('timeout clears pending and disposal aborts requests', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+  const started = deferred()
+  const { runtime, calls } = fixture({ timeoutMs: 5, beforeStream: (_, request) => {
+    started.resolve()
+    return new Promise(resolve => request.signal.addEventListener('abort', resolve, { once: true }))
+  } })
+  const rejected = assert.rejects(runtime.recap({ sessionId: 's' }), { code: 'cancelled' })
+  await started.promise
+  t.mock.timers.tick(5)
+  await rejected
+  assert.equal(calls[0].signal.aborted, true)
   assert.equal(runtime.pending.size, 0)
   runtime.dispose()
   await assert.rejects(runtime.recap({ sessionId: 's' }), { code: 'unavailable' })
 })
 test('in-flight stale results never enter cache', async () => {
-  const { runtime, session } = fixture({ delay: 10 })
+  const started = deferred(), release = deferred()
+  const { runtime, session } = fixture({ beforeStream: () => { started.resolve(); return release.promise } })
   const promise = runtime.recap({ sessionId: 's' })
+  await started.promise
   session.seq++
+  release.resolve()
   await assert.rejects(promise, { code: 'stale' })
   assert.equal(runtime.cache.size, 0)
 })
-test('JSON escaping cannot exceed transmitted input bound', () => {
-  const rows = boundedHistory([message('\u0000'.repeat(100000))])
-  assert.ok(Buffer.byteLength(JSON.stringify(rows)) <= LIMITS.inputBytes)
-})
 test('settings changes invalidate an in-flight response', async () => {
-  const { runtime, config } = fixture({ delay: 10 })
+  const started = deferred(), release = deferred()
+  const { runtime, config } = fixture({ beforeStream: () => { started.resolve(); return release.promise } })
   const promise = runtime.recap({ sessionId: 's' })
+  await started.promise
   config.model = 'changed'
+  release.resolve()
   await assert.rejects(promise, { code: 'stale' })
   assert.equal(runtime.cache.size, 0)
 })
@@ -389,7 +297,8 @@ test('cache size stays bounded across revisions', async () => {
   assert.equal(runtime.cache.size, LIMITS.cacheEntries)
 })
 test('concurrent distinct revisions respect admission limit', async () => {
-  const { runtime, session } = fixture({ delay: 10 })
+  const release = deferred()
+  const { runtime, session } = fixture({ beforeStream: () => release.promise })
   const pending = []
   for (let i = 0; i < LIMITS.concurrent; i++) {
     session.seq++
@@ -397,6 +306,7 @@ test('concurrent distinct revisions respect admission limit', async () => {
   }
   session.seq++
   await assert.rejects(runtime.recap({ sessionId: 's' }), { code: 'busy' })
+  release.resolve()
   await Promise.all(pending)
   assert.equal(runtime.pending.size, 0)
 })

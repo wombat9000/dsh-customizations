@@ -1,6 +1,8 @@
-// Uses rpc.js (settings reader, envelope, channel) and return-tracker.js.
+import { CHANNEL, createSettingsReader, unwrap } from './rpc.js'
+import { createActivityStore, createReturnTracker } from './return-tracker.js'
+
 // Session state and recap request transitions are independent of React mounts.
-function createController({ rpc, storage, now = Date.now }) {
+export function createController({ rpc, storage, now = Date.now }) {
   const states = new Map()
   const settingsReader = createSettingsReader(rpc)
   const { settings } = settingsReader

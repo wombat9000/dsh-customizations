@@ -10,7 +10,7 @@
     "./client": "./client.js",
     "./package.json": "./package.json"
   },
-  "files": ["client.js", "client/*.js", "scripts/build-client.mjs", "cordis.patch.yml", "src/**/*.js", "README.md"],
+  "files": ["client.js", "client/**/*.js", "client/**/*.jsx", "scripts/build-client.mjs", "cordis.patch.yml", "src/**/*.js", "README.md"],
   "scripts": {"build:client": "node scripts/build-client.mjs", "test": "node --test test/*.test.*"},
   "engines": {"node": "^22.19.0 || >=24.0.0"},
   "dsh": {
@@ -36,6 +36,9 @@
     "@deepseek-ai/dsh-client-ui-conversation": "0.1.5-rc.2",
     "@deepseek-ai/dsh-client-ui-settings-plugins": "0.1.5-rc.2",
     "react": "18.3.1"
+  },
+  "devDependencies": {
+    "tsdown": "0.22.2"
   },
   "license": "UNLICENSED"
 }

@@ -212,6 +212,10 @@ importers:
       react:
         specifier: 18.3.1
         version: 18.3.1
+    devDependencies:
+      tsdown:
+        specifier: 0.22.2
+        version: 0.22.2(typescript@6.0.3)
 
   packages/dsh-tool-imagegen:
     dependencies:

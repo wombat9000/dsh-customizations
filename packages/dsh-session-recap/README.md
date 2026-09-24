@@ -87,9 +87,11 @@ Edit the focused source files, not the generated `client.js`:
 - `src/generation.js` handles the shared deadline, Jev selection, writer stream, and optional shortening request.
 - `src/settings.js` and `src/errors.js` define shared host settings, limits, and errors.
 - `src/cards.js` defines Jev questions, ranking, diagnostics, and card-writing instructions.
-- `client/` separates RPC helpers, activity storage and return tracking, controller transitions, presentation, styles, and registration.
+- `client/` contains ES modules for RPC helpers, activity storage, return tracking, controller transitions, styles, and registration. `client/index.js` is the browser entrypoint.
+- `client/containers/` connects React views to DSH session hooks, controller subscriptions, and settings RPC calls.
+- `client/components/` contains JSX views with explicit props and callbacks: the recap action, panel, tiles, bullet list, selection table, and settings form.
 
-The pinned DSH loader serves one client file. The dependency-free assembly script joins the client source fragments inside one module-loader factory. It does not transpile code or register additional modules, so the existing loading and hot-reload contract stays unchanged. Client fragments share that factory's scope; their headers identify their responsibilities and dependencies.
+The pinned DSH loader serves one client file. `scripts/build-client.mjs` uses the repository's existing pinned tsdown `0.22.2` to bundle the ES modules and compile JSX into one lazy CommonJS factory. React stays external and is supplied by DSH. The build rejects extra output files, unsupported external imports, dynamic imports, and unresolved `process.env` references. It does not bundle another copy of React or register additional loader modules. The committed `client.js` retains the existing installation and hot-reload contract.
 
 From the repository root, regenerate `client.js` after changing client sources, then run the focused tests:
 
@@ -103,4 +105,18 @@ Commit the source changes and regenerated `client.js` together. The tests reject
 
 The host registers `/session-recap` RPC handlers and the `wombat9000-session-recap` settings namespace. The client registers the existing `conversation.chat.assistant-actions`, `conversation.input.dock`, and `settings.plugin.item` slots. It does not patch DSH core, replace transcript renderers, or start a web server.
 
-Tests cover model routing, input/output bounds, caching, concurrent requests, failure handling, module compatibility, and browser return detection without making model calls. The [repository browser suites](../../README.md#browser-interactions-and-real-dsh-screenshots) cover React interactions and real-shell rendering with fixture data. They do not test live provider generation. Source edits and tests do not update a running profile.
+### Test layers
+
+- **Logic:** Node tests import the history, schema, settings, card-selection, and controller modules directly. Runtime tests retain controlled model streams for cache, cancellation, timeout, and stale-result regressions. These tests need neither React rendering nor a DSH host.
+- **React source components:** `test/browser/components.browser.test.mjs` imports the JSX components directly and runs them in Chromium. Presentation tests supply props and callbacks; container tests supply controller/RPC and session-hook fixtures. They cover rendering, escaped text, input callbacks, diagnostics copying, subscriptions, and cleanup.
+- **Backend services:** `test/backend-integration.test.js` mounts real pinned Cordis, `HostConnectionService`, `FileSettingsProvider`, `SessionStore`, and `JsonlSessionPersistence` in process. Settings and session events persist in temporary directories and are restored in fresh contexts. Model calls are controlled fixtures. A dormant route registry and in-memory request/response streams replace the HTTP listener; a fixed authentication capability replaces login. The fixture manually performs the dormant session-load transaction rather than running the agent loop. These tests do not prove browser transport, login, or live model integration.
+- **Existing wiring and packaging:** slot-level browser tests still exercise the generated bundle with mocked slots/RPC. Bundle tests check reproducibility, the lazy factory, external dependencies, and registrations. The [real-shell suite](../../README.md#browser-interactions-and-real-dsh-screenshots) verifies mounting and screenshots in a disposable DSH application.
+
+Run the focused browser suite and backend suite from the repository root:
+
+```sh
+env -u NODE_PATH node node_modules/vitest/vitest.mjs run --config vitest.browser.config.mjs packages/dsh-session-recap/test/browser/
+env -u NODE_PATH node --test packages/dsh-session-recap/test/backend-integration.test.js
+```
+
+All suites use fixture model responses, not paid provider calls. Backend tests do not read personal settings or session history. Source edits and tests do not update a running profile.
