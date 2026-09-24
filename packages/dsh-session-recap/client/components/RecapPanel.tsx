@@ -1,14 +1,24 @@
 import React from 'react'
-import { CARD_LABELS, visualCards } from '../cards.js'
-import { SelectionDetails } from './SelectionDetails.jsx'
+import { CARD_LABELS, visualCards } from '../cards.ts'
+import { SelectionDetails } from './SelectionDetails.tsx'
+import type { RecapCard, Selection } from '../../shared/contracts.ts'
+import type { ControllerSnapshot } from '../controller-types.ts'
 
-export function RecapTile({ card }) {
+export interface RecapTileProps { card: RecapCard }
+export interface RecapBulletListProps { bullets: unknown }
+export interface RecapPanelProps extends Pick<ControllerSnapshot, 'busy' | 'error' | 'recap' | 'selection'> {
+  diagnosticsKey?: React.Key | undefined
+}
+type AccentStyle = React.CSSProperties & { '--recap-accent': string }
+
+export function RecapTile({ card }: RecapTileProps) {
   const label = CARD_LABELS[card.label]
+  const accentStyle: AccentStyle = { '--recap-accent': label.accent }
   return <li data-recap-card={card.label} className="dsh-session-recap-card__tile">
     <h3 className="dsh-session-recap-card__title">
       <svg
         className="dsh-session-recap-card__icon"
-        style={{ '--recap-accent': label.accent }}
+        style={accentStyle}
         aria-hidden={true}
         focusable="false"
         width={14}
@@ -27,21 +37,22 @@ export function RecapTile({ card }) {
   </li>
 }
 
-export function RecapBulletList({ bullets }) {
-  const items = (Array.isArray(bullets) ? bullets : []).filter(bullet => typeof bullet === 'string')
+export function RecapBulletList({ bullets }: RecapBulletListProps) {
+  const source: readonly unknown[] = Array.isArray(bullets) ? bullets : []
+  const items = source.filter((bullet): bullet is string => typeof bullet === 'string')
   return <ul className="dsh-session-recap-card__list">
     {items.map((bullet, index) => <li key={index} className="dsh-session-recap-card__row">{bullet}</li>)}
   </ul>
 }
 
-function selectionCaption(selection) {
+function selectionCaption(selection: Selection | undefined) {
   if (selection?.mode !== 'standard') return null
   if (selection.reason === 'unavailable') return 'Jev unavailable'
   if (selection.reason === 'no-labels') return 'No suitable categories'
   return null
 }
 
-export function RecapPanel({ busy, error, recap, selection, diagnosticsKey }) {
+export function RecapPanel({ busy, error, recap, selection, diagnosticsKey }: RecapPanelProps) {
   const cards = visualCards(recap)
   const caption = selectionCaption(selection)
   return <aside aria-label="Session recap" className="dsh-session-recap-card">

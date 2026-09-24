@@ -213,9 +213,18 @@ importers:
         specifier: 18.3.1
         version: 18.3.1
     devDependencies:
+      '@deepseek-ai/dsh-client-ui-chat':
+        specifier: 0.1.5-rc.2
+        version: 0.1.5-rc.2(@deepseek-ai/cordis@4.0.2)
+      '@types/react':
+        specifier: 18.3.28
+        version: 18.3.28
       tsdown:
         specifier: 0.22.2
         version: 0.22.2(typescript@6.0.3)
+      typescript:
+        specifier: 6.0.3
+        version: 6.0.3
 
   packages/dsh-tool-imagegen:
     dependencies:

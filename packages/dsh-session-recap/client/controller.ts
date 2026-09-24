@@ -1,30 +1,34 @@
-import { CHANNEL, createSettingsReader, unwrap } from './rpc.js'
-import { createActivityStore, createReturnTracker } from './return-tracker.js'
+import { CHANNEL, createSettingsReader, errorMessage, unwrap } from './rpc.ts'
+import { createActivityStore, createReturnTracker } from './return-tracker.ts'
+import type { RecapResult } from '../shared/contracts.ts'
+import type { Controller, ControllerOptions, ControllerSnapshot, MountEnvironment, SessionObservation, SessionState, SnapshotListener } from './controller-types.ts'
 
 // Session state and recap request transitions are independent of React mounts.
-export function createController({ rpc, storage, now = Date.now }) {
-  const states = new Map()
+export function createController({ rpc, storage, now = Date.now }: ControllerOptions): Controller {
+  const states = new Map<string, SessionState>()
   const settingsReader = createSettingsReader(rpc)
   const { settings } = settingsReader
   const activityStore = createActivityStore({ storage, now })
 
-  function state(sessionId) {
-    if (!states.has(sessionId)) {
-      states.set(sessionId, { value: {}, listeners: new Set(), pending: null, generation: 0 })
+  function state(sessionId: string): SessionState {
+    let session = states.get(sessionId)
+    if (!session) {
+      session = { value: {}, listeners: new Set(), pending: null, generation: 0 }
+      states.set(sessionId, session)
     }
-    return states.get(sessionId)
+    return session
   }
 
-  function publish(session, value) {
+  function publish(session: SessionState, value: ControllerSnapshot) {
     session.value = value
     for (const listener of session.listeners) listener(value)
   }
 
-  function requestOpening(session) {
+  function requestOpening(session: SessionState) {
     publish(session, { ...session.value, openOnReady: true })
   }
 
-  function beginRecap(session, automatic) {
+  function beginRecap(session: SessionState, automatic: boolean) {
     publish(session, {
       ...session.value,
       busy: true,
@@ -35,7 +39,7 @@ export function createController({ rpc, storage, now = Date.now }) {
     })
   }
 
-  function completeRecap(session, result) {
+  function completeRecap(session: SessionState, result: RecapResult) {
     const open = session.value.openOnReady === true
     publish(session, {
       busy: false,
@@ -47,17 +51,17 @@ export function createController({ rpc, storage, now = Date.now }) {
     })
   }
 
-  function failRecap(session, error) {
+  function failRecap(session: SessionState, error: unknown) {
     publish(session, {
       ...session.value,
       busy: false,
       open: session.value.openOnReady === true,
       openOnReady: false,
-      error: error.message || String(error),
+      error: errorMessage(error),
     })
   }
 
-  async function recap(sessionId, automatic = false) {
+  async function recap(sessionId: string, automatic = false): Promise<void> {
     const session = state(sessionId)
     if (session.pending) {
       if (!automatic) requestOpening(session)
@@ -75,7 +79,7 @@ export function createController({ rpc, storage, now = Date.now }) {
         }
         completeRecap(session, result)
       })
-      .catch((error) => {
+      .catch((error: unknown) => {
         if (generation === session.generation) failRecap(session, error)
       })
       .finally(() => {
@@ -85,7 +89,7 @@ export function createController({ rpc, storage, now = Date.now }) {
     return pending
   }
 
-  function mount(sessionId, { document, window }, listener) {
+  function mount(sessionId: string, { document, window }: MountEnvironment, listener: SnapshotListener) {
     const session = state(sessionId)
     session.listeners.add(listener)
     listener(session.value)
@@ -101,7 +105,7 @@ export function createController({ rpc, storage, now = Date.now }) {
     }
   }
 
-  function discard(sessionId) {
+  function discard(sessionId: string) {
     const session = states.get(sessionId)
     if (!session) return
     session.generation++
@@ -109,7 +113,7 @@ export function createController({ rpc, storage, now = Date.now }) {
     publish(session, {})
   }
 
-  function click(sessionId) {
+  function click(sessionId: string) {
     const session = state(sessionId)
     if (session.value.busy) {
       requestOpening(session)
@@ -122,7 +126,7 @@ export function createController({ rpc, storage, now = Date.now }) {
     return recap(sessionId)
   }
 
-  function observeSession(sessionId, observation) {
+  function observeSession(sessionId: string, observation: SessionObservation) {
     const session = state(sessionId)
     const previous = session.observation
     // Keep the last loaded baseline through dock remounts/history reloads.
@@ -136,7 +140,7 @@ export function createController({ rpc, storage, now = Date.now }) {
     session.observation = observation
   }
 
-  function humanMessageSent(sessionId) {
+  function humanMessageSent(sessionId: string) {
     discard(sessionId)
     // A successful send counts as activity even without a mounted dock.
     void settings().then((config) => {

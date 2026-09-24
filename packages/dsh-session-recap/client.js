@@ -32,9 +32,12 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 let react = require("react");
 react = __toESM(react, 1);
 
-//#region client/rpc.js
+//#region client/rpc.ts
 const CHANNEL = "/session-recap";
 const ID = "wombat9000-session-recap";
+function adaptRpc(rpc) {
+	return rpc;
+}
 function unwrap(result) {
 	if (!result?.ok) throw new Error(result?.error?.message || "Session recap is unavailable.");
 	return result.value;
@@ -56,9 +59,12 @@ function createSettingsReader(rpc) {
 		invalidate
 	};
 }
+function errorMessage(error) {
+	return error !== null && (typeof error === "object" || typeof error === "function") && "message" in error && typeof error.message === "string" && error.message || String(error);
+}
 
 //#endregion
-//#region client/return-tracker.js
+//#region client/return-tracker.ts
 function createActivityStore({ storage, now }) {
 	const memory = /* @__PURE__ */ new Map();
 	function key(config, sessionId) {
@@ -114,21 +120,21 @@ function createReturnTracker({ sessionId, document, window, rpc, settings, activ
 			if (!activity.ready || activity.running) {
 				clearTimeout(retry);
 				retry = setTimeout(() => {
-					if (alive && active) checkReturn(currentConfig);
+					if (alive && active && currentConfig) checkReturn(currentConfig);
 				}, 1e3);
 				return;
 			}
 			clearTimeout(retry);
 			const stored = read(activityKey);
 			const fallback = activity.latestActivity;
-			const previous = stored ?? (Number.isFinite(fallback) && fallback >= 0 && fallback <= now() ? fallback : void 0);
+			const previous = stored ?? (typeof fallback === "number" && Number.isFinite(fallback) && fallback >= 0 && fallback <= now() ? fallback : void 0);
 			touch(activityKey);
 			const minutes = Number.isFinite(config.inactivityMinutes) && config.inactivityMinutes > 0 ? config.inactivityMinutes : 30;
 			if (previous !== void 0 && now() - previous >= minutes * 6e4) recap(sessionId, true);
 		} catch (error) {
 			if (alive && active && token === generation && recapGeneration === state.generation) publish(state, {
 				...state.value,
-				error: error.message || String(error)
+				error: errorMessage(error)
 			});
 		} finally {
 			checking = false;
@@ -148,7 +154,7 @@ function createReturnTracker({ sessionId, document, window, rpc, settings, activ
 		} catch (error) {
 			if (alive && active && recapGeneration === state.generation) publish(state, {
 				...state.value,
-				error: error.message || String(error)
+				error: errorMessage(error)
 			});
 		}
 	}
@@ -220,7 +226,7 @@ function createReturnTracker({ sessionId, document, window, rpc, settings, activ
 }
 
 //#endregion
-//#region client/controller.js
+//#region client/controller.ts
 function createController({ rpc, storage, now = Date.now }) {
 	const states = /* @__PURE__ */ new Map();
 	const settingsReader = createSettingsReader(rpc);
@@ -230,13 +236,17 @@ function createController({ rpc, storage, now = Date.now }) {
 		now
 	});
 	function state(sessionId) {
-		if (!states.has(sessionId)) states.set(sessionId, {
-			value: {},
-			listeners: /* @__PURE__ */ new Set(),
-			pending: null,
-			generation: 0
-		});
-		return states.get(sessionId);
+		let session = states.get(sessionId);
+		if (!session) {
+			session = {
+				value: {},
+				listeners: /* @__PURE__ */ new Set(),
+				pending: null,
+				generation: 0
+			};
+			states.set(sessionId, session);
+		}
+		return session;
 	}
 	function publish(session, value) {
 		session.value = value;
@@ -275,7 +285,7 @@ function createController({ rpc, storage, now = Date.now }) {
 			busy: false,
 			open: session.value.openOnReady === true,
 			openOnReady: false,
-			error: error.message || String(error)
+			error: errorMessage(error)
 		});
 	}
 	async function recap(sessionId, automatic = false) {
@@ -380,7 +390,7 @@ function createController({ rpc, storage, now = Date.now }) {
 }
 
 //#endregion
-//#region client/styles.js
+//#region client/styles.ts
 const recapStyles = `
   .dsh-session-recap-action { appearance: none; display: inline-flex; align-items: center; justify-content: center; gap: 6px; flex: none; font: inherit; font-size: 13px; line-height: 20px; color: var(--dsw-alias-label-secondary, inherit); background: transparent; border: 0; border-radius: 8px; padding: 5px 8px; cursor: pointer; }
   .dsh-session-recap-action:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover, #8882); color: var(--dsw-alias-label-primary, inherit); }
@@ -458,7 +468,7 @@ function useRecapStyles(enabled = true) {
 }
 
 //#endregion
-//#region client/components/RecapActionButton.jsx
+//#region client/components/RecapActionButton.tsx
 function recapActionLabel({ busy, error, recap, open }) {
 	if (busy) return "Open recap when ready";
 	if (error) return "Retry recap";
@@ -507,7 +517,7 @@ function RecapActionButton({ busy, error, recap, open, unread, onClick }) {
 }
 
 //#endregion
-//#region client/cards.js
+//#region client/cards.ts
 const CARD_LABELS = Object.freeze({
 	direction: {
 		title: "Direction",
@@ -543,14 +553,14 @@ const CARD_LABELS = Object.freeze({
 function visualCards(recap) {
 	const seen = /* @__PURE__ */ new Set();
 	return (Array.isArray(recap?.cards) ? recap.cards : []).filter((card) => {
-		if (!card || typeof card.label !== "string" || !Object.hasOwn(CARD_LABELS, card.label) || typeof card.text !== "string" || !card.text.trim() || seen.has(card.label)) return false;
+		if (!card || typeof card !== "object" && typeof card !== "function" || !("label" in card) || typeof card.label !== "string" || !Object.hasOwn(CARD_LABELS, card.label) || !("text" in card) || typeof card.text !== "string" || !card.text.trim() || seen.has(card.label)) return false;
 		seen.add(card.label);
 		return true;
 	}).slice(0, 3);
 }
 
 //#endregion
-//#region client/components/SelectionDetails.jsx
+//#region client/components/SelectionDetails.tsx
 function SelectionTable({ categories, thresholds }) {
 	const format = (value) => typeof value === "number" && Number.isFinite(value) ? String(Number(value.toFixed(3))) : "—";
 	const reasons = {
@@ -615,15 +625,16 @@ function SelectionDetails({ diagnostics }) {
 }
 
 //#endregion
-//#region client/components/RecapPanel.jsx
+//#region client/components/RecapPanel.tsx
 function RecapTile({ card }) {
 	const label = CARD_LABELS[card.label];
+	const accentStyle = { "--recap-accent": label.accent };
 	return /* @__PURE__ */ react.default.createElement("li", {
 		"data-recap-card": card.label,
 		className: "dsh-session-recap-card__tile"
 	}, /* @__PURE__ */ react.default.createElement("h3", { className: "dsh-session-recap-card__title" }, /* @__PURE__ */ react.default.createElement("svg", {
 		className: "dsh-session-recap-card__icon",
-		style: { "--recap-accent": label.accent },
+		style: accentStyle,
 		"aria-hidden": true,
 		focusable: "false",
 		width: 14,
@@ -682,7 +693,7 @@ function RecapPanel({ busy, error, recap, selection, diagnosticsKey }) {
 }
 
 //#endregion
-//#region client/containers/recap.jsx
+//#region client/containers/recap.tsx
 function useRecapState(controller, sessionId) {
 	return react.default.useSyncExternalStore(react.default.useCallback((listener) => controller.subscribe(sessionId, listener), [controller, sessionId]), react.default.useCallback(() => controller.getSnapshot(sessionId), [controller, sessionId]));
 }
@@ -691,7 +702,10 @@ function latestClosingMessage(chat) {
 	if (turn === void 0 || chat.timeline.turns.get(turn)?.status !== "closed") return void 0;
 	for (const key of chat.locations.getTurn(turn)) {
 		const node = chat.nodes.get(key);
-		if (node?.kind === "turn-tail" && node.data.closing?.status === "settled") return node.data.closing.finalNode.messageId;
+		if (node?.kind === "turn-tail") {
+			const data = node.data;
+			if (data.closing?.status === "settled") return data.closing.finalNode.messageId;
+		}
 	}
 }
 function RecapAction({ sessionId, messageId, useSession, useChat, controller }) {
@@ -756,7 +770,7 @@ function RecapCard({ sessionId, useSession, useConversation, useChat, controller
 }
 
 //#endregion
-//#region client/components/SettingsForm.jsx
+//#region client/components/SettingsForm.tsx
 function SettingsRow({ label, children }) {
 	return /* @__PURE__ */ react.default.createElement("label", { className: "dsh-session-recap-settings__row" }, label, children);
 }
@@ -832,7 +846,7 @@ function SettingsForm({ open, draft, providers, error, notice, busy, onToggle, o
 }
 
 //#endregion
-//#region client/containers/SettingsCard.jsx
+//#region client/containers/SettingsCard.tsx
 function SettingsCard({ rpc, controller }) {
 	const [open, setOpen] = react.default.useState(false);
 	const [draft, setDraft] = react.default.useState(null);
@@ -854,7 +868,7 @@ function SettingsCard({ rpc, controller }) {
 				if (!result.ok) throw new Error(result.error.message);
 				if (alive) setDraft(result.value);
 			} catch (error) {
-				if (alive) setError(error.message || String(error));
+				if (alive) setError(errorMessage(error));
 			}
 		}
 		load();
@@ -904,7 +918,7 @@ function SettingsCard({ rpc, controller }) {
 			controller.invalidateSettings();
 			setNotice("Session recap settings saved.");
 		} catch (error) {
-			setError(error.message || String(error));
+			setError(errorMessage(error));
 		} finally {
 			setBusy(false);
 		}
@@ -926,14 +940,14 @@ function SettingsCard({ rpc, controller }) {
 }
 
 //#endregion
-//#region client/registration.js
+//#region client/registration.ts
 function apply(ctx) {
 	let storage;
 	try {
 		storage = window.localStorage;
 	} catch {}
 	const controller = createController({
-		rpc: ctx.get("connection").rpc,
+		rpc: adaptRpc(ctx.get("connection").rpc),
 		storage
 	});
 	ctx.get("remote").$on("api-session/activity", (sessionId) => controller.humanMessageSent(sessionId));
@@ -959,14 +973,14 @@ function apply(ctx) {
 		name: "settings.plugin.item",
 		key: ID,
 		inject: () => ({
-			rpc: ctx.get("connection").rpc,
+			rpc: adaptRpc(ctx.get("connection").rpc),
 			controller
 		})
 	}, SettingsCard));
 }
 
 //#endregion
-//#region client/index.js
+//#region client/index.ts
 const inject = [
 	"slots",
 	"connection",

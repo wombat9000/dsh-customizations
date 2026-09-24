@@ -1,13 +1,20 @@
 import React from 'react'
+import type { ControllerSnapshot } from '../controller-types.ts'
 
-export function recapActionLabel({ busy, error, recap, open }) {
+export type RecapActionLabelProps = Pick<ControllerSnapshot, 'busy' | 'error' | 'recap' | 'open'>
+export interface RecapActionButtonProps extends RecapActionLabelProps {
+  unread?: boolean | undefined
+  onClick: React.MouseEventHandler<HTMLButtonElement>
+}
+
+export function recapActionLabel({ busy, error, recap, open }: RecapActionLabelProps) {
   if (busy) return 'Open recap when ready'
   if (error) return 'Retry recap'
   if (recap) return open ? 'Hide recap' : 'Show recap'
   return 'Generate recap'
 }
 
-export function RecapActionButton({ busy, error, recap, open, unread, onClick }) {
+export function RecapActionButton({ busy, error, recap, open, unread, onClick }: RecapActionButtonProps) {
   const label = recapActionLabel({ busy, error, recap, open })
   return <button
     type="button"

@@ -1,6 +1,9 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { createController } from '../client/controller.js'
+import { registerTypeScript } from './fixtures/typescript.mjs'
+
+registerTypeScript()
+const { createController } = await import('../client/controller.ts')
 
 class Target {
   handlers = new Map()

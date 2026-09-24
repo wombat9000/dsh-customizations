@@ -1,8 +1,21 @@
 import React from 'react'
-import { CARD_LABELS } from '../cards.js'
+import { CARD_LABELS } from '../cards.ts'
+import type { SelectionCategory, SelectionDiagnostics, SelectionThresholds } from '../../shared/contracts.ts'
 
-export function SelectionTable({ categories, thresholds }) {
-  const format = value => typeof value === 'number' && Number.isFinite(value)
+export interface SelectionTableProps {
+  categories: readonly SelectionCategory[]
+  thresholds: SelectionThresholds
+}
+export interface SelectionDetailsViewProps {
+  diagnostics: SelectionDiagnostics
+  json: string
+  copyStatus: string
+  onCopy: React.MouseEventHandler<HTMLButtonElement>
+}
+export interface SelectionDetailsProps { diagnostics?: SelectionDiagnostics | null | undefined }
+
+export function SelectionTable({ categories, thresholds }: SelectionTableProps) {
+  const format = (value: unknown) => typeof value === 'number' && Number.isFinite(value)
     ? String(Number(value.toFixed(3)))
     : '—'
   const reasons = {
@@ -38,7 +51,7 @@ export function SelectionTable({ categories, thresholds }) {
   </div>
 }
 
-export function SelectionDetailsView({ diagnostics, json, copyStatus, onCopy }) {
+export function SelectionDetailsView({ diagnostics, json, copyStatus, onCopy }: SelectionDetailsViewProps) {
   const thresholds = diagnostics.thresholds
   return <details className="dsh-session-recap-card__diagnostics">
     <summary>Selection details</summary>
@@ -59,7 +72,7 @@ export function SelectionDetailsView({ diagnostics, json, copyStatus, onCopy }) 
   </details>
 }
 
-export function SelectionDetails({ diagnostics }) {
+export function SelectionDetails({ diagnostics }: SelectionDetailsProps) {
   const [copyStatus, setCopyStatus] = React.useState('')
   React.useEffect(() => { setCopyStatus('') }, [diagnostics])
   if (diagnostics?.version !== 1) return null

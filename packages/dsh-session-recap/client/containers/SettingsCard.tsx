@@ -1,13 +1,18 @@
 import React from 'react'
-import { CHANNEL, ID } from '../rpc.js'
-import { settingsStyles } from '../styles.js'
-import { SettingsForm } from '../components/SettingsForm.jsx'
+import { CHANNEL, ID, errorMessage } from '../rpc.ts'
+import { settingsStyles } from '../styles.ts'
+import { SettingsForm } from '../components/SettingsForm.tsx'
+import type { SettingsDraft } from '../components/SettingsForm.tsx'
+import type { ModelsResult, Rpc } from '../../shared/contracts.ts'
+import type { Controller } from '../controller-types.ts'
+
+export interface SettingsCardProps { rpc: Rpc; controller: Controller }
 
 // Keep original raw RPC envelopes/messages, separate from cached controller settings.
-export function SettingsCard({ rpc, controller }) {
+export function SettingsCard({ rpc, controller }: SettingsCardProps) {
   const [open, setOpen] = React.useState(false)
-  const [draft, setDraft] = React.useState(null)
-  const [providers, setProviders] = React.useState([])
+  const [draft, setDraft] = React.useState<SettingsDraft | null>(null)
+  const [providers, setProviders] = React.useState<ModelsResult['providers']>([])
   const [error, setError] = React.useState('')
   const [notice, setNotice] = React.useState('')
   const [busy, setBusy] = React.useState(false)
@@ -25,7 +30,7 @@ export function SettingsCard({ rpc, controller }) {
         if (!result.ok) throw new Error(result.error.message)
         if (alive) setDraft(result.value)
       } catch (error) {
-        if (alive) setError(error.message || String(error))
+        if (alive) setError(errorMessage(error))
       }
     }
     void load()
@@ -42,14 +47,17 @@ export function SettingsCard({ rpc, controller }) {
     }
   }, [rpc])
 
-  function change(key, value) {
-    setDraft((draft) => ({ ...draft, [key]: value }))
+  // These callbacks are rendered only after settings load; keep draft updates
+  // unchanged while recording that UI invariant for strict null checking.
+  function change<K extends keyof SettingsDraft>(key: K, value: SettingsDraft[K]) {
+    setDraft((draft) => ({ ...draft!, [key]: value }))
   }
 
-  function chooseModel(event) {
+  function chooseModel(event: React.ChangeEvent<HTMLSelectElement>) {
     if (event.target.value) {
-      const [provider, model] = JSON.parse(event.target.value)
-      setDraft((draft) => ({ ...draft, provider, model }))
+      // SettingsForm serializes this exact pair into each option value.
+      const [provider, model] = JSON.parse(event.target.value) as [string, string]
+      setDraft((draft) => ({ ...draft!, provider, model }))
     }
   }
 
@@ -58,9 +66,9 @@ export function SettingsCard({ rpc, controller }) {
     setError('')
     setNotice('')
     try {
-      const { autoRecap, inactivityMinutes, provider, model } = draft
+      const { autoRecap, inactivityMinutes, provider, model } = draft!
       const result = await rpc.call(CHANNEL, 'configure', {
-        autoRecap, useJev: draft.useJev === true,
+        autoRecap, useJev: draft!.useJev === true,
         inactivityMinutes: Number(inactivityMinutes), provider, model,
       })
       if (!result.ok) throw new Error(result.error.message)
@@ -68,7 +76,7 @@ export function SettingsCard({ rpc, controller }) {
       controller.invalidateSettings()
       setNotice('Session recap settings saved.')
     } catch (error) {
-      setError(error.message || String(error))
+      setError(errorMessage(error))
     } finally {
       setBusy(false)
     }

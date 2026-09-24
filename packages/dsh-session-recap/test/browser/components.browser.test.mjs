@@ -2,12 +2,12 @@ import React, { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, expect, test, vi } from 'vitest'
 import { page } from 'vitest/browser'
-import { RecapActionButton } from '../../client/components/RecapActionButton.jsx'
-import { RecapPanel, RecapBulletList } from '../../client/components/RecapPanel.jsx'
-import { SelectionDetails, SelectionDetailsView, SelectionTable } from '../../client/components/SelectionDetails.jsx'
-import { SettingsForm } from '../../client/components/SettingsForm.jsx'
-import { RecapAction, RecapCard } from '../../client/containers/recap.jsx'
-import { SettingsCard } from '../../client/containers/SettingsCard.jsx'
+import { RecapActionButton } from '../../client/components/RecapActionButton.tsx'
+import { RecapPanel, RecapBulletList } from '../../client/components/RecapPanel.tsx'
+import { SelectionDetails, SelectionDetailsView, SelectionTable } from '../../client/components/SelectionDetails.tsx'
+import { SettingsForm } from '../../client/components/SettingsForm.tsx'
+import { RecapAction, RecapCard } from '../../client/containers/recap.tsx'
+import { SettingsCard } from '../../client/containers/SettingsCard.tsx'
 
 // Direct source-component tests complement, rather than replace, bundle slot tests.
 globalThis.IS_REACT_ACT_ENVIRONMENT = true

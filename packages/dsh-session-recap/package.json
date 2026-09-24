@@ -10,8 +10,12 @@
     "./client": "./client.js",
     "./package.json": "./package.json"
   },
-  "files": ["client.js", "client/**/*.js", "client/**/*.jsx", "scripts/build-client.mjs", "cordis.patch.yml", "src/**/*.js", "README.md"],
-  "scripts": {"build:client": "node scripts/build-client.mjs", "test": "node --test test/*.test.*"},
+  "files": ["client.js", "client/**/*.ts", "client/**/*.tsx", "shared/**/*.ts", "scripts/*.mjs", "tsconfig.json", "cordis.patch.yml", "src/**/*.js", "README.md"],
+  "scripts": {
+    "typecheck": "node scripts/typecheck.mjs",
+    "build:client": "node scripts/build-client.mjs",
+    "test": "node --test test/*.test.*"
+  },
   "engines": {"node": "^22.19.0 || >=24.0.0"},
   "dsh": {
     "bundle": {"patch": "./cordis.patch.yml"},
@@ -38,7 +42,10 @@
     "react": "18.3.1"
   },
   "devDependencies": {
-    "tsdown": "0.22.2"
+    "@deepseek-ai/dsh-client-ui-chat": "0.1.5-rc.2",
+    "@types/react": "18.3.28",
+    "tsdown": "0.22.2",
+    "typescript": "6.0.3"
   },
   "license": "UNLICENSED"
 }

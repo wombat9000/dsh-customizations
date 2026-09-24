@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { ID } from './rpc.js'
+import { ID } from './rpc.ts'
 
 export const recapStyles = `
   .dsh-session-recap-action { appearance: none; display: inline-flex; align-items: center; justify-content: center; gap: 6px; flex: none; font: inherit; font-size: 13px; line-height: 20px; color: var(--dsw-alias-label-secondary, inherit); background: transparent; border: 0; border-radius: 8px; padding: 5px 8px; cursor: pointer; }

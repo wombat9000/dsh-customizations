@@ -1,16 +1,18 @@
-import { ID, CHANNEL, unwrap } from './rpc.js'
+import { ID, CHANNEL, errorMessage, unwrap } from './rpc.ts'
+import type { ScopedSettings } from '../shared/contracts.ts'
+import type { ActivityStorage, ActivityStore, EventSource, ReturnTrackerOptions } from './controller-types.ts'
 
 // Only timestamps enter browser storage. Recap text stays in memory.
-export function createActivityStore({ storage, now }) {
-  const memory = new Map()
+export function createActivityStore({ storage, now }: { storage?: ActivityStorage | undefined; now: () => number }): ActivityStore {
+  const memory = new Map<string, string>()
 
-  function key(config, sessionId) {
+  function key(config: ScopedSettings, sessionId: string) {
     return typeof config.storageScope === 'string' && config.storageScope
       ? `${ID}:activity:${JSON.stringify([config.storageScope, sessionId])}`
       : undefined
   }
 
-  function read(key) {
+  function read(key: string | undefined) {
     if (!key) return undefined
     let raw = memory.get(key)
     try {
@@ -22,7 +24,7 @@ export function createActivityStore({ storage, now }) {
       : undefined
   }
 
-  function touch(key) {
+  function touch(key: string | undefined) {
     if (!key) return
     const value = String(now())
     memory.set(key, value)
@@ -36,14 +38,14 @@ export function createActivityStore({ storage, now }) {
 
 // Each dock mount owns its focus/visibility lifetime and its retry timer.
 // Controller generations independently invalidate in-flight session work.
-export function createReturnTracker({ sessionId, document, window, rpc, settings, activityStore, now, state, publish, recap }) {
+export function createReturnTracker({ sessionId, document, window, rpc, settings, activityStore, now, state, publish, recap }: ReturnTrackerOptions) {
   const { key, read, touch } = activityStore
   let alive = true
   let active = false
-  let activityKey
-  let currentConfig
+  let activityKey: string | undefined
+  let currentConfig: ScopedSettings | undefined
   let checking = false
-  let retry
+  let retry: ReturnType<typeof setTimeout> | undefined
   let generation = 0
 
   function visible() {
@@ -51,7 +53,7 @@ export function createReturnTracker({ sessionId, document, window, rpc, settings
       && (typeof document.hasFocus !== 'function' || document.hasFocus())
   }
 
-  async function checkReturn(config) {
+  async function checkReturn(config: ScopedSettings) {
     if (checking) return
     if (!config.autoRecap || !config.provider || !config.model) {
       touch(activityKey)
@@ -68,14 +70,14 @@ export function createReturnTracker({ sessionId, document, window, rpc, settings
       if (!activity.ready || activity.running) {
         clearTimeout(retry)
         retry = setTimeout(() => {
-          if (alive && active) void checkReturn(currentConfig)
+          if (alive && active && currentConfig) void checkReturn(currentConfig)
         }, 1000)
         return
       }
       clearTimeout(retry)
       const stored = read(activityKey)
       const fallback = activity.latestActivity
-      const previous = stored ?? (Number.isFinite(fallback) && fallback >= 0 && fallback <= now() ? fallback : undefined)
+      const previous = stored ?? (typeof fallback === 'number' && Number.isFinite(fallback) && fallback >= 0 && fallback <= now() ? fallback : undefined)
       // Claim this return before any billable call, including errors.
       touch(activityKey)
       const minutes = Number.isFinite(config.inactivityMinutes) && config.inactivityMinutes > 0
@@ -86,7 +88,7 @@ export function createReturnTracker({ sessionId, document, window, rpc, settings
       }
     } catch (error) {
       if (alive && active && token === generation && recapGeneration === state.generation) {
-        publish(state, { ...state.value, error: error.message || String(error) })
+        publish(state, { ...state.value, error: errorMessage(error) })
       }
     } finally {
       checking = false
@@ -106,7 +108,7 @@ export function createReturnTracker({ sessionId, document, window, rpc, settings
       checkReturn(config)
     } catch (error) {
       if (alive && active && recapGeneration === state.generation) {
-        publish(state, { ...state.value, error: error.message || String(error) })
+        publish(state, { ...state.value, error: errorMessage(error) })
       }
     }
   }
@@ -137,7 +139,7 @@ export function createReturnTracker({ sessionId, document, window, rpc, settings
     })
   }
 
-  const handlers = [
+  const handlers: readonly (readonly [EventSource, string, () => void])[] = [
     [document, 'visibilitychange', visibility],
     [window, 'focus', enter],
     [window, 'blur', leave],

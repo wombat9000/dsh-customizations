@@ -2,6 +2,7 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { build } from 'tsdown'
+import { typecheck } from './typecheck.mjs'
 
 const packageRoot = fileURLToPath(new URL('../', import.meta.url))
 const manifest = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
@@ -9,13 +10,14 @@ export const clientPath = new URL('../client.js', import.meta.url)
 const allowedExternals = new Set(['react'])
 
 // RC2 serves one ./client file and invalidates its package ID during HMR.
-// Author normal ESM/JSX; wrap the bundled CommonJS output in one lazy factory.
+// Author TypeScript/TSX; wrap the bundled CommonJS output in one lazy factory.
+// This bundling API does not replace type checking; the CLI and test suite run it.
 export async function buildClient() {
   const bundles = await build({
     cwd: packageRoot,
     config: false,
     tsconfig: false,
-    entry: { client: 'client/index.js' },
+    entry: { client: 'client/index.ts' },
     outDir: packageRoot,
     format: 'cjs',
     platform: 'browser',
@@ -61,6 +63,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   if (args.length && (args.length !== 1 || args[0] !== '--check')) {
     throw new Error('Usage: node scripts/build-client.mjs [--check]')
   }
+  await typecheck()
   const output = await buildClient()
   if (args[0] === '--check') {
     if (readFileSync(clientPath, 'utf8') !== output) {

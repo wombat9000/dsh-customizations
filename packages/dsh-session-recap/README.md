@@ -87,11 +87,16 @@ Edit the focused source files, not the generated `client.js`:
 - `src/generation.js` handles the shared deadline, Jev selection, writer stream, and optional shortening request.
 - `src/settings.js` and `src/errors.js` define shared host settings, limits, and errors.
 - `src/cards.js` defines Jev questions, ranking, diagnostics, and card-writing instructions.
-- `client/` contains ES modules for RPC helpers, activity storage, return tracking, controller transitions, styles, and registration. `client/index.js` is the browser entrypoint.
-- `client/containers/` connects React views to DSH session hooks, controller subscriptions, and settings RPC calls.
-- `client/components/` contains JSX views with explicit props and callbacks: the recap action, panel, tiles, bullet list, selection table, and settings form.
+- `client/` contains TypeScript modules for RPC helpers, activity storage, return tracking, controller transitions, styles, and registration. `client/index.ts` is the browser entrypoint.
+- `client/containers/` connects TSX views to DSH session hooks, controller subscriptions, and settings RPC calls.
+- `client/components/` contains TSX views with typed props and callbacks: the recap action, panel, tiles, bullet list, selection table, and settings form.
+- `shared/contracts.ts` describes the host protocol: settings, endpoint-specific RPC payloads/results, recap shapes, and selection diagnostics. `client/controller-types.ts` describes client state and subscriptions. The host stays JavaScript and retains its runtime validation.
 
-The pinned DSH loader serves one client file. `scripts/build-client.mjs` uses the repository's existing pinned tsdown `0.22.2` to bundle the ES modules and compile JSX into one lazy CommonJS factory. React stays external and is supplied by DSH. The build rejects extra output files, unsupported external imports, dynamic imports, and unresolved `process.env` references. It does not bundle another copy of React or register additional loader modules. The committed `client.js` retains the existing installation and hot-reload contract.
+`tsconfig.json` enables strict checking, checked indexed access, exact optional properties, and type-only import enforcement. The pinned TypeScript `6.0.3` compiler checks client code and compile-time regression cases without emitting files. Run it independently with `node packages/dsh-session-recap/scripts/typecheck.mjs`. Both the build command and the Node test suite enforce this check; tsdown transpilation alone is not a type check.
+
+The pinned DSH loader serves one client file. After type checking, `scripts/build-client.mjs` uses pinned tsdown `0.22.2` to compile TS/TSX into one lazy CommonJS factory. React stays external and is supplied by DSH. The build rejects extra output files, unsupported external imports, dynamic imports, and unresolved `process.env` references. It does not bundle another copy of React or register additional loader modules. The committed `client.js` retains the existing installation and hot-reload contract. DSH needs no TypeScript loader at runtime.
+
+Types do not validate received JSON. The RPC adapter records the existing host-validated protocol without changing transport identity. Rendering keeps its defensive filters. Where RC2's published slot declarations reference absent type packages, registration uses a narrow interface for the three existing slots, backed by the real-shell tests; it does not claim complete DSH type coverage.
 
 From the repository root, regenerate `client.js` after changing client sources, then run the focused tests:
 
@@ -107,8 +112,9 @@ The host registers `/session-recap` RPC handlers and the `wombat9000-session-rec
 
 ### Test layers
 
-- **Logic:** Node tests import the history, schema, settings, card-selection, and controller modules directly. Runtime tests retain controlled model streams for cache, cancellation, timeout, and stale-result regressions. These tests need neither React rendering nor a DSH host.
-- **React source components:** `test/browser/components.browser.test.mjs` imports the JSX components directly and runs them in Chromium. Presentation tests supply props and callbacks; container tests supply controller/RPC and session-hook fixtures. They cover rendering, escaped text, input callbacks, diagnostics copying, subscriptions, and cleanup.
+- **Types:** `test/typecheck.test.mjs` runs the pinned compiler. `test/types/contracts.ts` verifies accepted values and rejected RPC payloads, response access, component props, controller flags, and slot registrations. These cases fail if an expected type error disappears.
+- **Logic:** Node tests import the history, schema, settings, card-selection, and controller source modules. A package-scoped test hook transpiles TypeScript with the pinned compiler because some supported Node builds disable native type stripping. It does not load the generated client bundle or replace strict checking. Runtime tests retain controlled model streams for cache, cancellation, timeout, and stale-result regressions. These tests need neither React rendering nor a DSH host.
+- **React source components:** `test/browser/components.browser.test.mjs` imports the TSX components directly and runs them in Chromium. Presentation tests supply props and callbacks; container tests supply controller/RPC and session-hook fixtures. They cover rendering, escaped text, input callbacks, diagnostics copying, subscriptions, and cleanup.
 - **Backend services:** `test/backend-integration.test.js` mounts real pinned Cordis, `HostConnectionService`, `FileSettingsProvider`, `SessionStore`, and `JsonlSessionPersistence` in process. Settings and session events persist in temporary directories and are restored in fresh contexts. Model calls are controlled fixtures. A dormant route registry and in-memory request/response streams replace the HTTP listener; a fixed authentication capability replaces login. The fixture manually performs the dormant session-load transaction rather than running the agent loop. These tests do not prove browser transport, login, or live model integration.
 - **Existing wiring and packaging:** slot-level browser tests still exercise the generated bundle with mocked slots/RPC. Bundle tests check reproducibility, the lazy factory, external dependencies, and registrations. The [real-shell suite](../../README.md#browser-interactions-and-real-dsh-screenshots) verifies mounting and screenshots in a disposable DSH application.
 

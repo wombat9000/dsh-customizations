@@ -1,14 +1,30 @@
 import React from 'react'
-import { ID } from '../rpc.js'
+import { ID } from '../rpc.ts'
+import type { ModelsResult, Settings } from '../../shared/contracts.ts'
 
-function SettingsRow({ label, children }) {
+export type SettingsDraft = Omit<Settings, 'inactivityMinutes'> & { inactivityMinutes: number | string }
+export interface SettingsRowProps { label: string; children: React.ReactNode }
+export interface SettingsFormProps {
+  open: boolean
+  draft: SettingsDraft | null
+  providers: ModelsResult['providers']
+  error: string
+  notice: string
+  busy: boolean
+  onToggle: React.MouseEventHandler<HTMLButtonElement>
+  onChange: <K extends keyof SettingsDraft>(key: K, value: SettingsDraft[K]) => void
+  onChooseModel: React.ChangeEventHandler<HTMLSelectElement>
+  onSave: React.MouseEventHandler<HTMLButtonElement>
+}
+
+function SettingsRow({ label, children }: SettingsRowProps) {
   return <label className="dsh-session-recap-settings__row">{label}{children}</label>
 }
 
 export function SettingsForm({
   open, draft, providers, error, notice, busy,
   onToggle, onChange, onChooseModel, onSave,
-}) {
+}: SettingsFormProps) {
   return <section
     aria-label="Session recap settings"
     className="dsh-session-recap-settings"

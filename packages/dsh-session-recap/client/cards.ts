@@ -1,3 +1,5 @@
+import type { RecapCard } from '../shared/contracts.ts'
+
 // Fixed card vocabulary shared by recap rendering and selection diagnostics.
 // Only these local labels, paths and accents may shape a generated card.
 export const CARD_LABELS = Object.freeze({
@@ -9,11 +11,13 @@ export const CARD_LABELS = Object.freeze({
   paused: { title: 'Where we paused', path: 'M8 5v14M16 5v14', accent: '#a38273' },
 })
 
-export function visualCards(recap) {
-  const seen = new Set()
-  return (Array.isArray(recap?.cards) ? recap.cards : []).filter(card => {
-    if (!card || typeof card.label !== 'string' || !Object.hasOwn(CARD_LABELS, card.label)
-      || typeof card.text !== 'string' || !card.text.trim() || seen.has(card.label)) return false
+export function visualCards(recap: { readonly cards?: unknown } | null | undefined): RecapCard[] {
+  const seen = new Set<string>()
+  const cards: readonly unknown[] = Array.isArray(recap?.cards) ? recap.cards : []
+  return cards.filter((card): card is RecapCard => {
+    if (!card || (typeof card !== 'object' && typeof card !== 'function')
+      || !('label' in card) || typeof card.label !== 'string' || !Object.hasOwn(CARD_LABELS, card.label)
+      || !('text' in card) || typeof card.text !== 'string' || !card.text.trim() || seen.has(card.label)) return false
     seen.add(card.label)
     return true
   }).slice(0, 3)
