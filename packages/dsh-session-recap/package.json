@@ -10,8 +10,8 @@
     "./client": "./client.js",
     "./package.json": "./package.json"
   },
-  "files": ["client.js", "cordis.patch.yml", "src/**/*.js", "README.md"],
-  "scripts": {"test": "node --test test/*.test.*"},
+  "files": ["client.js", "client/*.js", "scripts/build-client.mjs", "cordis.patch.yml", "src/**/*.js", "README.md"],
+  "scripts": {"build:client": "node scripts/build-client.mjs", "test": "node --test test/*.test.*"},
   "engines": {"node": "^22.19.0 || >=24.0.0"},
   "dsh": {
     "bundle": {"patch": "./cordis.patch.yml"},

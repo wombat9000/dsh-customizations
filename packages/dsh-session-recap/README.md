@@ -6,7 +6,7 @@ While generation runs, a highlight shimmers across the fixed icon; it does not r
 
 ## Install and configure
 
-This bundle targets DSH `0.1.5-rc.2` and requires the standard base and Web bundles. It ships plain JavaScript; no build step is required. This RC also requires the repository's pinned RPC-owner patch; use the patched launcher/profile setup in the [migration guide](../../MIGRATION-0.1.5-rc.1.md), not an unpatched global launcher.
+This bundle targets DSH `0.1.5-rc.2` and requires the standard base and Web bundles. It ships plain JavaScript with a committed client bundle; installation needs no build step. After editing client source files, regenerate that bundle as described under [Development](#development). This RC also requires the repository's pinned RPC-owner patch; use the patched launcher/profile setup in the [migration guide](../../MIGRATION-0.1.5-rc.1.md), not an unpatched global launcher.
 
 1. From this repository, validate and preview the profile:
 
@@ -78,12 +78,29 @@ This version regenerates from bounded conversation excerpts after a revision cha
 
 ## Development
 
+Edit the focused source files, not the generated `client.js`:
+
+- `src/index.js` registers settings and RPC handlers.
+- `src/runtime.js` owns session checks, caching, concurrent requests, and disposal. It re-exports the existing helper API for compatibility.
+- `src/history.js` selects and bounds conversation text.
+- `src/recap-schema.js` defines the standard writer prompt and validates bullet and card responses.
+- `src/generation.js` handles the shared deadline, Jev selection, writer stream, and optional shortening request.
+- `src/settings.js` and `src/errors.js` define shared host settings, limits, and errors.
+- `src/cards.js` defines Jev questions, ranking, diagnostics, and card-writing instructions.
+- `client/` separates RPC helpers, activity storage and return tracking, controller transitions, presentation, styles, and registration.
+
+The pinned DSH loader serves one client file. The dependency-free assembly script joins the client source fragments inside one module-loader factory. It does not transpile code or register additional modules, so the existing loading and hot-reload contract stays unchanged. Client fragments share that factory's scope; their headers identify their responsibilities and dependencies.
+
+From the repository root, regenerate `client.js` after changing client sources, then run the focused tests:
+
 ```sh
-pnpm install --ignore-scripts
-pnpm test
-pnpm run check
+node packages/dsh-session-recap/scripts/build-client.mjs
+env -u NODE_PATH node --test packages/dsh-session-recap/test/*.test.*
+node scripts/check.mjs
 ```
+
+Commit the source changes and regenerated `client.js` together. The tests reject a stale bundle. Existing dependencies are required for the test suite; follow the [repository setup procedure](../../.agents/skills/repository-setup/SKILL.md) before any approved installation.
 
 The host registers `/session-recap` RPC handlers and the `wombat9000-session-recap` settings namespace. The client registers the existing `conversation.chat.assistant-actions`, `conversation.input.dock`, and `settings.plugin.item` slots. It does not patch DSH core, replace transcript renderers, or start a web server.
 
-Tests cover model routing, input/output bounds, caching, concurrent requests, failure handling, and browser return detection without making model calls. Live provider generation and visual behavior require installation in a DSH Web profile and a browser smoke test.
+Tests cover model routing, input/output bounds, caching, concurrent requests, failure handling, module compatibility, and browser return detection without making model calls. The [repository browser suites](../../README.md#browser-interactions-and-real-dsh-screenshots) cover React interactions and real-shell rendering with fixture data. They do not test live provider generation. Source edits and tests do not update a running profile.

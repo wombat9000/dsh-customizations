@@ -13,42 +13,105 @@ export const Config = z.object({
   model: z.string().default(''),
 })
 
+async function listModels(llm) {
+  const providers = await Promise.all(llm.listProviders().map(async provider => ({
+    id: provider.id,
+    name: provider.name,
+    models: (await llm.listModels(provider.id)).map(model => ({
+      id: model.id,
+      name: model.name,
+    })),
+  })))
+  return { providers }
+}
+
+async function validateRoute(llm, settings) {
+  if (!settings.provider) return
+
+  const prepared = await llm.prepareCall({
+    provider: settings.provider,
+    model: settings.model,
+    maxTokens: 1400,
+  }, AbortSignal.timeout(10000))
+  const routeChanged = prepared.config.provider !== settings.provider || prepared.config.model !== settings.model
+  const rejectsText = prepared.inputModalities && !prepared.inputModalities.includes('text')
+  if (routeChanged || rejectsText) {
+    throw new RecapError('invalid-model', 'Choose a valid model that accepts text.')
+  }
+}
+
+function updatedSettings(source, payload) {
+  const invalidPayload = !payload || typeof payload !== 'object' || Array.isArray(payload)
+  if (invalidPayload || Object.keys(payload).some(key => !Object.hasOwn(DEFAULT_SETTINGS, key))) {
+    throw new RecapError('invalid-settings', 'Provide only Session Recap settings.')
+  }
+
+  const next = normalizeSettings({ ...source(), ...payload })
+  if (Boolean(next.provider) !== Boolean(next.model)) {
+    throw new RecapError('invalid-settings', 'Choose both a provider and model, or clear both.')
+  }
+  return next
+}
+
+function rpcFailure(error) {
+  // Provider exceptions can contain credentials or request bodies.
+  const known = error instanceof RecapError
+  return {
+    ok: false,
+    error: {
+      code: known ? error.code : 'recap-error',
+      message: known ? error.message : 'Session Recap could not complete this request. Check the provider configuration.',
+      details: {},
+    },
+  }
+}
+
 export function apply(ctx, config = {}) {
   let source = () => normalizeSettings({ ...DEFAULT_SETTINGS, ...config })
   ctx.settings.installSection(ctx, name, Config, source(), {
     setSource(current) { source = current },
     onChange() {},
   })
-  const runtime = new RecapRuntime({ sessions: ctx.sessions, llm: ctx.llm, settings: () => source(), getJev: () => ctx.get('jev') })
+  const runtime = new RecapRuntime({
+    sessions: ctx.sessions,
+    llm: ctx.llm,
+    settings: () => source(),
+    getJev: () => ctx.get('jev'),
+  })
   // This scope is opaque and contains no provider credentials.
-  const storageScope = createHash('sha256').update(JSON.stringify([process.env.DSH_HOME ?? '', process.cwd(), name])).digest('hex').slice(0, 24)
+  const storageScope = createHash('sha256')
+    .update(JSON.stringify([process.env.DSH_HOME ?? '', process.cwd(), name]))
+    .digest('hex')
+    .slice(0, 24)
   const settings = () => ({ ...normalizeSettings(source()), storageScope })
+
+  async function handle(endpoint, payload) {
+    switch (endpoint) {
+      case 'settings':
+        return settings()
+      case 'activity':
+        return runtime.activity(payload)
+      case 'recap':
+        return runtime.recap(payload)
+      case 'models':
+        return listModels(ctx.llm)
+      case 'configure': {
+        const next = updatedSettings(source, payload)
+        await validateRoute(ctx.llm, next)
+        await ctx.settings.update(name, next)
+        return settings()
+      }
+      default:
+        throw new RecapError('unknown-endpoint', 'Unknown Session Recap endpoint.')
+    }
+  }
+
   ctx.effect(() => () => runtime.dispose())
   ctx.effect(() => ctx.connection.rpc.handle(CHANNEL, async (endpoint, payload) => {
     try {
-      let value
-      if (endpoint === 'settings') value = settings()
-      else if (endpoint === 'activity') value = runtime.activity(payload)
-      else if (endpoint === 'recap') value = await runtime.recap(payload)
-      else if (endpoint === 'models') {
-        value = { providers: await Promise.all(ctx.llm.listProviders().map(async provider => ({
-          id: provider.id, name: provider.name,
-          models: (await ctx.llm.listModels(provider.id)).map(model => ({ id: model.id, name: model.name })),
-        }))) }
-      } else if (endpoint === 'configure') {
-        if (!payload || typeof payload !== 'object' || Array.isArray(payload) || Object.keys(payload).some(key => !Object.hasOwn(DEFAULT_SETTINGS, key))) throw new RecapError('invalid-settings', 'Provide only Session Recap settings.')
-        const next = normalizeSettings({ ...source(), ...payload })
-        if (Boolean(next.provider) !== Boolean(next.model)) throw new RecapError('invalid-settings', 'Choose both a provider and model, or clear both.')
-        if (next.provider) {
-          const prepared = await ctx.llm.prepareCall({ provider: next.provider, model: next.model, maxTokens: 1400 }, AbortSignal.timeout(10000))
-          if (prepared.config.provider !== next.provider || prepared.config.model !== next.model || (prepared.inputModalities && !prepared.inputModalities.includes('text'))) throw new RecapError('invalid-model', 'Choose a valid model that accepts text.')
-        }
-        await ctx.settings.update(name, next)
-        value = settings()
-      } else throw new RecapError('unknown-endpoint', 'Unknown Session Recap endpoint.')
-      return { ok: true, value }
+      return { ok: true, value: await handle(endpoint, payload) }
     } catch (error) {
-      return { ok: false, error: { code: error instanceof RecapError ? error.code : 'recap-error', message: error instanceof RecapError ? error.message : 'Session Recap could not complete this request. Check the provider configuration.', details: {} } }
+      return rpcFailure(error)
     }
   }))
 }
