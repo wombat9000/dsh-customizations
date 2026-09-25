@@ -2,7 +2,7 @@ import React, { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, expect, test } from 'vitest'
 import { page, userEvent } from 'vitest/browser'
-import source from '../../client.js?raw'
+import { ReadCard } from '../../client/read-components.tsx'
 let root, container
 const h = React.createElement
 const connection = (nodes, more = false) => ({
@@ -89,22 +89,8 @@ globalThis.IS_REACT_ACT_ENVIRONMENT = true
 afterEach(async () => {
   await act(async () => root?.unmount())
   container?.remove()
-  document.documentElement.style.colorScheme = ''
 })
 async function mount(toolName, data, extra = {}) {
-  let record
-  const previous = window.__ModuleLoader__
-  window.__ModuleLoader__ = {
-    load: (value) => {
-      record = value
-    },
-  }
-  try {
-    new Function(source)()
-  } finally {
-    window.__ModuleLoader__ = previous
-  }
-  const plugin = record.factory(() => React)
   container = document.createElement('div')
   document.body.append(container)
   root = createRoot(container)
@@ -115,9 +101,7 @@ async function mount(toolName, data, extra = {}) {
     throw new Error('Read cards must not request HTTP')
   }
   try {
-    await act(async () =>
-      root.render(h(plugin.ReadCard, { toolName, block: block(data), ...extra })),
-    )
+    await act(async () => root.render(h(ReadCard, { toolName, block: block(data), ...extra })))
   } finally {
     window.fetch = originalFetch
   }
@@ -135,6 +119,11 @@ test.each([
   async (tool, data, expected) => {
     await mount(tool, data)
     expect(container.textContent).toContain(expected)
+    expect(
+      [...container.querySelectorAll('summary')].some(
+        (node) => node.textContent === 'Raw tool details',
+      ),
+    ).toBe(true)
     if (tool !== 'github_get_issue') expect(container.textContent).toContain('returned')
     expect(container.querySelectorAll('a[href^="https://github.com/"]').length).toBeGreaterThan(0)
     expect(container.querySelectorAll('button')).toHaveLength(0)
@@ -163,30 +152,32 @@ test.each(['github_list_issues', 'github_search_issues'])(
     ).toEqual(['acme/one', 'acme/two'])
   },
 )
-test.each(['light', 'dark'])(
-  'compact issue lists fit narrow %s layout and retain keyboard raw access',
-  async (scheme) => {
-    document.documentElement.style.colorScheme = scheme
-    await mount(
-      'github_search_issues',
-      connection([{ ...issue, title: 'long'.repeat(200), url: 'javascript:alert(1)' }], true),
-    )
-    container.style.width = '320px'
-    expect(container.scrollWidth).toBeLessThanOrEqual(320)
-    expect(container.querySelector('a')).toBeNull()
-    const summary = page.getByText('Raw tool details', { exact: true }).element()
-    summary.focus()
-    await act(async () => userEvent.keyboard('{Enter}'))
-    expect(summary.parentElement.open).toBe(true)
-    expect(summary.parentElement.textContent).toContain('I_1')
-    expect(container.textContent).toContain('1,000')
-  },
-)
+test('compact issue lists fit narrow layout and retain keyboard raw access', async () => {
+  await mount(
+    'github_search_issues',
+    connection([{ ...issue, title: 'long'.repeat(200), url: 'javascript:alert(1)' }], true),
+  )
+  container.style.width = '320px'
+  expect(container.scrollWidth).toBeLessThanOrEqual(320)
+  expect(container.querySelector('a')).toBeNull()
+  const summary = page.getByText('Raw tool details', { exact: true }).element()
+  summary.focus()
+  await act(async () => userEvent.keyboard('{Enter}'))
+  expect(summary.parentElement.open).toBe(true)
+  expect(summary.parentElement.textContent).toContain('I_1')
+  expect(container.textContent).toContain('1,000')
+})
 test('issue state remains separate from board Status and single item continuation is supported', async () => {
   await mount('github_list_project_items', {
     ...projectItem,
     content: { ...projectItem.content, state: 'CLOSED' },
   })
+  expect(container.textContent).toContain('Synthetic issue')
+  expect(
+    [...container.querySelectorAll('summary')].some(
+      (node) => node.textContent === 'Raw tool details',
+    ),
+  ).toBe(true)
   expect(container.textContent).toContain('Issue state: CLOSED')
   expect(container.textContent).toContain('Board status: Ready')
   expect(container.textContent).toContain('fieldValues.nodes[1].labels')
@@ -342,26 +333,23 @@ test('all client-side nested truncation warnings remain outside collapsed bodies
   expect(notes.some((note) => note.textContent.includes('50'))).toBe(true)
   expect(notes.every((note) => note.closest('details') === null)).toBe(true)
 })
-test.each(['light', 'dark'])(
-  'hostile text, keyboard expansion and long titles fit narrow %s layout',
-  async (scheme) => {
-    document.documentElement.style.colorScheme = scheme
-    await mount('github_get_issue', {
-      ...detailedIssue,
-      title: '<script>unsafe</script>' + 'long'.repeat(200),
-      url: 'https://github.com.evil.example/issue',
-      body: '<img src=x onerror=alert(1)>' + 'long description '.repeat(60),
-    })
-    container.style.width = '320px'
-    expect(container.scrollWidth).toBeLessThanOrEqual(320)
-    expect(container.querySelector('script')).toBeNull()
-    expect(container.querySelector('a[href*="evil.example"]')).toBeNull()
-    const summary = page
-      .getByText('Full description — preview shortened', { exact: true })
-      .element()
-    summary.focus()
-    await act(async () => userEvent.keyboard('{Enter}'))
-    expect(summary.parentElement.open).toBe(true)
-    expect(container.querySelector('img')).toBeNull()
-  },
-)
+test('hostile text, keyboard expansion and long titles fit narrow layout', async () => {
+  await mount('github_get_issue', {
+    ...detailedIssue,
+    title: '<script>unsafe</script>' + 'long'.repeat(200),
+    url: 'https://github.com.evil.example/issue',
+    body: '<img src=x onerror=alert(1)>' + 'long description '.repeat(60),
+    parent: { title: '<script>unsafe</script>', url: 'https://github.com.evil.test/x' },
+    labels: connection([null, 'bad', { name: '<img src=x>', url: 'data:text/html,evil' }]),
+  })
+  container.style.width = '320px'
+  expect(container.scrollWidth).toBeLessThanOrEqual(320)
+  expect(container.querySelector('script')).toBeNull()
+  expect(container.querySelector('a[href*="evil."],a[href^="data:"]')).toBeNull()
+  expect(container.querySelector('.gh-grant').textContent).toContain('<script>unsafe</script>')
+  const summary = page.getByText('Full description — preview shortened', { exact: true }).element()
+  summary.focus()
+  await act(async () => userEvent.keyboard('{Enter}'))
+  expect(summary.parentElement.open).toBe(true)
+  expect(container.querySelector('img')).toBeNull()
+})

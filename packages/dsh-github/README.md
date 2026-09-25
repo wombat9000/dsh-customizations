@@ -152,4 +152,20 @@ node scripts/check.mjs
 git diff --check
 ```
 
-Follow the repository setup skill before validation or dependency work. No install is required by this package. Unit/registration tests are not evidence of a deployed GUI or a live GitHub acceptance test.
+Follow the repository setup skill before validation or dependency work. Unit/registration tests are not evidence of a deployed GUI or a live GitHub acceptance test.
+
+### Client development
+
+Edit `client/` TypeScript and TSX sources, not the generated `client.js`. Pure models validate approval payloads, grant status, field changes, and bounded read results. React components render those models; containers own status polling, revocation, cancellation, and session/call isolation. `shared/contracts.ts` describes the consumed DSH hooks and browser endpoint payloads. Responses remain `unknown` until runtime validation accepts them. Malformed non-string grant operations fail validation; malformed directly supplied project-item fields and non-Error failures use defensive fallbacks.
+
+GitHub and Session Recap share repository-level build and type-check tooling. Compiler, React type, and bundler versions are pinned once in the root development dependencies. Each plugin retains its own manifest and client configuration; installed plugins load the committed bundle without invoking the compiler.
+
+From the repository root:
+
+```sh
+node packages/dsh-github/scripts/build-client.mjs
+env -u NODE_PATH node --test packages/dsh-github/test/*.test.js
+env -u NODE_PATH node node_modules/vitest/vitest.mjs run --config vitest.browser.config.mjs packages/dsh-github/test/browser/
+```
+
+The build runs strict type checking before bundling. Commit source and regenerated `client.js` together. The Node suite checks types, runtime validation, registration, and bundle freshness. Browser tests exercise source components with real React and fixture transports. Existing real-shell tests exercise the generated bundle, native approval fallback, and screenshot baselines in a disposable DSH instance. None of these tests authorizes a GitHub mutation, deploys the plugin, or updates a running profile.

@@ -2,28 +2,14 @@ import React, { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, expect, test } from 'vitest'
 import { userEvent } from 'vitest/browser'
-import source from '../../client.js?raw'
+import { ReadCard } from '../../client/read-components.tsx'
 import { projectItems, itemConnection, projectItemsBlock } from '../project-items-fixture.js'
 let root, container, originalFetch, requests
-let record
-const previous = window.__ModuleLoader__
-window.__ModuleLoader__ = {
-  load: (value) => {
-    record = value
-  },
-}
-try {
-  new Function(source)()
-} finally {
-  window.__ModuleLoader__ = previous
-}
-const { ReadCard } = record.factory(() => React)
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 afterEach(async () => {
   await act(async () => root?.unmount())
   container?.remove()
   window.fetch = originalFetch
-  document.documentElement.style.colorScheme = ''
 })
 async function mount(data = itemConnection(projectItems), width = 900) {
   originalFetch = window.fetch
@@ -121,31 +107,27 @@ test('missing, empty and unknown item data remain accessible without invented va
   expect(container.innerText).toContain('Future: Value not supplied or unsupported')
   expect(requests).toBe(0)
 })
-test.each(['light', 'dark'])(
-  'narrow %s rows stack safely with long hostile titles and visible nested warnings',
-  async (theme) => {
-    document.documentElement.style.colorScheme = theme
-    const item = structuredClone(projectItems[0])
-    item.content.title = '<script>unsafe</script>' + 'long'.repeat(100)
-    item.content.url = 'https://github.com.evil.example/x'
-    item.fieldValues.nodes[3].pullRequests = itemConnection(
-      [{ title: '<img src=x>', url: 'javascript:alert(1)' }],
-      true,
-    )
-    await mount({ ...itemConnection([item], true), totalCount: 50 }, 320)
-    expect(container.scrollWidth).toBeLessThanOrEqual(320)
-    expect(
-      container.querySelector('.gh-item-head').children[1].getBoundingClientRect().top,
-    ).toBeGreaterThan(container.querySelector('h4').getBoundingClientRect().bottom)
-    expect(
-      container.querySelectorAll('script,img,a[href*="evil"],a[href^="javascript:"]'),
-    ).toHaveLength(0)
-    expect(container.innerText).toContain('1 entries returned; 50 total reported')
-    expect(
-      [...container.querySelectorAll('[role="note"]')].some(
-        (node) => node.textContent.includes('pullRequests') && !node.closest('details'),
-      ),
-    ).toBe(true)
-    expect(requests).toBe(0)
-  },
-)
+test('narrow rows stack safely with long hostile titles and visible nested warnings', async () => {
+  const item = structuredClone(projectItems[0])
+  item.content.title = '<script>unsafe</script>' + 'long'.repeat(100)
+  item.content.url = 'https://github.com.evil.example/x'
+  item.fieldValues.nodes[3].pullRequests = itemConnection(
+    [{ title: '<img src=x>', url: 'javascript:alert(1)' }],
+    true,
+  )
+  await mount({ ...itemConnection([item], true), totalCount: 50 }, 320)
+  expect(container.scrollWidth).toBeLessThanOrEqual(320)
+  expect(
+    container.querySelector('.gh-item-head').children[1].getBoundingClientRect().top,
+  ).toBeGreaterThan(container.querySelector('h4').getBoundingClientRect().bottom)
+  expect(
+    container.querySelectorAll('script,img,a[href*="evil"],a[href^="javascript:"]'),
+  ).toHaveLength(0)
+  expect(container.innerText).toContain('1 entries returned; 50 total reported')
+  expect(
+    [...container.querySelectorAll('[role="note"]')].some(
+      (node) => node.textContent.includes('pullRequests') && !node.closest('details'),
+    ),
+  ).toBe(true)
+  expect(requests).toBe(0)
+})

@@ -192,7 +192,9 @@ The configuration uses two spaces, single quotes, no semicolons, and a 100-colum
 
 If dependencies are missing, follow the [repository setup skill](.agents/skills/repository-setup/SKILL.md) before an approved offline install. Run repository checks with `pnpm run check` and the Node.js unit and host-integration tests with `pnpm test`. The test command first runs `pnpm run build`, which type-checks and bundles Session Environment's TypeScript host and client. Its integration tests validate recipe wiring and generated entrypoints without starting DSH; the browser suites below do not yet cover the Environment card.
 
-The Node suite also runs Session Recap's strict client/contract type check, source-logic tests, in-process backend integration, and committed-bundle freshness checks. The root build does not regenerate Session Recap's client; use its [development commands](packages/dsh-session-recap/README.md#development) after editing client sources. Its browser coverage includes direct TSX component tests as well as generated-bundle slot tests.
+GitHub and Session Recap share client build/type-check helpers and exact-pinned root development tooling. Their Node suites enforce strict client/contract type checks and committed-bundle freshness. GitHub's browser suites import source components; real-shell tests load its generated bundle. See [GitHub client development](packages/dsh-github/README.md#client-development).
+
+The Node suite also runs Session Recap's source-logic tests and in-process backend integration. The root build does not regenerate Session Recap's client; use its [development commands](packages/dsh-session-recap/README.md#development) after editing client sources. Its browser coverage includes direct TSX component tests as well as generated-bundle slot tests.
 
 ### Browser interactions and real DSH screenshots
 

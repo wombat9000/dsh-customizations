@@ -94,6 +94,8 @@ Edit the focused source files, not the generated `client.js`:
 
 `tsconfig.json` enables strict checking, checked indexed access, exact optional properties, and type-only import enforcement. The pinned TypeScript `6.0.3` compiler checks client code and compile-time regression cases without emitting files. Run it independently with `node packages/dsh-session-recap/scripts/typecheck.mjs`. Both the build command and the Node test suite enforce this check; tsdown transpilation alone is not a type check.
 
+GitHub and Session Recap share repository-level build and type-check helpers, with TypeScript, React types, and tsdown pinned in the root development dependencies. Package scripts retain the commands below.
+
 The pinned DSH loader serves one client file. After type checking, `scripts/build-client.mjs` uses pinned tsdown `0.22.2` to compile TS/TSX into one lazy CommonJS factory. React stays external and is supplied by DSH. The build rejects extra output files, unsupported external imports, dynamic imports, and unresolved `process.env` references. It does not bundle another copy of React or register additional loader modules. The committed `client.js` retains the existing installation and hot-reload contract. DSH needs no TypeScript loader at runtime.
 
 Types do not validate received JSON. The RPC adapter records the existing host-validated protocol without changing transport identity. Rendering keeps its defensive filters. Where RC2's published slot declarations reference absent type packages, registration uses a narrow interface for the three existing slots, backed by the real-shell tests; it does not claim complete DSH type coverage.

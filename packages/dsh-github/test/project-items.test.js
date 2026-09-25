@@ -1,20 +1,9 @@
 import assert from 'node:assert/strict'
-import { readFile } from 'node:fs/promises'
-import vm from 'node:vm'
 import test from 'node:test'
 import { itemConnection, projectItems, projectItemsBlock } from './project-items-fixture.js'
-let record
-vm.runInNewContext(await readFile(new URL('../client.js', import.meta.url), 'utf8'), {
-  window: {
-    __ModuleLoader__: {
-      load(value) {
-        record = value
-      },
-    },
-  },
-  URL,
-})
-const { readCardModel, projectItemModel, itemFieldModel } = record.factory(() => ({}))
+import { registerTypeScript } from './source-loader.mjs'
+registerTypeScript()
+const { readCardModel, projectItemModel, itemFieldModel } = await import('../client/read-models.ts')
 test('six item model preserves independent states, repository fields, PRs and additional fields', () => {
   const model = readCardModel('github_list_project_items', projectItemsBlock())
   assert.equal(model.returnedCount, 6)
@@ -55,6 +44,19 @@ test('missing, empty, null, zero and unexpected fields remain distinct', () => {
     projectItemModel({ content: { __typename: 'PullRequest', state: 'CLOSED' } }).issueState,
     'Not an issue',
   )
+})
+test('direct malformed item field nodes stay defensive while read cards reject them', () => {
+  for (const nodes of [null, {}, 'not an array', 42]) {
+    const entry = { id: 'ITEM', content: null, fieldValues: { nodes } }
+    const model = projectItemModel(entry)
+    assert.deepEqual(model.fields, [])
+    assert.deepEqual(model.prs, [])
+    assert.equal(model.boardStatus, 'Not supplied')
+    assert.equal(
+      readCardModel('github_list_project_items', projectItemsBlock({ nodes: [entry] })).state,
+      'unknown',
+    )
+  }
 })
 test('outer and nested incompleteness remain visible independently of expanded items', () => {
   const item = structuredClone(projectItems[0])

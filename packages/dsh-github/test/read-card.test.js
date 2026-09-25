@@ -1,21 +1,10 @@
 import assert from 'node:assert/strict'
-import { readFile } from 'node:fs/promises'
-import vm from 'node:vm'
 import test from 'node:test'
 import { issue, project, detailedIssue, detailedProject, projectItem } from './payloads.js'
 import { connection } from './fixtures.js'
-let record
-vm.runInNewContext(await readFile(new URL('../client.js', import.meta.url), 'utf8'), {
-  window: {
-    __ModuleLoader__: {
-      load(value) {
-        record = value
-      },
-    },
-  },
-  URL,
-})
-const { readCardModel, readWarnings } = record.factory(() => ({}))
+import { registerTypeScript } from './source-loader.mjs'
+registerTypeScript()
+const { readCardModel, readWarnings } = await import('../client/read-models.ts')
 const block = (data, extra = {}) => ({
   kind: 'tool-result',
   content: [

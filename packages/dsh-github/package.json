@@ -14,9 +14,20 @@
   "files": [
     "src/**/*.js",
     "client.js",
+    "client/**/*.ts",
+    "client/**/*.tsx",
+    "shared/**/*.ts",
+    "scripts/*.mjs",
+    "tsconfig.json",
     "cordis.patch.yml",
     "README.md"
   ],
+  "scripts": {
+    "typecheck": "node scripts/typecheck.mjs",
+    "build": "node scripts/build-client.mjs",
+    "build:client": "node scripts/build-client.mjs",
+    "test": "node --test test/*.test.js"
+  },
   "engines": {
     "node": "^22.19.0 || >=24.0.0"
   },

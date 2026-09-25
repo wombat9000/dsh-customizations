@@ -1,5 +1,9 @@
 {
   "extends": "../../tsconfig.client.json",
+  "compilerOptions": {
+    "target": "ES2023",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"]
+  },
   "include": [
     "client/**/*.ts",
     "client/**/*.tsx",

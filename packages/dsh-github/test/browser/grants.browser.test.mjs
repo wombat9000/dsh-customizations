@@ -1,8 +1,8 @@
 import React, { act } from 'react'
 import { createRoot } from 'react-dom/client'
-import { afterEach, expect, test } from 'vitest'
+import { afterEach, expect, test, vi } from 'vitest'
 import { page, userEvent } from 'vitest/browser'
-import source from '../../client.js?raw'
+import { GrantCard } from '../../client/grant-card.tsx'
 let root, container
 const h = React.createElement
 const click = (locator) => act(async () => locator.click())
@@ -10,7 +10,7 @@ globalThis.IS_REACT_ACT_ENVIRONMENT = true
 afterEach(async () => {
   await act(async () => root?.unmount())
   container?.remove()
-  document.documentElement.style.colorScheme = ''
+  vi.useRealTimers()
 })
 const scope = {
   account: { id: 'U_fixture', login: 'fixture' },
@@ -53,20 +53,7 @@ const active = {
   grants: [{ id: 'grant-one', state: 'active', scope }],
 }
 async function mount(handler, extra = {}) {
-  let record
-  const previous = window.__ModuleLoader__
-  window.__ModuleLoader__ = {
-    load: (value) => {
-      record = value
-    },
-  }
-  try {
-    new Function(source)()
-  } finally {
-    window.__ModuleLoader__ = previous
-  }
-  const plugin = record.factory(() => React),
-    calls = []
+  const calls = []
   const request = async (action, body, signal) => {
     calls.push({ action, body, signal })
     return handler(action, body, signal)
@@ -81,12 +68,12 @@ async function mount(handler, extra = {}) {
     request,
     ...extra,
   }
-  await act(async () => root.render(h(plugin.GrantCard, props)))
+  await act(async () => root.render(h(GrantCard, props)))
   return {
     calls,
     async render(changes) {
       props = { ...props, ...changes }
-      await act(async () => root.render(h(plugin.GrantCard, props)))
+      await act(async () => root.render(h(GrantCard, props)))
     },
   }
 }
@@ -228,7 +215,7 @@ test.each([
   expect(container.textContent).not.toContain('Active access')
   expect(container.querySelector('[aria-label^="Revoke access"]')).toBeNull()
 })
-test('concurrent revoke clicks produce one request and stale polling cannot revive access', async () => {
+test('concurrent revoke clicks produce one request and disable the revoke button', async () => {
   let settle
   const fixture = await mount((action) =>
     action === 'revoke'
@@ -246,29 +233,80 @@ test('concurrent revoke clicks produce one request and stale polling cannot revi
   expect(button.disabled).toBe(true)
   await act(async () => settle({ state: 'revoked' }))
 })
-test.each(['light', 'dark'])(
-  'long scope remains bounded and keyboard accessible in narrow %s layout',
-  async (scheme) => {
-    document.documentElement.style.colorScheme = scheme
-    const longScope = {
-      ...scope,
-      issues: Array.from({ length: 50 }, (_, i) => ({
-        ...scope.issues[0],
-        id: `I_${i}`,
-        issueNumber: i + 1,
-        title: 'Long issue title '.repeat(12),
-      })),
-    }
-    await mount(() => ({ ...pending, scope: longScope }))
-    container.style.width = '320px'
-    expect(container.scrollWidth).toBeLessThanOrEqual(320)
-    const summary = page.getByText('Complete exact approval preview', { exact: true }).element()
-    summary.focus()
-    await act(async () => userEvent.keyboard('{Enter}'))
-    expect(summary.parentElement.open).toBe(true)
-    await expect
-      .element(page.getByRole('group', { name: 'Selected issues', exact: true }))
-      .toBeVisible()
-    expect(container.querySelector('.gh-scroll').clientHeight).toBeLessThanOrEqual(350)
-  },
-)
+test('late in-flight poll cannot revive revoked access and disposal aborts the current request', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+  let resolvePoll, resolveRevoke, resolveDisposed
+  let statusRequests = 0
+  const revoked = {
+    ...active,
+    phase: 'revoked',
+    grants: [{ ...active.grants[0], state: 'revoked' }],
+  }
+  const fixture = await mount((action) => {
+    if (action === 'revoke')
+      return new Promise((resolve) => {
+        resolveRevoke = resolve
+      })
+    statusRequests++
+    if (statusRequests === 1) return active
+    if (statusRequests === 2)
+      return new Promise((resolve) => {
+        resolvePoll = resolve
+      })
+    if (statusRequests === 3) return revoked
+    return new Promise((resolve) => {
+      resolveDisposed = resolve
+    })
+  })
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(1500)
+  })
+  expect(statusRequests).toBe(2)
+  const oldPoll = fixture.calls[1]
+  await act(async () => container.querySelector('[aria-label="Revoke access grant-one"]').click())
+  await act(async () => resolveRevoke({ state: 'revoked' }))
+  expect(statusRequests).toBe(3)
+  expect(oldPoll.signal.aborted).toBe(true)
+  await act(async () => resolvePoll(active))
+  expect(container.querySelector('[role="status"]').textContent).toBe('Revoked')
+  expect(container.querySelector('[aria-label^="Revoke access"]')).toBeNull()
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(6000)
+  })
+  expect(statusRequests).toBe(3)
+  await fixture.render({ sessionId: 'other' })
+  expect(statusRequests).toBe(4)
+  const disposed = fixture.calls.at(-1)
+  expect(disposed.body.sessionId).toBe('other')
+  await act(async () => root.unmount())
+  root = undefined
+  expect(disposed.signal.aborted).toBe(true)
+  await act(async () => resolveDisposed(active))
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(6000)
+  })
+  expect(statusRequests).toBe(4)
+  expect(container.textContent).toBe('')
+})
+test('long scope remains bounded and keyboard accessible in narrow layout', async () => {
+  const longScope = {
+    ...scope,
+    issues: Array.from({ length: 50 }, (_, i) => ({
+      ...scope.issues[0],
+      id: `I_${i}`,
+      issueNumber: i + 1,
+      title: 'Long issue title '.repeat(12),
+    })),
+  }
+  await mount(() => ({ ...pending, scope: longScope }))
+  container.style.width = '320px'
+  expect(container.scrollWidth).toBeLessThanOrEqual(320)
+  const summary = page.getByText('Complete exact approval preview', { exact: true }).element()
+  summary.focus()
+  await act(async () => userEvent.keyboard('{Enter}'))
+  expect(summary.parentElement.open).toBe(true)
+  await expect
+    .element(page.getByRole('group', { name: 'Selected issues', exact: true }))
+    .toBeVisible()
+  expect(container.querySelector('.gh-scroll').clientHeight).toBeLessThanOrEqual(350)
+})
