@@ -2,22 +2,9 @@ import React, { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, expect, test } from 'vitest'
 import { userEvent } from 'vitest/browser'
-import source from '../../client.js?raw'
+import { ReadCard } from '../../client/read-components.tsx'
 import { projectItems, itemConnection, projectItemsBlock } from '../project-items-fixture.js'
 let root, container, originalFetch, requests
-let record
-const previous = window.__ModuleLoader__
-window.__ModuleLoader__ = {
-  load: (value) => {
-    record = value
-  },
-}
-try {
-  new Function(source)()
-} finally {
-  window.__ModuleLoader__ = previous
-}
-const { ReadCard } = record.factory(() => React)
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 afterEach(async () => {
   await act(async () => root?.unmount())

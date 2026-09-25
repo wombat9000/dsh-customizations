@@ -6,7 +6,7 @@ import { typecheck } from './typecheck.mjs'
 export const clientPath = new URL('../client.js', import.meta.url)
 
 export function buildClient() {
-  return bundleClient({ packageRoot: new URL('../', import.meta.url) })
+  return bundleClient({ packageRoot: new URL('../', import.meta.url), defaultExport: true })
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
@@ -14,6 +14,6 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     buildClient,
     clientPath,
     typecheck,
-    command: 'node packages/dsh-session-recap/scripts/build-client.mjs',
+    command: 'node packages/dsh-github/scripts/build-client.mjs',
   })
 }

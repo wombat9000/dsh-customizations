@@ -1,8 +1,8 @@
 import React, { act } from 'react'
 import { createRoot } from 'react-dom/client'
-import { afterEach, expect, test } from 'vitest'
+import { afterEach, expect, test, vi } from 'vitest'
 import { page, userEvent } from 'vitest/browser'
-import source from '../../client.js?raw'
+import { GrantCard } from '../../client/grant-card.tsx'
 let root, container
 const h = React.createElement
 const click = (locator) => act(async () => locator.click())
@@ -10,6 +10,7 @@ globalThis.IS_REACT_ACT_ENVIRONMENT = true
 afterEach(async () => {
   await act(async () => root?.unmount())
   container?.remove()
+  vi.useRealTimers()
   document.documentElement.style.colorScheme = ''
 })
 const scope = {
@@ -53,20 +54,7 @@ const active = {
   grants: [{ id: 'grant-one', state: 'active', scope }],
 }
 async function mount(handler, extra = {}) {
-  let record
-  const previous = window.__ModuleLoader__
-  window.__ModuleLoader__ = {
-    load: (value) => {
-      record = value
-    },
-  }
-  try {
-    new Function(source)()
-  } finally {
-    window.__ModuleLoader__ = previous
-  }
-  const plugin = record.factory(() => React),
-    calls = []
+  const calls = []
   const request = async (action, body, signal) => {
     calls.push({ action, body, signal })
     return handler(action, body, signal)
@@ -81,12 +69,12 @@ async function mount(handler, extra = {}) {
     request,
     ...extra,
   }
-  await act(async () => root.render(h(plugin.GrantCard, props)))
+  await act(async () => root.render(h(GrantCard, props)))
   return {
     calls,
     async render(changes) {
       props = { ...props, ...changes }
-      await act(async () => root.render(h(plugin.GrantCard, props)))
+      await act(async () => root.render(h(GrantCard, props)))
     },
   }
 }
@@ -245,6 +233,61 @@ test('concurrent revoke clicks produce one request and stale polling cannot revi
   expect(fixture.calls.filter((call) => call.action === 'revoke')).toHaveLength(1)
   expect(button.disabled).toBe(true)
   await act(async () => settle({ state: 'revoked' }))
+})
+test('late in-flight poll cannot revive revoked access and disposal aborts the current request', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+  let resolvePoll, resolveRevoke, resolveDisposed
+  let statusRequests = 0
+  const revoked = {
+    ...active,
+    phase: 'revoked',
+    grants: [{ ...active.grants[0], state: 'revoked' }],
+  }
+  const fixture = await mount((action) => {
+    if (action === 'revoke')
+      return new Promise((resolve) => {
+        resolveRevoke = resolve
+      })
+    statusRequests++
+    if (statusRequests === 1) return active
+    if (statusRequests === 2)
+      return new Promise((resolve) => {
+        resolvePoll = resolve
+      })
+    if (statusRequests === 3) return revoked
+    return new Promise((resolve) => {
+      resolveDisposed = resolve
+    })
+  })
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(1500)
+  })
+  expect(statusRequests).toBe(2)
+  const oldPoll = fixture.calls[1]
+  await act(async () => container.querySelector('[aria-label="Revoke access grant-one"]').click())
+  await act(async () => resolveRevoke({ state: 'revoked' }))
+  expect(statusRequests).toBe(3)
+  expect(oldPoll.signal.aborted).toBe(true)
+  await act(async () => resolvePoll(active))
+  expect(container.querySelector('[role="status"]').textContent).toBe('Revoked')
+  expect(container.querySelector('[aria-label^="Revoke access"]')).toBeNull()
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(6000)
+  })
+  expect(statusRequests).toBe(3)
+  await fixture.render({ sessionId: 'other' })
+  expect(statusRequests).toBe(4)
+  const disposed = fixture.calls.at(-1)
+  expect(disposed.body.sessionId).toBe('other')
+  await act(async () => root.unmount())
+  root = undefined
+  expect(disposed.signal.aborted).toBe(true)
+  await act(async () => resolveDisposed(active))
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(6000)
+  })
+  expect(statusRequests).toBe(4)
+  expect(container.textContent).toBe('')
 })
 test.each(['light', 'dark'])(
   'long scope remains bounded and keyboard accessible in narrow %s layout',

@@ -12,6 +12,7 @@ Follow the [repository setup procedure](../.agents/skills/repository-setup/SKILL
 - Prefer published upstream types. If they are missing or incomplete, define a narrow adapter or interface for the consumed surface. Document the limitation and the evidence supporting the contract. Do not hide integration uncertainty behind broad `any`, context-wide casts, or blanket error suppression.
 - Treat external data and caught errors as untrusted until narrowed or validated. Type assertions do not validate JSON. Retain runtime validation for settings, RPC inputs, and model output; document transport boundaries that rely on host validation.
 - Run an explicit type check in the package's build and normal test path. Bundling or transpiling successfully does not establish type safety. Add compile-time regression cases for important contracts, including values that must be rejected.
+- Reuse repository-level client build/type-check helpers and root development-tool pins when migrating a client. Each installable plugin keeps its own manifest, source entrypoint, and type-check configuration; do not copy compiler dependencies and build implementations into every package.
 
 ## Module boundaries
 

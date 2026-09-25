@@ -3,13 +3,16 @@ import { readFile } from 'node:fs/promises'
 import vm from 'node:vm'
 import test from 'node:test'
 
+import { registerTypeScript } from './source-loader.mjs'
+registerTypeScript()
+const plugin = {
+  ...(await import('../client/grant-model.ts')),
+  ...(await import('../client/validation.ts')),
+  ...(await import('../client/transport.ts')),
+}
+// Keep this loader solely for the generated-artifact registration regression.
 const source = await readFile(new URL('../client.js', import.meta.url), 'utf8')
-function load(
-  react = {},
-  fetch = () => {
-    throw new Error('Unexpected fetch')
-  },
-) {
+function load(react = {}) {
   let record
   vm.runInNewContext(source, {
     window: {
@@ -20,10 +23,6 @@ function load(
       },
     },
     URL,
-    fetch,
-    AbortController,
-    setTimeout,
-    clearTimeout,
   })
   return {
     record,
@@ -106,7 +105,6 @@ test('client owns exactly eight intended tool keys and disposes every registrati
   assert.deepEqual(disposed, keys.toReversed())
 })
 test('scope/status validation fails closed on malformed and mismatched data', () => {
-  const { plugin } = load()
   assert.equal(plugin.validScope(scope), true)
   assert.equal(plugin.validStatus(status, 'call'), true)
   for (const value of [
@@ -129,8 +127,21 @@ test('scope/status validation fails closed on malformed and mismatched data', ()
     true,
   )
 })
+test('non-string operation keys never become grant authority through property-key coercion', () => {
+  for (const operation of [['setProjectItemField'], null, 1, {}, true]) {
+    const malformed = { ...scope, operations: [operation] }
+    assert.equal(plugin.validScope(malformed), false)
+    assert.equal(plugin.validStatus({ ...status, scope: malformed }, 'call'), false)
+    assert.equal(
+      plugin.validStatus(
+        { ...status, grants: [{ id: 'grant', state: 'active', scope: malformed }] },
+        'call',
+      ),
+      false,
+    )
+  }
+})
 test('links require exact public HTTPS github.com authority', () => {
-  const { plugin } = load()
   assert.equal(plugin.safeUrl('https://github.com/fixture/repo'), 'https://github.com/fixture/repo')
   for (const url of [
     'javascript:alert(1)',
@@ -144,7 +155,6 @@ test('links require exact public HTTPS github.com authority', () => {
     assert.equal(plugin.safeUrl(url), undefined)
 })
 test('raw details retain original args, result and structured error without inferring state', () => {
-  const { plugin } = load()
   assert.equal(plugin.rawDetails({ argsRaw: '{"issues":[]}' }), 'Arguments\n{"issues":[]}')
   assert.equal(
     plugin.rawDetails({
@@ -157,12 +167,12 @@ test('raw details retain original args, result and structured error without infe
   assert.match(plugin.phaseLabel('surprise'), /unknown/)
   assert.doesNotMatch(plugin.phaseLabel('running'), /success|granted/i)
 })
-test('browser API uses the same-origin strict identity body and never accepts an approval action', async () => {
-  const calls = [],
-    { plugin } = load({}, async (...args) => {
-      calls.push(args)
-      return { ok: true, json: async () => ({ ok: true, value: status }) }
-    })
+test('browser API uses the same-origin strict identity body and never accepts an approval action', async (t) => {
+  const calls = []
+  t.mock.method(globalThis, 'fetch', async (...args) => {
+    calls.push(args)
+    return { ok: true, json: async () => ({ ok: true, value: status }) }
+  })
   const controller = new AbortController()
   assert.equal(
     await plugin.api('status', { sessionId: 's', callId: 'call' }, controller.signal),

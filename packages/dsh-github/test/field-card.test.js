@@ -1,20 +1,9 @@
 import assert from 'node:assert/strict'
-import { readFile } from 'node:fs/promises'
-import vm from 'node:vm'
 import test from 'node:test'
 import { fields, item } from './write-payloads.js'
-let record
-vm.runInNewContext(await readFile(new URL('../client.js', import.meta.url), 'utf8'), {
-  window: {
-    __ModuleLoader__: {
-      load(value) {
-        record = value
-      },
-    },
-  },
-  URL,
-})
-const plugin = record.factory(() => ({}))
+import { registerTypeScript } from './source-loader.mjs'
+registerTypeScript()
+const plugin = await import('../client/field-model.ts')
 const value = (dataType, before, after, selectedOption = null) => ({
   field: fields.find((field) => field.dataType === dataType),
   before,

@@ -24,7 +24,13 @@ vm.runInNewContext(await readFile(new URL('../client.js', import.meta.url), 'utf
   },
   URL,
 })
-const plugin = record.factory(() => React)
+import { registerTypeScript } from './source-loader.mjs'
+registerTypeScript()
+const plugin = {
+  ...(await import('../client/approval-model.ts')),
+  ...(await import('../client/approval-components.tsx')),
+}
+const bundledPlugin = record.factory(() => React)
 const markup = (value, reason = approvalReason(value)) =>
   renderToStaticMarkup(
     React.createElement(plugin.ApprovalPreview, {
@@ -85,6 +91,76 @@ test('malformed, missing, foreign, inconsistent and future payloads retain nativ
     null,
   )
 })
+// Change one JSON leaf at a time: each mismatch must independently retain the
+// complete native fallback rather than displaying an unrelated approval preview.
+const bindingPaths = {
+  createProject: [
+    ['targets', 'destination', 'id'],
+    ['change', 'title'],
+  ],
+  createIssue: [
+    ['targets', 'repository', 'id'],
+    ['change', 'title'],
+    ['change', 'body'],
+  ],
+  updateProject: [
+    ['targets', 'project', 'id'],
+    ['change', 'title', 'after'],
+    ['change', 'shortDescription', 'after'],
+    ['change', 'readme', 'after'],
+  ],
+  linkProjectRepository: [
+    ['targets', 'project', 'id'],
+    ['targets', 'repository', 'id'],
+    ['change', 'link', 'id'],
+  ],
+  addProjectItem: [
+    ['targets', 'project', 'id'],
+    ['targets', 'issue', 'id'],
+    ['change', 'addIssue', 'id'],
+  ],
+  setProjectItemField: [
+    ['targets', 'project', 'id'],
+    ['targets', 'item', 'id'],
+    ['change', 'field', 'id'],
+    ['change', 'after', 'singleSelectOptionId'],
+  ],
+  addIssueDependency: [
+    ['targets', 'blockedIssue', 'id'],
+    ['targets', 'blockingIssue', 'id'],
+    ['change', 'addBlockedBy', 'id'],
+  ],
+}
+function replaceLeaf(value, path, replacement) {
+  let parent = value
+  for (const key of path.slice(0, -1)) parent = parent[key]
+  parent[path.at(-1)] = replacement
+}
+for (const operation of approvalNames) {
+  test(`${operation} binds each target and proposed change to its exact payload`, () => {
+    const original = approvalValue(operation)
+    assert.ok(plugin.approvalModel(approvalTool(operation), approvalReason(original)))
+    for (const path of bindingPaths[operation]) {
+      const value = JSON.parse(JSON.stringify(original))
+      replaceLeaf(value, path, 'UNRELATED_VALUE')
+      assert.equal(
+        plugin.approvalModel(approvalTool(operation), approvalReason(value)),
+        null,
+        path.join('.'),
+      )
+    }
+    for (const key of Object.keys(original.exactPayload)) {
+      const value = JSON.parse(JSON.stringify(original))
+      value.exactPayload[key] =
+        key === 'value' ? { singleSelectOptionId: 'UNRELATED' } : 'UNRELATED'
+      assert.equal(
+        plugin.approvalModel(approvalTool(operation), approvalReason(value)),
+        null,
+        `exactPayload.${key}`,
+      )
+    }
+  })
+}
 test('membership keeps unrelated README only in collapsed complete details; direction includes repository identity', () => {
   const html = markup(approvalValue('addProjectItem')),
     primary = html.split('Technical details')[0]
@@ -129,6 +205,26 @@ test('template copy behavior is exact for both draft options, and malformed copi
     const html = renderToStaticMarkup(React.createElement(plugin.ApprovalPreview, { model }))
     assert.match(html, /Source template/)
     assert.match(html, /Not copied \/ visibility/)
+    for (const [path, replacement] of [
+      [['targets', 'destination', 'id'], 'OTHER_OWNER'],
+      [['targets', 'template', 'id'], 'OTHER_TEMPLATE'],
+      [['change', 'title'], 'Other title'],
+      [['change', 'copyBehavior', 'sourceTemplate'], 'OTHER_TEMPLATE'],
+      [['change', 'copyBehavior', 'includeDraftIssues'], !includeDraftIssues],
+      [['change', 'copyBehavior', 'ordinaryNewProject'], false],
+      [['exactPayload', 'ownerId'], 'OTHER_OWNER'],
+      [['exactPayload', 'projectId'], 'OTHER_TEMPLATE'],
+      [['exactPayload', 'title'], 'Other title'],
+      [['exactPayload', 'includeDraftIssues'], !includeDraftIssues],
+    ]) {
+      const mismatched = JSON.parse(JSON.stringify(model.value))
+      replaceLeaf(mismatched, path, replacement)
+      assert.equal(
+        plugin.approvalModel('github_create_project', approvalReason(mismatched)),
+        null,
+        path.join('.'),
+      )
+    }
     const malformed = JSON.parse(JSON.stringify(model.value))
     malformed.change.copyBehavior.copied = {}
     assert.equal(plugin.approvalModel('github_create_project', approvalReason(malformed)), null)
@@ -147,7 +243,7 @@ test('missing descriptive metadata and literal Markdown markers remain reviewabl
 test('native registration selects exact call only and disposes independently', () => {
   const registrations = [],
     disposed = []
-  plugin.apply({
+  bundledPlugin.apply({
     slots: {
       inject(name, callback) {
         const dispose = callback()

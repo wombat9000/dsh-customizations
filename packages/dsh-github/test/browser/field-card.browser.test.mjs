@@ -2,7 +2,7 @@ import React, { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, expect, test } from 'vitest'
 import { page, userEvent } from 'vitest/browser'
-import source from '../../client.js?raw'
+import { FieldChangeCard } from '../../client/field-card.tsx'
 let root, container
 const h = React.createElement
 const click = (locator) => act(async () => locator.click())
@@ -64,20 +64,7 @@ const settled = (outcome, extra = {}) => ({
   ],
 })
 async function mount(handler = () => prepared, extra = {}) {
-  let record
-  const previous = window.__ModuleLoader__
-  window.__ModuleLoader__ = {
-    load: (value) => {
-      record = value
-    },
-  }
-  try {
-    new Function(source)()
-  } finally {
-    window.__ModuleLoader__ = previous
-  }
-  const plugin = record.factory(() => React),
-    calls = []
+  const calls = []
   const request = async (action, body, signal) => {
     calls.push({ action, body, signal })
     return handler(action, body, signal)
@@ -92,12 +79,12 @@ async function mount(handler = () => prepared, extra = {}) {
     request,
     ...extra,
   }
-  await act(async () => root.render(h(plugin.FieldChangeCard, props)))
+  await act(async () => root.render(h(FieldChangeCard, props)))
   return {
     calls,
     async render(changes) {
       props = { ...props, ...changes }
-      await act(async () => root.render(h(plugin.FieldChangeCard, props)))
+      await act(async () => root.render(h(FieldChangeCard, props)))
     },
   }
 }

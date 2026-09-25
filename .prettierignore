@@ -12,6 +12,7 @@ artifacts/
 # Package-manager and build-generated files have their own writers/checks.
 /pnpm-lock.yaml
 /packages/dsh-session-recap/client.js
+/packages/dsh-github/client.js
 /packages/dsh-google-drive/test/fixtures/sheets-preview.json
 
 # Preserve exact patch payloads, upstream legal text, and visual baselines.

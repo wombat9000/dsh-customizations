@@ -2,7 +2,7 @@ import React, { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, expect, test } from 'vitest'
 import { page, userEvent } from 'vitest/browser'
-import source from '../../client.js?raw'
+import { ReadCard } from '../../client/read-components.tsx'
 let root, container
 const h = React.createElement
 const connection = (nodes, more = false) => ({
@@ -92,19 +92,6 @@ afterEach(async () => {
   document.documentElement.style.colorScheme = ''
 })
 async function mount(toolName, data, extra = {}) {
-  let record
-  const previous = window.__ModuleLoader__
-  window.__ModuleLoader__ = {
-    load: (value) => {
-      record = value
-    },
-  }
-  try {
-    new Function(source)()
-  } finally {
-    window.__ModuleLoader__ = previous
-  }
-  const plugin = record.factory(() => React)
   container = document.createElement('div')
   document.body.append(container)
   root = createRoot(container)
@@ -115,9 +102,7 @@ async function mount(toolName, data, extra = {}) {
     throw new Error('Read cards must not request HTTP')
   }
   try {
-    await act(async () =>
-      root.render(h(plugin.ReadCard, { toolName, block: block(data), ...extra })),
-    )
+    await act(async () => root.render(h(ReadCard, { toolName, block: block(data), ...extra })))
   } finally {
     window.fetch = originalFetch
   }

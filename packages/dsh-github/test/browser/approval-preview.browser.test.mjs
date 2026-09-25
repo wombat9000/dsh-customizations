@@ -2,7 +2,8 @@ import React, { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, expect, test } from 'vitest'
 import { page, userEvent } from 'vitest/browser'
-import source from '../../client.js?raw'
+import { ApprovalPreview, NativeApprovalDetail } from '../../client/approval-components.tsx'
+import { approvalModel } from '../../client/approval-model.ts'
 import {
   approvalNames,
   approvalValue,
@@ -11,20 +12,7 @@ import {
   issueBody,
 } from '../approval-preview-fixtures.js'
 const h = React.createElement
-let root, container, plugin
-let record
-const previous = window.__ModuleLoader__
-window.__ModuleLoader__ = {
-  load: (value) => {
-    record = value
-  },
-}
-try {
-  new Function(source)()
-} finally {
-  window.__ModuleLoader__ = previous
-}
-plugin = record.factory(() => React)
+let root, container
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 afterEach(async () => {
   await act(async () => root?.unmount())
@@ -34,7 +22,7 @@ async function mount(operation, reason = approvalReason(approvalValue(operation)
   container = document.createElement('div')
   document.body.append(container)
   root = createRoot(container)
-  const model = plugin.approvalModel(approvalTool(operation), reason)
+  const model = approvalModel(approvalTool(operation), reason)
   // RC2 native structure, controls represented only for isolation assertions.
   await act(async () =>
     root.render(
@@ -45,7 +33,7 @@ async function mount(operation, reason = approvalReason(approvalValue(operation)
           'div',
           { 'data-approval-scroll': '' },
           h('div', { 'data-native-reason': '' }, reason),
-          h('div', null, h(plugin.ApprovalPreview, { model })),
+          h('div', null, h(ApprovalPreview, { model })),
         ),
         h('button', null, 'Native reject'),
         h('button', null, 'Native allow'),
@@ -124,7 +112,7 @@ test('native single-seat component correlates session and call, and retains RC2 
   ])
   await act(async () =>
     root.render(
-      h(plugin.NativeApprovalDetail, {
+      h(NativeApprovalDetail, {
         sessionId: 'session',
         callId: 'call',
         useSessionPendingInteraction: (select) => select(pending),
@@ -137,7 +125,7 @@ test('native single-seat component correlates session and call, and retains RC2 
   nodes.get('node').data.root.kind = 'tool-result'
   await act(async () =>
     root.render(
-      h(plugin.NativeApprovalDetail, {
+      h(NativeApprovalDetail, {
         sessionId: 'session',
         callId: 'call',
         useSessionPendingInteraction: (select) => select(pending),
