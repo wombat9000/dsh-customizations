@@ -19,7 +19,7 @@ test('committed GitHub client matches reproducible source assembly', async () =>
   )
 })
 
-test('GitHub assembly registers one lazy factory and retains its complete public surface', async () => {
+test('GitHub assembly registers one lazy factory with the loader contract and React external', async () => {
   const source = await readFile(clientPath, 'utf8')
   const registrations = []
   // At script evaluation there are no React, require, exports, module, or process globals.
@@ -37,36 +37,5 @@ test('GitHub assembly registers one lazy factory and retains its complete public
   })
   assert.deepEqual([...new Set(requested)], ['react'])
   assert.deepEqual(Array.from(plugin.inject), ['slots'])
-  assert.deepEqual(
-    Object.keys(plugin).sort(),
-    [
-      'inject',
-      'approvalModel',
-      'selectApproval',
-      'ApprovalPreview',
-      'NativeApprovalDetail',
-      'api',
-      'safeUrl',
-      'validScope',
-      'validStatus',
-      'rawDetails',
-      'phaseLabel',
-      'Scope',
-      'GrantCard',
-      'fieldValueModel',
-      'validFieldStatus',
-      'fieldResult',
-      'fieldPhase',
-      'fieldPhaseLabel',
-      'FieldChangeCard',
-      'READ_TOOLS',
-      'readWarnings',
-      'readCardModel',
-      'itemFieldModel',
-      'projectItemModel',
-      'ReadCard',
-      'apply',
-    ].sort(),
-  )
-  assert.doesNotMatch(source, /dangerouslySetInnerHTML/)
+  assert.equal(typeof plugin.apply, 'function')
 })

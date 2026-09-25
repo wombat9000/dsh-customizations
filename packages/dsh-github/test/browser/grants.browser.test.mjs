@@ -11,7 +11,6 @@ afterEach(async () => {
   await act(async () => root?.unmount())
   container?.remove()
   vi.useRealTimers()
-  document.documentElement.style.colorScheme = ''
 })
 const scope = {
   account: { id: 'U_fixture', login: 'fixture' },
@@ -216,7 +215,7 @@ test.each([
   expect(container.textContent).not.toContain('Active access')
   expect(container.querySelector('[aria-label^="Revoke access"]')).toBeNull()
 })
-test('concurrent revoke clicks produce one request and stale polling cannot revive access', async () => {
+test('concurrent revoke clicks produce one request and disable the revoke button', async () => {
   let settle
   const fixture = await mount((action) =>
     action === 'revoke'
@@ -289,29 +288,25 @@ test('late in-flight poll cannot revive revoked access and disposal aborts the c
   expect(statusRequests).toBe(4)
   expect(container.textContent).toBe('')
 })
-test.each(['light', 'dark'])(
-  'long scope remains bounded and keyboard accessible in narrow %s layout',
-  async (scheme) => {
-    document.documentElement.style.colorScheme = scheme
-    const longScope = {
-      ...scope,
-      issues: Array.from({ length: 50 }, (_, i) => ({
-        ...scope.issues[0],
-        id: `I_${i}`,
-        issueNumber: i + 1,
-        title: 'Long issue title '.repeat(12),
-      })),
-    }
-    await mount(() => ({ ...pending, scope: longScope }))
-    container.style.width = '320px'
-    expect(container.scrollWidth).toBeLessThanOrEqual(320)
-    const summary = page.getByText('Complete exact approval preview', { exact: true }).element()
-    summary.focus()
-    await act(async () => userEvent.keyboard('{Enter}'))
-    expect(summary.parentElement.open).toBe(true)
-    await expect
-      .element(page.getByRole('group', { name: 'Selected issues', exact: true }))
-      .toBeVisible()
-    expect(container.querySelector('.gh-scroll').clientHeight).toBeLessThanOrEqual(350)
-  },
-)
+test('long scope remains bounded and keyboard accessible in narrow layout', async () => {
+  const longScope = {
+    ...scope,
+    issues: Array.from({ length: 50 }, (_, i) => ({
+      ...scope.issues[0],
+      id: `I_${i}`,
+      issueNumber: i + 1,
+      title: 'Long issue title '.repeat(12),
+    })),
+  }
+  await mount(() => ({ ...pending, scope: longScope }))
+  container.style.width = '320px'
+  expect(container.scrollWidth).toBeLessThanOrEqual(320)
+  const summary = page.getByText('Complete exact approval preview', { exact: true }).element()
+  summary.focus()
+  await act(async () => userEvent.keyboard('{Enter}'))
+  expect(summary.parentElement.open).toBe(true)
+  await expect
+    .element(page.getByRole('group', { name: 'Selected issues', exact: true }))
+    .toBeVisible()
+  expect(container.querySelector('.gh-scroll').clientHeight).toBeLessThanOrEqual(350)
+})

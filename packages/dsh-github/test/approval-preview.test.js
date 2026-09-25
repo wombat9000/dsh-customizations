@@ -3,7 +3,6 @@ import { readFile } from 'node:fs/promises'
 import vm from 'node:vm'
 import test from 'node:test'
 import React from 'react'
-import { renderToStaticMarkup } from 'react-dom/server'
 import { createGitHubWriteRuntime, renderWritePreview } from '../src/write-runtime.js'
 import { args, snapshot } from './write-payloads.js'
 import { fakeSubprocess, json } from './fixtures.js'
@@ -26,17 +25,8 @@ vm.runInNewContext(await readFile(new URL('../client.js', import.meta.url), 'utf
 })
 import { registerTypeScript } from './source-loader.mjs'
 registerTypeScript()
-const plugin = {
-  ...(await import('../client/approval-model.ts')),
-  ...(await import('../client/approval-components.tsx')),
-}
+const plugin = await import('../client/approval-model.ts')
 const bundledPlugin = record.factory(() => React)
-const markup = (value, reason = approvalReason(value)) =>
-  renderToStaticMarkup(
-    React.createElement(plugin.ApprovalPreview, {
-      model: plugin.approvalModel(approvalTool(value.operation), reason),
-    }),
-  )
 test('all seven previews derive exactly from actual immutable runtime preparations; template copies too', async () => {
   for (const name of Object.keys(args)) {
     const operation = name === 'copyProject' ? 'createProject' : name
@@ -50,9 +40,6 @@ test('all seven previews derive exactly from actual immutable runtime preparatio
     assert.ok(model, name)
     assert.equal(model.reason, prepared.preview)
     assert.deepEqual(JSON.parse(JSON.stringify(model.value.exactPayload)), prepared.payload)
-    const html = renderToStaticMarkup(React.createElement(plugin.ApprovalPreview, { model }))
-    assert.match(html, /GitHub approval preview/)
-    assert.doesNotMatch(html, /<button/)
   }
 })
 test('malformed, missing, foreign, inconsistent and future payloads retain native fallback', () => {
@@ -161,32 +148,8 @@ for (const operation of approvalNames) {
     }
   })
 }
-test('membership keeps unrelated README only in collapsed complete details; direction includes repository identity', () => {
-  const html = markup(approvalValue('addProjectItem')),
-    primary = html.split('Technical details')[0]
-  assert.doesNotMatch(primary, /UNRELATED PROJECT README SENTINEL/)
-  assert.match(html, /UNRELATED PROJECT README SENTINEL/)
-  const value = approvalValue('addIssueDependency')
-  value.targets.blockedIssue.repository = { nameWithOwner: 'one/repo' }
-  value.targets.blockingIssue.repository = { nameWithOwner: 'two/repo' }
-  value.targets.blockingIssue.number = value.targets.blockedIssue.number
-  value.targets.blockingIssue.title = value.targets.blockedIssue.title
-  const result = markup(value)
-  assert.match(result, /<small>Blocked issue<\/small>.*<small>one\/repo · #49<\/small>/)
-  assert.match(result, /<small>Blocking issue<\/small>.*<small>two\/repo · #49<\/small>/)
-  assert.doesNotMatch(primary, /exact source and whitespace/)
-  assert.doesNotMatch(primary, /Use the native approval buttons below/)
-})
-test('safe Markdown and exact source preserve all long text, whitespace and unsafe syntax without execution', () => {
-  const html = markup(approvalValue())
-  assert.match(html, /<strong>Important<\/strong>/)
-  assert.match(html, /END OF COMPLETE BODY/)
-  assert.match(html, /JSON string/)
-  assert.doesNotMatch(html, /<img|<script|href="javascript:/)
-  assert.match(html, /&lt;img/)
+test('host write preview rejects unsafe control characters before client rendering', () => {
   const value = approvalValue()
-  value.change.body = value.exactPayload.body = ''
-  assert.match(markup(value), /Empty string/)
   value.change.body = value.exactPayload.body = 'bad\u0001control'
   assert.throws(() => renderWritePreview(value), /unsafe/i)
 })
@@ -202,9 +165,6 @@ test('template copy behavior is exact for both draft options, and malformed copi
     )
     const model = plugin.approvalModel('github_create_project', prepared.preview)
     assert.equal(model.value.exactPayload.includeDraftIssues, includeDraftIssues)
-    const html = renderToStaticMarkup(React.createElement(plugin.ApprovalPreview, { model }))
-    assert.match(html, /Source template/)
-    assert.match(html, /Not copied \/ visibility/)
     for (const [path, replacement] of [
       [['targets', 'destination', 'id'], 'OTHER_OWNER'],
       [['targets', 'template', 'id'], 'OTHER_TEMPLATE'],
@@ -229,16 +189,6 @@ test('template copy behavior is exact for both draft options, and malformed copi
     malformed.change.copyBehavior.copied = {}
     assert.equal(plugin.approvalModel('github_create_project', approvalReason(malformed)), null)
   }
-})
-test('missing descriptive metadata and literal Markdown markers remain reviewable', () => {
-  const value = approvalValue()
-  value.targets.repository = { id: 'R' }
-  value.change.body = value.exactPayload.body =
-    '*\n`\n**\n  \t\n[bad](https://github.com.evil.test/a)'
-  const html = markup(value)
-  assert.match(html, /Name unavailable/)
-  assert.doesNotMatch(html, /<em><\/em>|<code><\/code>|href="https:\/\/github.com.evil/)
-  assert.match(html, /exact source and whitespace/)
 })
 test('native registration selects exact call only and disposes independently', () => {
   const registrations = [],

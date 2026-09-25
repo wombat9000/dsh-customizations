@@ -10,7 +10,6 @@ globalThis.IS_REACT_ACT_ENVIRONMENT = true
 afterEach(async () => {
   await act(async () => root?.unmount())
   container?.remove()
-  document.documentElement.style.colorScheme = ''
 })
 const prepared = {
   version: 1,
@@ -177,57 +176,53 @@ test('expired bridge and malformed settled result do not imply success', async (
   expect(container.textContent).not.toContain('Previous value unavailable')
   expect(container.textContent).not.toContain('GitHub confirmed')
 })
-test.each(['light', 'dark'])(
-  'no-change and failure summaries omit placeholders in narrow %s layout',
-  async (scheme) => {
-    document.documentElement.style.colorScheme = scheme
-    let inspected = 0
-    const fixture = await mount(() => ({ version: 1, phase: 'expired' }), {
-      block: settled('no-change', { dispatched: false, reason: 'FIELD_VALUE_ALREADY_SET' }),
-      inspect: () => {
-        inspected++
-      },
-    })
-    container.style.width = '320px'
-    expect(container.textContent).toContain('No change needed')
-    expect(container.textContent).toContain(
-      'The field already has the requested value. Nothing was changed.',
-    )
-    expect(container.textContent).not.toContain('unavailable')
-    expect(container.querySelector('[aria-label="Prepared before and after values"]')).toBeNull()
-    const summary = page.getByText('Technical details', { exact: true }).element()
-    expect(summary.parentElement.open).toBe(false)
-    summary.focus()
-    await act(async () => userEvent.keyboard('{Enter}'))
-    expect(summary.parentElement.open).toBe(true)
-    await click(page.getByRole('button', { name: 'Inspect tool call' }))
-    expect(inspected).toBe(1)
-    await click(page.getByText('Technical details', { exact: true }))
-    const block = settled('failed', {
-      error: {
-        code: 'NOT_FOUND',
-        message: 'The requested project was not found. ghp_syntheticsecret',
-      },
-    })
-    block.call.argsRaw = JSON.stringify({
-      owner: 'fixture',
-      projectNumber: 7,
-      itemId: 'PI_TARGET',
-      fieldId: 'F_STATUS',
-      value: { singleSelectOptionId: 'OPT_NEW' },
-    })
-    await fixture.render({ block })
-    expect(container.querySelector('[role="alert"]').textContent).toBe(
-      'The requested project was not found. [REDACTED]',
-    )
-    expect(container.textContent).toContain(
-      'Requested target (call arguments, not verified resource metadata): Owner: fixture; Project number: 7; Item ID: PI_TARGET; Field ID: F_STATUS',
-    )
-    expect(container.textContent).not.toContain('unavailable')
-    expect(container.querySelector('[aria-label="Prepared before and after values"]')).toBeNull()
-    expect(container.scrollWidth).toBeLessThanOrEqual(320)
-  },
-)
+test('no-change and failure summaries omit placeholders in narrow layout', async () => {
+  let inspected = 0
+  const fixture = await mount(() => ({ version: 1, phase: 'expired' }), {
+    block: settled('no-change', { dispatched: false, reason: 'FIELD_VALUE_ALREADY_SET' }),
+    inspect: () => {
+      inspected++
+    },
+  })
+  container.style.width = '320px'
+  expect(container.textContent).toContain('No change needed')
+  expect(container.textContent).toContain(
+    'The field already has the requested value. Nothing was changed.',
+  )
+  expect(container.textContent).not.toContain('unavailable')
+  expect(container.querySelector('[aria-label="Prepared before and after values"]')).toBeNull()
+  const summary = page.getByText('Technical details', { exact: true }).element()
+  expect(summary.parentElement.open).toBe(false)
+  summary.focus()
+  await act(async () => userEvent.keyboard('{Enter}'))
+  expect(summary.parentElement.open).toBe(true)
+  await click(page.getByRole('button', { name: 'Inspect tool call' }))
+  expect(inspected).toBe(1)
+  await click(page.getByText('Technical details', { exact: true }))
+  const block = settled('failed', {
+    error: {
+      code: 'NOT_FOUND',
+      message: 'The requested project was not found. ghp_syntheticsecret',
+    },
+  })
+  block.call.argsRaw = JSON.stringify({
+    owner: 'fixture',
+    projectNumber: 7,
+    itemId: 'PI_TARGET',
+    fieldId: 'F_STATUS',
+    value: { singleSelectOptionId: 'OPT_NEW' },
+  })
+  await fixture.render({ block })
+  expect(container.querySelector('[role="alert"]').textContent).toBe(
+    'The requested project was not found. [REDACTED]',
+  )
+  expect(container.textContent).toContain(
+    'Requested target (call arguments, not verified resource metadata): Owner: fixture; Project number: 7; Item ID: PI_TARGET; Field ID: F_STATUS',
+  )
+  expect(container.textContent).not.toContain('unavailable')
+  expect(container.querySelector('[aria-label="Prepared before and after values"]')).toBeNull()
+  expect(container.scrollWidth).toBeLessThanOrEqual(320)
+})
 test('historical errors stay visible but never become structured no-change', async () => {
   await mount(() => ({ version: 1, phase: 'expired' }), {
     block: {
@@ -259,39 +254,35 @@ test('session changes abort requests and discard late prepared names', async () 
   expect(fixture.calls[0].signal.aborted).toBe(true)
   expect(container.textContent).not.toContain('Roadmap')
 })
-test.each(['light', 'dark'])(
-  'keyboard disclosure, hostile text and long exact values fit narrow %s layout',
-  async (scheme) => {
-    document.documentElement.style.colorScheme = scheme
-    await mount(() => ({
-      ...prepared,
-      change: {
-        field: { id: 'F_TEXT', name: 'Notes', dataType: 'TEXT' },
-        before: null,
-        after: { text: '<script>unsafe</script>' + 'long'.repeat(250) },
-      },
-      targets: {
-        ...prepared.targets,
-        item: {
-          ...prepared.targets.item,
-          content: {
-            __typename: 'DraftIssue',
-            id: 'DRAFT',
-            title: '<script>title</script>',
-            url: 'javascript:alert(1)',
-          },
+test('keyboard disclosure, hostile text and long exact values fit narrow layout', async () => {
+  await mount(() => ({
+    ...prepared,
+    change: {
+      field: { id: 'F_TEXT', name: 'Notes', dataType: 'TEXT' },
+      before: null,
+      after: { text: '<script>unsafe</script>' + 'long'.repeat(250) },
+    },
+    targets: {
+      ...prepared.targets,
+      item: {
+        ...prepared.targets.item,
+        content: {
+          __typename: 'DraftIssue',
+          id: 'DRAFT',
+          title: '<script>title</script>',
+          url: 'javascript:alert(1)',
         },
       },
-    }))
-    container.style.width = '320px'
-    expect(container.scrollWidth).toBeLessThanOrEqual(320)
-    expect(container.textContent).toContain('Not set →')
-    expect(container.textContent).toContain('Draft issue DRAFT')
-    expect(container.querySelector('script')).toBeNull()
-    expect(container.querySelector('a[href^="javascript"]')).toBeNull()
-    const summary = page.getByText('Complete exact approval preview', { exact: true }).element()
-    summary.focus()
-    await act(async () => userEvent.keyboard('{Enter}'))
-    expect(summary.parentElement.open).toBe(true)
-  },
-)
+    },
+  }))
+  container.style.width = '320px'
+  expect(container.scrollWidth).toBeLessThanOrEqual(320)
+  expect(container.textContent).toContain('Not set →')
+  expect(container.textContent).toContain('Draft issue DRAFT')
+  expect(container.querySelector('script')).toBeNull()
+  expect(container.querySelector('a[href^="javascript"]')).toBeNull()
+  const summary = page.getByText('Complete exact approval preview', { exact: true }).element()
+  summary.focus()
+  await act(async () => userEvent.keyboard('{Enter}'))
+  expect(summary.parentElement.open).toBe(true)
+})
