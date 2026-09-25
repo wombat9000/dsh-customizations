@@ -111,6 +111,10 @@ patches/                     Exact-version required DSH compatibility patches
 templates/plugin-bundle/     Starter package to copy
 ```
 
+### Engineering guidance
+
+Before implementing or refactoring code, read the [engineering guide](docs/engineering.md). It covers TypeScript contracts, module boundaries, React components, testing layers, and generated artifacts. Package READMEs contain package-specific commands and limitations.
+
 ### Packages
 
 Each selectable package declares `dsh.bundle.patch` in `package.json`. A package can contain runtime plugin code, a composition-only patch, or both.
@@ -172,6 +176,8 @@ If a package needs a build step, run its workspace build before applying the pro
 ## Run tests
 
 If dependencies are missing, follow the [repository setup skill](.agents/skills/repository-setup/SKILL.md) before an approved offline install. Run repository checks with `pnpm run check` and the Node.js unit and host-integration tests with `pnpm test`. The test command first runs `pnpm run build`, which type-checks and bundles Session Environment's TypeScript host and client. Its integration tests validate recipe wiring and generated entrypoints without starting DSH; the browser suites below do not yet cover the Environment card.
+
+The Node suite also runs Session Recap's strict client/contract type check, source-logic tests, in-process backend integration, and committed-bundle freshness checks. The root build does not regenerate Session Recap's client; use its [development commands](packages/dsh-session-recap/README.md#development) after editing client sources. Its browser coverage includes direct TSX component tests as well as generated-bundle slot tests.
 
 ### Browser interactions and real DSH screenshots
 
