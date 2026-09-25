@@ -11,11 +11,17 @@ const project = fileURLToPath(new URL('../tsconfig.json', import.meta.url))
 // Use the package's pinned compiler, never a global tsc or a downloader shim.
 export async function typecheck() {
   try {
-    await promisify(execFile)(process.execPath, [compiler, '--project', project, '--pretty', 'false'], {
-      maxBuffer: 1024 * 1024,
-    })
+    await promisify(execFile)(
+      process.execPath,
+      [compiler, '--project', project, '--pretty', 'false'],
+      {
+        maxBuffer: 1024 * 1024,
+      },
+    )
   } catch (error) {
-    throw new Error(`Session Recap type checking failed:\n${error.stdout || error.stderr || error.message}`)
+    throw new Error(
+      `Session Recap type checking failed:\n${error.stdout || error.stderr || error.message}`,
+    )
   }
 }
 

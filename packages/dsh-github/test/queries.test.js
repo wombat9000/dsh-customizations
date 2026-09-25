@@ -7,8 +7,14 @@ test('all fixed GraphQL documents are reads with explicit bounded collections', 
   for (const [name, query] of Object.entries(QUERIES)) {
     assert.match(query, /^query\b/, name)
     assert.doesNotMatch(query, /\bmutation\b|\bsubscription\b/, name)
-    for (const match of query.matchAll(/\b(repositories|projectsV2|items|fieldValues|labels|assignees|subIssues|blockedBy|blocking|comments|users|pullRequests|reviewers)\(/g)) {
-      assert.match(query.slice(match.index), /^[^(]+\(first:\$\w+,after:\$\w+/, `${name}: ${match[1]}`)
+    for (const match of query.matchAll(
+      /\b(repositories|projectsV2|items|fieldValues|labels|assignees|subIssues|blockedBy|blocking|comments|users|pullRequests|reviewers)\(/g,
+    )) {
+      assert.match(
+        query.slice(match.index),
+        /^[^(]+\(first:\$\w+,after:\$\w+/,
+        `${name}: ${match[1]}`,
+      )
     }
   }
   assert.match(QUERIES.getIssue, /parent \{/)

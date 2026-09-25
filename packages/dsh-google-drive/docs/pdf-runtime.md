@@ -50,19 +50,19 @@ The child environment does not inherit `TESSDATA_PREFIX` or other caller-selecte
 
 OCR renders one page at a time with `pdftoppm`, then passes the local image to Tesseract. The response labels pages and identifies each page's method as `embedded`, `ocr`, or `none`. Check `actualRange`, `totalPages`, `nextStartPage`, and `warnings` before claiming document coverage. OCR can misread words, numbers, and layout. Empty extracted text does not establish that a page is blank.
 
-| Limit | Current behavior |
-| --- | --- |
-| PDF download | At most 20 MiB; enforced on received bytes, not only metadata |
-| Document length | 1–200 pages |
-| Read range | 1–5 pages, with 1-based inclusive indices; defaults to pages 1–5 or the document end |
-| Concurrent PDF reads | At most 2 per reader/processor instance; excess requests fail as busy |
-| Render dimensions | Long side scaled to 2,400 pixels |
-| Rendered image | At most 20 MiB checked after rendering |
-| Text output | The model tool defaults to 65,536 UTF-8 bytes; the internal processor defaults to 262,144. Maximum 262,144; aggregate labeled text must fit. Page provenance and file metadata add bounded overhead, not another copy of the text. |
-| Processing deadline | 90 seconds for the processor |
-| Download and processing deadline | 120 seconds for the PDF read stage, after metadata acquisition |
-| Child wall-clock deadline | 10 seconds by default; 30 seconds for rendering and OCR |
-| Child diagnostic output | At most 65,536 bytes; raw stderr is not returned |
+| Limit                            | Current behavior                                                                                                                                                                                                                   |
+| -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| PDF download                     | At most 20 MiB; enforced on received bytes, not only metadata                                                                                                                                                                      |
+| Document length                  | 1–200 pages                                                                                                                                                                                                                        |
+| Read range                       | 1–5 pages, with 1-based inclusive indices; defaults to pages 1–5 or the document end                                                                                                                                               |
+| Concurrent PDF reads             | At most 2 per reader/processor instance; excess requests fail as busy                                                                                                                                                              |
+| Render dimensions                | Long side scaled to 2,400 pixels                                                                                                                                                                                                   |
+| Rendered image                   | At most 20 MiB checked after rendering                                                                                                                                                                                             |
+| Text output                      | The model tool defaults to 65,536 UTF-8 bytes; the internal processor defaults to 262,144. Maximum 262,144; aggregate labeled text must fit. Page provenance and file metadata add bounded overhead, not another copy of the text. |
+| Processing deadline              | 90 seconds for the processor                                                                                                                                                                                                       |
+| Download and processing deadline | 120 seconds for the PDF read stage, after metadata acquisition                                                                                                                                                                     |
+| Child wall-clock deadline        | 10 seconds by default; 30 seconds for rendering and OCR                                                                                                                                                                            |
+| Child diagnostic output          | At most 65,536 bytes; raw stderr is not returned                                                                                                                                                                                   |
 
 Output overflow produces an error rather than a silently truncated PDF result. Request fewer pages or increase `maxBytes` within its maximum. A render-size check does not prevent a PDF parser from allocating memory while decoding the document.
 
@@ -70,13 +70,13 @@ Output overflow produces an error rather than a silently truncated PDF result. R
 
 Linux invokes each utility through `prlimit`. macOS applies the following shared limits through Python's `resource.setrlimit` before execution:
 
-| Resource | Linux | macOS |
-| --- | --- | --- |
-| CPU time | 30 seconds per child | 30 seconds per child |
-| Maximum individual output file | 32 MiB | 32 MiB |
-| Open file descriptors | 64 | 64 |
-| Core dump size | 0 | 0 |
-| Virtual address space | 512 MiB per child | No hard memory limit |
+| Resource                       | Linux                | macOS                |
+| ------------------------------ | -------------------- | -------------------- |
+| CPU time                       | 30 seconds per child | 30 seconds per child |
+| Maximum individual output file | 32 MiB               | 32 MiB               |
+| Open file descriptors          | 64                   | 64                   |
+| Core dump size                 | 0                    | 0                    |
+| Virtual address space          | 512 MiB per child    | No hard memory limit |
 
 Linux's address-space limit is not a total resident-memory budget for the DSH Host or all concurrent children. The individual-file limit is not a total disk quota. Neither runner applies filesystem or network isolation. The plugin does not use `bwrap`, even if it is installed.
 
@@ -92,11 +92,11 @@ The processor stores input and page images in a private temporary directory with
 
 Linux ARM64 validation uses these installed Ubuntu 26.04 package revisions, verified with `dpkg-query`:
 
-| Package | Installed test revision | Assessment |
-| --- | --- | --- |
-| `poppler-utils` and `libpoppler156` | `26.01.0-2ubuntu0.1` | Ubuntu security update; see the advisory below |
-| `tesseract-ocr` and `libtesseract5` | `5.5.0-1build1` | Ubuntu Universe package; unresolved advisory status below |
-| `tesseract-ocr-eng` and `tesseract-ocr-deu` | `1:4.1.0-2build1` | Distribution language-data packages; model versions differ from engine versions |
+| Package                                     | Installed test revision | Assessment                                                                      |
+| ------------------------------------------- | ----------------------- | ------------------------------------------------------------------------------- |
+| `poppler-utils` and `libpoppler156`         | `26.01.0-2ubuntu0.1`    | Ubuntu security update; see the advisory below                                  |
+| `tesseract-ocr` and `libtesseract5`         | `5.5.0-1build1`         | Ubuntu Universe package; unresolved advisory status below                       |
+| `tesseract-ocr-eng` and `tesseract-ocr-deu` | `1:4.1.0-2build1`       | Distribution language-data packages; model versions differ from engine versions |
 
 These are test-sandbox versions, not a production version recommendation or evidence of the installed state on your machine. The approved installation changes only the Linux test sandbox, not the macOS Host or its live profile. Verify actual installed revisions after any separately approved runtime installation.
 

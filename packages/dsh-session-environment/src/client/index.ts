@@ -60,29 +60,49 @@ interface SessionEnvironmentRemote {
 
 const styles: Record<string, React.CSSProperties> = {
   card: {
-    position: 'fixed', top: 84, right: 18, zIndex: 50,
-    width: 'min(300px, calc(100vw - 36px))', boxSizing: 'border-box',
-    pointerEvents: 'auto', border: '1px solid var(--dsw-alias-border-l1)',
-    borderRadius: 14, background: 'var(--dsw-alias-bg-layer-1)',
-    color: 'var(--dsw-alias-label-primary)', boxShadow: '0 10px 28px rgba(0, 0, 0, 0.18)',
-    padding: '14px 15px 15px', fontSize: 13,
+    position: 'fixed',
+    top: 84,
+    right: 18,
+    zIndex: 50,
+    width: 'min(300px, calc(100vw - 36px))',
+    boxSizing: 'border-box',
+    pointerEvents: 'auto',
+    border: '1px solid var(--dsw-alias-border-l1)',
+    borderRadius: 14,
+    background: 'var(--dsw-alias-bg-layer-1)',
+    color: 'var(--dsw-alias-label-primary)',
+    boxShadow: '0 10px 28px rgba(0, 0, 0, 0.18)',
+    padding: '14px 15px 15px',
+    fontSize: 13,
   },
   title: {
-    margin: '0 0 12px', color: 'var(--dsw-alias-label-secondary)',
-    fontSize: 12, fontWeight: 600, letterSpacing: '0.02em',
+    margin: '0 0 12px',
+    color: 'var(--dsw-alias-label-secondary)',
+    fontSize: 12,
+    fontWeight: 600,
+    letterSpacing: '0.02em',
   },
   row: {
-    display: 'grid', gridTemplateColumns: '74px minmax(0, 1fr)',
-    alignItems: 'baseline', gap: 10, minHeight: 26,
+    display: 'grid',
+    gridTemplateColumns: '74px minmax(0, 1fr)',
+    alignItems: 'baseline',
+    gap: 10,
+    minHeight: 26,
   },
   label: { color: 'var(--dsw-alias-label-secondary)' },
   value: {
-    overflow: 'hidden', minWidth: 0, textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    minWidth: 0,
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
     fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
   },
   muted: { color: 'var(--dsw-alias-label-secondary)' },
   branchIcon: {
-    width: 14, height: 14, marginRight: 7, color: 'var(--dsw-alias-label-secondary)',
+    width: 14,
+    height: 14,
+    marginRight: 7,
+    color: 'var(--dsw-alias-label-secondary)',
     verticalAlign: -2,
   },
   sync: { display: 'inline-flex', alignItems: 'baseline', gap: 8, width: '100%', minWidth: 0 },
@@ -93,25 +113,53 @@ const styles: Record<string, React.CSSProperties> = {
   deletions: { color: 'var(--dsw-alias-state-error-primary)' },
 }
 
-export function blankInfo(status: LoadStatus, cwd: string | null, showLoading: boolean): EnvironmentInfo {
+export function blankInfo(
+  status: LoadStatus,
+  cwd: string | null,
+  showLoading: boolean,
+): EnvironmentInfo {
   return {
-    status, cwd, home: null, repo: null, hasHead: null, branch: null,
-    upstream: null, ahead: null, behind: null,
-    dirtyFiles: null, additions: null, deletions: null, error: null, showLoading,
+    status,
+    cwd,
+    home: null,
+    repo: null,
+    hasHead: null,
+    branch: null,
+    upstream: null,
+    ahead: null,
+    behind: null,
+    dirtyFiles: null,
+    additions: null,
+    deletions: null,
+    error: null,
+    showLoading,
   }
 }
 
 function cachedInfo(cwd: string | null, cached: CachedEnvironment): EnvironmentInfo {
   return {
-    status: 'ready', cwd, home: cached.home, repo: cached.repo,
-    hasHead: cached.hasHead, branch: cached.branch,
-    upstream: cached.upstream, ahead: cached.ahead, behind: cached.behind,
-    dirtyFiles: cached.dirtyFiles, additions: cached.additions, deletions: cached.deletions,
-    error: null, showLoading: false,
+    status: 'ready',
+    cwd,
+    home: cached.home,
+    repo: cached.repo,
+    hasHead: cached.hasHead,
+    branch: cached.branch,
+    upstream: cached.upstream,
+    ahead: cached.ahead,
+    behind: cached.behind,
+    dirtyFiles: cached.dirtyFiles,
+    additions: cached.additions,
+    deletions: cached.deletions,
+    error: null,
+    showLoading: false,
   }
 }
 
-export function describeSync(upstream: string | null, ahead: number | null, behind: number | null): {
+export function describeSync(
+  upstream: string | null,
+  ahead: number | null,
+  behind: number | null,
+): {
   readonly label: string
   readonly title: string
 } {
@@ -145,12 +193,12 @@ export function compactPath(path: string | null, home: string | null): string {
   if (!path) return 'Unavailable'
   let value = path
   if (home) {
-    const normalizedHome = home.length > 1 && (home.endsWith('/') || home.endsWith('\\'))
-      ? home.slice(0, -1)
-      : home
-    const boundary = path.length === normalizedHome.length
-      || path[normalizedHome.length] === '/'
-      || path[normalizedHome.length] === '\\'
+    const normalizedHome =
+      home.length > 1 && (home.endsWith('/') || home.endsWith('\\')) ? home.slice(0, -1) : home
+    const boundary =
+      path.length === normalizedHome.length ||
+      path[normalizedHome.length] === '/' ||
+      path[normalizedHome.length] === '\\'
     if (boundary && path.slice(0, normalizedHome.length) === normalizedHome) {
       value = `~${path.slice(normalizedHome.length)}`
     }
@@ -189,7 +237,12 @@ export function CopyValue(props: {
   const [highlighted, setHighlighted] = React.useState(false)
   const attempt = React.useRef(0)
 
-  React.useEffect(() => () => { attempt.current += 1 }, [])
+  React.useEffect(
+    () => () => {
+      attempt.current += 1
+    },
+    [],
+  )
   React.useEffect(() => {
     if (!feedback) return
     const timer = window.setTimeout(() => setFeedback(''), 2_000)
@@ -207,37 +260,79 @@ export function CopyValue(props: {
     }
   }
 
-  return React.createElement(React.Fragment, null,
-    React.createElement('button', {
-      type: 'button',
-      title: `Copy ${props.label}: ${props.value}`,
-      'aria-label': `Copy ${props.label}: ${props.value}`,
-      onClick: () => { void copy() },
-      onMouseEnter: () => setHighlighted(true),
-      onMouseLeave: () => setHighlighted(false),
-      style: {
-        ...styles.value, border: 0, padding: 0, margin: 0,
-        background: 'transparent', color: 'inherit', fontSize: 'inherit',
-        textAlign: 'left', cursor: 'pointer', borderRadius: 3,
-        textDecoration: highlighted ? 'underline' : 'none',
+  return React.createElement(
+    React.Fragment,
+    null,
+    React.createElement(
+      'button',
+      {
+        type: 'button',
+        title: `Copy ${props.label}: ${props.value}`,
+        'aria-label': `Copy ${props.label}: ${props.value}`,
+        onClick: () => {
+          void copy()
+        },
+        onMouseEnter: () => setHighlighted(true),
+        onMouseLeave: () => setHighlighted(false),
+        style: {
+          ...styles.value,
+          border: 0,
+          padding: 0,
+          margin: 0,
+          background: 'transparent',
+          color: 'inherit',
+          fontSize: 'inherit',
+          textAlign: 'left',
+          cursor: 'pointer',
+          borderRadius: 3,
+          textDecoration: highlighted ? 'underline' : 'none',
+        },
       },
-    }, props.children),
-    React.createElement('span', {
-      role: 'status', 'aria-live': 'polite',
-      style: { gridColumn: '2', ...styles.muted, fontSize: 11, ...(feedback ? {} : { position: 'absolute', width: 1, height: 1, overflow: 'hidden', clipPath: 'inset(50%)' }) },
-    }, feedback))
+      props.children,
+    ),
+    React.createElement(
+      'span',
+      {
+        role: 'status',
+        'aria-live': 'polite',
+        style: {
+          gridColumn: '2',
+          ...styles.muted,
+          fontSize: 11,
+          ...(feedback
+            ? {}
+            : {
+                position: 'absolute',
+                width: 1,
+                height: 1,
+                overflow: 'hidden',
+                clipPath: 'inset(50%)',
+              }),
+        },
+      },
+      feedback,
+    ),
+  )
 }
 
 function BranchIcon(): React.ReactElement {
-  return React.createElement('svg', {
-    style: styles.branchIcon,
-    viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2,
-    strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': 'true',
-  },
-  React.createElement('line', { x1: 6, y1: 3, x2: 6, y2: 15 }),
-  React.createElement('circle', { cx: 18, cy: 6, r: 3 }),
-  React.createElement('circle', { cx: 6, cy: 18, r: 3 }),
-  React.createElement('path', { d: 'M18 9a9 9 0 0 1-9 9' }))
+  return React.createElement(
+    'svg',
+    {
+      style: styles.branchIcon,
+      viewBox: '0 0 24 24',
+      fill: 'none',
+      stroke: 'currentColor',
+      strokeWidth: 2,
+      strokeLinecap: 'round',
+      strokeLinejoin: 'round',
+      'aria-hidden': 'true',
+    },
+    React.createElement('line', { x1: 6, y1: 3, x2: 6, y2: 15 }),
+    React.createElement('circle', { cx: 18, cy: 6, r: 3 }),
+    React.createElement('circle', { cx: 6, cy: 18, r: 3 }),
+    React.createElement('path', { d: 'M18 9a9 9 0 0 1-9 9' }),
+  )
 }
 
 export function createEnvironmentCard(
@@ -266,14 +361,17 @@ export function createEnvironmentCard(
       let active = true
       let busy = false
       const controller = new AbortController()
-      let loadingTimer: number | null = cached === undefined
-        ? window.setTimeout(() => {
-            if (!active) return
-            setInfo((previous) => previous.cwd === cwd && previous.status === 'pending'
-              ? { ...previous, showLoading: true }
-              : previous)
-          }, LOADING_DELAY_MS)
-        : null
+      let loadingTimer: number | null =
+        cached === undefined
+          ? window.setTimeout(() => {
+              if (!active) return
+              setInfo((previous) =>
+                previous.cwd === cwd && previous.status === 'pending'
+                  ? { ...previous, showLoading: true }
+                  : previous,
+              )
+            }, LOADING_DELAY_MS)
+          : null
 
       const clearLoadingTimer = (): void => {
         if (loadingTimer === null) return
@@ -282,9 +380,11 @@ export function createEnvironmentCard(
       }
       const preserveCacheOrError = (message: string): void => {
         const latest = cwd === null ? undefined : environmentCache.get(cwd)
-        setInfo(latest === undefined
-          ? { ...blankInfo('error', cwd, false), error: message }
-          : cachedInfo(cwd, latest))
+        setInfo(
+          latest === undefined
+            ? { ...blankInfo('error', cwd, false), error: message }
+            : cachedInfo(cwd, latest),
+        )
       }
 
       const refresh = async (): Promise<void> => {
@@ -329,8 +429,12 @@ export function createEnvironmentCard(
       }
 
       void refresh()
-      const interval = window.setInterval(() => { void refresh() }, POLL_INTERVAL_MS)
-      const resetDisposer = ctx.on('connection/reset', () => { void refresh() })
+      const interval = window.setInterval(() => {
+        void refresh()
+      }, POLL_INTERVAL_MS)
+      const resetDisposer = ctx.on('connection/reset', () => {
+        void refresh()
+      })
       return () => {
         active = false
         controller.abort()
@@ -343,11 +447,12 @@ export function createEnvironmentCard(
     if (sessionId === undefined) return null
 
     const cached = cwd === null ? undefined : environmentCache.get(cwd)
-    const displayInfo = info.cwd === cwd
-      ? info
-      : cached === undefined
-        ? blankInfo('pending', cwd, false)
-        : cachedInfo(cwd, cached)
+    const displayInfo =
+      info.cwd === cwd
+        ? info
+        : cached === undefined
+          ? blankInfo('pending', cwd, false)
+          : cachedInfo(cwd, cached)
     const fullCwd = cwd ?? displayInfo.cwd ?? 'Unavailable'
     const shownCwd = compactPath(fullCwd, displayInfo.home)
     const waitingText = displayInfo.showLoading ? 'Checking…' : '—'
@@ -379,11 +484,15 @@ export function createEnvironmentCard(
       } else {
         const sync = describeSync(displayInfo.upstream, displayInfo.ahead, displayInfo.behind)
         syncTitle = sync.title
-        syncNode = displayInfo.upstream === null
-          ? sync.label
-          : React.createElement('span', { style: styles.sync, 'aria-label': sync.title },
-              React.createElement('span', { style: styles.upstream }, displayInfo.upstream),
-              React.createElement('span', { style: styles.syncCounts }, sync.label))
+        syncNode =
+          displayInfo.upstream === null
+            ? sync.label
+            : React.createElement(
+                'span',
+                { style: styles.sync, 'aria-label': sync.title },
+                React.createElement('span', { style: styles.upstream }, displayInfo.upstream),
+                React.createElement('span', { style: styles.syncCounts }, sync.label),
+              )
       }
     } else if (displayInfo.status === 'error') {
       syncNode = displayInfo.error ?? 'Unavailable'
@@ -402,10 +511,21 @@ export function createEnvironmentCard(
       } else if (displayInfo.dirtyFiles !== null) {
         const fileLabel = displayInfo.dirtyFiles === 1 ? 'file' : 'files'
         changesTitle = `${displayInfo.dirtyFiles} dirty ${fileLabel}, ${displayInfo.additions ?? 0} lines added, ${displayInfo.deletions ?? 0} lines deleted`
-        changesNode = React.createElement('span', { style: styles.changes, 'aria-label': changesTitle },
+        changesNode = React.createElement(
+          'span',
+          { style: styles.changes, 'aria-label': changesTitle },
           React.createElement('span', null, `${displayInfo.dirtyFiles} ${fileLabel}`),
-          React.createElement('span', { style: styles.additions }, `+${displayInfo.additions ?? 0}`),
-          React.createElement('span', { style: styles.deletions }, `−${displayInfo.deletions ?? 0}`))
+          React.createElement(
+            'span',
+            { style: styles.additions },
+            `+${displayInfo.additions ?? 0}`,
+          ),
+          React.createElement(
+            'span',
+            { style: styles.deletions },
+            `−${displayInfo.deletions ?? 0}`,
+          ),
+        )
       } else {
         changesNode = 'Unavailable'
         changesTitle = 'Change statistics unavailable'
@@ -415,25 +535,52 @@ export function createEnvironmentCard(
       changesTitle = String(changesNode)
     }
 
-    return React.createElement('section', { style: styles.card, 'aria-label': 'Session environment' },
+    return React.createElement(
+      'section',
+      { style: styles.card, 'aria-label': 'Session environment' },
       React.createElement('h2', { style: styles.title }, 'Environment'),
-      React.createElement('div', { style: styles.row },
+      React.createElement(
+        'div',
+        { style: styles.row },
         React.createElement('span', { style: styles.label }, 'CWD'),
         (cwd ?? displayInfo.cwd)
-          ? React.createElement(CopyValue, { key: `${sessionId}:cwd:${fullCwd}`, label: 'CWD', value: fullCwd }, shownCwd)
-          : React.createElement('span', { style: styles.value }, shownCwd)),
-      React.createElement('div', { style: styles.row },
+          ? React.createElement(
+              CopyValue,
+              { key: `${sessionId}:cwd:${fullCwd}`, label: 'CWD', value: fullCwd },
+              shownCwd,
+            )
+          : React.createElement('span', { style: styles.value }, shownCwd),
+      ),
+      React.createElement(
+        'div',
+        { style: styles.row },
         React.createElement('span', { style: styles.label }, 'Branch'),
         showBranchIcon
-          ? React.createElement(CopyValue, { key: `${sessionId}:branch:${shownBranch}`, label: 'branch name', value: shownBranch },
-              React.createElement(BranchIcon), shownBranch)
-          : React.createElement('span', { style: branchStyle, title: shownBranch }, shownBranch)),
-      React.createElement('div', { style: styles.row },
+          ? React.createElement(
+              CopyValue,
+              {
+                key: `${sessionId}:branch:${shownBranch}`,
+                label: 'branch name',
+                value: shownBranch,
+              },
+              React.createElement(BranchIcon),
+              shownBranch,
+            )
+          : React.createElement('span', { style: branchStyle, title: shownBranch }, shownBranch),
+      ),
+      React.createElement(
+        'div',
+        { style: styles.row },
         React.createElement('span', { style: styles.label }, 'Sync'),
-        React.createElement('span', { style: styles.value, title: syncTitle }, syncNode)),
-      React.createElement('div', { style: styles.row },
+        React.createElement('span', { style: styles.value, title: syncTitle }, syncNode),
+      ),
+      React.createElement(
+        'div',
+        { style: styles.row },
         React.createElement('span', { style: styles.label }, 'Changes'),
-        React.createElement('span', { style: styles.value, title: changesTitle }, changesNode)))
+        React.createElement('span', { style: styles.value, title: changesTitle }, changesNode),
+      ),
+    )
   }
 }
 
@@ -442,17 +589,27 @@ export const inject = ['remote', 'slots']
 export async function apply(ctx: Context): Promise<() => Promise<void>> {
   const unmountRemote = await ctx.remote.$mount(sessionEnvironmentRemote)
   const mounted = ctx.get('remote.sessionEnvironment')
-  if (mounted === undefined || mounted === null || typeof mounted !== 'object' || typeof Reflect.get(mounted, 'read') !== 'function') {
+  if (
+    mounted === undefined ||
+    mounted === null ||
+    typeof mounted !== 'object' ||
+    typeof Reflect.get(mounted, 'read') !== 'function'
+  ) {
     await unmountRemote()
     throw new Error('session-environment: mounted Remote namespace is unavailable')
   }
   const EnvironmentCard = createEnvironmentCard(ctx, mounted as SessionEnvironmentRemote)
-  const unregisterSlot = ctx.slots.inject('shell.overlay', () => ctx.slots.register({
-    name: 'shell.overlay',
-    id: 'session-environment',
-    order: 0,
-    label: 'Session environment',
-  }, EnvironmentCard))
+  const unregisterSlot = ctx.slots.inject('shell.overlay', () =>
+    ctx.slots.register(
+      {
+        name: 'shell.overlay',
+        id: 'session-environment',
+        order: 0,
+        label: 'Session environment',
+      },
+      EnvironmentCard,
+    ),
+  )
   return async () => {
     unregisterSlot()
     await unmountRemote()

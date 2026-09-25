@@ -1,7 +1,8 @@
 // Trusted package-authored instructions, never derived from Drive content.
 export const READ_SKILL = Object.freeze({
   name: 'google-drive-read',
-  description: 'Use session-authorized Google Drive listing and text-reading tools safely and efficiently.',
+  description:
+    'Use session-authorized Google Drive listing and text-reading tools safely and efficiently.',
   source: 'runtime',
   invocation: { modelInvocable: true, userInvocable: true },
   content: `# Read selected Google Drive resources

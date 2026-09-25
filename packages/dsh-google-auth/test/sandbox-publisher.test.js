@@ -6,22 +6,42 @@ function fixture(overrides = {}, options = {}) {
   const clients = []
   let loads = 0
   class BridgeClient {
-    constructor(config) { this.config = config; this.calls = []; clients.push(this) }
+    constructor(config) {
+      this.config = config
+      this.calls = []
+      clients.push(this)
+    }
     async open(args, signal) {
       this.calls.push(['open', args, signal])
-      return overrides.open ? overrides.open(args, signal) : { url: 'http://127.0.0.1:45678', hostPort: 45678 }
+      return overrides.open
+        ? overrides.open(args, signal)
+        : { url: 'http://127.0.0.1:45678', hostPort: 45678 }
     }
-    async close(port) { this.calls.push(['close', port]); await overrides.close?.(port) }
-    async dispose() { this.calls.push(['dispose']); await overrides.dispose?.() }
+    async close(port) {
+      this.calls.push(['close', port])
+      await overrides.close?.(port)
+    }
+    async dispose() {
+      this.calls.push(['dispose'])
+      await overrides.dispose?.()
+    }
   }
-  const publisher = new SandboxCallbackPublisher({ bridgeDir: '/configured/bridge',
+  const publisher = new SandboxCallbackPublisher({
+    bridgeDir: '/configured/bridge',
     resolveBridge: () => '/optional/bridge/index.js',
-    loadBridge: async () => { loads++; return { BridgeClient } }, ...options })
+    loadBridge: async () => {
+      loads++
+      return { BridgeClient }
+    },
+    ...options,
+  })
   return { publisher, clients, loads: () => loads }
 }
 const deferred = () => {
   let resolve
-  const promise = new Promise(done => { resolve = done })
+  const promise = new Promise((done) => {
+    resolve = done
+  })
   return { promise, resolve }
 }
 
@@ -36,7 +56,14 @@ test('direct mode and availability do not load or contact the bridge', async () 
 })
 
 test('missing optional module fails early without loading', async () => {
-  const { publisher, loads } = fixture({}, { resolveBridge() { throw new Error('secret path') } })
+  const { publisher, loads } = fixture(
+    {},
+    {
+      resolveBridge() {
+        throw new Error('secret path')
+      },
+    },
+  )
   assert.equal(publisher.available(), false)
   await assert.rejects(publisher.publish({ port: 1234 }), /publishing is unavailable/)
   assert.equal(loads(), 0)
@@ -51,7 +78,12 @@ test('configuration uses DSH_HOME without probing directories', () => {
 
 test('publication exposes only port and constant label; release runs once', async () => {
   const { publisher, clients } = fixture()
-  const lease = await publisher.publish({ port: 1234, callbackUrl: 'secret', code: 'secret', token: 'secret' })
+  const lease = await publisher.publish({
+    port: 1234,
+    callbackUrl: 'secret',
+    code: 'secret',
+    token: 'secret',
+  })
   assert.equal(lease.origin, 'http://127.0.0.1:45678')
   assert.deepEqual(clients[0].calls[0][1], { port: 1234, name: 'Google OAuth callback' })
   assert.deepEqual(clients[0].config, { bridgeDir: '/configured/bridge' })
@@ -60,8 +92,12 @@ test('publication exposes only port and constant label; release runs once', asyn
 })
 
 test('helper failure is sanitized and disposes its dedicated client', async () => {
-  const { publisher, clients } = fixture({ open() { throw new Error('secret provider log') } })
-  await assert.rejects(publisher.publish({ port: 1234 }), error => {
+  const { publisher, clients } = fixture({
+    open() {
+      throw new Error('secret provider log')
+    },
+  })
+  await assert.rejects(publisher.publish({ port: 1234 }), (error) => {
     assert.equal(error.message.includes('secret'), false)
     assert.equal(error.cause, undefined)
     return true
@@ -71,9 +107,15 @@ test('helper failure is sanitized and disposes its dedicated client', async () =
 })
 
 test('failed close still disposes relays and returns a sanitized error', async () => {
-  const { publisher, clients } = fixture({ close() { throw new Error('secret') } })
+  const { publisher, clients } = fixture({
+    close() {
+      throw new Error('secret')
+    },
+  })
   const lease = await publisher.publish({ port: 1234 })
-  await assert.rejects(lease.dispose(), { message: 'Could not release the sandbox callback publication.' })
+  await assert.rejects(lease.dispose(), {
+    message: 'Could not release the sandbox callback publication.',
+  })
   await assert.rejects(lease.dispose(), /Could not release/)
   await publisher.dispose()
   assert.deepEqual(clients[0].calls.slice(1), [['close', 1234], ['dispose']])
@@ -82,7 +124,12 @@ test('failed close still disposes relays and returns a sanitized error', async (
 test('stop during abort-ignoring open rejects promptly and cleans eventual lease', async () => {
   const opened = deferred()
   const started = deferred()
-  const { publisher, clients } = fixture({ open() { started.resolve(); return opened.promise } })
+  const { publisher, clients } = fixture({
+    open() {
+      started.resolve()
+      return opened.promise
+    },
+  })
   const publishing = publisher.publish({ port: 1234 })
   await started.promise
   const stopped = publisher.dispose()
@@ -107,13 +154,17 @@ test('abort during lazy load never constructs a client', async () => {
 
 test('lease isolation includes concurrent publications of the same port', async () => {
   const { publisher, clients } = fixture()
-  const [first, second] = await Promise.all([publisher.publish({ port: 1234 }), publisher.publish({ port: 1234 })])
+  const [first, second] = await Promise.all([
+    publisher.publish({ port: 1234 }),
+    publisher.publish({ port: 1234 }),
+  ])
   assert.equal(clients.length, 2)
   await first.dispose()
   assert.equal(clients[1].calls.length, 1)
   await second.dispose()
   await publisher.dispose()
-  for (const client of clients) assert.deepEqual(client.calls.slice(1), [['close', 1234], ['dispose']])
+  for (const client of clients)
+    assert.deepEqual(client.calls.slice(1), [['close', 1234], ['dispose']])
 })
 
 test('caller cancellation after setup preserves the lease until explicit release', async () => {
@@ -136,9 +187,17 @@ test('invalid input ports never load the optional bridge', async () => {
 })
 
 test('rejects non-loopback, non-origin, and invalid host port results', async () => {
-  for (const url of ['https://127.0.0.1:1234', 'http://evil.test:1234', 'http://localhost:1234',
-    'http://127.0.0.1:0', 'http://127.0.0.1:65536', 'http://127.0.0.1:1234/callback',
-    'http://127.0.0.1:1234?code=secret', 'http://127.0.0.1:1234#secret', 'http://user@127.0.0.1:1234']) {
+  for (const url of [
+    'https://127.0.0.1:1234',
+    'http://evil.test:1234',
+    'http://localhost:1234',
+    'http://127.0.0.1:0',
+    'http://127.0.0.1:65536',
+    'http://127.0.0.1:1234/callback',
+    'http://127.0.0.1:1234?code=secret',
+    'http://127.0.0.1:1234#secret',
+    'http://user@127.0.0.1:1234',
+  ]) {
     const { publisher, clients } = fixture({ open: () => ({ url }) })
     await assert.rejects(publisher.publish({ port: 1234 }), /Could not publish/)
     assert.deepEqual(clients[0].calls.slice(1), [['close', 1234], ['dispose']])
@@ -150,8 +209,23 @@ test('rejects non-loopback, non-origin, and invalid host port results', async ()
 test('plugin provides a minimal facade with lifecycle cleanup', async () => {
   let service
   let stop
-  apply({ provide(key, value) { assert.equal(key, 'sandboxCallbackPublisher'); service = value },
-    effect(fn) { stop = fn() } }, { bridgeDir: '', loadBridge() { assert.fail('unexpected load') } })
+  apply(
+    {
+      provide(key, value) {
+        assert.equal(key, 'sandboxCallbackPublisher')
+        service = value
+      },
+      effect(fn) {
+        stop = fn()
+      },
+    },
+    {
+      bridgeDir: '',
+      loadBridge() {
+        assert.fail('unexpected load')
+      },
+    },
+  )
   assert.equal(name, 'sandbox-callback-publisher')
   assert.deepEqual(Object.keys(service), ['available', 'publish'])
   assert.equal(service.available(), false)

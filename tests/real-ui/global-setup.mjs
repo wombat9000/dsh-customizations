@@ -47,18 +47,23 @@ export async function startDisposableHost({ additionalPlugins = [], profilePatch
   let child
   let stopping
   const emergency = () => killGroup(child, 'SIGKILL')
-  const interrupted = () => { void cleanup().finally(() => process.exit(130)) }
-  const terminated = () => { void cleanup().finally(() => process.exit(143)) }
-  const cleanup = () => stopping ??= (async () => {
-    await stopHost(child)
-    process.removeListener('exit', emergency)
-    process.removeListener('SIGINT', interrupted)
-    process.removeListener('SIGTERM', terminated)
-    delete process.env.DSH_TEST_COOKIE
-    delete process.env.DSH_TEST_URL
-    delete process.env.DSH_TEST_WORKSPACE
-    await rm(directory, { recursive: true, force: true })
-  })()
+  const interrupted = () => {
+    void cleanup().finally(() => process.exit(130))
+  }
+  const terminated = () => {
+    void cleanup().finally(() => process.exit(143))
+  }
+  const cleanup = () =>
+    (stopping ??= (async () => {
+      await stopHost(child)
+      process.removeListener('exit', emergency)
+      process.removeListener('SIGINT', interrupted)
+      process.removeListener('SIGTERM', terminated)
+      delete process.env.DSH_TEST_COOKIE
+      delete process.env.DSH_TEST_URL
+      delete process.env.DSH_TEST_WORKSPACE
+      await rm(directory, { recursive: true, force: true })
+    })())
   process.once('exit', emergency)
   process.once('SIGINT', interrupted)
   process.once('SIGTERM', terminated)
@@ -73,42 +78,115 @@ export async function startDisposableHost({ additionalPlugins = [], profilePatch
     await mkdir(fixture, { recursive: true })
     await copyFile(join(root, 'tests/real-ui/session-fixture.mjs'), join(fixture, 'index.mjs'))
     // Resolve the existing pinned scope package from the checkout, without installs.
-    await symlink(join(root, 'tests/real-ui/github-approval-fixture.mjs'), join(fixture, 'github-approval-fixture.mjs'))
-    await copyFile(join(root, 'tests/real-ui/github-grants-fixture.mjs'), join(fixture, 'github-grants-fixture.mjs'))
-    await copyFile(join(root, 'tests/real-ui/github-items-fixture.mjs'), join(fixture, 'github-items-fixture.mjs'))
-    await copyFile(join(root, 'tests/real-ui/github-field-fixture.mjs'), join(fixture, 'github-field-fixture.mjs'))
-    await copyFile(join(root, 'packages/dsh-github/test/project-items-fixture.js'), join(fixture, 'project-items-fixture.js'))
-    await writeFile(join(fixture, 'package.json'), JSON.stringify({ name: 'dsh-visual-fixture', type: 'module', main: 'index.mjs', dsh: { bundle: { patch: 'cordis.patch.yml' } } }))
-    await writeFile(join(fixture, 'cordis.patch.yml'), '- insert:\n    - id: visual-fixture\n      name: dsh-visual-fixture\n')
-    await writeFile(join(profile, 'package.json'), JSON.stringify({
-      name: 'dsh-visual-tests', private: true, type: 'module',
-      dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', ...bundles.map((plugin) => plugin.name), 'dsh-visual-fixture'], patchReload: 'startup' } },
-    }))
+    await symlink(
+      join(root, 'tests/real-ui/github-approval-fixture.mjs'),
+      join(fixture, 'github-approval-fixture.mjs'),
+    )
+    await copyFile(
+      join(root, 'tests/real-ui/github-grants-fixture.mjs'),
+      join(fixture, 'github-grants-fixture.mjs'),
+    )
+    await copyFile(
+      join(root, 'tests/real-ui/github-items-fixture.mjs'),
+      join(fixture, 'github-items-fixture.mjs'),
+    )
+    await copyFile(
+      join(root, 'tests/real-ui/github-field-fixture.mjs'),
+      join(fixture, 'github-field-fixture.mjs'),
+    )
+    await copyFile(
+      join(root, 'packages/dsh-github/test/project-items-fixture.js'),
+      join(fixture, 'project-items-fixture.js'),
+    )
+    await writeFile(
+      join(fixture, 'package.json'),
+      JSON.stringify({
+        name: 'dsh-visual-fixture',
+        type: 'module',
+        main: 'index.mjs',
+        dsh: { bundle: { patch: 'cordis.patch.yml' } },
+      }),
+    )
+    await writeFile(
+      join(fixture, 'cordis.patch.yml'),
+      '- insert:\n    - id: visual-fixture\n      name: dsh-visual-fixture\n',
+    )
+    await writeFile(
+      join(profile, 'package.json'),
+      JSON.stringify({
+        name: 'dsh-visual-tests',
+        private: true,
+        type: 'module',
+        dsh: {
+          profile: {
+            bundles: [
+              '@deepseek-ai/dsh-base',
+              '@deepseek-ai/dsh-web-app',
+              ...bundles.map((plugin) => plugin.name),
+              'dsh-visual-fixture',
+            ],
+            patchReload: 'startup',
+          },
+        },
+      }),
+    )
     if (profilePatch) await copyFile(profilePatch, join(profile, 'cordis.patch.yml'))
     const launcherManifest = require.resolve('@deepseek-ai/dsh/package.json')
     const installed = JSON.parse(await readFile(launcherManifest, 'utf8')).version
-    const expected = JSON.parse(await readFile(join(root, 'package.json'), 'utf8')).devDependencies['@deepseek-ai/dsh']
-    if (installed !== expected) throw new Error(`Disposable DSH version mismatch: expected ${expected}, installed ${installed}`)
+    const expected = JSON.parse(await readFile(join(root, 'package.json'), 'utf8')).devDependencies[
+      '@deepseek-ai/dsh'
+    ]
+    if (installed !== expected)
+      throw new Error(
+        `Disposable DSH version mismatch: expected ${expected}, installed ${installed}`,
+      )
     const cli = join(dirname(launcherManifest), 'lib/bin.js')
     // Never inherit provider credentials, DSH paths, proxy credentials, or shell init settings.
-    const env = { PATH: process.env.PATH, HOME: home, USER: 'visual-test', LOGNAME: 'visual-test', LANG: 'en_US.UTF-8', TZ: 'UTC',
-      XDG_CONFIG_HOME: join(home, '.config'), XDG_CACHE_HOME: join(home, '.cache'), XDG_DATA_HOME: join(home, '.local/share'),
-      DSH_HOME: dshHome, DSH_TELEMETRY_DISABLED: '1' }
-    const host = startHost(process.execPath, [cli, '--profile', 'visual-tests', '--no-open', '--host', '127.0.0.1', '--port', '0'], { cwd: workspace, env })
+    const env = {
+      PATH: process.env.PATH,
+      HOME: home,
+      USER: 'visual-test',
+      LOGNAME: 'visual-test',
+      LANG: 'en_US.UTF-8',
+      TZ: 'UTC',
+      XDG_CONFIG_HOME: join(home, '.config'),
+      XDG_CACHE_HOME: join(home, '.cache'),
+      XDG_DATA_HOME: join(home, '.local/share'),
+      DSH_HOME: dshHome,
+      DSH_TELEMETRY_DISABLED: '1',
+    }
+    const host = startHost(
+      process.execPath,
+      [cli, '--profile', 'visual-tests', '--no-open', '--host', '127.0.0.1', '--port', '0'],
+      { cwd: workspace, env },
+    )
     child = host.child
     const authenticatedUrl = await host.ready
     await waitForFixture(workspace)
     // Exchange the ephemeral launch token outside Playwright: no URL token in traces/errors.
     let response
-    try { response = await fetch(authenticatedUrl, { redirect: 'manual', signal: AbortSignal.timeout(10000) }) }
-    catch { throw new Error('Disposable DSH authentication exchange failed') }
+    try {
+      response = await fetch(authenticatedUrl, {
+        redirect: 'manual',
+        signal: AbortSignal.timeout(10000),
+      })
+    } catch {
+      throw new Error('Disposable DSH authentication exchange failed')
+    }
     const cookie = response.headers.get('set-cookie')?.split(';', 1)[0]
-    if (response.status !== 303 || !cookie) throw new Error('Disposable DSH did not issue its browser session cookie')
+    if (response.status !== 303 || !cookie)
+      throw new Error('Disposable DSH did not issue its browser session cookie')
     const separator = cookie.indexOf('=')
     const url = new URL(authenticatedUrl)
     url.search = ''
     process.env.DSH_TEST_URL = url.href
-    process.env.DSH_TEST_COOKIE = JSON.stringify({ name: cookie.slice(0, separator), value: cookie.slice(separator + 1), url: url.href, httpOnly: true, sameSite: 'Strict' })
+    process.env.DSH_TEST_COOKIE = JSON.stringify({
+      name: cookie.slice(0, separator),
+      value: cookie.slice(separator + 1),
+      url: url.href,
+      httpOnly: true,
+      sameSite: 'Strict',
+    })
     process.env.DSH_TEST_WORKSPACE = workspace
     console.log('Disposable DSH is ready (isolated home and workspace).')
     return cleanup

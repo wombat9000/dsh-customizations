@@ -49,39 +49,39 @@ Environment and .env credentials are read-only in Settings and take precedence o
 
 ## Configuration
 
-| Key | Default | Meaning |
-|---|---:|---|
-| model | gemini-3.7-flash | Gemini model used for both operations. |
-| timeoutMs | 180000 | Gemini request timeout in milliseconds, applied to each direct or clipped call. |
-| longOperationTimeoutMs | 900000 | Outer DSH timeout for the complete transcript operation. |
-| maxQuestionChars | 8000 | Maximum accepted watch question length. |
-| maxEvidenceItems | 24 | Maximum returned evidence entries. |
-| maxWatchOutputChars | 30000 | Maximum answer characters before an explicit truncation caveat. |
-| maxTranscriptOutputChars | 60000 | Approximate inline-page limit, enforced at segment boundaries; the archive retains every canonical segment. |
-| directTranscriptMaxSeconds | 1200 | Preferred maximum duration before clipped calls; a rejected clip may use the fixed one-hour direct fallback. |
-| maximumTranscriptCoreSeconds | 900 | Maximum non-overlap core covered by each long-video call. |
-| chunkOverlapSeconds | 15 | Context added on each side of internal transcript boundaries. |
-| maxChunkConcurrency | 2 | Maximum concurrent provider calls across primary chunks and recovery sub-intervals. |
-| adaptiveWatch | true | Inspect and plan watch requests by duration and deterministic question intent. |
-| enableWatchLowResolution | false | Permit the capability-gated low-resolution direct strategy. Enable only for model/API combinations verified to support it. |
-| enableWatchAgentic | false | Permit the capability-gated agentic strategy for long targeted questions. |
-| enableWatchChunking | true | Permit balanced clipped watch analysis followed by a text-only reduction. |
-| directWatchMaxSeconds | 1200 | Longest video handled with default direct watch processing. |
-| lowResolutionWatchMaxSeconds | 7200 | Longest video eligible for explicitly enabled low-resolution processing. |
-| maximumWatchCoreSeconds | 900 | Maximum non-overlap interval for chunked watch analysis. |
-| watchChunkOverlapSeconds | 15 | Context added around watch interval boundaries. |
-| maxWatchChunks | 16 | Maximum planned watch intervals before provider work begins. |
-| maxVideoDurationSeconds | 14400 | Hard duration ceiling for new provider-backed watch or transcript generation. |
-| maxProviderCalls | 64 | Exact per-operation provider-attempt ceiling, including explicit retries and recovery calls. |
-| maxEstimatedInputTokens | 3000000 | Conservative per-operation input-token estimate ceiling. |
-| videoTokensPerSecond | 300 | Configurable conservative media-token estimate. |
-| providerRequestRetries | 1 | Explicit retry count for retryable HTTP/network failures; SDK-internal retries are disabled. |
-| estimatedInputCostPerMillionTokensUsd | 0 | Optional operator-supplied input rate used only for planning; zero disables cost estimation. |
-| maxEstimatedCostUsd | 0 | Optional estimated cost ceiling; zero disables it. |
-| statefulTranscriptCorrections | true | Temporarily store transcript Interactions so one timestamp correction can use cached continuation; stored interaction IDs are deleted after each attempt. Disable for stateless text-only correction. |
-| watch | true | Register youtube_watch. |
-| transcript | true | Register youtube_transcript. |
-| apiKey | unset | Secret literal fallback; prefer GEMINI_API_KEY. |
+| Key                                   |          Default | Meaning                                                                                                                                                                                               |
+| ------------------------------------- | ---------------: | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| model                                 | gemini-3.7-flash | Gemini model used for both operations.                                                                                                                                                                |
+| timeoutMs                             |           180000 | Gemini request timeout in milliseconds, applied to each direct or clipped call.                                                                                                                       |
+| longOperationTimeoutMs                |           900000 | Outer DSH timeout for the complete transcript operation.                                                                                                                                              |
+| maxQuestionChars                      |             8000 | Maximum accepted watch question length.                                                                                                                                                               |
+| maxEvidenceItems                      |               24 | Maximum returned evidence entries.                                                                                                                                                                    |
+| maxWatchOutputChars                   |            30000 | Maximum answer characters before an explicit truncation caveat.                                                                                                                                       |
+| maxTranscriptOutputChars              |            60000 | Approximate inline-page limit, enforced at segment boundaries; the archive retains every canonical segment.                                                                                           |
+| directTranscriptMaxSeconds            |             1200 | Preferred maximum duration before clipped calls; a rejected clip may use the fixed one-hour direct fallback.                                                                                          |
+| maximumTranscriptCoreSeconds          |              900 | Maximum non-overlap core covered by each long-video call.                                                                                                                                             |
+| chunkOverlapSeconds                   |               15 | Context added on each side of internal transcript boundaries.                                                                                                                                         |
+| maxChunkConcurrency                   |                2 | Maximum concurrent provider calls across primary chunks and recovery sub-intervals.                                                                                                                   |
+| adaptiveWatch                         |             true | Inspect and plan watch requests by duration and deterministic question intent.                                                                                                                        |
+| enableWatchLowResolution              |            false | Permit the capability-gated low-resolution direct strategy. Enable only for model/API combinations verified to support it.                                                                            |
+| enableWatchAgentic                    |            false | Permit the capability-gated agentic strategy for long targeted questions.                                                                                                                             |
+| enableWatchChunking                   |             true | Permit balanced clipped watch analysis followed by a text-only reduction.                                                                                                                             |
+| directWatchMaxSeconds                 |             1200 | Longest video handled with default direct watch processing.                                                                                                                                           |
+| lowResolutionWatchMaxSeconds          |             7200 | Longest video eligible for explicitly enabled low-resolution processing.                                                                                                                              |
+| maximumWatchCoreSeconds               |              900 | Maximum non-overlap interval for chunked watch analysis.                                                                                                                                              |
+| watchChunkOverlapSeconds              |               15 | Context added around watch interval boundaries.                                                                                                                                                       |
+| maxWatchChunks                        |               16 | Maximum planned watch intervals before provider work begins.                                                                                                                                          |
+| maxVideoDurationSeconds               |            14400 | Hard duration ceiling for new provider-backed watch or transcript generation.                                                                                                                         |
+| maxProviderCalls                      |               64 | Exact per-operation provider-attempt ceiling, including explicit retries and recovery calls.                                                                                                          |
+| maxEstimatedInputTokens               |          3000000 | Conservative per-operation input-token estimate ceiling.                                                                                                                                              |
+| videoTokensPerSecond                  |              300 | Configurable conservative media-token estimate.                                                                                                                                                       |
+| providerRequestRetries                |                1 | Explicit retry count for retryable HTTP/network failures; SDK-internal retries are disabled.                                                                                                          |
+| estimatedInputCostPerMillionTokensUsd |                0 | Optional operator-supplied input rate used only for planning; zero disables cost estimation.                                                                                                          |
+| maxEstimatedCostUsd                   |                0 | Optional estimated cost ceiling; zero disables it.                                                                                                                                                    |
+| statefulTranscriptCorrections         |             true | Temporarily store transcript Interactions so one timestamp correction can use cached continuation; stored interaction IDs are deleted after each attempt. Disable for stateless text-only correction. |
+| watch                                 |             true | Register youtube_watch.                                                                                                                                                                               |
+| transcript                            |             true | Register youtube_transcript.                                                                                                                                                                          |
+| apiKey                                |            unset | Secret literal fallback; prefer GEMINI_API_KEY.                                                                                                                                                       |
 
 Transcript chunk-policy limits may be lowered for stricter deployments but cannot exceed their documented defaults. Global duration, provider-call, token, and optional cost ceilings apply before new paid work; local archive reads do not consume them.
 

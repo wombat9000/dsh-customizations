@@ -11,13 +11,23 @@ import { DriveAccessRuntime } from '../src/runtime.js'
 // All logs are newly generated fixtures. No GUI, provider, credentials, or private history.
 const require = createRequire(import.meta.url)
 const cli = createRequire(require.resolve('@deepseek-ai/dsh/package.json'))
-const installed = name => import(pathToFileURL(cli.resolve(name)).href)
+const installed = (name) => import(pathToFileURL(cli.resolve(name)).href)
 const { Context } = await installed('@deepseek-ai/cordis')
 const { default: SessionStore, Session } = await installed('@deepseek-ai/dsh-session')
 const { default: JsonlPersistence } = await installed('@deepseek-ai/dsh-session-persistence-jsonl')
 const time = Date.UTC(2026, 0, 2, 3, 4, 5)
-const user = { id: 'synthetic-user', role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text: 'Read the selected synthetic notes.' }] }
-const assistant = { id: 'synthetic-assistant', role: 'assistant', source: { kind: 'model', provider: 'synthetic', model: 'fixture' }, content: [{ type: 'text', text: 'The synthetic access interaction is complete.' }] }
+const user = {
+  id: 'synthetic-user',
+  role: 'user',
+  source: { kind: 'user' },
+  content: [{ type: 'text', text: 'Read the selected synthetic notes.' }],
+}
+const assistant = {
+  id: 'synthetic-assistant',
+  role: 'assistant',
+  source: { kind: 'model', provider: 'synthetic', model: 'fixture' },
+  content: [{ type: 'text', text: 'The synthetic access interaction is complete.' }],
+}
 
 async function store(t, root) {
   const ctx = new Context()
@@ -36,7 +46,11 @@ async function fixture(t, id) {
   return { root, writer, session }
 }
 function finish(session) {
-  session.append('assistant/message', { message: assistant, turn: 1, step: 0, stream: [] }, { surfaceOp: 'append' })
+  session.append(
+    'assistant/message',
+    { message: assistant, turn: 1, step: 0, stream: [] },
+    { surfaceOp: 'append' },
+  )
   session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
 }
 async function persisted(writer, session) {
@@ -56,49 +70,71 @@ async function persisted(writer, session) {
 }
 async function load(persistence, id) {
   const handle = await persistence.open(id, 'read')
-  try { return { meta: handle.header, events: (await handle.read()).events } }
-  finally { await handle.close() }
+  try {
+    return { meta: handle.header, events: (await handle.read()).events }
+  } finally {
+    await handle.close()
+  }
 }
 function runtimeFor(t, session) {
   const agent = { session }
   const runtime = new DriveAccessRuntime({
     client: {
-      getMetadata: async ({ fileId }) => ({ id: fileId, name: fileId, mimeType: 'text/plain', parents: [], trashed: false }),
+      getMetadata: async ({ fileId }) => ({
+        id: fileId,
+        name: fileId,
+        mimeType: 'text/plain',
+        parents: [],
+        trashed: false,
+      }),
       pickerList: async () => ({ files: [] }),
     },
     googleAuth: {
       getAccessGeneration: () => 1,
       onAccessChange: () => () => {},
-      status: async () => ({ connected: true, integrations: [{ id: 'google-drive', authorized: true }] }),
+      status: async () => ({
+        connected: true,
+        integrations: [{ id: 'google-drive', authorized: true }],
+      }),
     },
-    agents: { get: id => id === session.id ? agent : undefined, roots: () => [agent] },
+    agents: { get: (id) => (id === session.id ? agent : undefined), roots: () => [agent] },
     approval: { overrideOf: () => 'ask' },
     onChange: () => {},
   })
   t.after(() => runtime.dispose())
   async function request(callId) {
     const done = runtime.request(agent, { callId, reason: 'Read synthetic notes' })
-    await Promise.resolve(); await Promise.resolve(); await Promise.resolve()
+    await Promise.resolve()
+    await Promise.resolve()
+    await Promise.resolve()
     const identity = { sessionId: session.id, callId }
     return { done, input: { ...identity, requestId: runtime.status(identity).requestId } }
   }
   return { agent, runtime, request }
 }
 
-test('legacy unmarked Drive audit append survives flush but real compressed history reopen refuses it', async t => {
+test('legacy unmarked Drive audit append survives flush but real compressed history reopen refuses it', async (t) => {
   const { root, writer, session } = await fixture(t, 'synthetic-legacy-drive-history')
-  const audit = { action: 'granted', callId: 'synthetic-call', resources: [{ id: 'synthetic-notes', recursive: false }] }
+  const audit = {
+    action: 'granted',
+    callId: 'synthetic-call',
+    resources: [{ id: 'synthetic-notes', recursive: false }],
+  }
   session.append('google-drive/access', audit)
   finish(session)
   const artifact = await persisted(writer, session)
-  const auditRecord = artifact.records.find(record => record.type === 'google-drive/access')
+  const auditRecord = artifact.records.find((record) => record.type === 'google-drive/access')
   assert.equal(auditRecord.seq, 2)
   assert.deepEqual(auditRecord.data, audit)
   assert.equal(Object.hasOwn(auditRecord, 'ignorable'), false)
   await writer.ctx.fiber.dispose()
   const reader = await store(t, root)
-  await assert.rejects(load(reader.persistence, session.id), error => {
-    assert.ok(error.message.includes(`session "${session.id}" contains event type "google-drive/access" (seq 2) unknown to this harness and not marked ignorable; refusing to interpret the log`))
+  await assert.rejects(load(reader.persistence, session.id), (error) => {
+    assert.ok(
+      error.message.includes(
+        `session "${session.id}" contains event type "google-drive/access" (seq 2) unknown to this harness and not marked ignorable; refusing to interpret the log`,
+      ),
+    )
     assert.ok(error.message.includes(artifact.path))
     return true
   })
@@ -106,7 +142,7 @@ test('legacy unmarked Drive audit append survives flush but real compressed hist
   assert.deepEqual(await readFile(artifact.path), artifact.bytes)
 })
 
-test('real Drive request, denial, grant, management and revocation reopen without custom persisted events or restored grants', async t => {
+test('real Drive request, denial, grant, management and revocation reopen without custom persisted events or restored grants', async (t) => {
   const { root, writer, session } = await fixture(t, 'synthetic-current-drive-history')
   const { runtime, agent, request } = runtimeFor(t, session)
   const denied = await request('deny-call')
@@ -115,33 +151,65 @@ test('real Drive request, denial, grant, management and revocation reopen withou
   const granted = await request('grant-call')
   await runtime.grant({ ...granted.input, selected: [{ id: 'notes', recursive: false }] })
   assert.equal((await granted.done).state, 'granted')
-  assert.deepEqual(runtime.resources(agent).map(resource => resource.id), ['notes'])
+  assert.deepEqual(
+    runtime.resources(agent).map((resource) => resource.id),
+    ['notes'],
+  )
   const managed = await runtime.manage(granted.input)
-  await runtime.grant({ ...granted.input, requestId: managed.requestId, selected: [{ id: 'other-notes', recursive: false }] })
-  assert.deepEqual(runtime.resources(agent).map(resource => resource.id), ['other-notes'])
+  await runtime.grant({
+    ...granted.input,
+    requestId: managed.requestId,
+    selected: [{ id: 'other-notes', recursive: false }],
+  })
+  assert.deepEqual(
+    runtime.resources(agent).map((resource) => resource.id),
+    ['other-notes'],
+  )
   runtime.revoke(granted.input)
   assert.deepEqual(runtime.resources(agent), [])
   // Leave one real grant active before closing. Reopening must not reconstruct it.
   const active = await request('active-before-close')
   await runtime.grant({ ...active.input, selected: [{ id: 'final-notes', recursive: false }] })
   assert.equal((await active.done).state, 'granted')
-  assert.deepEqual(runtime.resources(agent).map(resource => resource.id), ['final-notes'])
+  assert.deepEqual(
+    runtime.resources(agent).map((resource) => resource.id),
+    ['final-notes'],
+  )
   finish(session)
   const artifact = await persisted(writer, session)
-  assert.equal(artifact.records.some(record => record.type === 'google-drive/access'), false)
-  const expectedEvents = artifact.records.filter(record => typeof record.seq === 'number')
-  assert.deepEqual(expectedEvents.map(event => event.type), ['turn/start', 'user/message', 'assistant/message', 'turn/end'])
-  assert.deepEqual(expectedEvents.map(event => event.seq), [0, 1, 2, 3])
+  assert.equal(
+    artifact.records.some((record) => record.type === 'google-drive/access'),
+    false,
+  )
+  const expectedEvents = artifact.records.filter((record) => typeof record.seq === 'number')
+  assert.deepEqual(
+    expectedEvents.map((event) => event.type),
+    ['turn/start', 'user/message', 'assistant/message', 'turn/end'],
+  )
+  assert.deepEqual(
+    expectedEvents.map((event) => event.seq),
+    [0, 1, 2, 3],
+  )
   runtime.dispose()
   await writer.ctx.fiber.dispose()
   const reader = await store(t, root)
   const loaded = await load(reader.persistence, session.id)
-  assert.deepEqual(loaded.meta, { version: 3, id: session.id, createdAt: time, cwd: root, isSeeded: false, delegationDepth: 0 })
+  assert.deepEqual(loaded.meta, {
+    version: 3,
+    id: session.id,
+    createdAt: time,
+    cwd: root,
+    isSeeded: false,
+    delegationDepth: 0,
+  })
   assert.deepEqual(loaded.events, expectedEvents)
   const reopened = Session.create(loaded.meta.id, loaded.events, loaded.meta)
   assert.deepEqual(reopened.deriveMessages(), [user, assistant])
   const fresh = runtimeFor(t, reopened)
   assert.deepEqual(fresh.runtime.resources(fresh.agent), [])
-  assert.throws(() => fresh.runtime.status({ sessionId: session.id, callId: 'active-before-close' }), /active|expired/u)
+  assert.throws(
+    () => fresh.runtime.status({ sessionId: session.id, callId: 'active-before-close' }),
+    /active|expired/u,
+  )
   assert.deepEqual(await readFile(artifact.path), artifact.bytes)
 })

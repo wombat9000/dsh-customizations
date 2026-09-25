@@ -21,19 +21,23 @@ function publicStatus(value) {
 export function registerTrivyStatusRpc(ctx, runtime) {
   const connection = ctx.get('connection')
   if (connection === undefined) return
-  ctx.effect(() => connection.rpc.handle(
-    TRIVY_STATUS_CHANNEL,
-    async (endpoint, _payload, signal) => {
-      if (endpoint !== TRIVY_STATUS_GET && endpoint !== TRIVY_STATUS_RECHECK) {
-        return internalError('Unknown Trivy status endpoint')
-      }
-      try {
-        const value = await runtime.check({ force: endpoint === TRIVY_STATUS_RECHECK, signal })
-        return { ok: true, value: publicStatus(value) }
-      } catch (error) {
-        return internalError(error instanceof Error ? error.message : String(error))
-      }
-    },
-    { authority: 'trusted-host' },
-  ), 'tool-trivy: status RPC')
+  ctx.effect(
+    () =>
+      connection.rpc.handle(
+        TRIVY_STATUS_CHANNEL,
+        async (endpoint, _payload, signal) => {
+          if (endpoint !== TRIVY_STATUS_GET && endpoint !== TRIVY_STATUS_RECHECK) {
+            return internalError('Unknown Trivy status endpoint')
+          }
+          try {
+            const value = await runtime.check({ force: endpoint === TRIVY_STATUS_RECHECK, signal })
+            return { ok: true, value: publicStatus(value) }
+          } catch (error) {
+            return internalError(error instanceof Error ? error.message : String(error))
+          }
+        },
+        { authority: 'trusted-host' },
+      ),
+    'tool-trivy: status RPC',
+  )
 }

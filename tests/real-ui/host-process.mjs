@@ -4,7 +4,11 @@ const closed = new WeakSet()
 
 export function killGroup(child, signal) {
   if (!child?.pid) return
-  try { process.kill(-child.pid, signal) } catch (error) { if (error.code !== 'ESRCH') throw error }
+  try {
+    process.kill(-child.pid, signal)
+  } catch (error) {
+    if (error.code !== 'ESRCH') throw error
+  }
 }
 
 export async function stopHost(child, graceMs = 6000) {
@@ -13,7 +17,11 @@ export async function stopHost(child, graceMs = 6000) {
   killGroup(child, 'SIGTERM')
   if (!closed.has(child)) {
     await new Promise((done) => {
-      const complete = () => { clearTimeout(timer); child.removeListener('close', complete); done() }
+      const complete = () => {
+        clearTimeout(timer)
+        child.removeListener('close', complete)
+        done()
+      }
       const timer = setTimeout(complete, graceMs)
       child.once('close', complete)
     })
@@ -22,7 +30,11 @@ export async function stopHost(child, graceMs = 6000) {
   killGroup(child, 'SIGKILL')
   if (!closed.has(child)) {
     await new Promise((done) => {
-      const complete = () => { clearTimeout(timer); child.removeListener('close', complete); done() }
+      const complete = () => {
+        clearTimeout(timer)
+        child.removeListener('close', complete)
+        done()
+      }
       const timer = setTimeout(complete, 2000)
       child.once('close', complete)
     })
@@ -30,7 +42,11 @@ export async function stopHost(child, graceMs = 6000) {
 }
 
 export function startHost(command, args, options, timeoutMs = 60000) {
-  const child = spawn(command, args, { ...options, detached: true, stdio: ['ignore', 'pipe', 'pipe'] })
+  const child = spawn(command, args, {
+    ...options,
+    detached: true,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
   child.once('close', () => closed.add(child))
   const ready = new Promise((accept, reject) => {
     let output = ''
@@ -46,10 +62,16 @@ export function startHost(command, args, options, timeoutMs = 60000) {
       // Drain runtime diagnostics without printing launch tokens or test state.
       child.stdout.resume()
       child.stderr.resume()
-      if (error) reject(error); else accept(url)
+      if (error) reject(error)
+      else accept(url)
     }
     const failed = () => finish(new Error('Disposable DSH could not start its process'))
-    const exited = (code) => finish(new Error(`Disposable DSH exited (${code}). ${output.replace(/http:\/\/\S+/g, '[redacted URL]').slice(-6000)}`))
+    const exited = (code) =>
+      finish(
+        new Error(
+          `Disposable DSH exited (${code}). ${output.replace(/http:\/\/\S+/g, '[redacted URL]').slice(-6000)}`,
+        ),
+      )
     const capture = (chunk) => {
       output = (output + String(chunk)).slice(-32000)
       const match = output.match(/(?:^|\n)dsh web: (http:\/\/127\.0\.0\.1:\d+[^\s]*)(?:[^\n]*)\n/)

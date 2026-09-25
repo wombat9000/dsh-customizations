@@ -33,7 +33,9 @@ function fakeSubprocess({ executable = '/usr/local/bin/trivy', resolveError, run
   let resolveCalls = 0
   return {
     specs,
-    get resolveCalls() { return resolveCalls },
+    get resolveCalls() {
+      return resolveCalls
+    },
     async resolveExecutable(command) {
       resolveCalls += 1
       assert.equal(command, 'trivy')
@@ -66,29 +68,36 @@ const REPORT = {
   Trivy: { Version: '0.69.2' },
   ArtifactName: 'workspace',
   ArtifactType: 'filesystem',
-  Results: [{
-    Target: 'package-lock.json',
-    Vulnerabilities: [{
-      VulnerabilityID: 'CVE-2025-0001',
-      PkgName: 'example',
-      InstalledVersion: '1.0.0',
-      FixedVersion: '1.0.1',
-      Severity: 'CRITICAL',
-      Title: 'Example vulnerability',
-      Status: 'fixed',
-      PrimaryURL: 'https://example.test/CVE-2025-0001',
-    }],
-  }, {
-    Target: 'Dockerfile',
-    Misconfigurations: [{
-      ID: 'DS002',
-      Severity: 'HIGH',
-      Title: 'Root user',
-      Message: 'Specify a non-root user',
-      Resolution: 'Add USER app',
-      CauseMetadata: { Resource: 'Dockerfile' },
-    }],
-  }],
+  Results: [
+    {
+      Target: 'package-lock.json',
+      Vulnerabilities: [
+        {
+          VulnerabilityID: 'CVE-2025-0001',
+          PkgName: 'example',
+          InstalledVersion: '1.0.0',
+          FixedVersion: '1.0.1',
+          Severity: 'CRITICAL',
+          Title: 'Example vulnerability',
+          Status: 'fixed',
+          PrimaryURL: 'https://example.test/CVE-2025-0001',
+        },
+      ],
+    },
+    {
+      Target: 'Dockerfile',
+      Misconfigurations: [
+        {
+          ID: 'DS002',
+          Severity: 'HIGH',
+          Title: 'Root user',
+          Message: 'Specify a non-root user',
+          Resolution: 'Add USER app',
+          CauseMetadata: { Resource: 'Dockerfile' },
+        },
+      ],
+    },
+  ],
 }
 
 test('parses and compares Trivy versions', () => {
@@ -102,15 +111,16 @@ test('parses and compares Trivy versions', () => {
 
 test('health resolver reports missing, ready, unsupported, and caches checks', async () => {
   const missingError = Object.assign(new Error('spawn trivy ENOENT'), { code: 'ENOENT' })
-  const missing = createTrivyRuntime(fakeSubprocess({ resolveError: missingError }), { now: () => 1 })
+  const missing = createTrivyRuntime(fakeSubprocess({ resolveError: missingError }), {
+    now: () => 1,
+  })
   assert.equal((await missing.check()).state, 'not-found')
   assert.match((await missing.check()).message, /effective PATH/)
 
   let now = 100
-  const subprocess = fakeSubprocess({ runs: [
-    { stdout: 'Version: 0.69.2\n' },
-    { stdout: 'Version: 0.69.3\n' },
-  ] })
+  const subprocess = fakeSubprocess({
+    runs: [{ stdout: 'Version: 0.69.2\n' }, { stdout: 'Version: 0.69.3\n' }],
+  })
   const ready = createTrivyRuntime(subprocess, { now: () => now, cwd: () => '/tmp' })
   assert.equal((await ready.check()).version, '0.69.2')
   assert.equal((await ready.check()).version, '0.69.2')
@@ -119,7 +129,9 @@ test('health resolver reports missing, ready, unsupported, and caches checks', a
   assert.equal((await ready.check({ force: true })).version, '0.69.3')
   assert.equal(subprocess.resolveCalls, 2)
 
-  const old = createTrivyRuntime(fakeSubprocess({ runs: [{ stdout: 'Version: 0.49.0\n' }] }), { cwd: () => '/tmp' })
+  const old = createTrivyRuntime(fakeSubprocess({ runs: [{ stdout: 'Version: 0.49.0\n' }] }), {
+    cwd: () => '/tmp',
+  })
   assert.equal((await old.check()).state, 'unsupported-version')
 })
 
@@ -130,7 +142,13 @@ test('collected subprocess execution classifies timeout and external cancellatio
       timeoutSpec = spec
       return {
         collected: { stdout: reader(''), stderr: reader('') },
-        done: new Promise((resolve) => spec.signal.addEventListener('abort', () => resolve({ exitCode: null, signal: 'SIGTERM' }), { once: true })),
+        done: new Promise((resolve) =>
+          spec.signal.addEventListener(
+            'abort',
+            () => resolve({ exitCode: null, signal: 'SIGTERM' }),
+            { once: true },
+          ),
+        ),
       }
     },
   }
@@ -150,7 +168,13 @@ test('collected subprocess execution classifies timeout and external cancellatio
       externalSpec = spec
       return {
         collected: { stdout: reader(''), stderr: reader('') },
-        done: new Promise((resolve) => spec.signal.addEventListener('abort', () => resolve({ exitCode: null, signal: 'SIGTERM' }), { once: true })),
+        done: new Promise((resolve) =>
+          spec.signal.addEventListener(
+            'abort',
+            () => resolve({ exitCode: null, signal: 'SIGTERM' }),
+            { once: true },
+          ),
+        ),
       }
     },
   }
@@ -173,18 +197,26 @@ test('normalizes options and builds argv without shell interpolation', () => {
     severities: ['CRITICAL'],
     ignoreUnfixed: true,
   })
-  assert.deepEqual(buildTrivyArgv('/bin/trivy', options, '/workspace/dir with spaces; touch nope'), [
-    '/bin/trivy',
-    '--config', EMPTY_CONFIG_PATH,
-    'fs',
-    '--ignorefile', EMPTY_IGNOREFILE_PATH,
-    '--format', 'json',
-    '--quiet',
-    '--scanners', 'vuln',
-    '--severity', 'CRITICAL',
-    '--ignore-unfixed',
-    '/workspace/dir with spaces; touch nope',
-  ])
+  assert.deepEqual(
+    buildTrivyArgv('/bin/trivy', options, '/workspace/dir with spaces; touch nope'),
+    [
+      '/bin/trivy',
+      '--config',
+      EMPTY_CONFIG_PATH,
+      'fs',
+      '--ignorefile',
+      EMPTY_IGNOREFILE_PATH,
+      '--format',
+      'json',
+      '--quiet',
+      '--scanners',
+      'vuln',
+      '--severity',
+      'CRITICAL',
+      '--ignore-unfixed',
+      '/workspace/dir with spaces; touch nope',
+    ],
+  )
   assert.throws(() => normalizeScanOptions({ scanners: ['secret'] }), /scanners/)
   assert.throws(() => normalizeScanOptions({ severities: ['EXTREME'] }), /severities/)
 })
@@ -198,10 +230,19 @@ test('canonicalizes scan targets and rejects workspace escapes', async () => {
     await mkdir(outside)
     await writeFile(join(workspace, 'package.json'), '{}')
     await writeFile(join(outside, 'secret.txt'), 'secret')
-    assert.equal((await resolveScanTarget(workspace, 'package.json')).target, await realpath(join(workspace, 'package.json')))
-    await assert.rejects(resolveScanTarget(workspace, '../outside'), /inside the active session workspace/)
+    assert.equal(
+      (await resolveScanTarget(workspace, 'package.json')).target,
+      await realpath(join(workspace, 'package.json')),
+    )
+    await assert.rejects(
+      resolveScanTarget(workspace, '../outside'),
+      /inside the active session workspace/,
+    )
     await symlink(outside, join(workspace, 'linked-outside'))
-    await assert.rejects(resolveScanTarget(workspace, 'linked-outside'), /inside the active session workspace/)
+    await assert.rejects(
+      resolveScanTarget(workspace, 'linked-outside'),
+      /inside the active session workspace/,
+    )
   } finally {
     await rm(root, { recursive: true, force: true })
   }
@@ -217,13 +258,19 @@ test('scan execution fails closed on truncated output and nonzero exit', async (
     check: async () => ({ state: 'ready', path: '/bin/trivy', version: '0.72.0' }),
   }
   try {
-    const truncated = fakeSubprocess({ runs: [{ stdout: '{"partial":true}', stdoutTruncated: true }] })
-    await assert.rejects(scanWithTrivy(runtime, truncated, {}, exec), (error) => error.code === 'TRIVY_OUTPUT_TOO_LARGE')
+    const truncated = fakeSubprocess({
+      runs: [{ stdout: '{"partial":true}', stdoutTruncated: true }],
+    })
+    await assert.rejects(
+      scanWithTrivy(runtime, truncated, {}, exec),
+      (error) => error.code === 'TRIVY_OUTPUT_TOO_LARGE',
+    )
 
     const failed = fakeSubprocess({ runs: [{ stderr: 'database unavailable', exitCode: 1 }] })
-    await assert.rejects(scanWithTrivy(runtime, failed, {}, exec), (error) => (
-      error.code === 'TRIVY_SCAN_FAILED' && /database unavailable/.test(error.message)
-    ))
+    await assert.rejects(
+      scanWithTrivy(runtime, failed, {}, exec),
+      (error) => error.code === 'TRIVY_SCAN_FAILED' && /database unavailable/.test(error.message),
+    )
   } finally {
     await rm(root, { recursive: true, force: true })
   }
@@ -247,18 +294,21 @@ test('normalizes vulnerability and misconfiguration findings', () => {
 })
 
 test('accepts a legacy clean-report shape without Results or Trivy.Version', () => {
-  const value = normalizeTrivyReport({
-    SchemaVersion: 2,
-    CreatedAt: '2026-01-01T00:00:00Z',
-    ArtifactName: 'workspace',
-    ArtifactType: 'filesystem',
-  }, {
-    scannerVersion: '0.72.0',
-    target: '/workspace',
-    scanners: ['vulnerability', 'misconfiguration'],
-    severities: ['HIGH', 'CRITICAL'],
-    ignoreUnfixed: false,
-  })
+  const value = normalizeTrivyReport(
+    {
+      SchemaVersion: 2,
+      CreatedAt: '2026-01-01T00:00:00Z',
+      ArtifactName: 'workspace',
+      ArtifactType: 'filesystem',
+    },
+    {
+      scannerVersion: '0.72.0',
+      target: '/workspace',
+      scanners: ['vulnerability', 'misconfiguration'],
+      severities: ['HIGH', 'CRITICAL'],
+      ignoreUnfixed: false,
+    },
+  )
   assert.equal(value.totalFindings, 0)
   assert.deepEqual(value.findings, [])
 })
@@ -272,28 +322,49 @@ test('rejects malformed or unrecognized Trivy reports instead of reporting a cle
     ignoreUnfixed: false,
   }
   assert.throws(() => normalizeTrivyReport({}, metadata), /SchemaVersion 2/)
-  assert.throws(() => normalizeTrivyReport({
-    SchemaVersion: 3,
-    Trivy: { Version: '0.72.0' },
-    ArtifactName: 'workspace',
-    ArtifactType: 'filesystem',
-  }, metadata), /SchemaVersion 2/)
-  assert.throws(() => normalizeTrivyReport({
-    SchemaVersion: 2,
-    CreatedAt: '2026-01-01T00:00:00Z',
-    Trivy: { Version: '0.72.0' },
-    ArtifactName: 'workspace',
-    ArtifactType: 'filesystem',
-    Results: [{ Target: 'package-lock.json', Vulnerabilities: {} }],
-  }, metadata), /Vulnerabilities must be an array/)
-  assert.throws(() => normalizeTrivyReport({
-    SchemaVersion: 2,
-    CreatedAt: '2026-01-01T00:00:00Z',
-    Trivy: { Version: '0.72.0' },
-    ArtifactName: 'workspace',
-    ArtifactType: 'filesystem',
-    Results: [{ Target: 'package-lock.json', Vulnerabilities: [{ Severity: 'HIGH' }] }],
-  }, metadata), /missing its identifier/)
+  assert.throws(
+    () =>
+      normalizeTrivyReport(
+        {
+          SchemaVersion: 3,
+          Trivy: { Version: '0.72.0' },
+          ArtifactName: 'workspace',
+          ArtifactType: 'filesystem',
+        },
+        metadata,
+      ),
+    /SchemaVersion 2/,
+  )
+  assert.throws(
+    () =>
+      normalizeTrivyReport(
+        {
+          SchemaVersion: 2,
+          CreatedAt: '2026-01-01T00:00:00Z',
+          Trivy: { Version: '0.72.0' },
+          ArtifactName: 'workspace',
+          ArtifactType: 'filesystem',
+          Results: [{ Target: 'package-lock.json', Vulnerabilities: {} }],
+        },
+        metadata,
+      ),
+    /Vulnerabilities must be an array/,
+  )
+  assert.throws(
+    () =>
+      normalizeTrivyReport(
+        {
+          SchemaVersion: 2,
+          CreatedAt: '2026-01-01T00:00:00Z',
+          Trivy: { Version: '0.72.0' },
+          ArtifactName: 'workspace',
+          ArtifactType: 'filesystem',
+          Results: [{ Target: 'package-lock.json', Vulnerabilities: [{ Severity: 'HIGH' }] }],
+        },
+        metadata,
+      ),
+    /missing its identifier/,
+  )
 })
 
 test('caps findings while retaining complete totals', () => {
@@ -303,14 +374,16 @@ test('caps findings while retaining complete totals', () => {
     Trivy: { Version: '0.69.2' },
     ArtifactName: 'workspace',
     ArtifactType: 'filesystem',
-    Results: [{
-      Target: 'package-lock.json',
-      Vulnerabilities: Array.from({ length: MAX_FINDINGS + 5 }, (_, index) => ({
-        VulnerabilityID: `CVE-${index}`,
-        PkgName: `pkg-${index}`,
-        Severity: 'HIGH',
-      })),
-    }],
+    Results: [
+      {
+        Target: 'package-lock.json',
+        Vulnerabilities: Array.from({ length: MAX_FINDINGS + 5 }, (_, index) => ({
+          VulnerabilityID: `CVE-${index}`,
+          PkgName: `pkg-${index}`,
+          Severity: 'HIGH',
+        })),
+      },
+    ],
   }
   const value = normalizeTrivyReport(report, {
     scannerVersion: '0.69.2',
@@ -338,29 +411,34 @@ test('bundled provider loads the Trivy audit instructions', async () => {
 test('status RPC forwards cancellation and removes executable paths from its response', async () => {
   let registration
   let received
-  registerTrivyStatusRpc({
-    get: () => ({
-      rpc: {
-        handle(channel, handler, options) {
-          registration = { channel, handler, options }
-          return () => {}
+  registerTrivyStatusRpc(
+    {
+      get: () => ({
+        rpc: {
+          handle(channel, handler, options) {
+            registration = { channel, handler, options }
+            return () => {}
+          },
         },
+      }),
+      effect(installer) {
+        installer()
       },
-    }),
-    effect(installer) { installer() },
-  }, {
-    async check(options) {
-      received = options
-      return {
-        state: 'ready',
-        path: '/private/host/bin/trivy',
-        version: '0.72.0',
-        minimumVersion: '0.50.0',
-        checkedAt: '2026-01-01T00:00:00.000Z',
-        message: 'ready',
-      }
     },
-  })
+    {
+      async check(options) {
+        received = options
+        return {
+          state: 'ready',
+          path: '/private/host/bin/trivy',
+          version: '0.72.0',
+          minimumVersion: '0.50.0',
+          checkedAt: '2026-01-01T00:00:00.000Z',
+          message: 'ready',
+        }
+      },
+    },
+  )
   const controller = new AbortController()
   const response = await registration.handler(TRIVY_STATUS_RECHECK, {}, controller.signal)
   assert.equal(received.signal, controller.signal)
@@ -376,9 +454,21 @@ test('headless plugin registers tools and skills without activating optional web
   let optionalServices
   apply({
     subprocess: fakeSubprocess({ runs: [] }),
-    tools: { register(value) { tool = value; return () => {} } },
-    skills: { registerProvider(value) { providerFactory = value; return () => {} } },
-    inject(services) { optionalServices = services },
+    tools: {
+      register(value) {
+        tool = value
+        return () => {}
+      },
+    },
+    skills: {
+      registerProvider(value) {
+        providerFactory = value
+        return () => {}
+      },
+    },
+    inject(services) {
+      optionalServices = services
+    },
   })
   assert.equal(tool.name, 'trivy_scan')
   assert.equal(providerFactory().name, 'trivy-audit')
@@ -389,13 +479,18 @@ test('plugin registers tool, skill provider, and status RPC and executes a fixtu
   const root = await mkdtemp(join(tmpdir(), 'dsh-trivy-tool-'))
   try {
     await writeFile(join(root, 'package.json'), '{}')
-    await writeFile(join(root, 'trivy.yaml'), 'output: controlled-by-repo.json\nserver: https://invalid.example\n')
+    await writeFile(
+      join(root, 'trivy.yaml'),
+      'output: controlled-by-repo.json\nserver: https://invalid.example\n',
+    )
     await writeFile(join(root, '.trivyignore'), '*\n')
-    const subprocess = fakeSubprocess({ runs: [
-      { stdout: 'Version: 0.69.2\n' },
-      { stdout: 'Version: 0.69.2\n' },
-      { stdout: JSON.stringify(REPORT) },
-    ] })
+    const subprocess = fakeSubprocess({
+      runs: [
+        { stdout: 'Version: 0.69.2\n' },
+        { stdout: 'Version: 0.69.2\n' },
+        { stdout: JSON.stringify(REPORT) },
+      ],
+    })
     let tool
     let providerFactory
     let rpcRegistration
@@ -405,8 +500,18 @@ test('plugin registers tool, skill provider, and status RPC and executes a fixtu
         callback(this)
       },
       subprocess,
-      tools: { register(value) { tool = value; return () => {} } },
-      skills: { registerProvider(value) { providerFactory = value; return () => {} } },
+      tools: {
+        register(value) {
+          tool = value
+          return () => {}
+        },
+      },
+      skills: {
+        registerProvider(value) {
+          providerFactory = value
+          return () => {}
+        },
+      },
       get(name) {
         if (name !== 'connection') return undefined
         return {
@@ -418,7 +523,9 @@ test('plugin registers tool, skill provider, and status RPC and executes a fixtu
           },
         }
       },
-      effect(installer) { installer() },
+      effect(installer) {
+        installer()
+      },
     }
     apply(ctx)
     assert.equal(tool.name, 'trivy_scan')
@@ -431,17 +538,22 @@ test('plugin registers tool, skill provider, and status RPC and executes a fixtu
     assert.equal(status.value.state, 'ready')
     assert.equal(status.value.path, undefined)
 
-    const result = await tool.execute({}, {
-      callId: 'call-1',
-      signal: new AbortController().signal,
-      agent: { session: { header: { cwd: root } } },
-    })
+    const result = await tool.execute(
+      {},
+      {
+        callId: 'call-1',
+        signal: new AbortController().signal,
+        agent: { session: { header: { cwd: root } } },
+      },
+    )
     assert.equal(result.totalFindings, 2)
     assert.deepEqual(subprocess.specs.at(-1).argv.slice(0, 6), [
       '/usr/local/bin/trivy',
-      '--config', EMPTY_CONFIG_PATH,
+      '--config',
+      EMPTY_CONFIG_PATH,
       'fs',
-      '--ignorefile', EMPTY_IGNOREFILE_PATH,
+      '--ignorefile',
+      EMPTY_IGNOREFILE_PATH,
     ])
     assert.equal(subprocess.specs.at(-1).argv.includes(join(root, 'trivy.yaml')), false)
     assert.equal(subprocess.specs.at(-1).argv.includes(join(root, '.trivyignore')), false)

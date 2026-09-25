@@ -30,7 +30,8 @@ try {
     ['/local-worktrees', 'capability', { sessionId: 'nonexistent-synthetic-session' }],
   ]) {
     const response = await fetch(new URL(`${channel}/${method}`, url), {
-      method: 'POST', headers: { cookie, origin: url.origin, 'content-type': 'application/json' },
+      method: 'POST',
+      headers: { cookie, origin: url.origin, 'content-type': 'application/json' },
       body: JSON.stringify({ type: 'client-request', rpcId: 'migration-check', method, payload }),
       signal: AbortSignal.timeout(10000),
     })
@@ -41,7 +42,9 @@ try {
     if (channel === '/session-recap') assert.equal(result.result.value.autoRecap, true)
     if (channel === '/local-worktrees') assert.equal(result.result.value.state, 'unavailable')
   }
-  console.log('PASS: thirteen-plugin boot, seeded fixture, authentication, shell and read-only RPCs')
+  console.log(
+    'PASS: thirteen-plugin boot, seeded fixture, authentication, shell and read-only RPCs',
+  )
 } finally {
   await cleanup()
 }

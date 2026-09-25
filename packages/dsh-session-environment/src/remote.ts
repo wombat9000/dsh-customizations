@@ -4,10 +4,16 @@ import { sessionEnvironmentRequestSchema, sessionEnvironmentSnapshotSchema } fro
 
 declare module '@deepseek-ai/dsh-typert-protocol' {
   interface TypertRemoteNamespace$73657373696f6e456e7669726f6e6d656e74 {
-    read: (request: SessionEnvironmentRequest, signal?: AbortSignal) => Promise<RemoteResult<SessionEnvironmentSnapshot>>
+    read: (
+      request: SessionEnvironmentRequest,
+      signal?: AbortSignal,
+    ) => Promise<RemoteResult<SessionEnvironmentSnapshot>>
   }
   interface TypertRemoteMap {
-    'sessionEnvironment/read': (request: SessionEnvironmentRequest, signal?: AbortSignal) => Promise<RemoteResult<SessionEnvironmentSnapshot>>
+    'sessionEnvironment/read': (
+      request: SessionEnvironmentRequest,
+      signal?: AbortSignal,
+    ) => Promise<RemoteResult<SessionEnvironmentSnapshot>>
   }
   interface TypertRemoteNamespaceMap {
     sessionEnvironment: TypertRemoteNamespace$73657373696f6e456e7669726f6e6d656e74

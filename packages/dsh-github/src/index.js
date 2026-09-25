@@ -18,13 +18,24 @@ export const inject = ['tools', 'subprocess']
 export function apply(ctx) {
   const writes = createGitHubWriteRuntime(ctx.subprocess)
   const grants = createGitHubGrantRuntime(writes)
-  const runtime = createGitHubRuntime(ctx.subprocess, { onAccount: actor => grants.observeAccount(actor) })
+  const runtime = createGitHubRuntime(ctx.subprocess, {
+    onAccount: (actor) => grants.observeAccount(actor),
+  })
   for (const tool of createGitHubTools(runtime)) ctx.tools.register(tool)
   const grantCaller = createGrantCaller(ctx)
-  const agents = { get: id => ctx.get('agents')?.get(id), roots: () => ctx.get('agents')?.roots() ?? [] }
+  const agents = {
+    get: (id) => ctx.get('agents')?.get(id),
+    roots: () => ctx.get('agents')?.roots() ?? [],
+  }
   const presentation = createGitHubPresentation({ agents, grants, caller: grantCaller })
-  ctx.effect(() => () => { grants.dispose(); presentation.dispose() })
-  ctx.on('agent/disposed', ({ agent }) => { grants.disposeSession(agent.session); presentation.disposeSession(agent.session) })
+  ctx.effect(() => () => {
+    grants.dispose()
+    presentation.dispose()
+  })
+  ctx.on('agent/disposed', ({ agent }) => {
+    grants.disposeSession(agent.session)
+    presentation.disposeSession(agent.session)
+  })
   registerGitHubGrantTools(ctx, grants, grantCaller, presentation)
   registerGitHubWriteTools(ctx, writes, { grants, grantCaller, presentation })
   registerGitHubRoutes(ctx, presentation)

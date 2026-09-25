@@ -50,7 +50,9 @@ function stringList(value, name, maxItems = 1_000, maxLength = 500) {
 
 function normalizeSegments(value) {
   if (!Array.isArray(value) || value.length > MAX_TRANSCRIPT_SEGMENTS) {
-    throw new TypeError(`youtube-transcript-store: segments must be an array of at most ${MAX_TRANSCRIPT_SEGMENTS} items`)
+    throw new TypeError(
+      `youtube-transcript-store: segments must be an array of at most ${MAX_TRANSCRIPT_SEGMENTS} items`,
+    )
   }
   let totalTextChars = 0
   let previousStartSeconds = -1
@@ -66,11 +68,14 @@ function normalizeSegments(value) {
     const text = assertNonEmptyString(segment.text, 'segment text', 100_000)
     totalTextChars += text.length
     if (totalTextChars > MAX_TRANSCRIPT_TEXT_CHARS) {
-      throw new TypeError(`youtube-transcript-store: transcript text exceeds ${MAX_TRANSCRIPT_TEXT_CHARS} characters`)
+      throw new TypeError(
+        `youtube-transcript-store: transcript text exceeds ${MAX_TRANSCRIPT_TEXT_CHARS} characters`,
+      )
     }
-    const speaker = segment.speaker === undefined
-      ? undefined
-      : assertNonEmptyString(segment.speaker, 'segment speaker', 500)
+    const speaker =
+      segment.speaker === undefined
+        ? undefined
+        : assertNonEmptyString(segment.speaker, 'segment speaker', 500)
     return { ordinal, startSeconds, text, ...(speaker === undefined ? {} : { speaker }) }
   })
 }
@@ -115,7 +120,10 @@ function ownedSegment(row) {
 function searchExpression(query) {
   const terms = query.match(/[\p{L}\p{N}]+/gu) ?? []
   if (terms.length === 0) return undefined
-  return terms.slice(0, 20).map((term) => `"${term.replaceAll('"', '""')}"`).join(' AND ')
+  return terms
+    .slice(0, 20)
+    .map((term) => `"${term.replaceAll('"', '""')}"`)
+    .join(' AND ')
 }
 
 export function resolveConfig(config = {}) {
@@ -227,18 +235,26 @@ export class YoutubeTranscriptArchive {
   }
 
   configureFullTextSearch() {
-    const ftsRow = this.db.prepare(`
+    const ftsRow = this.db
+      .prepare(
+        `
       SELECT sql FROM sqlite_master
       WHERE type = 'table' AND name = 'transcript_segments_fts'
-    `).get()
-    const triggerCount = this.db.prepare(`
+    `,
+      )
+      .get()
+    const triggerCount = this.db
+      .prepare(
+        `
       SELECT count(*) AS count FROM sqlite_master
       WHERE type = 'trigger' AND name IN (
         'transcript_segments_fts_insert',
         'transcript_segments_fts_delete',
         'transcript_segments_fts_update'
       )
-    `).get().count
+    `,
+      )
+      .get().count
     const obsoleteFts = ftsRow?.sql?.includes('transcript_id UNINDEXED') === true
     const needsRebuild = ftsRow === undefined || triggerCount !== 3 || obsoleteFts
     this.ftsEnabled = false
@@ -281,7 +297,9 @@ export class YoutubeTranscriptArchive {
           END;
         `)
         if (needsRebuild) {
-          this.db.exec("INSERT INTO transcript_segments_fts(transcript_segments_fts) VALUES ('rebuild');")
+          this.db.exec(
+            "INSERT INTO transcript_segments_fts(transcript_segments_fts) VALUES ('rebuild');",
+          )
         }
         this.ftsEnabled = true
       }
@@ -371,9 +389,9 @@ export class YoutubeTranscriptArchive {
 
   getTranscript(transcriptId) {
     this.assertOpen()
-    return ownedMetadata(this.statements.getTranscript.get(
-      assertNonEmptyString(transcriptId, 'transcriptId', 200),
-    ))
+    return ownedMetadata(
+      this.statements.getTranscript.get(assertNonEmptyString(transcriptId, 'transcriptId', 200)),
+    )
   }
 
   loadComplete(transcriptId) {
@@ -388,8 +406,10 @@ export class YoutubeTranscriptArchive {
       }
       const segments = this.statements.allSegments.all(id).map(ownedSegment)
       this.db.exec('COMMIT;')
-      if (segments.length !== metadata.segmentCount
-        || contentHash(metadata.speakers, segments) !== metadata.contentHash) {
+      if (
+        segments.length !== metadata.segmentCount ||
+        contentHash(metadata.speakers, segments) !== metadata.contentHash
+      ) {
         this.deleteTranscript(id)
         return undefined
       }
@@ -411,7 +431,11 @@ export class YoutubeTranscriptArchive {
     const durationSeconds = assertNonNegativeInteger(input.durationSeconds, 'durationSeconds')
     const compatibilityKey = assertNonEmptyString(input.compatibilityKey, 'compatibilityKey')
     const model = assertNonEmptyString(input.model, 'model', 500)
-    const transcriberVersion = assertNonEmptyString(input.transcriberVersion, 'transcriberVersion', 500)
+    const transcriberVersion = assertNonEmptyString(
+      input.transcriberVersion,
+      'transcriberVersion',
+      500,
+    )
     const language = assertNonEmptyString(input.language, 'language', 500)
     const speakers = stringList(input.speakers, 'speakers')
     const timestampVerified = input.timestampVerified ?? true
@@ -434,9 +458,10 @@ export class YoutubeTranscriptArchive {
       }
     }
     const now = Number.isSafeInteger(input.createdAt) ? input.createdAt : Date.now()
-    const transcriptId = input.transcriptId === undefined
-      ? randomUUID()
-      : assertNonEmptyString(input.transcriptId, 'transcriptId', 200)
+    const transcriptId =
+      input.transcriptId === undefined
+        ? randomUUID()
+        : assertNonEmptyString(input.transcriptId, 'transcriptId', 200)
     const hash = contentHash(speakers, segments)
 
     this.db.exec('BEGIN IMMEDIATE;')
@@ -516,22 +541,24 @@ export class YoutubeTranscriptArchive {
       if (endSeconds < startSeconds) {
         throw new TypeError('youtube-transcript-store: endSeconds must not precede startSeconds')
       }
-      const rows = this.db.prepare(`
+      const rows = this.db
+        .prepare(
+          `
         SELECT ordinal, start_seconds, speaker, text
         FROM segments
         WHERE transcript_id = ? AND ordinal >= ?
           AND start_seconds >= ? AND start_seconds <= ?
         ORDER BY ordinal LIMIT ?
-      `).all(id, cursor, startSeconds, endSeconds, limit + 1)
+      `,
+        )
+        .all(id, cursor, startSeconds, endSeconds, limit + 1)
       const hasMore = rows.length > limit
       const selected = rows.slice(0, limit).map(ownedSegment)
       this.db.exec('COMMIT;')
       return {
         transcript: metadata,
         segments: selected,
-        nextCursor: hasMore && selected.length > 0
-          ? selected.at(-1).ordinal + 1
-          : undefined,
+        nextCursor: hasMore && selected.length > 0 ? selected.at(-1).ordinal + 1 : undefined,
       }
     } catch (error) {
       try {
@@ -549,21 +576,26 @@ export class YoutubeTranscriptArchive {
     const text = assertNonEmptyString(query, 'query', 2_000).trim()
     const limit = options.limit ?? 20
     assertPositiveInteger(limit, 'limit')
-    if (limit > 100) throw new TypeError('youtube-transcript-store: search limit must not exceed 100')
+    if (limit > 100)
+      throw new TypeError('youtube-transcript-store: search limit must not exceed 100')
     const expression = searchExpression(text)
     if (expression === undefined) {
       throw new TypeError('youtube-transcript-store: query must contain a letter or number')
     }
     const runLikeSearch = () => {
       const like = text.replaceAll('\\', '\\\\').replaceAll('%', '\\%').replaceAll('_', '\\_')
-      return this.db.prepare(`
+      return this.db
+        .prepare(
+          `
         SELECT ordinal, start_seconds, speaker, text, 0 AS score
         FROM segments
         WHERE transcript_id = ? AND (
           text LIKE ? ESCAPE '\\' OR coalesce(speaker, '') LIKE ? ESCAPE '\\'
         )
         ORDER BY ordinal LIMIT ?
-      `).all(id, `%${like}%`, `%${like}%`, limit)
+      `,
+        )
+        .all(id, `%${like}%`, `%${like}%`, limit)
     }
 
     this.db.exec('BEGIN;')
@@ -577,14 +609,18 @@ export class YoutubeTranscriptArchive {
       if (this.ftsEnabled) {
         const transcriptExpression = `transcript_id : "${id.replaceAll('"', '""')}" AND (${expression})`
         try {
-          rows = this.db.prepare(`
+          rows = this.db
+            .prepare(
+              `
             SELECT s.ordinal, s.start_seconds, s.speaker, s.text,
               bm25(transcript_segments_fts) AS score
             FROM transcript_segments_fts
             JOIN segments s ON s.id = transcript_segments_fts.rowid
             WHERE transcript_segments_fts MATCH ? AND s.transcript_id = ?
             ORDER BY score, s.ordinal LIMIT ?
-          `).all(transcriptExpression, id, limit)
+          `,
+            )
+            .all(transcriptExpression, id, limit)
         } catch {
           this.ftsEnabled = false
           rows = runLikeSearch()
@@ -609,9 +645,9 @@ export class YoutubeTranscriptArchive {
 
   listVersions(videoId) {
     this.assertOpen()
-    return this.statements.listVersions.all(
-      assertNonEmptyString(videoId, 'videoId', 100),
-    ).map(ownedMetadata)
+    return this.statements.listVersions
+      .all(assertNonEmptyString(videoId, 'videoId', 100))
+      .map(ownedMetadata)
   }
 
   deleteTranscript(transcriptId) {

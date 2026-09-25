@@ -11,8 +11,12 @@ export const MAX_REPORT_BYTES = 8 * 1024 * 1024
 export const MAX_STDERR_BYTES = 64 * 1024
 export const MAX_FINDINGS = 200
 export const RENDERED_FINDINGS = 50
-export const EMPTY_CONFIG_PATH = fileURLToPath(new URL('../assets/trivy-empty.yaml', import.meta.url))
-export const EMPTY_IGNOREFILE_PATH = fileURLToPath(new URL('../assets/trivy-empty.ignore', import.meta.url))
+export const EMPTY_CONFIG_PATH = fileURLToPath(
+  new URL('../assets/trivy-empty.yaml', import.meta.url),
+)
+export const EMPTY_IGNOREFILE_PATH = fileURLToPath(
+  new URL('../assets/trivy-empty.ignore', import.meta.url),
+)
 
 const SEVERITIES = ['UNKNOWN', 'LOW', 'MEDIUM', 'HIGH', 'CRITICAL']
 const SEVERITY_ORDER = new Map([...SEVERITIES].reverse().map((value, index) => [value, index]))
@@ -47,8 +51,9 @@ export class TrivyError extends HarnessError {
 }
 
 export function parseTrivyVersion(output) {
-  const match = /(?:^|\n)Version:\s*v?(\d+)\.(\d+)\.(\d+)(?:\s|$)/u.exec(output)
-    ?? /(?:^|\s)v?(\d+)\.(\d+)\.(\d+)(?:\s|$)/u.exec(output)
+  const match =
+    /(?:^|\n)Version:\s*v?(\d+)\.(\d+)\.(\d+)(?:\s|$)/u.exec(output) ??
+    /(?:^|\s)v?(\d+)\.(\d+)\.(\d+)(?:\s|$)/u.exec(output)
   if (match === null) return undefined
   return `${match[1]}.${match[2]}.${match[3]}`
 }
@@ -73,14 +78,10 @@ function copyRead(reader) {
   }
 }
 
-export async function runCollected(subprocess, {
-  argv,
-  cwd,
-  signal,
-  timeoutMs,
-  stdoutMaxBytes,
-  stderrMaxBytes = MAX_STDERR_BYTES,
-}) {
+export async function runCollected(
+  subprocess,
+  { argv, cwd, signal, timeoutMs, stdoutMaxBytes, stderrMaxBytes = MAX_STDERR_BYTES },
+) {
   const controller = new AbortController()
   let timedOut = false
   const onAbort = () => controller.abort(signal?.reason)
@@ -121,12 +122,15 @@ function notFound(error) {
   return error?.code === 'ENOENT' || /not found|cannot find|could not find/iu.test(messageOf(error))
 }
 
-export function createTrivyRuntime(subprocess, {
-  now = () => Date.now(),
-  cwd = () => process.cwd(),
-  minimumVersion = MINIMUM_TRIVY_VERSION,
-  statusCacheMs = STATUS_CACHE_MS,
-} = {}) {
+export function createTrivyRuntime(
+  subprocess,
+  {
+    now = () => Date.now(),
+    cwd = () => process.cwd(),
+    minimumVersion = MINIMUM_TRIVY_VERSION,
+    statusCacheMs = STATUS_CACHE_MS,
+  } = {},
+) {
   let cached
 
   const check = async ({ force = false, signal } = {}) => {
@@ -170,7 +174,9 @@ export function createTrivyRuntime(subprocess, {
           message: `Trivy did not respond within ${STATUS_TIMEOUT_MS}ms.`,
         }
       } else if (result.exitCode !== 0) {
-        const detail = diagnostic(result.stderr.text || result.stdout.text || `exit code ${result.exitCode}`)
+        const detail = diagnostic(
+          result.stderr.text || result.stdout.text || `exit code ${result.exitCode}`,
+        )
         value = {
           state: 'execution-failed',
           checkedAt: new Date(current).toISOString(),
@@ -226,18 +232,28 @@ export function createTrivyRuntime(subprocess, {
 
   return {
     check,
-    clear() { cached = undefined },
+    clear() {
+      cached = undefined
+    },
   }
 }
 
 function within(root, candidate) {
   const path = relative(root, candidate)
-  return path === '' || (!path.startsWith(`..${process.platform === 'win32' ? '\\' : '/'}`) && path !== '..' && !isAbsolute(path))
+  return (
+    path === '' ||
+    (!path.startsWith(`..${process.platform === 'win32' ? '\\' : '/'}`) &&
+      path !== '..' &&
+      !isAbsolute(path))
+  )
 }
 
 export async function resolveScanTarget(workspace, target = '.') {
   if (typeof workspace !== 'string' || workspace.length === 0) {
-    throw new TrivyError('TRIVY_WORKSPACE_REQUIRED', 'trivy_scan requires an active session workspace.')
+    throw new TrivyError(
+      'TRIVY_WORKSPACE_REQUIRED',
+      'trivy_scan requires an active session workspace.',
+    )
   }
   if (typeof target !== 'string' || target.trim().length === 0) {
     throw new TrivyError('TRIVY_INVALID_TARGET', 'Trivy target must be a non-empty path.')
@@ -256,7 +272,10 @@ export async function resolveScanTarget(workspace, target = '.') {
     throw new TrivyError('TRIVY_INVALID_TARGET', `Trivy target is unavailable: ${messageOf(error)}`)
   }
   if (!within(canonicalWorkspace, canonicalTarget)) {
-    throw new TrivyError('TRIVY_TARGET_OUTSIDE_WORKSPACE', 'Trivy targets must remain inside the active session workspace.')
+    throw new TrivyError(
+      'TRIVY_TARGET_OUTSIDE_WORKSPACE',
+      'Trivy targets must remain inside the active session workspace.',
+    )
   }
   return { workspace: canonicalWorkspace, target: canonicalTarget }
 }
@@ -264,11 +283,25 @@ export async function resolveScanTarget(workspace, target = '.') {
 export function normalizeScanOptions(args = {}) {
   const scanners = args.scanners ?? ['vulnerability', 'misconfiguration']
   const severities = args.severities ?? ['HIGH', 'CRITICAL']
-  if (!Array.isArray(scanners) || scanners.length === 0 || scanners.some((value) => !(value in SCANNER_ARGUMENT))) {
-    throw new TrivyError('TRIVY_INVALID_SCANNERS', 'Trivy scanners must contain vulnerability and/or misconfiguration.')
+  if (
+    !Array.isArray(scanners) ||
+    scanners.length === 0 ||
+    scanners.some((value) => !(value in SCANNER_ARGUMENT))
+  ) {
+    throw new TrivyError(
+      'TRIVY_INVALID_SCANNERS',
+      'Trivy scanners must contain vulnerability and/or misconfiguration.',
+    )
   }
-  if (!Array.isArray(severities) || severities.length === 0 || severities.some((value) => !SEVERITIES.includes(value))) {
-    throw new TrivyError('TRIVY_INVALID_SEVERITIES', 'Trivy severities contain an unsupported value.')
+  if (
+    !Array.isArray(severities) ||
+    severities.length === 0 ||
+    severities.some((value) => !SEVERITIES.includes(value))
+  ) {
+    throw new TrivyError(
+      'TRIVY_INVALID_SEVERITIES',
+      'Trivy severities contain an unsupported value.',
+    )
   }
   return {
     target: args.target ?? '.',
@@ -281,13 +314,18 @@ export function normalizeScanOptions(args = {}) {
 export function buildTrivyArgv(executable, options, target) {
   return [
     executable,
-    '--config', EMPTY_CONFIG_PATH,
+    '--config',
+    EMPTY_CONFIG_PATH,
     'fs',
-    '--ignorefile', EMPTY_IGNOREFILE_PATH,
-    '--format', 'json',
+    '--ignorefile',
+    EMPTY_IGNOREFILE_PATH,
+    '--format',
+    'json',
     '--quiet',
-    '--scanners', options.scanners.map((value) => SCANNER_ARGUMENT[value]).join(','),
-    '--severity', options.severities.join(','),
+    '--scanners',
+    options.scanners.map((value) => SCANNER_ARGUMENT[value]).join(','),
+    '--severity',
+    options.severities.join(','),
     ...(options.ignoreUnfixed ? ['--ignore-unfixed'] : []),
     target,
   ]
@@ -305,7 +343,10 @@ function severity(value) {
 }
 
 function primaryUrl(item) {
-  return text(item.PrimaryURL, 500) ?? (Array.isArray(item.References) ? text(item.References[0], 500) : undefined)
+  return (
+    text(item.PrimaryURL, 500) ??
+    (Array.isArray(item.References) ? text(item.References[0], 500) : undefined)
+  )
 }
 
 function vulnerabilityFinding(result, item) {
@@ -316,8 +357,12 @@ function vulnerabilityFinding(result, item) {
     severity: severity(item.Severity),
     ...(text(item.Title, 300) === undefined ? {} : { title: text(item.Title, 300) }),
     ...(text(item.PkgName, 300) === undefined ? {} : { package: text(item.PkgName, 300) }),
-    ...(text(item.InstalledVersion, 200) === undefined ? {} : { installedVersion: text(item.InstalledVersion, 200) }),
-    ...(text(item.FixedVersion, 200) === undefined ? {} : { fixedVersion: text(item.FixedVersion, 200) }),
+    ...(text(item.InstalledVersion, 200) === undefined
+      ? {}
+      : { installedVersion: text(item.InstalledVersion, 200) }),
+    ...(text(item.FixedVersion, 200) === undefined
+      ? {}
+      : { fixedVersion: text(item.FixedVersion, 200) }),
     ...(text(item.Status, 100) === undefined ? {} : { status: text(item.Status, 100) }),
     ...(primaryUrl(item) === undefined ? {} : { primaryUrl: primaryUrl(item) }),
   }
@@ -348,19 +393,29 @@ function reportRecord(value) {
 }
 
 function invalidReport(detail) {
-  throw new TrivyError('TRIVY_INVALID_OUTPUT', `Trivy returned an unsupported JSON report: ${detail}.`)
+  throw new TrivyError(
+    'TRIVY_INVALID_OUTPUT',
+    `Trivy returned an unsupported JSON report: ${detail}.`,
+  )
 }
 
 function validateTrivyReport(report) {
   if (!reportRecord(report)) invalidReport('expected an object')
   if (report.SchemaVersion !== 2) invalidReport('expected SchemaVersion 2')
-  if (typeof report.CreatedAt !== 'string' || report.CreatedAt.length === 0) invalidReport('missing CreatedAt')
-  if (report.Trivy !== undefined
-    && (!reportRecord(report.Trivy) || typeof report.Trivy.Version !== 'string' || report.Trivy.Version.length === 0)) {
+  if (typeof report.CreatedAt !== 'string' || report.CreatedAt.length === 0)
+    invalidReport('missing CreatedAt')
+  if (
+    report.Trivy !== undefined &&
+    (!reportRecord(report.Trivy) ||
+      typeof report.Trivy.Version !== 'string' ||
+      report.Trivy.Version.length === 0)
+  ) {
     invalidReport('invalid Trivy.Version')
   }
-  if (typeof report.ArtifactName !== 'string' || report.ArtifactName.length === 0) invalidReport('missing ArtifactName')
-  if (typeof report.ArtifactType !== 'string' || report.ArtifactType.length === 0) invalidReport('missing ArtifactType')
+  if (typeof report.ArtifactName !== 'string' || report.ArtifactName.length === 0)
+    invalidReport('missing ArtifactName')
+  if (typeof report.ArtifactType !== 'string' || report.ArtifactType.length === 0)
+    invalidReport('missing ArtifactType')
   if (report.Results === undefined) return
   if (!Array.isArray(report.Results)) invalidReport('Results must be an array')
 
@@ -394,15 +449,17 @@ export function normalizeTrivyReport(report, metadata) {
   const all = []
   for (const result of report.Results ?? []) {
     for (const item of result.Vulnerabilities ?? []) all.push(vulnerabilityFinding(result, item))
-    for (const item of result.Misconfigurations ?? []) all.push(misconfigurationFinding(result, item))
+    for (const item of result.Misconfigurations ?? [])
+      all.push(misconfigurationFinding(result, item))
   }
 
-  all.sort((left, right) => (
-    (SEVERITY_ORDER.get(left.severity) ?? 99) - (SEVERITY_ORDER.get(right.severity) ?? 99)
-      || left.kind.localeCompare(right.kind)
-      || left.target.localeCompare(right.target)
-      || left.id.localeCompare(right.id)
-  ))
+  all.sort(
+    (left, right) =>
+      (SEVERITY_ORDER.get(left.severity) ?? 99) - (SEVERITY_ORDER.get(right.severity) ?? 99) ||
+      left.kind.localeCompare(right.kind) ||
+      left.target.localeCompare(right.target) ||
+      left.id.localeCompare(right.id),
+  )
 
   const bySeverity = emptySeverities()
   const byKind = { vulnerabilities: 0, misconfigurations: 0 }
@@ -437,15 +494,34 @@ export function renderTrivyResult(value) {
   if (shown.length > 0) {
     lines.push('', 'Findings:')
     for (const finding of shown) {
-      const subject = finding.kind === 'vulnerability'
-        ? [finding.package, finding.installedVersion === undefined ? undefined : `installed ${finding.installedVersion}`, finding.fixedVersion === undefined ? undefined : `fixed ${finding.fixedVersion}`].filter(Boolean).join(', ')
-        : [finding.resource, finding.message].filter(Boolean).join(' — ')
-      lines.push(`- [${finding.severity}] ${finding.id} — ${finding.target}${subject.length === 0 ? '' : ` — ${subject}`}`)
+      const subject =
+        finding.kind === 'vulnerability'
+          ? [
+              finding.package,
+              finding.installedVersion === undefined
+                ? undefined
+                : `installed ${finding.installedVersion}`,
+              finding.fixedVersion === undefined ? undefined : `fixed ${finding.fixedVersion}`,
+            ]
+              .filter(Boolean)
+              .join(', ')
+          : [finding.resource, finding.message].filter(Boolean).join(' — ')
+      lines.push(
+        `- [${finding.severity}] ${finding.id} — ${finding.target}${subject.length === 0 ? '' : ` — ${subject}`}`,
+      )
     }
   }
-  if (value.findings.length > shown.length) lines.push(``, `Only ${shown.length} of ${value.returnedFindings} returned finding details are rendered here.`)
-  if (value.truncated) lines.push(`Only ${value.returnedFindings} of ${value.totalFindings} findings were returned. Narrow the scan before drawing complete conclusions.`)
-  if (value.totalFindings === 0) lines.push('No findings matched the selected scanners and severities.')
+  if (value.findings.length > shown.length)
+    lines.push(
+      ``,
+      `Only ${shown.length} of ${value.returnedFindings} returned finding details are rendered here.`,
+    )
+  if (value.truncated)
+    lines.push(
+      `Only ${value.returnedFindings} of ${value.totalFindings} findings were returned. Narrow the scan before drawing complete conclusions.`,
+    )
+  if (value.totalFindings === 0)
+    lines.push('No findings matched the selected scanners and severities.')
   return lines.join('\n')
 }
 
@@ -455,7 +531,10 @@ export async function scanWithTrivy(runtime, subprocess, args, exec) {
   const paths = await resolveScanTarget(workspace, options.target)
   const status = await runtime.check({ force: true, signal: exec.signal })
   if (status.state === 'not-found') {
-    throw new TrivyError('TRIVY_NOT_FOUND', 'DSH could not find `trivy` on its effective PATH. Install Trivy, then open Settings → Trivy and select Recheck. DSH will not install Trivy automatically.')
+    throw new TrivyError(
+      'TRIVY_NOT_FOUND',
+      'DSH could not find `trivy` on its effective PATH. Install Trivy, then open Settings → Trivy and select Recheck. DSH will not install Trivy automatically.',
+    )
   }
   if (status.state === 'unsupported-version') {
     throw new TrivyError('TRIVY_VERSION_UNSUPPORTED', status.message)
@@ -475,7 +554,10 @@ export async function scanWithTrivy(runtime, subprocess, args, exec) {
     throw new TrivyError('TRIVY_TIMEOUT', `Trivy scan timed out after ${DEFAULT_TIMEOUT_MS}ms.`)
   }
   if (result.stdout.truncated) {
-    throw new TrivyError('TRIVY_OUTPUT_TOO_LARGE', `Trivy JSON output exceeded ${MAX_REPORT_BYTES} bytes. Narrow the target or selected severities.`)
+    throw new TrivyError(
+      'TRIVY_OUTPUT_TOO_LARGE',
+      `Trivy JSON output exceeded ${MAX_REPORT_BYTES} bytes. Narrow the target or selected severities.`,
+    )
   }
   if (result.exitCode !== 0) {
     const detail = diagnostic(result.stderr.text || `exit code ${result.exitCode}`)

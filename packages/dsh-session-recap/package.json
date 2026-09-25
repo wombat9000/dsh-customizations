@@ -10,15 +10,29 @@
     "./client": "./client.js",
     "./package.json": "./package.json"
   },
-  "files": ["client.js", "client/**/*.ts", "client/**/*.tsx", "shared/**/*.ts", "scripts/*.mjs", "tsconfig.json", "cordis.patch.yml", "src/**/*.js", "README.md"],
+  "files": [
+    "client.js",
+    "client/**/*.ts",
+    "client/**/*.tsx",
+    "shared/**/*.ts",
+    "scripts/*.mjs",
+    "tsconfig.json",
+    "cordis.patch.yml",
+    "src/**/*.js",
+    "README.md"
+  ],
   "scripts": {
     "typecheck": "node scripts/typecheck.mjs",
     "build:client": "node scripts/build-client.mjs",
     "test": "node --test test/*.test.*"
   },
-  "engines": {"node": "^22.19.0 || >=24.0.0"},
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0"
+  },
   "dsh": {
-    "bundle": {"patch": "./cordis.patch.yml"},
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
     "client": {
       "inject": [
         "@deepseek-ai/dsh-client-ui-conversation",

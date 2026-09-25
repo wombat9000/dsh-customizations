@@ -6,7 +6,10 @@ export function pageArgs(args = {}, fallback = DEFAULT_PAGE_SIZE) {
   if (!Number.isInteger(limit) || limit < 1 || limit > MAX_PAGE_SIZE) {
     throw new Error(`limit must be an integer from 1 to ${MAX_PAGE_SIZE}`)
   }
-  if (args.cursor !== undefined && (typeof args.cursor !== 'string' || args.cursor.trim().length === 0)) {
+  if (
+    args.cursor !== undefined &&
+    (typeof args.cursor !== 'string' || args.cursor.trim().length === 0)
+  ) {
     throw new Error('cursor must be a non-empty Linear pagination cursor')
   }
   return {

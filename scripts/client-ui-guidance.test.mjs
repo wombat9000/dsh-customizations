@@ -15,7 +15,7 @@ test('client UI guidance has discoverable skill metadata and an AGENTS entrypoin
 })
 
 test('all local skill references resolve to repository files', async () => {
-  const links = [...source.matchAll(/\[[^\]]+\]\(([^)]+)\)/g)].map(match => match[1])
+  const links = [...source.matchAll(/\[[^\]]+\]\(([^)]+)\)/g)].map((match) => match[1])
   assert.ok(links.length > 0, 'guidance links to reusable setup and fixtures')
   for (const link of links) {
     assert.ok(!/^[a-z]+:/i.test(link), `expected a local reference: ${link}`)
@@ -27,10 +27,13 @@ test('all local skill references resolve to repository files', async () => {
 test('the decision table retains three distinct change paths', () => {
   const table = source.split('## Choose the smallest sufficient path\n')[1]?.split('\n## ')[0]
   assert.ok(table, 'decision table precedes the detailed procedure')
-  const rows = table.split('\n').filter(line => /^\| \*\*/.test(line))
+  const rows = table.split('\n').filter((line) => /^\| \*\*/.test(line))
   assert.equal(rows.length, 3)
   for (const label of ['Presentation only', 'Established behavior', 'Integration boundary']) {
-    assert.ok(rows.some(row => row.includes(`**${label}:**`)), `missing path: ${label}`)
+    assert.ok(
+      rows.some((row) => row.includes(`**${label}:**`)),
+      `missing path: ${label}`,
+    )
   }
   // These are document/discovery checks, not proof of agent behavior or UI correctness.
 })

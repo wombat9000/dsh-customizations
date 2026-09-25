@@ -14,9 +14,10 @@ export default defineConfig(({ env }) => {
       dts: false,
       clean: false,
       deps: {
-        neverBundle: (specifier) => specifier.startsWith('@deepseek-ai/')
-          || specifier === 'zod'
-          || specifier.startsWith('node:'),
+        neverBundle: (specifier) =>
+          specifier.startsWith('@deepseek-ai/') ||
+          specifier === 'zod' ||
+          specifier.startsWith('node:'),
       },
     }
   }

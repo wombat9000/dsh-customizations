@@ -86,27 +86,35 @@ test('deduplicates compatible saves and misses changed duration or version', () 
   assert.equal(second.created, false)
   assert.equal(second.transcript.transcriptId, first.transcript.transcriptId)
   assert.equal(archive.stats().transcripts, 1)
-  assert.equal(archive.findCompatible({
-    compatibilityKey: transcript().compatibilityKey,
-    videoId: VIDEO_ID,
-    durationSeconds: 121,
-  }), undefined)
-  assert.equal(archive.findCompatible({
-    compatibilityKey: `${VIDEO_ID}:120:v2:model`,
-    videoId: VIDEO_ID,
-    durationSeconds: 120,
-  }), undefined)
+  assert.equal(
+    archive.findCompatible({
+      compatibilityKey: transcript().compatibilityKey,
+      videoId: VIDEO_ID,
+      durationSeconds: 121,
+    }),
+    undefined,
+  )
+  assert.equal(
+    archive.findCompatible({
+      compatibilityKey: `${VIDEO_ID}:120:v2:model`,
+      videoId: VIDEO_ID,
+      durationSeconds: 120,
+    }),
+    undefined,
+  )
   archive.close()
 })
 
 test('preserves transcript-specific duration when a video revision changes', () => {
   const archive = new YoutubeTranscriptArchive({ path: ':memory:' })
   const first = archive.saveComplete(transcript())
-  const second = archive.saveComplete(transcript({
-    durationSeconds: 100,
-    compatibilityKey: `${VIDEO_ID}:100:v1:model`,
-    segments: [{ startSeconds: 90, speaker: 'Narrator', text: 'Trimmed ending.' }],
-  }))
+  const second = archive.saveComplete(
+    transcript({
+      durationSeconds: 100,
+      compatibilityKey: `${VIDEO_ID}:100:v1:model`,
+      segments: [{ startSeconds: 90, speaker: 'Narrator', text: 'Trimmed ending.' }],
+    }),
+  )
   assert.equal(archive.getTranscript(first.transcript.transcriptId).durationSeconds, 120)
   assert.equal(archive.getTranscript(second.transcript.transcriptId).durationSeconds, 100)
   archive.close()
@@ -116,14 +124,20 @@ test('pages by ordinal and timestamp and searches with FTS5', () => {
   const archive = new YoutubeTranscriptArchive({ path: ':memory:' })
   const saved = archive.saveComplete(transcript())
   const first = archive.readSegments(saved.transcript.transcriptId, { limit: 2 })
-  assert.deepEqual(first.segments.map((segment) => segment.ordinal), [0, 1])
+  assert.deepEqual(
+    first.segments.map((segment) => segment.ordinal),
+    [0, 1],
+  )
   assert.equal(first.nextCursor, 2)
   const second = archive.readSegments(saved.transcript.transcriptId, {
     cursor: first.nextCursor,
     startSeconds: 80,
     endSeconds: 120,
   })
-  assert.deepEqual(second.segments.map((segment) => segment.text), ['Closing statement.'])
+  assert.deepEqual(
+    second.segments.map((segment) => segment.text),
+    ['Closing statement.'],
+  )
   assert.equal(second.nextCursor, undefined)
 
   const search = archive.search(saved.transcript.transcriptId, 'searchable middle')
@@ -152,9 +166,15 @@ test('deletes transcript segments and search index entries transactionally', () 
 
 test('rejects invalid or incomplete archive records', () => {
   const archive = new YoutubeTranscriptArchive({ path: ':memory:' })
-  assert.throws(() => archive.saveComplete(transcript({
-    segments: [{ startSeconds: 121, text: 'Beyond duration.', speaker: 'Narrator' }],
-  })), /exceeds video duration/)
+  assert.throws(
+    () =>
+      archive.saveComplete(
+        transcript({
+          segments: [{ startSeconds: 121, text: 'Beyond duration.', speaker: 'Narrator' }],
+        }),
+      ),
+    /exceeds video duration/,
+  )
   assert.throws(() => archive.saveComplete(transcript({ segments: undefined })), /segments/)
   assert.equal(archive.stats().transcripts, 0)
   archive.close()
@@ -198,14 +218,18 @@ test('falls back to bounded LIKE search when FTS is disabled', () => {
 
 test('scopes common-term FTS matches to one transcript', () => {
   const archive = new YoutubeTranscriptArchive({ path: ':memory:' })
-  const first = archive.saveComplete(transcript({
-    compatibilityKey: 'first-common',
-    segments: [{ startSeconds: 1, text: 'common phrase from first' }],
-  }))
-  archive.saveComplete(transcript({
-    compatibilityKey: 'second-common',
-    segments: [{ startSeconds: 1, text: 'common phrase from second' }],
-  }))
+  const first = archive.saveComplete(
+    transcript({
+      compatibilityKey: 'first-common',
+      segments: [{ startSeconds: 1, text: 'common phrase from first' }],
+    }),
+  )
+  archive.saveComplete(
+    transcript({
+      compatibilityKey: 'second-common',
+      segments: [{ startSeconds: 1, text: 'common phrase from second' }],
+    }),
+  )
   const result = archive.search(first.transcript.transcriptId, 'common phrase')
   assert.equal(result.matches.length, 1)
   assert.equal(result.matches[0].text, 'common phrase from first')
@@ -219,10 +243,14 @@ test('disabling FTS removes persisted index artifacts', async () => {
     enabled.close()
 
     const disabled = new YoutubeTranscriptArchive({ path, fullTextSearch: false })
-    const artifacts = disabled.db.prepare(`
+    const artifacts = disabled.db
+      .prepare(
+        `
       SELECT count(*) AS count FROM sqlite_master
       WHERE name LIKE 'transcript_segments_fts%'
-    `).get().count
+    `,
+      )
+      .get().count
     assert.equal(artifacts, 0)
     disabled.close()
   })
@@ -245,13 +273,18 @@ test('an enabled connection falls back if another connection removes FTS', async
 test('embedded host provider preserves the service name and closes on disposal', () => {
   let provided
   let dispose
-  apply({
-    effect(setup) { dispose = setup() },
-    provide(name, value) {
-      assert.equal(name, 'youtubeTranscriptStore')
-      provided = value
+  apply(
+    {
+      effect(setup) {
+        dispose = setup()
+      },
+      provide(name, value) {
+        assert.equal(name, 'youtubeTranscriptStore')
+        provided = value
+      },
     },
-  }, { path: ':memory:' })
+    { path: ':memory:' },
+  )
   try {
     assert.ok(provided instanceof YoutubeTranscriptArchive)
     assert.equal(provided.closed, false)
@@ -264,9 +297,12 @@ test('embedded host provider preserves the service name and closes on disposal',
 test('bounds the number of segments accepted in one transcript', () => {
   const archive = new YoutubeTranscriptArchive({ path: ':memory:' })
   assert.throws(
-    () => archive.saveComplete(transcript({
-      segments: new Array(MAX_TRANSCRIPT_SEGMENTS + 1).fill({ startSeconds: 1, text: 'x' }),
-    })),
+    () =>
+      archive.saveComplete(
+        transcript({
+          segments: new Array(MAX_TRANSCRIPT_SEGMENTS + 1).fill({ startSeconds: 1, text: 'x' }),
+        }),
+      ),
     /at most/,
   )
   archive.close()

@@ -93,7 +93,8 @@ test('rejects unsafe, malformed, and playlist-only URLs', () => {
     'https://www.youtube.com/playlist?list=abc',
     'https://youtu.be/not-valid',
     `https://www.youtube.com/embed/${VIDEO_ID}`,
-  ]) assert.throws(() => parseYoutubeUrl(input))
+  ])
+    assert.throws(() => parseYoutubeUrl(input))
 })
 
 test('normalizes timestamps in minute and hour forms', () => {
@@ -146,7 +147,8 @@ test('fetches duration from YouTube player metadata without extra dependencies',
     return {
       ok: true,
       status: 200,
-      text: async () => '<script>ytInitialPlayerResponse = {"videoDetails":{"lengthSeconds":"984"}}</script>',
+      text: async () =>
+        '<script>ytInitialPlayerResponse = {"videoDetails":{"lengthSeconds":"984"}}</script>',
     }
   })
 
@@ -186,10 +188,14 @@ test('resolves and validates configuration defaults and bounds', () => {
   assert.equal(config.statefulTranscriptCorrections, true)
   assert.throws(() => resolveConfig({ timeoutMs: 0 }), /positive integer/)
   assert.throws(() => resolveConfig({ chunkOverlapSeconds: -1 }), /non-negative integer/)
-  assert.throws(() => resolveConfig({
-    maximumTranscriptCoreSeconds: 15,
-    chunkOverlapSeconds: 15,
-  }), /smaller than/)
+  assert.throws(
+    () =>
+      resolveConfig({
+        maximumTranscriptCoreSeconds: 15,
+        chunkOverlapSeconds: 15,
+      }),
+    /smaller than/,
+  )
   assert.throws(() => resolveConfig({ directTranscriptMaxSeconds: 1_201 }), /fixed policy maximum/)
   assert.throws(() => resolveConfig({ maximumTranscriptCoreSeconds: 901 }), /fixed policy maximum/)
   assert.throws(() => resolveConfig({ chunkOverlapSeconds: 16 }), /fixed policy maximum/)
@@ -198,14 +204,17 @@ test('resolves and validates configuration defaults and bounds', () => {
 })
 
 test('normalizes bounded watch output and records truncation caveats', () => {
-  const result = normalizeWatchResponse({
-    answer: 'one two three four five six',
-    evidence: [
-      { timestamp: '0:03', description: 'A title appears.', modality: 'visual' },
-      { timestamp: '0:08', description: 'The speaker starts.', modality: 'spoken' },
-    ],
-    caveats: ['Existing caveat'],
-  }, { maxWatchOutputChars: 18, maxEvidenceItems: 1 })
+  const result = normalizeWatchResponse(
+    {
+      answer: 'one two three four five six',
+      evidence: [
+        { timestamp: '0:03', description: 'A title appears.', modality: 'visual' },
+        { timestamp: '0:08', description: 'The speaker starts.', modality: 'spoken' },
+      ],
+      caveats: ['Existing caveat'],
+    },
+    { maxWatchOutputChars: 18, maxEvidenceItems: 1 },
+  )
 
   assert.equal(result.answer, 'one two three')
   assert.equal(result.evidence.length, 1)
@@ -219,11 +228,14 @@ test('normalizes bounded watch output and records truncation caveats', () => {
 })
 
 test('retains local truncation notices when Gemini returns the caveat limit', () => {
-  const result = normalizeWatchResponse({
-    answer: 'This answer must be shortened.',
-    evidence: [],
-    caveats: Array.from({ length: 20 }, (_value, index) => `Provider caveat ${index + 1}`),
-  }, { maxWatchOutputChars: 12, maxEvidenceItems: 4 })
+  const result = normalizeWatchResponse(
+    {
+      answer: 'This answer must be shortened.',
+      evidence: [],
+      caveats: Array.from({ length: 20 }, (_value, index) => `Provider caveat ${index + 1}`),
+    },
+    { maxWatchOutputChars: 12, maxEvidenceItems: 4 },
+  )
 
   assert.equal(result.caveats.length, 20)
   assert.ok(result.caveats.includes('The answer was truncated by the configured output limit.'))
@@ -231,47 +243,71 @@ test('retains local truncation notices when Gemini returns the caveat limit', ()
 })
 
 test('rejects invalid evidence rather than silently accepting it', () => {
-  assert.throws(() => normalizeWatchResponse({
-    answer: 'Answer',
-    evidence: [{ timestamp: 'later', description: 'Something', modality: 'visual' }],
-    caveats: [],
-  }, { maxWatchOutputChars: 100, maxEvidenceItems: 4 }), /timestamp/)
+  assert.throws(
+    () =>
+      normalizeWatchResponse(
+        {
+          answer: 'Answer',
+          evidence: [{ timestamp: 'later', description: 'Something', modality: 'visual' }],
+          caveats: [],
+        },
+        { maxWatchOutputChars: 100, maxEvidenceItems: 4 },
+      ),
+    /timestamp/,
+  )
 })
 
 test('normalizes, sorts, and truncates transcript at segment boundaries', () => {
-  const result = normalizeTranscriptResponse({
-    duration_seconds: 20,
-    language: 'English',
-    speakers: ['Host'],
-    segments: [
-      { start_seconds: 9, text: 'Second sentence.', speaker: 'Guest' },
-      { start_seconds: 2, text: 'First sentence.', speaker: 'Host' },
-      { start_seconds: 20, text: 'Third sentence is too long for the cap.', speaker: '' },
-    ],
-  }, 75)
+  const result = normalizeTranscriptResponse(
+    {
+      duration_seconds: 20,
+      language: 'English',
+      speakers: ['Host'],
+      segments: [
+        { start_seconds: 9, text: 'Second sentence.', speaker: 'Guest' },
+        { start_seconds: 2, text: 'First sentence.', speaker: 'Host' },
+        { start_seconds: 20, text: 'Third sentence is too long for the cap.', speaker: '' },
+      ],
+    },
+    75,
+  )
 
-  assert.deepEqual(result.segments.map((segment) => segment.startSeconds), [2, 9])
+  assert.deepEqual(
+    result.segments.map((segment) => segment.startSeconds),
+    [2, 9],
+  )
   assert.deepEqual(result.speakers, ['Host', 'Guest'])
   assert.equal(result.truncated, true)
   assert.match(formatTranscriptOutput({ videoId: VIDEO_ID, ...result }), /transcript truncated/i)
 })
 
 test('rejects transcript timestamps beyond independently verified duration', () => {
-  assert.throws(() => normalizeTranscriptResponse({
-    duration_seconds: 99,
-    language: 'English',
-    speakers: [],
-    segments: [{ start_seconds: 21, text: 'Too late.', speaker: '' }],
-  }, 1_000, { durationSeconds: 20 }), /beyond the video duration/)
+  assert.throws(
+    () =>
+      normalizeTranscriptResponse(
+        {
+          duration_seconds: 99,
+          language: 'English',
+          speakers: [],
+          segments: [{ start_seconds: 21, text: 'Too late.', speaker: '' }],
+        },
+        1_000,
+        { durationSeconds: 20 },
+      ),
+    /beyond the video duration/,
+  )
 })
 
 test('marks transcript timestamps unverified when duration lookup is unavailable', () => {
-  const result = normalizeTranscriptResponse({
-    duration_seconds: 20,
-    language: 'English',
-    speakers: [],
-    segments: [{ start_seconds: 19, text: 'Near the end.', speaker: '' }],
-  }, 1_000)
+  const result = normalizeTranscriptResponse(
+    {
+      duration_seconds: 20,
+      language: 'English',
+      speakers: [],
+      segments: [{ start_seconds: 19, text: 'Near the end.', speaker: '' }],
+    },
+    1_000,
+  )
 
   assert.equal(result.timestampVerified, false)
   assert.deepEqual(result.caveats, [
@@ -283,22 +319,36 @@ test('rejects transcript segments with a missing or non-string speaker', () => {
   for (const speaker of [undefined, null, 42]) {
     const segment = { start_seconds: 1, text: 'Hello.' }
     if (speaker !== undefined) segment.speaker = speaker
-    assert.throws(() => normalizeTranscriptResponse({
-      duration_seconds: 10,
-      language: 'English',
-      speakers: [],
-      segments: [segment],
-    }, 1_000), /transcript speaker/)
+    assert.throws(
+      () =>
+        normalizeTranscriptResponse(
+          {
+            duration_seconds: 10,
+            language: 'English',
+            speakers: [],
+            segments: [segment],
+          },
+          1_000,
+        ),
+      /transcript speaker/,
+    )
   }
 })
 
 test('rejects non-safe transcript timestamps', () => {
-  assert.throws(() => normalizeTranscriptResponse({
-    duration_seconds: 10,
-    language: 'English',
-    speakers: [],
-    segments: [{ start_seconds: 1e100, text: 'Hello.', speaker: '' }],
-  }, 1_000), /transcript timestamp/)
+  assert.throws(
+    () =>
+      normalizeTranscriptResponse(
+        {
+          duration_seconds: 10,
+          language: 'English',
+          speakers: [],
+          segments: [{ start_seconds: 1e100, text: 'Hello.', speaker: '' }],
+        },
+        1_000,
+      ),
+    /transcript timestamp/,
+  )
 })
 
 test('default ceilings admit a two-hour chunked transcript estimate', () => {
@@ -308,23 +358,28 @@ test('default ceilings admit a two-hour chunked transcript estimate', () => {
     overlapSeconds: options.chunkOverlapSeconds,
   })
   const budget = createYoutubeOperationBudget(options)
-  const projection = budget.assertCanFit(chunks.map((chunk) => ({
-    mediaSeconds: chunk.clipEndSeconds - chunk.clipStartSeconds,
-    textChars: 1_000,
-  })), { operation: 'transcription' })
+  const projection = budget.assertCanFit(
+    chunks.map((chunk) => ({
+      mediaSeconds: chunk.clipEndSeconds - chunk.clipStartSeconds,
+      textChars: 1_000,
+    })),
+    { operation: 'transcription' },
+  )
   assert.equal(chunks.length, 8)
   assert.ok(projection.projectedTokens < options.maxEstimatedInputTokens)
 })
 
 test('watch rejects extreme duration before creating a paid provider client', async () => {
   let created = false
-  const client = new GeminiYoutubeClient(clientOptions({
-    durationFetcher: async () => DEFAULT_MAX_VIDEO_DURATION_SECONDS + 1,
-    clientFactory: () => {
-      created = true
-      return fakeGeminiClient(async () => {})
-    },
-  }))
+  const client = new GeminiYoutubeClient(
+    clientOptions({
+      durationFetcher: async () => DEFAULT_MAX_VIDEO_DURATION_SECONDS + 1,
+      clientFactory: () => {
+        created = true
+        return fakeGeminiClient(async () => {})
+      },
+    }),
+  )
   await assert.rejects(
     client.watch({ url: WATCH_URL, question: 'What happens?' }),
     (error) => error.code === 'VIDEO_DURATION_LIMIT_EXCEEDED',
@@ -334,10 +389,15 @@ test('watch rejects extreme duration before creating a paid provider client', as
 
 test('zero-duration watch is rejected as live or upcoming before provider work', async () => {
   let created = false
-  const client = new GeminiYoutubeClient(clientOptions({
-    durationFetcher: async () => 0,
-    clientFactory: () => { created = true; return {} },
-  }))
+  const client = new GeminiYoutubeClient(
+    clientOptions({
+      durationFetcher: async () => 0,
+      clientFactory: () => {
+        created = true
+        return {}
+      },
+    }),
+  )
   await assert.rejects(
     client.watch({ url: WATCH_URL, question: 'What happens?' }),
     (error) => error.code === 'VIDEO_NOT_READY',
@@ -347,18 +407,21 @@ test('zero-duration watch is rejected as live or upcoming before provider work',
 
 test('explicit provider retries consume the exact shared call ceiling', async () => {
   let calls = 0
-  const client = new GeminiYoutubeClient(clientOptions({
-    durationFetcher: async () => 10,
-    maxProviderCalls: 2,
-    providerRequestRetries: 3,
-    clientFactory: () => fakeGeminiClient(async (_request, options) => {
-      calls += 1
-      assert.equal(options.maxRetries, 0)
-      const error = new Error('retryable')
-      error.status = 500
-      throw error
+  const client = new GeminiYoutubeClient(
+    clientOptions({
+      durationFetcher: async () => 10,
+      maxProviderCalls: 2,
+      providerRequestRetries: 3,
+      clientFactory: () =>
+        fakeGeminiClient(async (_request, options) => {
+          calls += 1
+          assert.equal(options.maxRetries, 0)
+          const error = new Error('retryable')
+          error.status = 500
+          throw error
+        }),
     }),
-  }))
+  )
   await assert.rejects(
     client.watch({ url: WATCH_URL, question: 'What happens?' }),
     (error) => error.code === 'PROVIDER_CALL_LIMIT_EXCEEDED',
@@ -368,25 +431,32 @@ test('explicit provider retries consume the exact shared call ceiling', async ()
 
 test('watch sends canonical YouTube input, structured schema, and request controls', async () => {
   let observed
-  const client = new GeminiYoutubeClient(clientOptions({
-    durationFetcher: async () => 20,
-    clientFactory(apiKey) {
-      assert.equal(apiKey, 'gemini-test-key')
-      return fakeGeminiClient(async (request, options) => {
-        observed = { request, options }
-        return fakeInteraction({
-          answer: 'The presenter shows a red device.',
-          evidence: [{ timestamp: '0:12', description: 'A red device is held up.', modality: 'visual' }],
-          caveats: [],
+  const client = new GeminiYoutubeClient(
+    clientOptions({
+      durationFetcher: async () => 20,
+      clientFactory(apiKey) {
+        assert.equal(apiKey, 'gemini-test-key')
+        return fakeGeminiClient(async (request, options) => {
+          observed = { request, options }
+          return fakeInteraction({
+            answer: 'The presenter shows a red device.',
+            evidence: [
+              { timestamp: '0:12', description: 'A red device is held up.', modality: 'visual' },
+            ],
+            caveats: [],
+          })
         })
-      })
-    },
-  }))
+      },
+    }),
+  )
   const controller = new AbortController()
-  const result = await client.watch({
-    url: `https://youtu.be/${VIDEO_ID}?si=x`,
-    question: 'What object is shown?',
-  }, controller.signal)
+  const result = await client.watch(
+    {
+      url: `https://youtu.be/${VIDEO_ID}?si=x`,
+      question: 'What object is shown?',
+    },
+    controller.signal,
+  )
 
   assert.equal(result.videoId, VIDEO_ID)
   assert.equal(observed.request.model, DEFAULT_MODEL)
@@ -406,28 +476,33 @@ test('watch sends canonical YouTube input, structured schema, and request contro
 
 test('adaptive watch chunks long global questions and reduces verified evidence', async () => {
   const requests = []
-  const client = new GeminiYoutubeClient(clientOptions({
-    durationFetcher: async () => 1_800,
-    maximumWatchCoreSeconds: 900,
-    watchChunkOverlapSeconds: 15,
-    clientFactory: () => fakeGeminiClient(async (request) => {
-      requests.push(request)
-      const media = request.input[0]
-      if (media.type !== 'video') {
-        return fakeInteraction({ answer: 'Combined answer.', caveats: [] })
-      }
-      const clipStart = Number.parseInt(media.processing.start_offset ?? '0', 10)
-      return fakeInteraction({
-        answer: `Interval ${clipStart}`,
-        evidence: [{
-          timestamp: clipStart === 0 ? '0:10' : '0:20',
-          description: `Evidence ${clipStart}`,
-          modality: 'visual',
-        }],
-        caveats: [],
-      })
+  const client = new GeminiYoutubeClient(
+    clientOptions({
+      durationFetcher: async () => 1_800,
+      maximumWatchCoreSeconds: 900,
+      watchChunkOverlapSeconds: 15,
+      clientFactory: () =>
+        fakeGeminiClient(async (request) => {
+          requests.push(request)
+          const media = request.input[0]
+          if (media.type !== 'video') {
+            return fakeInteraction({ answer: 'Combined answer.', caveats: [] })
+          }
+          const clipStart = Number.parseInt(media.processing.start_offset ?? '0', 10)
+          return fakeInteraction({
+            answer: `Interval ${clipStart}`,
+            evidence: [
+              {
+                timestamp: clipStart === 0 ? '0:10' : '0:20',
+                description: `Evidence ${clipStart}`,
+                modality: 'visual',
+              },
+            ],
+            caveats: [],
+          })
+        }),
     }),
-  }))
+  )
 
   const result = await client.watch({ url: WATCH_URL, question: 'Summarize the whole video.' })
   assert.equal(result.answer, 'Combined answer.')
@@ -436,25 +511,31 @@ test('adaptive watch chunks long global questions and reduces verified evidence'
   assert.equal(result.processing.chunksCompleted, 2)
   assert.equal(result.processing.coverage.complete, true)
   assert.equal(result.processing.providerCalls, 3)
-  assert.deepEqual(result.evidence.map((item) => item.startSeconds), [10, 905])
+  assert.deepEqual(
+    result.evidence.map((item) => item.startSeconds),
+    [10, 905],
+  )
   assert.equal(requests.filter((request) => request.input[0].type === 'video').length, 2)
   assert.equal(requests.filter((request) => request.input[0].type === 'text').length, 1)
 })
 
 test('short transcript sends one native YouTube structured request', async () => {
   let observedRequest
-  const client = new GeminiYoutubeClient(clientOptions({
-    durationFetcher: async () => 10,
-    clientFactory: () => fakeGeminiClient(async (request) => {
-      observedRequest = request
-      return fakeInteraction({
-        duration_seconds: 10,
-        language: 'English',
-        speakers: ['Narrator'],
-        segments: [{ start_seconds: 4, text: 'Hello world.', speaker: 'Narrator' }],
-      })
+  const client = new GeminiYoutubeClient(
+    clientOptions({
+      durationFetcher: async () => 10,
+      clientFactory: () =>
+        fakeGeminiClient(async (request) => {
+          observedRequest = request
+          return fakeInteraction({
+            duration_seconds: 10,
+            language: 'English',
+            speakers: ['Narrator'],
+            segments: [{ start_seconds: 4, text: 'Hello world.', speaker: 'Narrator' }],
+          })
+        }),
     }),
-  }))
+  )
   const progress = []
   const result = await client.transcript(
     { url: WATCH_URL },
@@ -475,34 +556,36 @@ test('short transcript sends one native YouTube structured request', async () =>
       chunksCompleted: 1,
       chunksTotal: 1,
       collectedSegments: 1,
-      intervals: [{
-        id: '1',
-        index: 0,
-        startSeconds: 0,
-        endSeconds: 10,
-        status: 'complete',
-        attempt: 1,
-        segmentCount: 1,
-      }],
+      intervals: [
+        {
+          id: '1',
+          index: 0,
+          startSeconds: 0,
+          endSeconds: 10,
+          status: 'complete',
+          attempt: 1,
+          segmentCount: 1,
+        },
+      ],
       providerCalls: 1,
       providerCallLimit: 64,
       estimatedInputTokens: 5430,
       estimatedInputTokenLimit: 3_000_000,
-      attempts: [{
-        index: 1,
-        operation: 'transcription',
-        kind: 'transcript-primary',
-        estimatedInputTokens: 5430,
-      }],
+      attempts: [
+        {
+          index: 1,
+          operation: 'transcription',
+          kind: 'transcript-primary',
+          estimatedInputTokens: 5430,
+        },
+      ],
     },
   })
   assert.deepEqual(observedRequest.input[0], { type: 'video', uri: WATCH_URL })
-  assert.deepEqual(progress.map((value) => value.phase), [
-    'inspecting',
-    'transcribing',
-    'transcribing',
-    'complete',
-  ])
+  assert.deepEqual(
+    progress.map((value) => value.phase),
+    ['inspecting', 'transcribing', 'transcribing', 'complete'],
+  )
   assert.deepEqual(progress.at(-1), {
     phase: 'complete',
     strategy: 'direct',
@@ -511,15 +594,17 @@ test('short transcript sends one native YouTube structured request', async () =>
     completedChunks: 1,
     activeChunks: 0,
     collectedSegments: 1,
-    chunks: [{
-      id: '1',
-      index: 0,
-      startSeconds: 0,
-      endSeconds: 10,
-      status: 'complete',
-      attempt: 1,
-      segmentCount: 1,
-    }],
+    chunks: [
+      {
+        id: '1',
+        index: 0,
+        startSeconds: 0,
+        endSeconds: 10,
+        status: 'complete',
+        attempt: 1,
+        segmentCount: 1,
+      },
+    ],
     truncated: false,
   })
 })
@@ -527,21 +612,24 @@ test('short transcript sends one native YouTube structured request', async () =>
 test('uses independently fetched duration to verify transcript timestamps', async () => {
   let observedRequest
   let observedUrl
-  const client = new GeminiYoutubeClient(clientOptions({
-    durationFetcher: async (url) => {
-      observedUrl = url
-      return 1_200
-    },
-    clientFactory: () => fakeGeminiClient(async (request) => {
-      observedRequest = request
-      return fakeInteraction({
-        duration_seconds: 1_200,
-        language: 'English',
-        speakers: ['Narrator'],
-        segments: [{ start_seconds: 4, text: 'Hello world.', speaker: 'Narrator' }],
-      })
+  const client = new GeminiYoutubeClient(
+    clientOptions({
+      durationFetcher: async (url) => {
+        observedUrl = url
+        return 1_200
+      },
+      clientFactory: () =>
+        fakeGeminiClient(async (request) => {
+          observedRequest = request
+          return fakeInteraction({
+            duration_seconds: 1_200,
+            language: 'English',
+            speakers: ['Narrator'],
+            segments: [{ start_seconds: 4, text: 'Hello world.', speaker: 'Narrator' }],
+          })
+        }),
     }),
-  }))
+  )
 
   const result = await client.transcript({ url: WATCH_URL })
 
@@ -550,7 +638,8 @@ test('uses independently fetched duration to verify transcript timestamps', asyn
   assert.match(observedRequest.input[1].text, /authoritative video duration is 1200 seconds/)
   assert.deepEqual(observedRequest.response_format.schema.properties.duration_seconds.enum, [1_200])
   assert.equal(
-    observedRequest.response_format.schema.properties.segments.items.properties.start_seconds.maximum,
+    observedRequest.response_format.schema.properties.segments.items.properties.start_seconds
+      .maximum,
     1_200,
   )
   assert.equal(result.durationSeconds, 1_200)
@@ -561,38 +650,42 @@ test('uses independently fetched duration to verify transcript timestamps', asyn
 test('short transcript repairs invalid timestamps through one cached continuation', async () => {
   const requests = []
   const deleted = []
-  const client = new GeminiYoutubeClient(clientOptions({
-    durationFetcher: async () => 20,
-    clientFactory: () => ({
-      interactions: {
-        async create(request) {
-          requests.push(request)
-          if (request.previous_interaction_id === undefined) {
+  const client = new GeminiYoutubeClient(
+    clientOptions({
+      durationFetcher: async () => 20,
+      clientFactory: () => ({
+        interactions: {
+          async create(request) {
+            requests.push(request)
+            if (request.previous_interaction_id === undefined) {
+              return {
+                id: 'initial-transcript',
+                ...fakeInteraction({
+                  duration_seconds: 20,
+                  language: 'English',
+                  speakers: [],
+                  segments: [{ start_seconds: 21, text: 'Near the end.', speaker: '' }],
+                }),
+              }
+            }
             return {
-              id: 'initial-transcript',
+              id: 'corrected-transcript',
               ...fakeInteraction({
                 duration_seconds: 20,
                 language: 'English',
                 speakers: [],
-                segments: [{ start_seconds: 21, text: 'Near the end.', speaker: '' }],
+                segments: [{ start_seconds: 19, text: 'Near the end.', speaker: '' }],
               }),
             }
-          }
-          return {
-            id: 'corrected-transcript',
-            ...fakeInteraction({
-              duration_seconds: 20,
-              language: 'English',
-              speakers: [],
-              segments: [{ start_seconds: 19, text: 'Near the end.', speaker: '' }],
-            }),
-          }
+          },
+          async delete(id) {
+            deleted.push(id)
+          },
         },
-        async delete(id) { deleted.push(id) },
-      },
-      models: {},
+        models: {},
+      }),
     }),
-  }))
+  )
 
   const result = await client.transcript({ url: WATCH_URL })
 
@@ -612,25 +705,30 @@ test('short transcript repairs invalid timestamps through one cached continuatio
 test('short transcript rejects a second invalid timestamp result and deletes both interactions', async () => {
   let calls = 0
   const deleted = []
-  const client = new GeminiYoutubeClient(clientOptions({
-    durationFetcher: async () => 20,
-    clientFactory: () => fakeGeminiClient(
-      async () => {
-        calls += 1
-        return {
-          id: `invalid-${calls}`,
-          ...fakeInteraction({
-            duration_seconds: 20,
-            language: 'English',
-            speakers: [],
-            segments: [{ start_seconds: 21, text: 'Invalid timing.', speaker: '' }],
-          }),
-        }
-      },
-      undefined,
-      async (id) => { deleted.push(id) },
-    ),
-  }))
+  const client = new GeminiYoutubeClient(
+    clientOptions({
+      durationFetcher: async () => 20,
+      clientFactory: () =>
+        fakeGeminiClient(
+          async () => {
+            calls += 1
+            return {
+              id: `invalid-${calls}`,
+              ...fakeInteraction({
+                duration_seconds: 20,
+                language: 'English',
+                speakers: [],
+                segments: [{ start_seconds: 21, text: 'Invalid timing.', speaker: '' }],
+              }),
+            }
+          },
+          undefined,
+          async (id) => {
+            deleted.push(id)
+          },
+        ),
+    }),
+  )
 
   await assert.rejects(client.transcript({ url: WATCH_URL }), /beyond the video duration/)
   assert.equal(calls, 2)
@@ -639,23 +737,28 @@ test('short transcript rejects a second invalid timestamp result and deletes bot
 
 test('stateless transcript correction is text-only and never stores interactions', async () => {
   const requests = []
-  const client = new GeminiYoutubeClient(clientOptions({
-    durationFetcher: async () => 20,
-    statefulTranscriptCorrections: false,
-    clientFactory: () => fakeGeminiClient(async (request) => {
-      requests.push(request)
-      return fakeInteraction({
-        duration_seconds: 20,
-        language: 'English',
-        speakers: [],
-        segments: [{
-          start_seconds: requests.length === 1 ? 21 : 19,
-          text: 'Near the end.',
-          speaker: '',
-        }],
-      })
+  const client = new GeminiYoutubeClient(
+    clientOptions({
+      durationFetcher: async () => 20,
+      statefulTranscriptCorrections: false,
+      clientFactory: () =>
+        fakeGeminiClient(async (request) => {
+          requests.push(request)
+          return fakeInteraction({
+            duration_seconds: 20,
+            language: 'English',
+            speakers: [],
+            segments: [
+              {
+                start_seconds: requests.length === 1 ? 21 : 19,
+                text: 'Near the end.',
+                speaker: '',
+              },
+            ],
+          })
+        }),
     }),
-  }))
+  )
 
   const result = await client.transcript({ url: WATCH_URL })
 
@@ -671,113 +774,130 @@ test('stateless transcript correction is text-only and never stores interactions
 test('reports bounded usage and does not let cleanup failure mask success', async () => {
   const usageReports = []
   const cleanupFailures = []
-  const client = new GeminiYoutubeClient(clientOptions({
-    durationFetcher: async () => 10,
-    reportUsage: (usage) => usageReports.push(usage),
-    reportCleanupFailure: (...args) => cleanupFailures.push(args),
-    clientFactory: () => fakeGeminiClient(
-      async () => ({
-        id: 'stored-success',
-        usage: {
-          total_input_tokens: 12_000,
-          total_cached_tokens: 10_000,
-          total_output_tokens: 500,
-        },
-        ...fakeInteraction({
-          duration_seconds: 10,
-          language: 'English',
-          speakers: [],
-          segments: [{ start_seconds: 1, text: 'Hello.', speaker: '' }],
-        }),
-      }),
-      undefined,
-      async () => {
-        const error = new Error('private cleanup detail')
-        error.status = 503
-        throw error
-      },
-    ),
-  }))
+  const client = new GeminiYoutubeClient(
+    clientOptions({
+      durationFetcher: async () => 10,
+      reportUsage: (usage) => usageReports.push(usage),
+      reportCleanupFailure: (...args) => cleanupFailures.push(args),
+      clientFactory: () =>
+        fakeGeminiClient(
+          async () => ({
+            id: 'stored-success',
+            usage: {
+              total_input_tokens: 12_000,
+              total_cached_tokens: 10_000,
+              total_output_tokens: 500,
+            },
+            ...fakeInteraction({
+              duration_seconds: 10,
+              language: 'English',
+              speakers: [],
+              segments: [{ start_seconds: 1, text: 'Hello.', speaker: '' }],
+            }),
+          }),
+          undefined,
+          async () => {
+            const error = new Error('private cleanup detail')
+            error.status = 503
+            throw error
+          },
+        ),
+    }),
+  )
 
   const result = await client.transcript({ url: WATCH_URL })
 
   assert.equal(result.segments[0].text, 'Hello.')
-  assert.deepEqual(usageReports, [{
-    operation: 'transcription',
-    inputTokens: 12_000,
-    cachedTokens: 10_000,
-    outputTokens: 500,
-  }])
+  assert.deepEqual(usageReports, [
+    {
+      operation: 'transcription',
+      inputTokens: 12_000,
+      cachedTokens: 10_000,
+      outputTokens: 500,
+    },
+  ])
   assert.deepEqual(cleanupFailures, [['transcription', 503]])
 })
 
 test('usage reporting preserves unknown optional token counts', async () => {
   const usageReports = []
-  const client = new GeminiYoutubeClient(clientOptions({
-    durationFetcher: async () => 10,
-    reportUsage: (usage) => usageReports.push(usage),
-    clientFactory: () => fakeGeminiClient(async () => ({
-      usage: { total_input_tokens: 12_000 },
-      ...fakeInteraction({
-        duration_seconds: 10,
-        language: 'English',
-        speakers: [],
-        segments: [{ start_seconds: 1, text: 'Hello.', speaker: '' }],
-      }),
-    })),
-  }))
+  const client = new GeminiYoutubeClient(
+    clientOptions({
+      durationFetcher: async () => 10,
+      reportUsage: (usage) => usageReports.push(usage),
+      clientFactory: () =>
+        fakeGeminiClient(async () => ({
+          usage: { total_input_tokens: 12_000 },
+          ...fakeInteraction({
+            duration_seconds: 10,
+            language: 'English',
+            speakers: [],
+            segments: [{ start_seconds: 1, text: 'Hello.', speaker: '' }],
+          }),
+        })),
+    }),
+  )
 
   await client.transcript({ url: WATCH_URL })
 
-  assert.deepEqual(usageReports, [{
-    operation: 'transcription',
-    inputTokens: 12_000,
-    cachedTokens: undefined,
-    outputTokens: undefined,
-  }])
+  assert.deepEqual(usageReports, [
+    {
+      operation: 'transcription',
+      inputTokens: 12_000,
+      cachedTokens: undefined,
+      outputTokens: undefined,
+    },
+  ])
 })
 
 test('reports safe interaction diagnostics when transcript output is empty', async () => {
-  const client = new GeminiYoutubeClient(clientOptions({
-    durationFetcher: async () => 10,
-    clientFactory: () => fakeGeminiClient(async () => ({
-      status: 'completed',
-      output_text: '',
-      errors: [
-        { code: 'SAFETY_BLOCKED', message: 'private provider detail' },
-        { code: 'secret-token-123', message: 'ignored credential-shaped code' },
-        { code: 'unsafe code with spaces', message: 'ignored' },
-      ],
-    })),
-  }))
+  const client = new GeminiYoutubeClient(
+    clientOptions({
+      durationFetcher: async () => 10,
+      clientFactory: () =>
+        fakeGeminiClient(async () => ({
+          status: 'completed',
+          output_text: '',
+          errors: [
+            { code: 'SAFETY_BLOCKED', message: 'private provider detail' },
+            { code: 'secret-token-123', message: 'ignored credential-shaped code' },
+            { code: 'unsafe code with spaces', message: 'ignored' },
+          ],
+        })),
+    }),
+  )
 
   await assert.rejects(
     client.transcript({ url: WATCH_URL }),
-    (error) => error.message.includes('status: completed')
-      && error.message.includes('diagnostic codes: SAFETY_BLOCKED')
-      && !error.message.includes('private provider detail')
-      && !error.message.includes('secret-token-123')
-      && !error.message.includes('unsafe code with spaces'),
+    (error) =>
+      error.message.includes('status: completed') &&
+      error.message.includes('diagnostic codes: SAFETY_BLOCKED') &&
+      !error.message.includes('private provider detail') &&
+      !error.message.includes('secret-token-123') &&
+      !error.message.includes('unsafe code with spaces'),
   )
 })
 
 test('does not correct a direct timestamp error marked by content-filter metadata', async () => {
   let calls = 0
-  const client = new GeminiYoutubeClient(clientOptions({
-    durationFetcher: async () => 20,
-    clientFactory: () => fakeGeminiClient(async () => {
-      calls += 1
-      return {
-        ...fakeInteraction({
-          duration_seconds: 20,
-          language: 'English',
-          speakers: [],
-          segments: [{ start_seconds: 21, text: 'Filtered timing.', speaker: '' }],
+  const client = new GeminiYoutubeClient(
+    clientOptions({
+      durationFetcher: async () => 20,
+      clientFactory: () =>
+        fakeGeminiClient(async () => {
+          calls += 1
+          return {
+            ...fakeInteraction({
+              duration_seconds: 20,
+              language: 'English',
+              speakers: [],
+              segments: [{ start_seconds: 21, text: 'Filtered timing.', speaker: '' }],
+            }),
+            errors: [{ code: 'SAFETY_BLOCKED' }],
+          }
         }),
-        errors: [{ code: 'SAFETY_BLOCKED' }],
-      }
     }),
-  }))
+  )
 
   await assert.rejects(client.transcript({ url: WATCH_URL }), /beyond the video duration/)
   assert.equal(calls, 1)
@@ -786,45 +906,53 @@ test('does not correct a direct timestamp error marked by content-filter metadat
 test('retries only the clipped chunk that returns invalid timestamps', async () => {
   const requests = []
   let secondChunkCalls = 0
-  const client = new GeminiYoutubeClient(clientOptions({
-    durationFetcher: async () => 1_260,
-    clientFactory: () => fakeGeminiClient(async (request) => {
-      requests.push(request)
-      if (request.previous_interaction_id !== undefined) {
-        secondChunkCalls += 1
-        return fakeInteraction({
-          duration_seconds: 645,
-          language: 'English',
-          speakers: [],
-          segments: [{ start_seconds: 16, text: 'Valid timing.', speaker: '' }],
-        })
-      }
-      const media = request.input[0]
-      const start = Number.parseInt(media.processing.start_offset, 10)
-      const end = media.processing.end_offset === undefined
-        ? 1_260
-        : Number.parseInt(media.processing.end_offset, 10)
-      if (start > 0) secondChunkCalls += 1
-      return {
-        ...(start > 0 ? { id: 'second-chunk' } : {}),
-        ...fakeInteraction({
-          duration_seconds: end - start,
-          language: 'English',
-          speakers: [],
-          segments: [{
-            start_seconds: start > 0 ? end - start + 1 : 16,
-            text: start > 0 ? 'Invalid timing.' : 'Valid timing.',
-            speaker: '',
-          }],
+  const client = new GeminiYoutubeClient(
+    clientOptions({
+      durationFetcher: async () => 1_260,
+      clientFactory: () =>
+        fakeGeminiClient(async (request) => {
+          requests.push(request)
+          if (request.previous_interaction_id !== undefined) {
+            secondChunkCalls += 1
+            return fakeInteraction({
+              duration_seconds: 645,
+              language: 'English',
+              speakers: [],
+              segments: [{ start_seconds: 16, text: 'Valid timing.', speaker: '' }],
+            })
+          }
+          const media = request.input[0]
+          const start = Number.parseInt(media.processing.start_offset, 10)
+          const end =
+            media.processing.end_offset === undefined
+              ? 1_260
+              : Number.parseInt(media.processing.end_offset, 10)
+          if (start > 0) secondChunkCalls += 1
+          return {
+            ...(start > 0 ? { id: 'second-chunk' } : {}),
+            ...fakeInteraction({
+              duration_seconds: end - start,
+              language: 'English',
+              speakers: [],
+              segments: [
+                {
+                  start_seconds: start > 0 ? end - start + 1 : 16,
+                  text: start > 0 ? 'Invalid timing.' : 'Valid timing.',
+                  speaker: '',
+                },
+              ],
+            }),
+          }
         }),
-      }
     }),
-  }))
+  )
 
   const result = await client.transcript({ url: WATCH_URL })
   assert.equal(requests.length, 3)
   assert.equal(secondChunkCalls, 2)
-  const correctionRequest = requests.find((request) => request.previous_interaction_id !== undefined)
+  const correctionRequest = requests.find(
+    (request) => request.previous_interaction_id !== undefined,
+  )
   assert.ok(correctionRequest)
   assert.equal(correctionRequest.previous_interaction_id, 'second-chunk')
   assert.equal(correctionRequest.input.length, 1)
@@ -835,20 +963,19 @@ test('retries only the clipped chunk that returns invalid timestamps', async () 
 
 test('fails safely when duration lookup is unavailable', async () => {
   let created = false
-  const client = new GeminiYoutubeClient(clientOptions({
-    durationFetcher: async () => {
-      throw new Error('YouTube unavailable')
-    },
-    clientFactory: () => {
-      created = true
-      return {}
-    },
-  }))
-
-  await assert.rejects(
-    client.transcript({ url: WATCH_URL }),
-    /duration could not be determined/,
+  const client = new GeminiYoutubeClient(
+    clientOptions({
+      durationFetcher: async () => {
+        throw new Error('YouTube unavailable')
+      },
+      clientFactory: () => {
+        created = true
+        return {}
+      },
+    }),
   )
+
+  await assert.rejects(client.transcript({ url: WATCH_URL }), /duration could not be determined/)
   assert.equal(created, false)
 })
 
@@ -858,50 +985,59 @@ test('long transcript uses balanced clipped Gemini calls with bounded concurrenc
   let maxActive = 0
   const progress = []
   const signal = new AbortController().signal
-  const client = new GeminiYoutubeClient(clientOptions({
-    durationFetcher: async () => 7_200,
-    clientFactory: () => fakeGeminiClient(
-      async (request) => {
-        requests.push(request)
-        active += 1
-        maxActive = Math.max(maxActive, active)
-        await new Promise((resolve) => setImmediate(resolve))
-        active -= 1
-        const media = request.input[0]
-        const start = Number.parseInt(media.processing.start_offset, 10)
-        const end = media.processing.end_offset === undefined
-          ? 7_200
-          : Number.parseInt(media.processing.end_offset, 10)
-        const localStart = start === 0 ? 1 : 16
-        return {
-          id: `chunk-${start}`,
-          ...fakeInteraction({
-            duration_seconds: end - start,
-            language: 'English',
-            speakers: ['Narrator'],
-            segments: [{
-              start_seconds: localStart,
-              text: `Speech from core ${start === 0 ? 0 : start + 15}.`,
-              speaker: 'Narrator',
-            }],
-          }),
-        }
-      },
-      undefined,
-      async () => {
-        active += 1
-        maxActive = Math.max(maxActive, active)
-        await new Promise((resolve) => setImmediate(resolve))
-        active -= 1
-      },
-    ),
-  }))
+  const client = new GeminiYoutubeClient(
+    clientOptions({
+      durationFetcher: async () => 7_200,
+      clientFactory: () =>
+        fakeGeminiClient(
+          async (request) => {
+            requests.push(request)
+            active += 1
+            maxActive = Math.max(maxActive, active)
+            await new Promise((resolve) => setImmediate(resolve))
+            active -= 1
+            const media = request.input[0]
+            const start = Number.parseInt(media.processing.start_offset, 10)
+            const end =
+              media.processing.end_offset === undefined
+                ? 7_200
+                : Number.parseInt(media.processing.end_offset, 10)
+            const localStart = start === 0 ? 1 : 16
+            return {
+              id: `chunk-${start}`,
+              ...fakeInteraction({
+                duration_seconds: end - start,
+                language: 'English',
+                speakers: ['Narrator'],
+                segments: [
+                  {
+                    start_seconds: localStart,
+                    text: `Speech from core ${start === 0 ? 0 : start + 15}.`,
+                    speaker: 'Narrator',
+                  },
+                ],
+              }),
+            }
+          },
+          undefined,
+          async () => {
+            active += 1
+            maxActive = Math.max(maxActive, active)
+            await new Promise((resolve) => setImmediate(resolve))
+            active -= 1
+          },
+        ),
+    }),
+  )
 
-  const result = await client.transcript({ url: WATCH_URL }, signal, (value) => progress.push(value))
-  requests.sort((left, right) => Number.parseInt(
-    left.input[0].processing.start_offset,
-    10,
-  ) - Number.parseInt(right.input[0].processing.start_offset, 10))
+  const result = await client.transcript({ url: WATCH_URL }, signal, (value) =>
+    progress.push(value),
+  )
+  requests.sort(
+    (left, right) =>
+      Number.parseInt(left.input[0].processing.start_offset, 10) -
+      Number.parseInt(right.input[0].processing.start_offset, 10),
+  )
 
   assert.equal(requests.length, 8)
   assert.equal(maxActive, 2)
@@ -921,15 +1057,19 @@ test('long transcript uses balanced clipped Gemini calls with bounded concurrenc
   })
   assert.equal(requests[0].response_format.mime_type, 'application/json')
   assert.equal(requests[0].response_format.schema.type, 'object')
-  assert.equal(requests[0].response_format.schema.properties.segments.items.properties.start_seconds.maximum, 915)
+  assert.equal(
+    requests[0].response_format.schema.properties.segments.items.properties.start_seconds.maximum,
+    915,
+  )
   assert.equal(requests[0].store, true)
   assert.match(requests[0].system_instruction, /clipped interval/)
   assert.equal(result.durationSeconds, 7_200)
   assert.equal(result.timestampVerified, true)
   assert.equal(result.segments.length, 8)
-  assert.deepEqual(result.segments.map((segment) => segment.startSeconds), [
-    1, 901, 1_801, 2_701, 3_601, 4_501, 5_401, 6_301,
-  ])
+  assert.deepEqual(
+    result.segments.map((segment) => segment.startSeconds),
+    [1, 901, 1_801, 2_701, 3_601, 4_501, 5_401, 6_301],
+  )
   assert.equal(progress[0].phase, 'inspecting')
   assert.ok(progress.some((value) => value.phase === 'merging'))
   assert.deepEqual(progress.at(-1), {
@@ -956,25 +1096,30 @@ test('long transcript uses balanced clipped Gemini calls with bounded concurrenc
 test('falls back to one direct interaction when YouTube clipping is rejected', async () => {
   const requests = []
   const progress = []
-  const client = new GeminiYoutubeClient(clientOptions({
-    durationFetcher: async () => 1_260,
-    clientFactory: () => fakeGeminiClient(async (request) => {
-      requests.push(request)
-      if (request.input[0].processing !== undefined) {
-        const error = new Error('Static processing offsets are not supported.')
-        error.status = 400
-        throw error
-      }
-      return fakeInteraction({
-        duration_seconds: 1_260,
-        language: 'English',
-        speakers: ['Narrator'],
-        segments: [{ start_seconds: 5, text: 'Direct fallback.', speaker: 'Narrator' }],
-      })
+  const client = new GeminiYoutubeClient(
+    clientOptions({
+      durationFetcher: async () => 1_260,
+      clientFactory: () =>
+        fakeGeminiClient(async (request) => {
+          requests.push(request)
+          if (request.input[0].processing !== undefined) {
+            const error = new Error('Static processing offsets are not supported.')
+            error.status = 400
+            throw error
+          }
+          return fakeInteraction({
+            duration_seconds: 1_260,
+            language: 'English',
+            speakers: ['Narrator'],
+            segments: [{ start_seconds: 5, text: 'Direct fallback.', speaker: 'Narrator' }],
+          })
+        }),
     }),
-  }))
+  )
 
-  const result = await client.transcript({ url: WATCH_URL }, undefined, (value) => progress.push(value))
+  const result = await client.transcript({ url: WATCH_URL }, undefined, (value) =>
+    progress.push(value),
+  )
 
   assert.ok(requests.some((request) => request.input[0].processing !== undefined))
   assert.ok(requests.some((request) => request.input[0].processing === undefined))
@@ -989,44 +1134,52 @@ test('falls back to one direct interaction when YouTube clipping is rejected', a
 test('diagnoses a filtered chunk and stops on provider safety metadata', async () => {
   const interactionRequests = []
   const generateRequests = []
-  const client = new GeminiYoutubeClient(clientOptions({
-    durationFetcher: async () => 1_260,
-    clientFactory: () => fakeGeminiClient(
-      async (request) => {
-        interactionRequests.push(request)
-        const start = Number.parseInt(request.input[0].processing.start_offset, 10)
-        if (start === 0) {
-          return {
-            status: 'completed',
-            output_text: '{',
-            errors: [{ code: 'SAFETY_BLOCKED', message: 'untrusted provider text' }],
-          }
-        }
-        return fakeInteraction({
-          duration_seconds: 645,
-          language: 'English',
-          speakers: [],
-          segments: [{ start_seconds: 16, text: 'Sibling chunk.', speaker: '' }],
-        })
-      },
-      async (request) => {
-        generateRequests.push(request)
-        return {
-          promptFeedback: {
-            blockReason: 'OTHER',
-            safetyRatings: [{
-              category: 'HARM_CATEGORY_DANGEROUS_CONTENT',
-              probability: 'HIGH',
-              blocked: true,
-            }],
+  const client = new GeminiYoutubeClient(
+    clientOptions({
+      durationFetcher: async () => 1_260,
+      clientFactory: () =>
+        fakeGeminiClient(
+          async (request) => {
+            interactionRequests.push(request)
+            const start = Number.parseInt(request.input[0].processing.start_offset, 10)
+            if (start === 0) {
+              return {
+                status: 'completed',
+                output_text: '{',
+                errors: [{ code: 'SAFETY_BLOCKED', message: 'untrusted provider text' }],
+              }
+            }
+            return fakeInteraction({
+              duration_seconds: 645,
+              language: 'English',
+              speakers: [],
+              segments: [{ start_seconds: 16, text: 'Sibling chunk.', speaker: '' }],
+            })
           },
-          candidates: [{ finishReason: 'SAFETY' }],
-        }
-      },
-    ),
-  }))
+          async (request) => {
+            generateRequests.push(request)
+            return {
+              promptFeedback: {
+                blockReason: 'OTHER',
+                safetyRatings: [
+                  {
+                    category: 'HARM_CATEGORY_DANGEROUS_CONTENT',
+                    probability: 'HIGH',
+                    blocked: true,
+                  },
+                ],
+              },
+              candidates: [{ finishReason: 'SAFETY' }],
+            }
+          },
+        ),
+    }),
+  )
 
-  await assert.rejects(client.transcript({ url: WATCH_URL }), /blocked transcription chunk 1 \(SAFETY\)/)
+  await assert.rejects(
+    client.transcript({ url: WATCH_URL }),
+    /blocked transcription chunk 1 \(SAFETY\)/,
+  )
   assert.ok(interactionRequests.length >= 1)
   assert.ok(interactionRequests.every((request) => request.input[0].processing !== undefined))
   assert.equal(generateRequests.length, 1)
@@ -1051,71 +1204,77 @@ test('recovers only a filtered chunk through generateContent with global bounded
   const leave = () => {
     active -= 1
   }
-  const client = new GeminiYoutubeClient(clientOptions({
-    durationFetcher: async () => 1_260,
-    maxChunkConcurrency: 2,
-    clientFactory: () => fakeGeminiClient(
-      async (request) => {
-        interactionRequests.push(request)
-        await enter()
-        try {
-          const media = request.input[0]
-          const start = Number.parseInt(media.processing.start_offset, 10)
-          const end = media.processing.end_offset === undefined
-            ? 1_260
-            : Number.parseInt(media.processing.end_offset, 10)
-          if (start === 0) {
-            const error = new Error('Input blocked by filters')
-            error.status = 400
-            throw error
-          }
-          return fakeInteraction({
-            duration_seconds: end - start,
-            language: 'English',
-            speakers: ['Narrator'],
-            segments: [{ start_seconds: 16, text: 'Second core.', speaker: 'Narrator' }],
-          })
-        } finally {
-          leave()
-        }
-      },
-      async (request) => {
-        generateRequests.push(request)
-        await enter()
-        try {
-          return {
-            text: JSON.stringify({
-              duration_seconds: 645,
-              language: 'English',
-              speakers: ['Narrator'],
-              segments: [{ start_seconds: 1, text: 'Recovered first core.', speaker: 'Narrator' }],
-            }),
-            promptFeedback: { blockReason: 'SAFETY' },
-            candidates: [{ finishReason: 'RECITATION' }],
-          }
-        } finally {
-          leave()
-        }
-      },
-    ),
-  }))
-
-  const result = await client.transcript(
-    { url: WATCH_URL },
-    undefined,
-    (value) => progress.push(value),
+  const client = new GeminiYoutubeClient(
+    clientOptions({
+      durationFetcher: async () => 1_260,
+      maxChunkConcurrency: 2,
+      clientFactory: () =>
+        fakeGeminiClient(
+          async (request) => {
+            interactionRequests.push(request)
+            await enter()
+            try {
+              const media = request.input[0]
+              const start = Number.parseInt(media.processing.start_offset, 10)
+              const end =
+                media.processing.end_offset === undefined
+                  ? 1_260
+                  : Number.parseInt(media.processing.end_offset, 10)
+              if (start === 0) {
+                const error = new Error('Input blocked by filters')
+                error.status = 400
+                throw error
+              }
+              return fakeInteraction({
+                duration_seconds: end - start,
+                language: 'English',
+                speakers: ['Narrator'],
+                segments: [{ start_seconds: 16, text: 'Second core.', speaker: 'Narrator' }],
+              })
+            } finally {
+              leave()
+            }
+          },
+          async (request) => {
+            generateRequests.push(request)
+            await enter()
+            try {
+              return {
+                text: JSON.stringify({
+                  duration_seconds: 645,
+                  language: 'English',
+                  speakers: ['Narrator'],
+                  segments: [
+                    { start_seconds: 1, text: 'Recovered first core.', speaker: 'Narrator' },
+                  ],
+                }),
+                promptFeedback: { blockReason: 'SAFETY' },
+                candidates: [{ finishReason: 'RECITATION' }],
+              }
+            } finally {
+              leave()
+            }
+          },
+        ),
+    }),
   )
 
-  assert.deepEqual(result.segments.map((segment) => segment.text), [
-    'Recovered first core.',
-    'Second core.',
-  ])
+  const result = await client.transcript({ url: WATCH_URL }, undefined, (value) =>
+    progress.push(value),
+  )
+
+  assert.deepEqual(
+    result.segments.map((segment) => segment.text),
+    ['Recovered first core.', 'Second core.'],
+  )
   assert.equal(generateRequests.length, 1)
   assert.equal(generateRequests[0].config.responseJsonSchema.type, 'object')
   assert.match(result.caveats.join(' '), /recovered through a provider fallback/)
-  assert.ok(progress.some((value) => value.chunks?.some((chunk) => (
-    chunk.id === '1' && chunk.status === 'fallback'
-  ))))
+  assert.ok(
+    progress.some((value) =>
+      value.chunks?.some((chunk) => chunk.id === '1' && chunk.status === 'fallback'),
+    ),
+  )
   assert.equal(progress.at(-1).collectedSegments, 2)
   assert.ok(interactionRequests.length >= 2)
   assert.ok(maxActive <= 2)
@@ -1123,40 +1282,45 @@ test('recovers only a filtered chunk through generateContent with global bounded
 
 test('generateContent repairs invalid timestamps without re-sending video media', async () => {
   const generateRequests = []
-  const client = new GeminiYoutubeClient(clientOptions({
-    durationFetcher: async () => 1_260,
-    clientFactory: () => fakeGeminiClient(
-      async (request) => {
-        const start = Number.parseInt(request.input[0].processing.start_offset, 10)
-        if (start === 0) {
-          const error = new Error('Input blocked by filters')
-          error.status = 400
-          throw error
-        }
-        return fakeInteraction({
-          duration_seconds: 645,
-          language: 'English',
-          speakers: [],
-          segments: [{ start_seconds: 16, text: 'Second core.', speaker: '' }],
-        })
-      },
-      async (request) => {
-        generateRequests.push(request)
-        return {
-          text: JSON.stringify({
-            duration_seconds: 645,
-            language: 'English',
-            speakers: [],
-            segments: [{
-              start_seconds: generateRequests.length === 1 ? 646 : 629,
-              text: 'Recovered first core.',
-              speaker: '',
-            }],
-          }),
-        }
-      },
-    ),
-  }))
+  const client = new GeminiYoutubeClient(
+    clientOptions({
+      durationFetcher: async () => 1_260,
+      clientFactory: () =>
+        fakeGeminiClient(
+          async (request) => {
+            const start = Number.parseInt(request.input[0].processing.start_offset, 10)
+            if (start === 0) {
+              const error = new Error('Input blocked by filters')
+              error.status = 400
+              throw error
+            }
+            return fakeInteraction({
+              duration_seconds: 645,
+              language: 'English',
+              speakers: [],
+              segments: [{ start_seconds: 16, text: 'Second core.', speaker: '' }],
+            })
+          },
+          async (request) => {
+            generateRequests.push(request)
+            return {
+              text: JSON.stringify({
+                duration_seconds: 645,
+                language: 'English',
+                speakers: [],
+                segments: [
+                  {
+                    start_seconds: generateRequests.length === 1 ? 646 : 629,
+                    text: 'Recovered first core.',
+                    speaker: '',
+                  },
+                ],
+              }),
+            }
+          },
+        ),
+    }),
+  )
 
   const result = await client.transcript({ url: WATCH_URL })
 
@@ -1175,66 +1339,75 @@ test('generateContent repairs invalid timestamps without re-sending video media'
 test('retries only a blocklisted chunk with neutral wording', async () => {
   const generateRequests = []
   const progress = []
-  const client = new GeminiYoutubeClient(clientOptions({
-    durationFetcher: async () => 1_260,
-    clientFactory: () => fakeGeminiClient(
-      async (request) => {
-        const media = request.input[0]
-        const start = Number.parseInt(media.processing.start_offset, 10)
-        const end = media.processing.end_offset === undefined
-          ? 1_260
-          : Number.parseInt(media.processing.end_offset, 10)
-        if (start === 0) {
-          const error = new Error('Input blocked by filters')
-          error.status = 400
-          throw error
-        }
-        return fakeInteraction({
-          duration_seconds: end - start,
-          language: 'English',
-          speakers: [],
-          segments: [{ start_seconds: 16, text: 'Second core.', speaker: '' }],
-        })
-      },
-      async (request) => {
-        generateRequests.push(request)
-        if (generateRequests.length === 1) {
-          return {
-            text: JSON.stringify({
-              duration_seconds: 645,
+  const client = new GeminiYoutubeClient(
+    clientOptions({
+      durationFetcher: async () => 1_260,
+      clientFactory: () =>
+        fakeGeminiClient(
+          async (request) => {
+            const media = request.input[0]
+            const start = Number.parseInt(media.processing.start_offset, 10)
+            const end =
+              media.processing.end_offset === undefined
+                ? 1_260
+                : Number.parseInt(media.processing.end_offset, 10)
+            if (start === 0) {
+              const error = new Error('Input blocked by filters')
+              error.status = 400
+              throw error
+            }
+            return fakeInteraction({
+              duration_seconds: end - start,
               language: 'English',
               speakers: [],
-              segments: [{ start_seconds: 1, text: 'Missing speaker.' }],
-            }),
-            promptFeedback: { blockReason: 'BLOCKLIST' },
-            candidates: [],
-          }
-        }
-        return {
-          text: JSON.stringify({
-            duration_seconds: 645,
-            language: 'English',
-            speakers: [],
-            segments: [{ start_seconds: 2, text: 'Neutral recovery.', speaker: '' }],
-          }),
-        }
-      },
-    ),
-  }))
+              segments: [{ start_seconds: 16, text: 'Second core.', speaker: '' }],
+            })
+          },
+          async (request) => {
+            generateRequests.push(request)
+            if (generateRequests.length === 1) {
+              return {
+                text: JSON.stringify({
+                  duration_seconds: 645,
+                  language: 'English',
+                  speakers: [],
+                  segments: [{ start_seconds: 1, text: 'Missing speaker.' }],
+                }),
+                promptFeedback: { blockReason: 'BLOCKLIST' },
+                candidates: [],
+              }
+            }
+            return {
+              text: JSON.stringify({
+                duration_seconds: 645,
+                language: 'English',
+                speakers: [],
+                segments: [{ start_seconds: 2, text: 'Neutral recovery.', speaker: '' }],
+              }),
+            }
+          },
+        ),
+    }),
+  )
 
-  const result = await client.transcript(
-    { url: WATCH_URL },
-    undefined,
-    (value) => progress.push(value),
+  const result = await client.transcript({ url: WATCH_URL }, undefined, (value) =>
+    progress.push(value),
   )
 
   assert.equal(generateRequests.length, 2)
   assert.match(generateRequests[0].config.systemInstruction, /Transcribe every spoken word/)
-  assert.match(generateRequests[1].config.systemInstruction, /speech record for analysis and accessibility/)
+  assert.match(
+    generateRequests[1].config.systemInstruction,
+    /speech record for analysis and accessibility/,
+  )
   assert.doesNotMatch(generateRequests[1].config.systemInstruction, /every spoken word/)
-  assert.ok(progress.some((value) => value.chunks?.some((chunk) => (
-    chunk.id === '1' && chunk.status === 'neutral' && chunk.attempt >= 2
-  ))))
+  assert.ok(
+    progress.some((value) =>
+      value.chunks?.some(
+        (chunk) => chunk.id === '1' && chunk.status === 'neutral' && chunk.attempt >= 2,
+      ),
+    ),
+  )
   assert.equal(result.segments[0].text, 'Neutral recovery.')
 })
 
@@ -1254,53 +1427,58 @@ test('splits only a recitation-blocked chunk while preserving bounded parallel w
       active -= 1
     }
   }
-  const client = new GeminiYoutubeClient(clientOptions({
-    durationFetcher: async () => 1_260,
-    maxChunkConcurrency: 2,
-    clientFactory: () => fakeGeminiClient(
-      async (request) => withActivity(async () => {
-        interactionRequests.push(request)
-        const media = request.input[0]
-        const start = Number.parseInt(media.processing.start_offset, 10)
-        const end = media.processing.end_offset === undefined
-          ? 1_260
-          : Number.parseInt(media.processing.end_offset, 10)
-        if (start === 0 && end === 645) {
-          const error = new Error('Input blocked by filters')
-          error.status = 400
-          throw error
-        }
-        const segments = start === 0
-          ? [
-              { start_seconds: 1, text: 'Left recovery.', speaker: 'Narrator' },
-              { start_seconds: 314, text: 'Boundary phrase.', speaker: 'Narrator' },
-            ]
-          : start === 300
-            ? [
-                { start_seconds: 15, text: 'Boundary phrase.', speaker: 'Narrator' },
-                { start_seconds: 16, text: 'Right recovery.', speaker: 'Narrator' },
-              ]
-            : [{ start_seconds: 16, text: 'Second core.', speaker: 'Narrator' }]
-        return fakeInteraction({
-          duration_seconds: end - start,
-          language: 'English',
-          speakers: ['Narrator'],
-          segments,
-        })
-      }),
-      async (request) => withActivity(async () => {
-        generateRequests.push(request)
-        return {
-          candidates: [{ finishReason: 'RECITATION', content: { parts: [] } }],
-        }
-      }),
-    ),
-  }))
+  const client = new GeminiYoutubeClient(
+    clientOptions({
+      durationFetcher: async () => 1_260,
+      maxChunkConcurrency: 2,
+      clientFactory: () =>
+        fakeGeminiClient(
+          async (request) =>
+            withActivity(async () => {
+              interactionRequests.push(request)
+              const media = request.input[0]
+              const start = Number.parseInt(media.processing.start_offset, 10)
+              const end =
+                media.processing.end_offset === undefined
+                  ? 1_260
+                  : Number.parseInt(media.processing.end_offset, 10)
+              if (start === 0 && end === 645) {
+                const error = new Error('Input blocked by filters')
+                error.status = 400
+                throw error
+              }
+              const segments =
+                start === 0
+                  ? [
+                      { start_seconds: 1, text: 'Left recovery.', speaker: 'Narrator' },
+                      { start_seconds: 314, text: 'Boundary phrase.', speaker: 'Narrator' },
+                    ]
+                  : start === 300
+                    ? [
+                        { start_seconds: 15, text: 'Boundary phrase.', speaker: 'Narrator' },
+                        { start_seconds: 16, text: 'Right recovery.', speaker: 'Narrator' },
+                      ]
+                    : [{ start_seconds: 16, text: 'Second core.', speaker: 'Narrator' }]
+              return fakeInteraction({
+                duration_seconds: end - start,
+                language: 'English',
+                speakers: ['Narrator'],
+                segments,
+              })
+            }),
+          async (request) =>
+            withActivity(async () => {
+              generateRequests.push(request)
+              return {
+                candidates: [{ finishReason: 'RECITATION', content: { parts: [] } }],
+              }
+            }),
+        ),
+    }),
+  )
 
-  const result = await client.transcript(
-    { url: WATCH_URL },
-    undefined,
-    (value) => progress.push(value),
+  const result = await client.transcript({ url: WATCH_URL }, undefined, (value) =>
+    progress.push(value),
   )
   const intervals = interactionRequests.map((request) => {
     const processing = request.input[0].processing
@@ -1314,28 +1492,40 @@ test('splits only a recitation-blocked chunk while preserving bounded parallel w
   assert.ok(intervals.some(([start, end]) => start === 0 && end === 330))
   assert.ok(intervals.some(([start, end]) => start === 300 && end === 645))
   assert.equal(intervals.filter(([start]) => start === 615).length, 1)
-  assert.deepEqual(result.segments.map((segment) => segment.text), [
-    'Left recovery.',
-    'Boundary phrase.',
-    'Right recovery.',
-    'Second core.',
-  ])
-  assert.deepEqual(result.segments.map((segment) => segment.startSeconds), [1, 314, 316, 631])
+  assert.deepEqual(
+    result.segments.map((segment) => segment.text),
+    ['Left recovery.', 'Boundary phrase.', 'Right recovery.', 'Second core.'],
+  )
+  assert.deepEqual(
+    result.segments.map((segment) => segment.startSeconds),
+    [1, 314, 316, 631],
+  )
   assert.match(result.caveats.join(' '), /split into shorter intervals after RECITATION/)
-  assert.ok(progress.some((value) => value.chunks?.some((chunk) => (
-    chunk.id === '1' && chunk.status === 'fallback'
-  ))))
-  assert.ok(progress.some((value) => {
-    const splitLeaves = value.chunks?.filter((chunk) => chunk.id.startsWith('1.')) ?? []
-    return splitLeaves.length === 2 && splitLeaves.every((chunk) => chunk.status === 'splitting')
-  }))
-  assert.ok(progress.some((value) => value.chunks?.some((chunk) => (
-    chunk.id === '2' && chunk.status === 'complete'
-  )) && value.completedChunks < value.totalChunks))
+  assert.ok(
+    progress.some((value) =>
+      value.chunks?.some((chunk) => chunk.id === '1' && chunk.status === 'fallback'),
+    ),
+  )
+  assert.ok(
+    progress.some((value) => {
+      const splitLeaves = value.chunks?.filter((chunk) => chunk.id.startsWith('1.')) ?? []
+      return splitLeaves.length === 2 && splitLeaves.every((chunk) => chunk.status === 'splitting')
+    }),
+  )
+  assert.ok(
+    progress.some(
+      (value) =>
+        value.chunks?.some((chunk) => chunk.id === '2' && chunk.status === 'complete') &&
+        value.completedChunks < value.totalChunks,
+    ),
+  )
   assert.equal(progress.at(-1).totalChunks, 3)
   assert.equal(progress.at(-1).completedChunks, 3)
   assert.equal(progress.at(-1).collectedSegments, 5)
-  assert.deepEqual(progress.at(-1).chunks.map((chunk) => chunk.id), ['1.1', '1.2', '2'])
+  assert.deepEqual(
+    progress.at(-1).chunks.map((chunk) => chunk.id),
+    ['1.1', '1.2', '2'],
+  )
   assert.equal(result.processing.strategy, 'chunked')
   assert.equal(result.processing.chunksTotal, 3)
   assert.deepEqual(
@@ -1353,61 +1543,68 @@ test('awaits and aborts split siblings before publishing terminal progress', asy
   })
   let releaseRight
   const rightResult = new Promise((resolve) => {
-    releaseRight = () => resolve(fakeInteraction({
-      duration_seconds: 345,
-      language: 'English',
-      speakers: [],
-      segments: [{ start_seconds: 16, text: 'Late sibling.', speaker: '' }],
-    }))
-  })
-  let rightSignal
-  const client = new GeminiYoutubeClient(clientOptions({
-    durationFetcher: async () => 1_260,
-    maxChunkConcurrency: 2,
-    clientFactory: () => fakeGeminiClient(
-      async (request, options) => {
-        const media = request.input[0]
-        const start = Number.parseInt(media.processing.start_offset, 10)
-        const end = media.processing.end_offset === undefined
-          ? 1_260
-          : Number.parseInt(media.processing.end_offset, 10)
-        if (start === 0 && end === 645) {
-          const error = new Error('Input blocked by filters')
-          error.status = 400
-          throw error
-        }
-        if (start === 0 && end === 330) {
-          const error = new Error('Processing failed')
-          error.status = 400
-          throw error
-        }
-        if (start === 300 && end === 645) {
-          rightSignal = options.signal
-          notifyRightStarted()
-          return rightResult
-        }
-        return fakeInteraction({
-          duration_seconds: end - start,
+    releaseRight = () =>
+      resolve(
+        fakeInteraction({
+          duration_seconds: 345,
           language: 'English',
           speakers: [],
-          segments: [{ start_seconds: 16, text: 'Completed sibling.', speaker: '' }],
-        })
-      },
-      async () => ({
-        candidates: [{ finishReason: 'RECITATION', content: { parts: [] } }],
-      }),
-    ),
-  }))
+          segments: [{ start_seconds: 16, text: 'Late sibling.', speaker: '' }],
+        }),
+      )
+  })
+  let rightSignal
+  const client = new GeminiYoutubeClient(
+    clientOptions({
+      durationFetcher: async () => 1_260,
+      maxChunkConcurrency: 2,
+      clientFactory: () =>
+        fakeGeminiClient(
+          async (request, options) => {
+            const media = request.input[0]
+            const start = Number.parseInt(media.processing.start_offset, 10)
+            const end =
+              media.processing.end_offset === undefined
+                ? 1_260
+                : Number.parseInt(media.processing.end_offset, 10)
+            if (start === 0 && end === 645) {
+              const error = new Error('Input blocked by filters')
+              error.status = 400
+              throw error
+            }
+            if (start === 0 && end === 330) {
+              const error = new Error('Processing failed')
+              error.status = 400
+              throw error
+            }
+            if (start === 300 && end === 645) {
+              rightSignal = options.signal
+              notifyRightStarted()
+              return rightResult
+            }
+            return fakeInteraction({
+              duration_seconds: end - start,
+              language: 'English',
+              speakers: [],
+              segments: [{ start_seconds: 16, text: 'Completed sibling.', speaker: '' }],
+            })
+          },
+          async () => ({
+            candidates: [{ finishReason: 'RECITATION', content: { parts: [] } }],
+          }),
+        ),
+    }),
+  )
 
   let settled = false
-  const pending = client.transcript(
-    { url: WATCH_URL },
-    undefined,
-    (value) => progress.push(value),
-  )
+  const pending = client.transcript({ url: WATCH_URL }, undefined, (value) => progress.push(value))
   pending.then(
-    () => { settled = true },
-    () => { settled = true },
+    () => {
+      settled = true
+    },
+    () => {
+      settled = true
+    },
   )
   await rightStarted
   await new Promise((resolve) => setImmediate(resolve))
@@ -1426,32 +1623,35 @@ test('awaits and aborts split siblings before publishing terminal progress', asy
 test('bounds recursive MAX_TOKENS splitting by depth and minimum core size', async () => {
   const interactionStarts = []
   let generateCalls = 0
-  const client = new GeminiYoutubeClient(clientOptions({
-    durationFetcher: async () => 1_260,
-    maxChunkConcurrency: 2,
-    clientFactory: () => fakeGeminiClient(
-      async (request) => {
-        const media = request.input[0]
-        const start = Number.parseInt(media.processing.start_offset, 10)
-        interactionStarts.push(start)
-        if (start === 615) {
-          return fakeInteraction({
-            duration_seconds: 645,
-            language: 'English',
-            speakers: [],
-            segments: [{ start_seconds: 16, text: 'Completed sibling.', speaker: '' }],
-          })
-        }
-        const error = new Error('Input blocked by filters')
-        error.status = 400
-        throw error
-      },
-      async () => {
-        generateCalls += 1
-        return { candidates: [{ finishReason: 'MAX_TOKENS', content: { parts: [] } }] }
-      },
-    ),
-  }))
+  const client = new GeminiYoutubeClient(
+    clientOptions({
+      durationFetcher: async () => 1_260,
+      maxChunkConcurrency: 2,
+      clientFactory: () =>
+        fakeGeminiClient(
+          async (request) => {
+            const media = request.input[0]
+            const start = Number.parseInt(media.processing.start_offset, 10)
+            interactionStarts.push(start)
+            if (start === 615) {
+              return fakeInteraction({
+                duration_seconds: 645,
+                language: 'English',
+                speakers: [],
+                segments: [{ start_seconds: 16, text: 'Completed sibling.', speaker: '' }],
+              })
+            }
+            const error = new Error('Input blocked by filters')
+            error.status = 400
+            throw error
+          },
+          async () => {
+            generateCalls += 1
+            return { candidates: [{ finishReason: 'MAX_TOKENS', content: { parts: [] } }] }
+          },
+        ),
+    }),
+  )
 
   await assert.rejects(
     client.transcript({ url: WATCH_URL }),
@@ -1465,18 +1665,21 @@ test('bounds recursive MAX_TOKENS splitting by depth and minimum core size', asy
 
 test('does not retry an unclassified HTTP 400 as a full-video interaction', async () => {
   const requests = []
-  const client = new GeminiYoutubeClient(clientOptions({
-    durationFetcher: async () => 1_260,
-    clientFactory: () => fakeGeminiClient(async (request) => {
-      requests.push(request)
-      const error = new Error('Processing request failed')
-      error.status = 400
-      error.body = JSON.stringify({
-        error: { status: 'INVALID_ARGUMENT', message: 'Processing request failed.' },
-      })
-      throw error
+  const client = new GeminiYoutubeClient(
+    clientOptions({
+      durationFetcher: async () => 1_260,
+      clientFactory: () =>
+        fakeGeminiClient(async (request) => {
+          requests.push(request)
+          const error = new Error('Processing request failed')
+          error.status = 400
+          error.body = JSON.stringify({
+            error: { status: 'INVALID_ARGUMENT', message: 'Processing request failed.' },
+          })
+          throw error
+        }),
     }),
-  }))
+  )
 
   await assert.rejects(client.transcript({ url: WATCH_URL }), /provider rejected the request/)
   assert.ok(requests.length >= 1)
@@ -1489,20 +1692,23 @@ test('does not treat credential or quota failures as content-filter recovery', a
     [429, /rate limit or quota exceeded/],
   ]) {
     let generateCalls = 0
-    const client = new GeminiYoutubeClient(clientOptions({
-      durationFetcher: async () => 1_260,
-      clientFactory: () => fakeGeminiClient(
-        async () => {
-          const error = new Error('Request blocked by provider policy')
-          error.status = status
-          throw error
-        },
-        async () => {
-          generateCalls += 1
-          throw new Error('must not run')
-        },
-      ),
-    }))
+    const client = new GeminiYoutubeClient(
+      clientOptions({
+        durationFetcher: async () => 1_260,
+        clientFactory: () =>
+          fakeGeminiClient(
+            async () => {
+              const error = new Error('Request blocked by provider policy')
+              error.status = status
+              throw error
+            },
+            async () => {
+              generateCalls += 1
+              throw new Error('must not run')
+            },
+          ),
+      }),
+    )
 
     await assert.rejects(client.transcript({ url: WATCH_URL }), expected)
     assert.equal(generateCalls, 0)
@@ -1512,27 +1718,34 @@ test('does not treat credential or quota failures as content-filter recovery', a
 test('a failed chunk aborts siblings and prevents scheduling more chunks', async () => {
   const starts = []
   let siblingAborted = false
-  const client = new GeminiYoutubeClient(clientOptions({
-    durationFetcher: async () => 2_700,
-    providerRequestRetries: 0,
-    clientFactory: () => fakeGeminiClient(async (request, options) => {
-      const start = Number.parseInt(request.input[0].processing.start_offset, 10)
-      starts.push(start)
-      if (start === 0) {
-        const error = new Error('provider failed')
-        error.status = 500
-        throw error
-      }
-      return new Promise((_resolve, reject) => {
-        options.signal.addEventListener('abort', () => {
-          siblingAborted = true
-          const error = new Error('cancelled')
-          error.name = 'APIUserAbortError'
-          reject(error)
-        }, { once: true })
-      })
+  const client = new GeminiYoutubeClient(
+    clientOptions({
+      durationFetcher: async () => 2_700,
+      providerRequestRetries: 0,
+      clientFactory: () =>
+        fakeGeminiClient(async (request, options) => {
+          const start = Number.parseInt(request.input[0].processing.start_offset, 10)
+          starts.push(start)
+          if (start === 0) {
+            const error = new Error('provider failed')
+            error.status = 500
+            throw error
+          }
+          return new Promise((_resolve, reject) => {
+            options.signal.addEventListener(
+              'abort',
+              () => {
+                siblingAborted = true
+                const error = new Error('cancelled')
+                error.name = 'APIUserAbortError'
+                reject(error)
+              },
+              { once: true },
+            )
+          })
+        }),
     }),
-  }))
+  )
 
   await assert.rejects(client.transcript({ url: WATCH_URL }), /HTTP 500/)
   assert.equal(starts.length, 2)
@@ -1540,34 +1753,42 @@ test('a failed chunk aborts siblings and prevents scheduling more chunks', async
 })
 
 test('overlap merging removes exact cross-boundary duplicates without dropping distinct speech', async () => {
-  const client = new GeminiYoutubeClient(clientOptions({
-    durationFetcher: async () => 1_260,
-    clientFactory: () => fakeGeminiClient(async (request) => {
-      const media = request.input[0]
-      const start = Number.parseInt(media.processing.start_offset, 10)
-      const end = media.processing.end_offset === undefined
-        ? 1_260
-        : Number.parseInt(media.processing.end_offset, 10)
-      return fakeInteraction({
-        duration_seconds: end - start,
-        language: 'English',
-        speakers: ['Host'],
-        segments: start === 0
-          ? [{ start_seconds: 629, text: 'Boundary phrase.', speaker: 'Host' }]
-          : [
-              { start_seconds: 15, text: 'Boundary phrase.', speaker: 'Host' },
-              { start_seconds: 16, text: 'Distinct continuation.', speaker: 'Host' },
-            ],
-      })
+  const client = new GeminiYoutubeClient(
+    clientOptions({
+      durationFetcher: async () => 1_260,
+      clientFactory: () =>
+        fakeGeminiClient(async (request) => {
+          const media = request.input[0]
+          const start = Number.parseInt(media.processing.start_offset, 10)
+          const end =
+            media.processing.end_offset === undefined
+              ? 1_260
+              : Number.parseInt(media.processing.end_offset, 10)
+          return fakeInteraction({
+            duration_seconds: end - start,
+            language: 'English',
+            speakers: ['Host'],
+            segments:
+              start === 0
+                ? [{ start_seconds: 629, text: 'Boundary phrase.', speaker: 'Host' }]
+                : [
+                    { start_seconds: 15, text: 'Boundary phrase.', speaker: 'Host' },
+                    { start_seconds: 16, text: 'Distinct continuation.', speaker: 'Host' },
+                  ],
+          })
+        }),
     }),
-  }))
+  )
 
   const result = await client.transcript({ url: WATCH_URL })
-  assert.deepEqual(result.segments.map((segment) => segment.text), [
-    'Boundary phrase.',
-    'Distinct continuation.',
-  ])
-  assert.deepEqual(result.segments.map((segment) => segment.startSeconds), [629, 631])
+  assert.deepEqual(
+    result.segments.map((segment) => segment.text),
+    ['Boundary phrase.', 'Distinct continuation.'],
+  )
+  assert.deepEqual(
+    result.segments.map((segment) => segment.startSeconds),
+    [629, 631],
+  )
 })
 
 test('archives a complete transcript and serves later calls without Gemini generation', async () => {
@@ -1589,18 +1810,35 @@ test('archives a complete transcript and serves later calls without Gemini gener
         language: 'English',
         speakers: ['Narrator'],
         segments: [
-          { startSeconds: 1, timestamp: '0:01', text: 'First archived segment.', speaker: 'Narrator' },
-          { startSeconds: 60, timestamp: '1:00', text: 'Second archived segment.', speaker: 'Narrator' },
+          {
+            startSeconds: 1,
+            timestamp: '0:01',
+            text: 'First archived segment.',
+            speaker: 'Narrator',
+          },
+          {
+            startSeconds: 60,
+            timestamp: '1:00',
+            text: 'Second archived segment.',
+            speaker: 'Narrator',
+          },
         ],
         processing: {
           strategy: 'direct',
           chunksCompleted: 1,
           chunksTotal: 1,
           collectedSegments: 2,
-          intervals: [{
-            id: '1', index: 0, startSeconds: 0, endSeconds: 120,
-            status: 'complete', attempt: 1, segmentCount: 2,
-          }],
+          intervals: [
+            {
+              id: '1',
+              index: 0,
+              startSeconds: 0,
+              endSeconds: 120,
+              status: 'complete',
+              attempt: 1,
+              segmentCount: 2,
+            },
+          ],
         },
         truncated: false,
       }
@@ -1649,10 +1887,19 @@ test('keeps an oversized first segment archived while bounding the initial page'
           caveats: [],
           language: 'English',
           speakers: [],
-          segments: [{ startSeconds: 1, timestamp: '0:01', text: 'A segment longer than the initial output cap.' }],
+          segments: [
+            {
+              startSeconds: 1,
+              timestamp: '0:01',
+              text: 'A segment longer than the initial output cap.',
+            },
+          ],
           processing: {
-            strategy: 'direct', chunksCompleted: 1, chunksTotal: 1,
-            collectedSegments: 1, intervals: [],
+            strategy: 'direct',
+            chunksCompleted: 1,
+            chunksTotal: 1,
+            collectedSegments: 1,
+            intervals: [],
           },
           truncated: false,
         }
@@ -1675,7 +1922,9 @@ test('single-flight shares generation and isolates follower cancellation', async
   const store = new YoutubeTranscriptArchive({ path: ':memory:' })
   let generations = 0
   let release
-  const gate = new Promise((resolve) => { release = resolve })
+  const gate = new Promise((resolve) => {
+    release = resolve
+  })
   const rawClient = {
     async inspectTranscript() {
       return { video: { videoId: VIDEO_ID, url: WATCH_URL }, durationSeconds: 10 }
@@ -1693,12 +1942,21 @@ test('single-flight shares generation and isolates follower cancellation', async
         speakers: [],
         segments: [{ startSeconds: 1, timestamp: '0:01', text: 'Shared result.' }],
         processing: {
-          strategy: 'direct', chunksCompleted: 1, chunksTotal: 1,
+          strategy: 'direct',
+          chunksCompleted: 1,
+          chunksTotal: 1,
           collectedSegments: 1,
-          intervals: [{
-            id: '1', index: 0, startSeconds: 0, endSeconds: 10,
-            status: 'complete', attempt: 1, segmentCount: 1,
-          }],
+          intervals: [
+            {
+              id: '1',
+              index: 0,
+              startSeconds: 0,
+              endSeconds: 10,
+              status: 'complete',
+              attempt: 1,
+              segmentCount: 1,
+            },
+          ],
         },
         truncated: false,
       }
@@ -1727,7 +1985,9 @@ test('a caller finishing inspection after cancellation starts a fresh flight', a
   let inspections = 0
   let generations = 0
   let releaseSecondInspection
-  const secondInspection = new Promise((resolve) => { releaseSecondInspection = resolve })
+  const secondInspection = new Promise((resolve) => {
+    releaseSecondInspection = resolve
+  })
   const rawClient = {
     async inspectTranscript() {
       inspections += 1
@@ -1750,8 +2010,11 @@ test('a caller finishing inspection after cancellation starts a fresh flight', a
         speakers: [],
         segments: [{ startSeconds: 1, timestamp: '0:01', text: 'Fresh flight.' }],
         processing: {
-          strategy: 'direct', chunksCompleted: 1, chunksTotal: 1,
-          collectedSegments: 1, intervals: [],
+          strategy: 'direct',
+          chunksCompleted: 1,
+          chunksTotal: 1,
+          collectedSegments: 1,
+          intervals: [],
         },
         truncated: false,
       }
@@ -1778,7 +2041,9 @@ test('dispose prevents inspection from creating generation work after shutdown',
   const store = new YoutubeTranscriptArchive({ path: ':memory:' })
   let releaseInspection
   let generations = 0
-  const inspection = new Promise((resolve) => { releaseInspection = resolve })
+  const inspection = new Promise((resolve) => {
+    releaseInspection = resolve
+  })
   const client = new ArchivedYoutubeClient({
     ...clientOptions(),
     store,
@@ -1787,7 +2052,9 @@ test('dispose prevents inspection from creating generation work after shutdown',
         await inspection
         return { video: { videoId: VIDEO_ID, url: WATCH_URL }, durationSeconds: 10 }
       },
-      async generateTranscript() { generations += 1 },
+      async generateTranscript() {
+        generations += 1
+      },
       watch() {},
     },
   })
@@ -1814,8 +2081,12 @@ test('reads and searches archived transcript segments without Gemini', async () 
     timestampVerified: true,
     caveats: [],
     processing: {
-      strategy: 'direct', source: 'generated', chunksCompleted: 1, chunksTotal: 1,
-      collectedSegments: 2, intervals: [],
+      strategy: 'direct',
+      source: 'generated',
+      chunksCompleted: 1,
+      chunksTotal: 1,
+      collectedSegments: 2,
+      intervals: [],
     },
     segments: [
       { startSeconds: 1, speaker: 'Narrator', text: 'Opening statement.' },
@@ -1844,13 +2115,15 @@ test('reads and searches archived transcript segments without Gemini', async () 
 
 test('missing credentials fail before creating a Gemini client', async () => {
   let created = false
-  const client = new GeminiYoutubeClient(clientOptions({
-    resolveApiKey: async () => undefined,
-    clientFactory: () => {
-      created = true
-      return {}
-    },
-  }))
+  const client = new GeminiYoutubeClient(
+    clientOptions({
+      resolveApiKey: async () => undefined,
+      clientFactory: () => {
+        created = true
+        return {}
+      },
+    }),
+  )
   await assert.rejects(
     client.watch({ url: WATCH_URL, question: 'What happens?' }),
     /GEMINI_API_KEY is not configured/,
@@ -1859,9 +2132,11 @@ test('missing credentials fail before creating a Gemini client', async () => {
 })
 
 test('aborts while credential resolution is stalled', async () => {
-  const client = new GeminiYoutubeClient(clientOptions({
-    resolveApiKey: () => new Promise(() => {}),
-  }))
+  const client = new GeminiYoutubeClient(
+    clientOptions({
+      resolveApiKey: () => new Promise(() => {}),
+    }),
+  )
   const controller = new AbortController()
   const pending = client.watch({ url: WATCH_URL, question: 'What happens?' }, controller.signal)
   controller.abort(new Error('test cancellation'))
@@ -1869,14 +2144,17 @@ test('aborts while credential resolution is stalled', async () => {
 })
 
 test('provider failures are sanitized and never reveal credentials', async () => {
-  const client = new GeminiYoutubeClient(clientOptions({
-    resolveApiKey: async () => 'super-secret-key',
-    clientFactory: () => fakeGeminiClient(async () => {
-      const error = new Error('super-secret-key invalid')
-      error.status = 401
-      throw error
+  const client = new GeminiYoutubeClient(
+    clientOptions({
+      resolveApiKey: async () => 'super-secret-key',
+      clientFactory: () =>
+        fakeGeminiClient(async () => {
+          const error = new Error('super-secret-key invalid')
+          error.status = 401
+          throw error
+        }),
     }),
-  }))
+  )
   await assert.rejects(
     client.watch({ url: WATCH_URL, question: 'What happens?' }),
     (error) => !error.message.includes('super-secret-key') && error.message.includes('credential'),
@@ -1884,56 +2162,72 @@ test('provider failures are sanitized and never reveal credentials', async () =>
 })
 
 test('maps invalid Gemini requests to allowlisted diagnostics', async () => {
-  const client = new GeminiYoutubeClient(clientOptions({
-    clientFactory: () => fakeGeminiClient(async () => {
-      const error = new Error('400 Bad Request')
-      error.status = 400
-      error.body = JSON.stringify({
-        error: {
-          status: 'INVALID_ARGUMENT',
-          message: 'Static processing is not supported for this YouTube URL.',
-        },
-      })
-      throw error
+  const client = new GeminiYoutubeClient(
+    clientOptions({
+      clientFactory: () =>
+        fakeGeminiClient(async () => {
+          const error = new Error('400 Bad Request')
+          error.status = 400
+          error.body = JSON.stringify({
+            error: {
+              status: 'INVALID_ARGUMENT',
+              message: 'Static processing is not supported for this YouTube URL.',
+            },
+          })
+          throw error
+        }),
     }),
-  }))
+  )
 
   await assert.rejects(
     client.watch({ url: WATCH_URL, question: 'What happens?' }),
-    (error) => error.message.includes('rejected static YouTube clipping')
-      && !error.message.includes('Static processing is not supported')
-      && !error.message.includes(WATCH_URL),
+    (error) =>
+      error.message.includes('rejected static YouTube clipping') &&
+      !error.message.includes('Static processing is not supported') &&
+      !error.message.includes(WATCH_URL),
   )
 })
 
 test('never reflects arbitrary HTTP 400 provider text', async () => {
-  const client = new GeminiYoutubeClient(clientOptions({
-    clientFactory: () => fakeGeminiClient(async () => {
-      const error = new Error('bare-value-123')
-      error.status = 400
-      throw error
+  const client = new GeminiYoutubeClient(
+    clientOptions({
+      clientFactory: () =>
+        fakeGeminiClient(async () => {
+          const error = new Error('bare-value-123')
+          error.status = 400
+          throw error
+        }),
     }),
-  }))
+  )
 
   await assert.rejects(
     client.watch({ url: WATCH_URL, question: 'What happens?' }),
-    (error) => error.message.includes('provider rejected the request')
-      && !error.message.includes('bare-value-123'),
+    (error) =>
+      error.message.includes('provider rejected the request') &&
+      !error.message.includes('bare-value-123'),
   )
 })
 
 test('aborts an in-flight Gemini interaction through the supplied signal', async () => {
-  const client = new GeminiYoutubeClient(clientOptions({
-    clientFactory: () => fakeGeminiClient(
-      (_request, { signal }) => new Promise((_resolve, reject) => {
-        signal.addEventListener('abort', () => {
-          const error = new Error('cancelled')
-          error.name = 'APIUserAbortError'
-          reject(error)
-        }, { once: true })
-      }),
-    ),
-  }))
+  const client = new GeminiYoutubeClient(
+    clientOptions({
+      clientFactory: () =>
+        fakeGeminiClient(
+          (_request, { signal }) =>
+            new Promise((_resolve, reject) => {
+              signal.addEventListener(
+                'abort',
+                () => {
+                  const error = new Error('cancelled')
+                  error.name = 'APIUserAbortError'
+                  reject(error)
+                },
+                { once: true },
+              )
+            }),
+        ),
+    }),
+  )
   const controller = new AbortController()
   const pending = client.watch({ url: WATCH_URL, question: 'What happens?' }, controller.signal)
   controller.abort(new Error('test cancellation'))
@@ -1946,36 +2240,44 @@ test('aborts a stateful correction and still deletes the stored parent interacti
   const correctionStarted = new Promise((resolve) => {
     notifyCorrectionStarted = resolve
   })
-  const client = new GeminiYoutubeClient(clientOptions({
-    durationFetcher: async () => 20,
-    clientFactory: () => ({
-      interactions: {
-        async create(request, options) {
-          if (request.previous_interaction_id === undefined) {
-            return {
-              id: 'abort-parent',
-              ...fakeInteraction({
-                duration_seconds: 20,
-                language: 'English',
-                speakers: [],
-                segments: [{ start_seconds: 21, text: 'Invalid timing.', speaker: '' }],
-              }),
+  const client = new GeminiYoutubeClient(
+    clientOptions({
+      durationFetcher: async () => 20,
+      clientFactory: () => ({
+        interactions: {
+          async create(request, options) {
+            if (request.previous_interaction_id === undefined) {
+              return {
+                id: 'abort-parent',
+                ...fakeInteraction({
+                  duration_seconds: 20,
+                  language: 'English',
+                  speakers: [],
+                  segments: [{ start_seconds: 21, text: 'Invalid timing.', speaker: '' }],
+                }),
+              }
             }
-          }
-          notifyCorrectionStarted()
-          return new Promise((_resolve, reject) => {
-            options.signal.addEventListener('abort', () => {
-              const error = new Error('cancelled')
-              error.name = 'APIUserAbortError'
-              reject(error)
-            }, { once: true })
-          })
+            notifyCorrectionStarted()
+            return new Promise((_resolve, reject) => {
+              options.signal.addEventListener(
+                'abort',
+                () => {
+                  const error = new Error('cancelled')
+                  error.name = 'APIUserAbortError'
+                  reject(error)
+                },
+                { once: true },
+              )
+            })
+          },
+          async delete(id) {
+            deleted.push(id)
+          },
         },
-        async delete(id) { deleted.push(id) },
-      },
-      models: {},
+        models: {},
+      }),
     }),
-  }))
+  )
   const controller = new AbortController()
   const pending = client.transcript({ url: WATCH_URL }, controller.signal)
 
@@ -1993,27 +2295,35 @@ test('aborts generateContent recovery before another chunk starts', async () => 
   const recoveryStarted = new Promise((resolve) => {
     notifyRecoveryStarted = resolve
   })
-  const client = new GeminiYoutubeClient(clientOptions({
-    durationFetcher: async () => 1_260,
-    maxChunkConcurrency: 1,
-    clientFactory: () => fakeGeminiClient(
-      async () => {
-        interactionCalls += 1
-        const error = new Error('Input blocked by filters')
-        error.status = 400
-        throw error
-      },
-      (request) => new Promise((_resolve, reject) => {
-        notifyRecoveryStarted()
-        request.config.abortSignal.addEventListener('abort', () => {
-          recoveryAborted = true
-          const error = new Error('cancelled')
-          error.name = 'APIUserAbortError'
-          reject(error)
-        }, { once: true })
-      }),
-    ),
-  }))
+  const client = new GeminiYoutubeClient(
+    clientOptions({
+      durationFetcher: async () => 1_260,
+      maxChunkConcurrency: 1,
+      clientFactory: () =>
+        fakeGeminiClient(
+          async () => {
+            interactionCalls += 1
+            const error = new Error('Input blocked by filters')
+            error.status = 400
+            throw error
+          },
+          (request) =>
+            new Promise((_resolve, reject) => {
+              notifyRecoveryStarted()
+              request.config.abortSignal.addEventListener(
+                'abort',
+                () => {
+                  recoveryAborted = true
+                  const error = new Error('cancelled')
+                  error.name = 'APIUserAbortError'
+                  reject(error)
+                },
+                { once: true },
+              )
+            }),
+        ),
+    }),
+  )
   const controller = new AbortController()
   const pending = client.transcript({ url: WATCH_URL }, controller.signal)
 
@@ -2032,15 +2342,17 @@ test('transcript progress store is bounded and served through Connection RPC', a
     phase: 'transcribing',
     totalChunks: 2,
     collectedSegments: 12,
-    chunks: [{
-      id: '1.2',
-      index: 0,
-      startSeconds: 0,
-      endSeconds: 450,
-      status: 'fallback',
-      attempt: 2,
-      segmentCount: 12,
-    }],
+    chunks: [
+      {
+        id: '1.2',
+        index: 0,
+        startSeconds: 0,
+        endSeconds: 450,
+        status: 'fallback',
+        attempt: 2,
+        segmentCount: 12,
+      },
+    ],
   })
   store.update('call-3', { phase: 'complete', totalChunks: 1, completedChunks: 1 })
   assert.equal(store.size(), 2)
@@ -2050,15 +2362,17 @@ test('transcript progress store is bounded and served through Connection RPC', a
     phase: 'transcribing',
     totalChunks: 2,
     collectedSegments: 12,
-    chunks: [{
-      id: '1.2',
-      index: 0,
-      startSeconds: 0,
-      endSeconds: 450,
-      status: 'fallback',
-      attempt: 2,
-      segmentCount: 12,
-    }],
+    chunks: [
+      {
+        id: '1.2',
+        index: 0,
+        startSeconds: 0,
+        endSeconds: 450,
+        status: 'fallback',
+        attempt: 2,
+        segmentCount: 12,
+      },
+    ],
   })
 
   let registration
@@ -2067,20 +2381,25 @@ test('transcript progress store is bounded and served through Connection RPC', a
     rpc: {
       handle(channel, handler, options) {
         registration = { channel, handler, options }
-        return async () => { disposed = true }
+        return async () => {
+          disposed = true
+        }
       },
     },
   }
   let dispose
-  registerTranscriptProgressRpc({
-    get(service) {
-      assert.equal(service, 'connection')
-      return connection
+  registerTranscriptProgressRpc(
+    {
+      get(service) {
+        assert.equal(service, 'connection')
+        return connection
+      },
+      effect(installer) {
+        dispose = installer()
+      },
     },
-    effect(installer) {
-      dispose = installer()
-    },
-  }, store)
+    store,
+  )
 
   assert.equal(registration.channel, TRANSCRIPT_PROGRESS_CHANNEL)
   assert.deepEqual(registration.options, { authority: 'trusted-host' })
@@ -2128,41 +2447,55 @@ test('registers YouTube analysis and transcript archive tools with prompt guidan
           chunksCompleted: 1,
           chunksTotal: 1,
           collectedSegments: 0,
-          intervals: [{
-            id: '1',
-            index: 0,
-            startSeconds: 0,
-            endSeconds: 10,
-            status: 'complete',
-            attempt: 1,
-            segmentCount: 0,
-          }],
+          intervals: [
+            {
+              id: '1',
+              index: 0,
+              startSeconds: 0,
+              endSeconds: 10,
+              status: 'complete',
+              attempt: 1,
+              segmentCount: 0,
+            },
+          ],
         },
       }
     },
     read: async () => ({
-      transcriptId: 'transcript-test', videoId: VIDEO_ID, durationSeconds: 10,
-      complete: true, inlineComplete: true, segments: [],
+      transcriptId: 'transcript-test',
+      videoId: VIDEO_ID,
+      durationSeconds: 10,
+      complete: true,
+      inlineComplete: true,
+      segments: [],
     }),
     search: async () => ({ transcriptId: 'transcript-test', videoId: VIDEO_ID, matches: [] }),
   }
   const config = resolveConfig({ timeoutMs: 42_000 })
-  registerYoutubeTools({
-    tools: { register: (definition) => definitions.push(definition) },
-    systemPrompt: { section: (section) => sections.push(section) },
-  }, config, fakeClient, {
-    update(callId, progress) { progressUpdates.push([callId, progress]) },
-  })
+  registerYoutubeTools(
+    {
+      tools: { register: (definition) => definitions.push(definition) },
+      systemPrompt: { section: (section) => sections.push(section) },
+    },
+    config,
+    fakeClient,
+    {
+      update(callId, progress) {
+        progressUpdates.push([callId, progress])
+      },
+    },
+  )
 
-  assert.deepEqual(definitions.map((definition) => definition.name), [
-    'youtube_watch',
-    'youtube_transcript',
-    'youtube_transcript_read',
-    'youtube_transcript_search',
-  ])
+  assert.deepEqual(
+    definitions.map((definition) => definition.name),
+    ['youtube_watch', 'youtube_transcript', 'youtube_transcript_read', 'youtube_transcript_search'],
+  )
   assert.equal(definitions[0].timeoutMs, DEFAULT_LONG_OPERATION_TIMEOUT_MS)
   assert.equal(definitions[1].timeoutMs, DEFAULT_LONG_OPERATION_TIMEOUT_MS)
-  assert.equal(definitions[0].isConcurrencySafe({ url: WATCH_URL, question: 'What happens?' }), true)
+  assert.equal(
+    definitions[0].isConcurrencySafe({ url: WATCH_URL, question: 'What happens?' }),
+    true,
+  )
   assert.match(sections[0].text, /untrusted source data/)
 
   const result = await definitions[0].execute(
@@ -2175,10 +2508,9 @@ test('registers YouTube analysis and transcript archive tools with prompt guidan
     { callId: 'call-transcript', signal: new AbortController().signal },
   )
   assert.equal(transcript.videoId, VIDEO_ID)
-  assert.deepEqual(progressUpdates, [[
-    'call-transcript',
-    { phase: 'complete', totalChunks: 1, completedChunks: 1 },
-  ]])
+  assert.deepEqual(progressUpdates, [
+    ['call-transcript', { phase: 'complete', totalChunks: 1, completedChunks: 1 }],
+  ])
   assert.deepEqual(definitions[1].output.presentationMeta({}, transcript), {
     phase: 'complete',
     strategy: 'direct',
@@ -2187,15 +2519,17 @@ test('registers YouTube analysis and transcript archive tools with prompt guidan
     completedChunks: 1,
     activeChunks: 0,
     collectedSegments: 0,
-    chunks: [{
-      id: '1',
-      index: 0,
-      startSeconds: 0,
-      endSeconds: 10,
-      status: 'complete',
-      attempt: 1,
-      segmentCount: 0,
-    }],
+    chunks: [
+      {
+        id: '1',
+        index: 0,
+        startSeconds: 0,
+        endSeconds: 10,
+        status: 'complete',
+        attempt: 1,
+        segmentCount: 0,
+      },
+    ],
     truncated: false,
     result: {
       transcriptId: 'transcript-test',
@@ -2216,12 +2550,14 @@ test('registers YouTube analysis and transcript archive tools with prompt guidan
   assert.ok(definitions[0].output.schema.required.includes('answer'))
   assert.ok(definitions[1].output.schema.required.includes('segments'))
 
-  const sdk = renderToolsSdk(definitions.map((definition) => ({
-    name: definition.name,
-    description: definition.description,
-    parameters: definition.parameters,
-    output: definition.output.schema,
-  })))
+  const sdk = renderToolsSdk(
+    definitions.map((definition) => ({
+      name: definition.name,
+      description: definition.description,
+      parameters: definition.parameters,
+      output: definition.output.schema,
+    })),
+  )
   assert.match(sdk, /youtube_watch:/)
   assert.match(sdk, /youtube_transcript:/)
   assert.match(sdk, /youtube_transcript_read:/)

@@ -84,7 +84,10 @@ export class SessionEnvironmentService extends TypertRemoteService {
     this.config = resolveConfig(config)
   }
 
-  async read(request: SessionEnvironmentRequest, signal: AbortSignal): Promise<SessionEnvironmentSnapshot> {
+  async read(
+    request: SessionEnvironmentRequest,
+    signal: AbortSignal,
+  ): Promise<SessionEnvironmentSnapshot> {
     return readSessionEnvironment(this.ctx, request, this.config, signal)
   }
 }

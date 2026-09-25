@@ -26,14 +26,8 @@ import {
   DEFAULT_PROVIDER_REQUEST_RETRIES,
   DEFAULT_VIDEO_TOKENS_PER_SECOND,
 } from './budget.js'
-import {
-  ArchivedYoutubeClient,
-  MAX_TRANSCRIPT_SEARCH_RESULTS,
-} from './archive.js'
-import {
-  createTranscriptProgressStore,
-  registerTranscriptProgressRpc,
-} from './progress.js'
+import { ArchivedYoutubeClient, MAX_TRANSCRIPT_SEARCH_RESULTS } from './archive.js'
+import { createTranscriptProgressStore, registerTranscriptProgressRpc } from './progress.js'
 import { parseYoutubeUrl, secondsToTimestamp } from './url.js'
 
 export {
@@ -118,16 +112,40 @@ export const Config = z.object({
   maxEvidenceItems: z.number().step(1).min(1).default(DEFAULT_MAX_EVIDENCE_ITEMS),
   maxWatchOutputChars: z.number().step(1).min(1).default(DEFAULT_MAX_WATCH_OUTPUT_CHARS),
   maxTranscriptOutputChars: z.number().step(1).min(1).default(DEFAULT_MAX_TRANSCRIPT_OUTPUT_CHARS),
-  directTranscriptMaxSeconds: z.number().step(1).min(1).max(DEFAULT_DIRECT_TRANSCRIPT_MAX_SECONDS).default(DEFAULT_DIRECT_TRANSCRIPT_MAX_SECONDS),
-  maximumTranscriptCoreSeconds: z.number().step(1).min(1).max(DEFAULT_MAXIMUM_TRANSCRIPT_CORE_SECONDS).default(DEFAULT_MAXIMUM_TRANSCRIPT_CORE_SECONDS),
-  chunkOverlapSeconds: z.number().step(1).min(0).max(DEFAULT_TRANSCRIPT_CHUNK_OVERLAP_SECONDS).default(DEFAULT_TRANSCRIPT_CHUNK_OVERLAP_SECONDS),
-  maxChunkConcurrency: z.number().step(1).min(1).max(DEFAULT_MAX_TRANSCRIPT_CHUNK_CONCURRENCY).default(DEFAULT_MAX_TRANSCRIPT_CHUNK_CONCURRENCY),
+  directTranscriptMaxSeconds: z
+    .number()
+    .step(1)
+    .min(1)
+    .max(DEFAULT_DIRECT_TRANSCRIPT_MAX_SECONDS)
+    .default(DEFAULT_DIRECT_TRANSCRIPT_MAX_SECONDS),
+  maximumTranscriptCoreSeconds: z
+    .number()
+    .step(1)
+    .min(1)
+    .max(DEFAULT_MAXIMUM_TRANSCRIPT_CORE_SECONDS)
+    .default(DEFAULT_MAXIMUM_TRANSCRIPT_CORE_SECONDS),
+  chunkOverlapSeconds: z
+    .number()
+    .step(1)
+    .min(0)
+    .max(DEFAULT_TRANSCRIPT_CHUNK_OVERLAP_SECONDS)
+    .default(DEFAULT_TRANSCRIPT_CHUNK_OVERLAP_SECONDS),
+  maxChunkConcurrency: z
+    .number()
+    .step(1)
+    .min(1)
+    .max(DEFAULT_MAX_TRANSCRIPT_CHUNK_CONCURRENCY)
+    .default(DEFAULT_MAX_TRANSCRIPT_CHUNK_CONCURRENCY),
   adaptiveWatch: z.boolean().default(true),
   enableWatchLowResolution: z.boolean().default(false),
   enableWatchAgentic: z.boolean().default(false),
   enableWatchChunking: z.boolean().default(true),
   directWatchMaxSeconds: z.number().step(1).min(1).default(DEFAULT_DIRECT_WATCH_MAX_SECONDS),
-  lowResolutionWatchMaxSeconds: z.number().step(1).min(1).default(DEFAULT_LOW_RESOLUTION_WATCH_MAX_SECONDS),
+  lowResolutionWatchMaxSeconds: z
+    .number()
+    .step(1)
+    .min(1)
+    .default(DEFAULT_LOW_RESOLUTION_WATCH_MAX_SECONDS),
   maximumWatchCoreSeconds: z.number().step(1).min(1).default(DEFAULT_MAXIMUM_WATCH_CORE_SECONDS),
   watchChunkOverlapSeconds: z.number().step(1).min(0).default(DEFAULT_WATCH_CHUNK_OVERLAP_SECONDS),
   maxWatchChunks: z.number().step(1).min(1).default(DEFAULT_MAX_WATCH_CHUNKS),
@@ -136,8 +154,16 @@ export const Config = z.object({
   maxProviderCalls: z.number().step(1).min(1).default(DEFAULT_MAX_PROVIDER_CALLS),
   maxEstimatedInputTokens: z.number().step(1).min(1).default(DEFAULT_MAX_ESTIMATED_INPUT_TOKENS),
   videoTokensPerSecond: z.number().step(1).min(1).default(DEFAULT_VIDEO_TOKENS_PER_SECOND),
-  providerRequestRetries: z.number().step(1).min(0).max(3).default(DEFAULT_PROVIDER_REQUEST_RETRIES),
-  estimatedInputCostPerMillionTokensUsd: z.number().min(0).default(DEFAULT_INPUT_COST_PER_MILLION_TOKENS_USD),
+  providerRequestRetries: z
+    .number()
+    .step(1)
+    .min(0)
+    .max(3)
+    .default(DEFAULT_PROVIDER_REQUEST_RETRIES),
+  estimatedInputCostPerMillionTokensUsd: z
+    .number()
+    .min(0)
+    .default(DEFAULT_INPUT_COST_PER_MILLION_TOKENS_USD),
   maxEstimatedCostUsd: z.number().min(0).default(DEFAULT_MAX_ESTIMATED_COST_USD),
   statefulTranscriptCorrections: z.boolean().default(true),
   watch: z.boolean().default(true),
@@ -290,7 +316,15 @@ const TRANSCRIPT_OUTPUT_SCHEMA = {
               status: {
                 type: 'string',
                 required: true,
-                enum: ['pending', 'transcribing', 'fallback', 'neutral', 'splitting', 'complete', 'failed'],
+                enum: [
+                  'pending',
+                  'transcribing',
+                  'fallback',
+                  'neutral',
+                  'splitting',
+                  'complete',
+                  'failed',
+                ],
               },
               attempt: { type: 'integer', required: true },
               segmentCount: { type: 'integer', required: true },
@@ -356,9 +390,12 @@ export function resolveConfig(config = {}) {
     maxQuestionChars: config.maxQuestionChars ?? DEFAULT_MAX_QUESTION_CHARS,
     maxEvidenceItems: config.maxEvidenceItems ?? DEFAULT_MAX_EVIDENCE_ITEMS,
     maxWatchOutputChars: config.maxWatchOutputChars ?? DEFAULT_MAX_WATCH_OUTPUT_CHARS,
-    maxTranscriptOutputChars: config.maxTranscriptOutputChars ?? DEFAULT_MAX_TRANSCRIPT_OUTPUT_CHARS,
-    directTranscriptMaxSeconds: config.directTranscriptMaxSeconds ?? DEFAULT_DIRECT_TRANSCRIPT_MAX_SECONDS,
-    maximumTranscriptCoreSeconds: config.maximumTranscriptCoreSeconds ?? DEFAULT_MAXIMUM_TRANSCRIPT_CORE_SECONDS,
+    maxTranscriptOutputChars:
+      config.maxTranscriptOutputChars ?? DEFAULT_MAX_TRANSCRIPT_OUTPUT_CHARS,
+    directTranscriptMaxSeconds:
+      config.directTranscriptMaxSeconds ?? DEFAULT_DIRECT_TRANSCRIPT_MAX_SECONDS,
+    maximumTranscriptCoreSeconds:
+      config.maximumTranscriptCoreSeconds ?? DEFAULT_MAXIMUM_TRANSCRIPT_CORE_SECONDS,
     chunkOverlapSeconds: config.chunkOverlapSeconds ?? DEFAULT_TRANSCRIPT_CHUNK_OVERLAP_SECONDS,
     maxChunkConcurrency: config.maxChunkConcurrency ?? DEFAULT_MAX_TRANSCRIPT_CHUNK_CONCURRENCY,
     adaptiveWatch: config.adaptiveWatch ?? true,
@@ -366,9 +403,11 @@ export function resolveConfig(config = {}) {
     enableWatchAgentic: config.enableWatchAgentic ?? false,
     enableWatchChunking: config.enableWatchChunking ?? true,
     directWatchMaxSeconds: config.directWatchMaxSeconds ?? DEFAULT_DIRECT_WATCH_MAX_SECONDS,
-    lowResolutionWatchMaxSeconds: config.lowResolutionWatchMaxSeconds ?? DEFAULT_LOW_RESOLUTION_WATCH_MAX_SECONDS,
+    lowResolutionWatchMaxSeconds:
+      config.lowResolutionWatchMaxSeconds ?? DEFAULT_LOW_RESOLUTION_WATCH_MAX_SECONDS,
     maximumWatchCoreSeconds: config.maximumWatchCoreSeconds ?? DEFAULT_MAXIMUM_WATCH_CORE_SECONDS,
-    watchChunkOverlapSeconds: config.watchChunkOverlapSeconds ?? DEFAULT_WATCH_CHUNK_OVERLAP_SECONDS,
+    watchChunkOverlapSeconds:
+      config.watchChunkOverlapSeconds ?? DEFAULT_WATCH_CHUNK_OVERLAP_SECONDS,
     maxWatchChunks: config.maxWatchChunks ?? DEFAULT_MAX_WATCH_CHUNKS,
     maxVideoDurationSeconds: config.maxVideoDurationSeconds ?? DEFAULT_MAX_VIDEO_DURATION_SECONDS,
     maxTranscriptChunks: config.maxTranscriptChunks ?? DEFAULT_MAX_TRANSCRIPT_CHUNKS,
@@ -376,7 +415,8 @@ export function resolveConfig(config = {}) {
     maxEstimatedInputTokens: config.maxEstimatedInputTokens ?? DEFAULT_MAX_ESTIMATED_INPUT_TOKENS,
     videoTokensPerSecond: config.videoTokensPerSecond ?? DEFAULT_VIDEO_TOKENS_PER_SECOND,
     providerRequestRetries: config.providerRequestRetries ?? DEFAULT_PROVIDER_REQUEST_RETRIES,
-    estimatedInputCostPerMillionTokensUsd: config.estimatedInputCostPerMillionTokensUsd ?? DEFAULT_INPUT_COST_PER_MILLION_TOKENS_USD,
+    estimatedInputCostPerMillionTokensUsd:
+      config.estimatedInputCostPerMillionTokensUsd ?? DEFAULT_INPUT_COST_PER_MILLION_TOKENS_USD,
     maxEstimatedCostUsd: config.maxEstimatedCostUsd ?? DEFAULT_MAX_ESTIMATED_COST_USD,
     statefulTranscriptCorrections: config.statefulTranscriptCorrections ?? true,
     watch: config.watch ?? true,
@@ -408,9 +448,13 @@ export function resolveConfig(config = {}) {
     'maxProviderCalls',
     'maxEstimatedInputTokens',
     'videoTokensPerSecond',
-  ]) assertPositiveInteger(key, resolved[key])
-  if (!Number.isInteger(resolved.providerRequestRetries)
-    || resolved.providerRequestRetries < 0 || resolved.providerRequestRetries > 3) {
+  ])
+    assertPositiveInteger(key, resolved[key])
+  if (
+    !Number.isInteger(resolved.providerRequestRetries) ||
+    resolved.providerRequestRetries < 0 ||
+    resolved.providerRequestRetries > 3
+  ) {
     throw new Error('tool-youtube: providerRequestRetries must be an integer between 0 and 3')
   }
   for (const key of ['estimatedInputCostPerMillionTokensUsd', 'maxEstimatedCostUsd']) {
@@ -422,14 +466,27 @@ export function resolveConfig(config = {}) {
     throw new Error('tool-youtube: chunkOverlapSeconds must be a non-negative integer')
   }
   if (resolved.chunkOverlapSeconds >= resolved.maximumTranscriptCoreSeconds) {
-    throw new Error('tool-youtube: chunkOverlapSeconds must be smaller than maximumTranscriptCoreSeconds')
+    throw new Error(
+      'tool-youtube: chunkOverlapSeconds must be smaller than maximumTranscriptCoreSeconds',
+    )
   }
-  if (!Number.isInteger(resolved.watchChunkOverlapSeconds) || resolved.watchChunkOverlapSeconds < 0
-    || resolved.watchChunkOverlapSeconds >= resolved.maximumWatchCoreSeconds) {
-    throw new Error('tool-youtube: watchChunkOverlapSeconds must be a non-negative integer smaller than maximumWatchCoreSeconds')
+  if (
+    !Number.isInteger(resolved.watchChunkOverlapSeconds) ||
+    resolved.watchChunkOverlapSeconds < 0 ||
+    resolved.watchChunkOverlapSeconds >= resolved.maximumWatchCoreSeconds
+  ) {
+    throw new Error(
+      'tool-youtube: watchChunkOverlapSeconds must be a non-negative integer smaller than maximumWatchCoreSeconds',
+    )
   }
-  for (const key of ['adaptiveWatch', 'enableWatchLowResolution', 'enableWatchAgentic', 'enableWatchChunking']) {
-    if (typeof resolved[key] !== 'boolean') throw new Error(`tool-youtube: ${key} must be a boolean`)
+  for (const key of [
+    'adaptiveWatch',
+    'enableWatchLowResolution',
+    'enableWatchAgentic',
+    'enableWatchChunking',
+  ]) {
+    if (typeof resolved[key] !== 'boolean')
+      throw new Error(`tool-youtube: ${key} must be a boolean`)
   }
   for (const [key, maximum] of [
     ['directTranscriptMaxSeconds', DEFAULT_DIRECT_TRANSCRIPT_MAX_SECONDS],
@@ -448,10 +505,14 @@ export function resolveConfig(config = {}) {
 export function formatWatchOutput(value) {
   const sections = [value.answer]
   if (value.evidence.length > 0) {
-    sections.push([
-      'Evidence:',
-      ...value.evidence.map((item) => `- [${item.timestamp}] (${item.modality}) ${item.description}`),
-    ].join('\n'))
+    sections.push(
+      [
+        'Evidence:',
+        ...value.evidence.map(
+          (item) => `- [${item.timestamp}] (${item.modality}) ${item.description}`,
+        ),
+      ].join('\n'),
+    )
   }
   if (value.caveats.length > 0) {
     sections.push(['Caveats:', ...value.caveats.map((item) => `- ${item}`)].join('\n'))
@@ -461,24 +522,29 @@ export function formatWatchOutput(value) {
 
 export function formatTranscriptOutput(value) {
   const metadata = [`Language: ${value.language}`]
-  if (value.transcriptId !== undefined) metadata.push(`Transcript archive ID: ${value.transcriptId}`)
+  if (value.transcriptId !== undefined)
+    metadata.push(`Transcript archive ID: ${value.transcriptId}`)
   if (value.processing?.source !== undefined) metadata.push(`Source: ${value.processing.source}`)
   if (value.durationSeconds !== undefined) {
     metadata.push(`Duration: ${secondsToTimestamp(value.durationSeconds)}`)
   }
   if (value.timestampVerified !== undefined) {
-    metadata.push(`Timestamps: ${value.timestampVerified ? 'independently verified' : 'unverified'}`)
+    metadata.push(
+      `Timestamps: ${value.timestampVerified ? 'independently verified' : 'unverified'}`,
+    )
   }
   if (value.speakers.length > 0) metadata.push(`Speakers: ${value.speakers.join(', ')}`)
   const lines = value.segments.map((segment) => {
     const speaker = segment.speaker === undefined ? '' : ` ${segment.speaker}:`
     return `[${segment.timestamp}]${speaker} ${segment.text}`
   })
-  if (lines.length === 0) lines.push('(No transcript segments fit within the configured output limit.)')
+  if (lines.length === 0)
+    lines.push('(No transcript segments fit within the configured output limit.)')
   if (value.truncated) {
-    const continuation = value.nextCursor === undefined
-      ? ''
-      : ` Continue with youtube_transcript_read using cursor ${value.nextCursor}.`
+    const continuation =
+      value.nextCursor === undefined
+        ? ''
+        : ` Continue with youtube_transcript_read using cursor ${value.nextCursor}.`
     lines.push('', `(Inline transcript truncated at a segment boundary.${continuation})`)
   }
   const output = `${metadata.join('\n')}\n\n${lines.join('\n')}`
@@ -502,10 +568,12 @@ export function formatTranscriptReadOutput(value) {
 
 export function formatTranscriptSearchOutput(value) {
   if (value.matches.length === 0) return 'No matching archived transcript segments.'
-  return value.matches.map((match) => {
-    const speaker = match.speaker === undefined ? '' : ` ${match.speaker}:`
-    return `[${match.timestamp}]${speaker} ${match.text}`
-  }).join('\n')
+  return value.matches
+    .map((match) => {
+      const speaker = match.speaker === undefined ? '' : ` ${match.speaker}:`
+      return `[${match.timestamp}]${speaker} ${match.text}`
+    })
+    .join('\n')
 }
 
 function safeTitle(url, suffix) {
@@ -528,75 +596,110 @@ export function registerYoutubeTools(ctx, config, client, transcriptProgress) {
   })
 
   if (config.watch) {
-    ctx.tools.register(defineTool({
-      name: 'youtube_watch',
-      description: 'Analyze a public YouTube video with Gemini and answer one visual or spoken-content question with timestamped evidence.',
-      parameters: {
-        url: {
-          type: 'string',
-          required: true,
-          description: 'Public HTTPS YouTube watch, Shorts, live, or youtu.be URL.',
-        },
-        question: {
-          type: 'string',
-          required: true,
-          description: 'Specific question about what is visible or spoken in the video.',
-        },
-      },
-      output: {
-        schema: WATCH_OUTPUT_SCHEMA,
-        render: (_args, value) => [{ type: 'text', text: formatWatchOutput(value) }],
-        presentationMeta: (_args, value) => ({
-          kind: 'youtube-card',
-          version: 1,
-          operation: 'watch',
-          video: { videoId: value.videoId, durationSeconds: value.durationSeconds },
-          result: {
-            durationSeconds: value.durationSeconds,
-            evidenceCount: value.evidence.length,
-            timestampVerified: value.timestampVerified,
+    ctx.tools.register(
+      defineTool({
+        name: 'youtube_watch',
+        description:
+          'Analyze a public YouTube video with Gemini and answer one visual or spoken-content question with timestamped evidence.',
+        parameters: {
+          url: {
+            type: 'string',
+            required: true,
+            description: 'Public HTTPS YouTube watch, Shorts, live, or youtu.be URL.',
           },
-          processing: value.processing,
-          notices: value.caveats.slice(0, 5),
+          question: {
+            type: 'string',
+            required: true,
+            description: 'Specific question about what is visible or spoken in the video.',
+          },
+        },
+        output: {
+          schema: WATCH_OUTPUT_SCHEMA,
+          render: (_args, value) => [{ type: 'text', text: formatWatchOutput(value) }],
+          presentationMeta: (_args, value) => ({
+            kind: 'youtube-card',
+            version: 1,
+            operation: 'watch',
+            video: { videoId: value.videoId, durationSeconds: value.durationSeconds },
+            result: {
+              durationSeconds: value.durationSeconds,
+              evidenceCount: value.evidence.length,
+              timestampVerified: value.timestampVerified,
+            },
+            processing: value.processing,
+            notices: value.caveats.slice(0, 5),
+          }),
+        },
+        timeoutMs: config.adaptiveWatch ? config.longOperationTimeoutMs : config.timeoutMs,
+        isConcurrencySafe: () => true,
+        execute: (args, exec) => client.watch(args, exec.signal),
+        presentCall: (args) => ({
+          card: 'generic',
+          title: safeTitle(args.url, args.question),
+          kind: 'fetch',
+          rawInput: args.url,
         }),
-      },
-      timeoutMs: config.adaptiveWatch ? config.longOperationTimeoutMs : config.timeoutMs,
-      isConcurrencySafe: () => true,
-      execute: (args, exec) => client.watch(args, exec.signal),
-      presentCall: (args) => ({
-        card: 'generic',
-        title: safeTitle(args.url, args.question),
-        kind: 'fetch',
-        rawInput: args.url,
       }),
-    }))
+    )
   }
 
   if (config.transcript) {
-    ctx.tools.register(defineTool({
-      name: 'youtube_transcript',
-      description: 'Transcribe a public YouTube video into bounded chronological segments with timestamps and speaker labels.',
-      parameters: {
-        url: {
-          type: 'string',
-          required: true,
-          description: 'Public HTTPS YouTube watch, Shorts, live, or youtu.be URL.',
+    ctx.tools.register(
+      defineTool({
+        name: 'youtube_transcript',
+        description:
+          'Transcribe a public YouTube video into bounded chronological segments with timestamps and speaker labels.',
+        parameters: {
+          url: {
+            type: 'string',
+            required: true,
+            description: 'Public HTTPS YouTube watch, Shorts, live, or youtu.be URL.',
+          },
         },
-      },
-      output: {
-        schema: TRANSCRIPT_OUTPUT_SCHEMA,
-        render: (_args, value) => [{ type: 'text', text: formatTranscriptOutput(value) }],
-        presentationMeta: (_args, value) => {
-          if (value.processing !== undefined) {
+        output: {
+          schema: TRANSCRIPT_OUTPUT_SCHEMA,
+          render: (_args, value) => [{ type: 'text', text: formatTranscriptOutput(value) }],
+          presentationMeta: (_args, value) => {
+            if (value.processing !== undefined) {
+              return {
+                phase: 'complete',
+                strategy: value.processing.strategy,
+                durationSeconds: value.durationSeconds,
+                totalChunks: value.processing.chunksTotal,
+                completedChunks: value.processing.chunksCompleted,
+                activeChunks: 0,
+                collectedSegments: value.processing.collectedSegments,
+                chunks: value.processing.intervals,
+                truncated: value.truncated,
+                result: {
+                  transcriptId: value.transcriptId,
+                  durationSeconds: value.durationSeconds,
+                  totalSegments: value.totalSegments,
+                  language: value.language,
+                  timestampVerified: value.timestampVerified,
+                  nextCursor: value.nextCursor,
+                  inlineComplete: value.inlineComplete,
+                },
+                completeness: {
+                  sourceComplete: value.complete,
+                  inlineComplete: value.inlineComplete,
+                  nextCursor: value.nextCursor,
+                },
+                processing: value.processing,
+              }
+            }
+            const chunked = value.durationSeconds > config.directTranscriptMaxSeconds
+            const totalChunks = chunked
+              ? Math.ceil(value.durationSeconds / config.maximumTranscriptCoreSeconds)
+              : 1
             return {
               phase: 'complete',
-              strategy: value.processing.strategy,
+              strategy: chunked ? 'chunked' : 'direct',
               durationSeconds: value.durationSeconds,
-              totalChunks: value.processing.chunksTotal,
-              completedChunks: value.processing.chunksCompleted,
+              totalChunks,
+              completedChunks: totalChunks,
               activeChunks: 0,
-              collectedSegments: value.processing.collectedSegments,
-              chunks: value.processing.intervals,
+              collectedSegments: value.segments.length,
               truncated: value.truncated,
               result: {
                 transcriptId: value.transcriptId,
@@ -612,171 +715,155 @@ export function registerYoutubeTools(ctx, config, client, transcriptProgress) {
                 inlineComplete: value.inlineComplete,
                 nextCursor: value.nextCursor,
               },
-              processing: value.processing,
             }
-          }
-          const chunked = value.durationSeconds > config.directTranscriptMaxSeconds
-          const totalChunks = chunked
-            ? Math.ceil(value.durationSeconds / config.maximumTranscriptCoreSeconds)
-            : 1
-          return {
-            phase: 'complete',
-            strategy: chunked ? 'chunked' : 'direct',
-            durationSeconds: value.durationSeconds,
-            totalChunks,
-            completedChunks: totalChunks,
-            activeChunks: 0,
-            collectedSegments: value.segments.length,
-            truncated: value.truncated,
+          },
+        },
+        timeoutMs: config.longOperationTimeoutMs,
+        isConcurrencySafe: () => true,
+        execute: (args, exec) =>
+          client.transcript(
+            args,
+            exec.signal,
+            transcriptProgress === undefined
+              ? undefined
+              : (progress) => transcriptProgress.update(String(exec.callId), progress),
+          ),
+        presentCall: (args) => ({
+          card: 'generic',
+          title: safeTitle(args.url),
+          kind: 'fetch',
+          rawInput: args.url,
+        }),
+      }),
+    )
+
+    ctx.tools.register(
+      defineTool({
+        name: 'youtube_transcript_read',
+        description:
+          'Read the next bounded page or timestamp range from a previously archived YouTube transcript.',
+        parameters: {
+          transcriptId: {
+            type: 'string',
+            required: true,
+            description: 'Transcript archive ID returned by youtube_transcript.',
+          },
+          cursor: {
+            type: 'integer',
+            description: 'Next segment cursor returned by an earlier transcript or read call.',
+          },
+          startSeconds: {
+            type: 'integer',
+            description: 'Optional inclusive lower timestamp bound in seconds.',
+          },
+          endSeconds: {
+            type: 'integer',
+            description: 'Optional inclusive upper timestamp bound in seconds.',
+          },
+          maxChars: {
+            type: 'integer',
+            description: 'Maximum rendered characters to return, from 1 through 200000.',
+          },
+        },
+        output: {
+          schema: TRANSCRIPT_READ_OUTPUT_SCHEMA,
+          render: (_args, value) => [{ type: 'text', text: formatTranscriptReadOutput(value) }],
+          presentationMeta: (args, value) => ({
+            kind: 'youtube-card',
+            version: 1,
+            operation: 'transcript-read',
+            video: { videoId: value.videoId, durationSeconds: value.durationSeconds },
+            request: {
+              transcriptId: args.transcriptId,
+              cursor: args.cursor,
+              startSeconds: args.startSeconds,
+              endSeconds: args.endSeconds,
+            },
             result: {
               transcriptId: value.transcriptId,
               durationSeconds: value.durationSeconds,
-              totalSegments: value.totalSegments,
-              language: value.language,
-              timestampVerified: value.timestampVerified,
+              returnedSegments: value.segments.length,
               nextCursor: value.nextCursor,
               inlineComplete: value.inlineComplete,
             },
-            completeness: {
-              sourceComplete: value.complete,
-              inlineComplete: value.inlineComplete,
-              nextCursor: value.nextCursor,
+            completeness: { inlineComplete: value.inlineComplete, nextCursor: value.nextCursor },
+          }),
+        },
+        timeoutMs: config.timeoutMs,
+        isConcurrencySafe: () => true,
+        execute: (args, exec) => client.read(args, exec.signal),
+        presentCall: (args) => ({
+          card: 'generic',
+          title: args.transcriptId,
+          kind: 'read',
+          rawInput: args.transcriptId,
+        }),
+      }),
+    )
+
+    ctx.tools.register(
+      defineTool({
+        name: 'youtube_transcript_search',
+        description:
+          'Search one archived YouTube transcript and return bounded timestamped matches.',
+        parameters: {
+          transcriptId: {
+            type: 'string',
+            required: true,
+            description: 'Transcript archive ID returned by youtube_transcript.',
+          },
+          query: {
+            type: 'string',
+            required: true,
+            description: 'Text to find in the archived transcript.',
+          },
+          maxResults: {
+            type: 'integer',
+            description: `Maximum matches to return, from 1 through ${MAX_TRANSCRIPT_SEARCH_RESULTS}.`,
+          },
+        },
+        output: {
+          schema: TRANSCRIPT_SEARCH_OUTPUT_SCHEMA,
+          render: (_args, value) => [{ type: 'text', text: formatTranscriptSearchOutput(value) }],
+          presentationMeta: (args, value) => ({
+            kind: 'youtube-card',
+            version: 1,
+            operation: 'transcript-search',
+            video: { videoId: value.videoId },
+            request: { transcriptId: args.transcriptId, query: args.query },
+            result: {
+              transcriptId: value.transcriptId,
+              matchCount: value.matches.length,
             },
-          }
+          }),
         },
-      },
-      timeoutMs: config.longOperationTimeoutMs,
-      isConcurrencySafe: () => true,
-      execute: (args, exec) => client.transcript(
-        args,
-        exec.signal,
-        transcriptProgress === undefined
-          ? undefined
-          : (progress) => transcriptProgress.update(String(exec.callId), progress),
-      ),
-      presentCall: (args) => ({
-        card: 'generic',
-        title: safeTitle(args.url),
-        kind: 'fetch',
-        rawInput: args.url,
-      }),
-    }))
-
-    ctx.tools.register(defineTool({
-      name: 'youtube_transcript_read',
-      description: 'Read the next bounded page or timestamp range from a previously archived YouTube transcript.',
-      parameters: {
-        transcriptId: {
-          type: 'string',
-          required: true,
-          description: 'Transcript archive ID returned by youtube_transcript.',
-        },
-        cursor: {
-          type: 'integer',
-          description: 'Next segment cursor returned by an earlier transcript or read call.',
-        },
-        startSeconds: {
-          type: 'integer',
-          description: 'Optional inclusive lower timestamp bound in seconds.',
-        },
-        endSeconds: {
-          type: 'integer',
-          description: 'Optional inclusive upper timestamp bound in seconds.',
-        },
-        maxChars: {
-          type: 'integer',
-          description: 'Maximum rendered characters to return, from 1 through 200000.',
-        },
-      },
-      output: {
-        schema: TRANSCRIPT_READ_OUTPUT_SCHEMA,
-        render: (_args, value) => [{ type: 'text', text: formatTranscriptReadOutput(value) }],
-        presentationMeta: (args, value) => ({
-          kind: 'youtube-card',
-          version: 1,
-          operation: 'transcript-read',
-          video: { videoId: value.videoId, durationSeconds: value.durationSeconds },
-          request: {
-            transcriptId: args.transcriptId,
-            cursor: args.cursor,
-            startSeconds: args.startSeconds,
-            endSeconds: args.endSeconds,
-          },
-          result: {
-            transcriptId: value.transcriptId,
-            durationSeconds: value.durationSeconds,
-            returnedSegments: value.segments.length,
-            nextCursor: value.nextCursor,
-            inlineComplete: value.inlineComplete,
-          },
-          completeness: { inlineComplete: value.inlineComplete, nextCursor: value.nextCursor },
+        timeoutMs: config.timeoutMs,
+        isConcurrencySafe: () => true,
+        execute: (args, exec) => client.search(args, exec.signal),
+        presentCall: (args) => ({
+          card: 'generic',
+          title: `${args.transcriptId} — ${args.query.slice(0, 80)}`,
+          kind: 'search',
+          rawInput: args.query,
         }),
-      },
-      timeoutMs: config.timeoutMs,
-      isConcurrencySafe: () => true,
-      execute: (args, exec) => client.read(args, exec.signal),
-      presentCall: (args) => ({
-        card: 'generic',
-        title: args.transcriptId,
-        kind: 'read',
-        rawInput: args.transcriptId,
       }),
-    }))
-
-    ctx.tools.register(defineTool({
-      name: 'youtube_transcript_search',
-      description: 'Search one archived YouTube transcript and return bounded timestamped matches.',
-      parameters: {
-        transcriptId: {
-          type: 'string',
-          required: true,
-          description: 'Transcript archive ID returned by youtube_transcript.',
-        },
-        query: {
-          type: 'string',
-          required: true,
-          description: 'Text to find in the archived transcript.',
-        },
-        maxResults: {
-          type: 'integer',
-          description: `Maximum matches to return, from 1 through ${MAX_TRANSCRIPT_SEARCH_RESULTS}.`,
-        },
-      },
-      output: {
-        schema: TRANSCRIPT_SEARCH_OUTPUT_SCHEMA,
-        render: (_args, value) => [{ type: 'text', text: formatTranscriptSearchOutput(value) }],
-        presentationMeta: (args, value) => ({
-          kind: 'youtube-card',
-          version: 1,
-          operation: 'transcript-search',
-          video: { videoId: value.videoId },
-          request: { transcriptId: args.transcriptId, query: args.query },
-          result: {
-            transcriptId: value.transcriptId,
-            matchCount: value.matches.length,
-          },
-        }),
-      },
-      timeoutMs: config.timeoutMs,
-      isConcurrencySafe: () => true,
-      execute: (args, exec) => client.search(args, exec.signal),
-      presentCall: (args) => ({
-        card: 'generic',
-        title: `${args.transcriptId} — ${args.query.slice(0, 80)}`,
-        kind: 'search',
-        rawInput: args.query,
-      }),
-    }))
+    )
   }
 }
 
 export function apply(ctx, config = {}) {
   // Plugin cards require a served namespace; API keys stay in the credential store.
   ctx.inject(['settings'], (settingsCtx) => {
-    settingsCtx.settings.installSection(ctx, 'youtube', z.object({}), {}, {
-      setSource: () => {},
-      onChange: () => {},
-    })
+    settingsCtx.settings.installSection(
+      ctx,
+      'youtube',
+      z.object({}),
+      {},
+      {
+        setSource: () => {},
+        onChange: () => {},
+      },
+    )
   })
   const resolved = resolveConfig(config)
   const literalApiKey = resolved.apiKey
@@ -785,7 +872,8 @@ export function apply(ctx, config = {}) {
     resolveApiKey: async () => {
       if (literalApiKey !== undefined) return literalApiKey
       const credentials = ctx.get('credentials')
-      if (credentials !== undefined) return (await credentials.resolve(GEMINI_CREDENTIAL_REF))?.value
+      if (credentials !== undefined)
+        return (await credentials.resolve(GEMINI_CREDENTIAL_REF))?.value
       return launchEnvironmentOf(ctx).get(GEMINI_CREDENTIAL_REF)?.value
     },
     reportUsage: (usage) => {

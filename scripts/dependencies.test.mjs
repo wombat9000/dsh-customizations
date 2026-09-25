@@ -7,18 +7,27 @@ import { test } from 'node:test'
 import { parse } from 'yaml'
 
 const root = resolve(import.meta.dirname, '..')
-const json = path => JSON.parse(readFileSync(path, 'utf8'))
+const json = (path) => JSON.parse(readFileSync(path, 'utf8'))
 const manifest = json(join(root, 'package.json'))
 const version = manifest.devDependencies['@deepseek-ai/dsh']
-const isDsh = name => name === '@deepseek-ai/dsh' || name.startsWith('@deepseek-ai/dsh-')
-const directories = [root, ...readdirSync(join(root, 'packages'), { withFileTypes: true })
-  .filter(entry => entry.isDirectory()).map(entry => join(root, 'packages', entry.name))]
+const isDsh = (name) => name === '@deepseek-ai/dsh' || name.startsWith('@deepseek-ai/dsh-')
+const directories = [
+  root,
+  ...readdirSync(join(root, 'packages'), { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => join(root, 'packages', entry.name)),
+]
 
 test('DSH declarations and normal lockfile resolve the target release, including peers', () => {
   assert.equal(version, '0.1.5-rc.2')
   for (const directory of directories) {
     const pkg = json(join(directory, 'package.json'))
-    for (const field of ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies']) {
+    for (const field of [
+      'dependencies',
+      'devDependencies',
+      'peerDependencies',
+      'optionalDependencies',
+    ]) {
       for (const [name, declared] of Object.entries(pkg[field] ?? {})) {
         if (isDsh(name)) assert.equal(declared, version, `${pkg.name} ${field} ${name}`)
       }
@@ -34,7 +43,9 @@ test('DSH declarations and normal lockfile resolve the target release, including
   assert.ok(count > 0, 'lockfile contains DSH packages')
   // Snapshot keys and importer versions include nested peer resolutions.
   for (const section of [lock.importers, lock.snapshots]) {
-    const references = JSON.stringify(section).matchAll(/@deepseek-ai\/dsh(?:-[a-z0-9-]+)?@([^()"\\]+)/g)
+    const references = JSON.stringify(section).matchAll(
+      /@deepseek-ai\/dsh(?:-[a-z0-9-]+)?@([^()"\\]+)/g,
+    )
     for (const [, resolved] of references) assert.equal(resolved, version)
   }
   const workspace = parse(readFileSync(join(root, 'pnpm-workspace.yaml'), 'utf8'))
@@ -52,5 +63,8 @@ test('installed launcher resolves RC2 Web and the patched RPC owner', () => {
   const connection = createRequire(web).resolve('@deepseek-ai/dsh-client-connection')
   assert.equal(json(join(dirname(web), '..', 'package.json')).version, version)
   assert.equal(json(join(dirname(connection), '..', 'package.json')).version, version)
-  assert.match(readFileSync(connection, 'utf8'), /const owner = getTraceable\(this\.ctx, this\.ctx\);/)
+  assert.match(
+    readFileSync(connection, 'utf8'),
+    /const owner = getTraceable\(this\.ctx, this\.ctx\);/,
+  )
 })

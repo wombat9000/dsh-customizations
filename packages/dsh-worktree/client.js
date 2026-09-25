@@ -1,6 +1,6 @@
 window.__ModuleLoader__.load({
   id: '@local/dsh-worktree',
-  factory: require => {
+  factory: (require) => {
     const React = require('react')
     const h = React.createElement
     const CHANNEL = '/local-worktrees'
@@ -11,7 +11,10 @@ window.__ModuleLoader__.load({
       // details. A failed or malformed read is not an empty worktree list.
       if (result?.ok !== true) throw new Error('Worktrees RPC failed.')
       const value = result.value
-      if (value?.sessionId !== sessionId || !['ready', 'disabled', 'unavailable', 'error'].includes(value.state)) {
+      if (
+        value?.sessionId !== sessionId ||
+        !['ready', 'disabled', 'unavailable', 'error'].includes(value.state)
+      ) {
         throw new Error('Invalid Worktrees response.')
       }
       return value
@@ -29,9 +32,16 @@ window.__ModuleLoader__.load({
           const token = ++generation
           publish({ value, loading: true })
           try {
-            const result = unwrap(await rpc.call(CHANNEL, 'snapshot', { sessionId, ...selection }), sessionId)
+            const result = unwrap(
+              await rpc.call(CHANNEL, 'snapshot', { sessionId, ...selection }),
+              sessionId,
+            )
             if (disposed || token !== generation) return
-            if (result.state === 'error' || (result.state === 'ready' && !Array.isArray(result.worktrees))) throw new Error('Invalid Worktrees snapshot.')
+            if (
+              result.state === 'error' ||
+              (result.state === 'ready' && !Array.isArray(result.worktrees))
+            )
+              throw new Error('Invalid Worktrees snapshot.')
             // Pin server defaults once resolved. Keep missing explicit selections
             // unavailable; an empty history may still resolve its first run later.
             if (result.state === 'ready' && result.selected) {
@@ -41,10 +51,14 @@ window.__ModuleLoader__.load({
             value = result
             publish({ value, loading: false })
           } catch {
-            if (!disposed && token === generation) publish({ loading: false, error: 'Worktrees could not refresh. Try again.' })
+            if (!disposed && token === generation)
+              publish({ loading: false, error: 'Worktrees could not refresh. Try again.' })
           }
         },
-        dispose() { disposed = true; generation++ },
+        dispose() {
+          disposed = true
+          generation++
+        },
       }
     }
 
@@ -63,103 +77,348 @@ window.__ModuleLoader__.load({
       React.useEffect(() => {
         const reader = createReader(rpc, sessionId, setState)
         readerRef.current = reader
-        const refresh = () => { if (visible()) void reader.refresh() }
+        const refresh = () => {
+          if (visible()) void reader.refresh()
+        }
         let jobs = sessions.list.getSnapshot().jobsBySession
         const off = sessions.list.subscribe(() => {
           const next = sessions.list.getSnapshot().jobsBySession
-          if (next !== jobs) { jobs = next; refresh() }
+          if (next !== jobs) {
+            jobs = next
+            refresh()
+          }
         })
         refresh()
         // The public jobs mirror covers worker transitions, not external Git edits.
         const timer = setInterval(refresh, 10000)
         document.addEventListener('visibilitychange', refresh)
-        return () => { reader.dispose(); off(); clearInterval(timer); document.removeEventListener('visibilitychange', refresh) }
+        return () => {
+          reader.dispose()
+          off()
+          clearInterval(timer)
+          document.removeEventListener('visibilitychange', refresh)
+        }
       }, [rpc, sessionId, sessions])
       const value = state.value
       const selected = value?.selected
-      const choose = selection => { setCopied(''); void readerRef.current?.refresh(selection) }
-      const button = (text, onClick, extra = {}) => h('button', { type: 'button', onClick, ...extra }, text)
-      const badge = (text, status) => h('span', { className: 'wt-badge', 'data-state': status }, text)
-      const selectedRow = value?.worktrees?.find(row => row.path === selected?.path)
-      return h('section', { 'aria-label': 'Worktrees', className: 'wt-panel' }, h('style', null, panelCss), h('div', { className: 'wt-header' }, h('div', null, h('h2', null, 'Worktrees'), h('p', { className: 'wt-subtitle' }, 'Repository checkouts · Session activity')), h('div', { className: 'wt-refresh' }, h('span', { className: 'wt-refresh-status', role: 'status', style: { visibility: state.loading && value ? 'visible' : 'hidden' } }, 'Updating…'), button('Refresh', () => readerRef.current?.refresh(), { disabled: state.loading && !value }))),
+      const choose = (selection) => {
+        setCopied('')
+        void readerRef.current?.refresh(selection)
+      }
+      const button = (text, onClick, extra = {}) =>
+        h('button', { type: 'button', onClick, ...extra }, text)
+      const badge = (text, status) =>
+        h('span', { className: 'wt-badge', 'data-state': status }, text)
+      const selectedRow = value?.worktrees?.find((row) => row.path === selected?.path)
+      return h(
+        'section',
+        { 'aria-label': 'Worktrees', className: 'wt-panel' },
+        h('style', null, panelCss),
+        h(
+          'div',
+          { className: 'wt-header' },
+          h(
+            'div',
+            null,
+            h('h2', null, 'Worktrees'),
+            h('p', { className: 'wt-subtitle' }, 'Repository checkouts · Session activity'),
+          ),
+          h(
+            'div',
+            { className: 'wt-refresh' },
+            h(
+              'span',
+              {
+                className: 'wt-refresh-status',
+                role: 'status',
+                style: { visibility: state.loading && value ? 'visible' : 'hidden' },
+              },
+              'Updating…',
+            ),
+            button('Refresh', () => readerRef.current?.refresh(), {
+              disabled: state.loading && !value,
+            }),
+          ),
+        ),
 
         state.loading && !value && h('p', { role: 'status' }, 'Loading worktrees…'),
         state.error && h('p', { role: 'alert' }, state.error),
         value?.state === 'error' && h('p', { role: 'alert' }, value.message),
-        ['unavailable', 'disabled'].includes(value?.state) && h('p', { role: 'status' }, 'Worktree integration is unavailable for this session.'),
-        value?.state === 'ready' && h('div', { className: 'wt-layout' },
-          h('nav', { 'aria-label': 'Repository worktrees' },
-            h('div', { className: 'wt-section-title' }, h('h4', null, 'Checkouts'), badge(String(value.worktrees.length))),
-            h('p', { className: 'wt-path', title: value.repository }, value.repository),
-            value.truncated && h('p', { className: 'wt-muted' }, 'Showing the first 100 repository worktrees.'),
-            value.worktrees.length === 0 && h('p', { className: 'wt-empty' }, 'No worktrees found.'),
-            h('ul', { className: 'wt-list' }, value.worktrees.map(row => h('li', { key: row.path },
-              button(h(React.Fragment, null,
-                h('span', { className: 'wt-card-name' }, row.name),
-                h('span', { className: 'wt-branch' }, row.branch ?? 'detached / bare'),
-                h('span', { className: 'wt-badges' }, badge(`Worker: ${row.workerStatus}`, row.workerStatus), badge(row.changes.error ? 'Git unavailable' : row.changes.count === 0 ? 'Clean' : `${row.changes.count} changed ${row.changes.count === 1 ? 'file' : 'files'}`)),
-                row.cleanupUncertain && h('span', { className: 'wt-assignment' }, 'Cleanup uncertain'),
-                row.latestAssignment && h('span', { className: 'wt-assignment' }, row.latestAssignment)),
-              () => choose({ path: row.path }), { className: 'wt-card', 'aria-label': `${row.name} — ${row.branch ?? 'detached / bare'}`, 'aria-pressed': selected?.path === row.path }))))),
-          selected ? h('section', { 'aria-label': 'Selected worktree', className: 'wt-detail' },
-            h('div', { className: 'wt-title' }, h('div', null, h('h3', null, selectedRow?.name ?? selected.path.split(/[\\/]/).at(-1)), h('p', { className: 'wt-branch' }, selectedRow?.branch ?? 'detached / bare')),
-            button('Copy checkout path', async () => {
-              try { await navigator.clipboard.writeText(selected.path); setCopied('Copied checkout path.') }
-              catch { setCopied('Copy failed. Select and copy the path above.') }
-            })),
-            h('p', { className: 'wt-path' }, selected.path),
-            h('span', { role: 'status', className: 'wt-copy-status' }, copied),
-            h('div', { className: 'wt-section' }, h('h4', null, 'Changed files', h('span', { className: 'wt-count' }, selected.changes.error ? '—' : selected.changes.count))),
-            selected.changes.error ? h('p', null, selected.changes.error) : h(React.Fragment, null,
-              selected.changes.count === 0 && h('p', null, 'No changed files.'),
-              h('ul', { className: 'wt-files' }, selected.changes.files.map((file, index) => h('li', { key: index }, h('code', null, file.status), h('span', null, `${file.path}${file.from ? ` ← ${file.from}` : ''}`)))),
-              selected.changes.truncated && h('p', null, 'Showing the first 500 changed files.')),
-            h('div', { className: 'wt-section' }, h('h4', null, `This session’s recorded runs (${selected.runs.length})`)),
-            selected.runs.length === 0 && h('p', { className: 'wt-empty' }, 'No recorded runs for this worktree.'),
-            selected.runs.length > 0 && !selected.run && h('p', null, 'The selected run is no longer available. Select a retained run below.'),
-            h('ol', { className: 'wt-runs' }, selected.runs.map((run, index) => h('li', { key: run.id }, button(h(React.Fragment, null, h('span', { className: 'wt-muted' }, `#${selected.runs.length - index}`), h('span', null, run.mode === 'read-only' ? 'Read-only run' : 'Write run'), badge(run.status, run.status)), () => choose({ path: selected.path, runId: run.id }), { className: 'wt-run', 'aria-label': `${selected.runs.length - index}. ${run.mode} · ${run.status}`, 'aria-pressed': selected.run?.id === run.id })))),
-            selected.run && h('div', { className: 'wt-report' },
-              h('h4', null, 'Full assignment'), h('pre', null, selected.run.task),
-              h('h4', null, 'Available report'), h('pre', null, selected.run.report ?? 'No report available.')),
-          ) : h('p', { className: 'wt-empty' }, 'Select a worktree. The previous selection may no longer be registered.')))
+        ['unavailable', 'disabled'].includes(value?.state) &&
+          h('p', { role: 'status' }, 'Worktree integration is unavailable for this session.'),
+        value?.state === 'ready' &&
+          h(
+            'div',
+            { className: 'wt-layout' },
+            h(
+              'nav',
+              { 'aria-label': 'Repository worktrees' },
+              h(
+                'div',
+                { className: 'wt-section-title' },
+                h('h4', null, 'Checkouts'),
+                badge(String(value.worktrees.length)),
+              ),
+              h('p', { className: 'wt-path', title: value.repository }, value.repository),
+              value.truncated &&
+                h('p', { className: 'wt-muted' }, 'Showing the first 100 repository worktrees.'),
+              value.worktrees.length === 0 &&
+                h('p', { className: 'wt-empty' }, 'No worktrees found.'),
+              h(
+                'ul',
+                { className: 'wt-list' },
+                value.worktrees.map((row) =>
+                  h(
+                    'li',
+                    { key: row.path },
+                    button(
+                      h(
+                        React.Fragment,
+                        null,
+                        h('span', { className: 'wt-card-name' }, row.name),
+                        h('span', { className: 'wt-branch' }, row.branch ?? 'detached / bare'),
+                        h(
+                          'span',
+                          { className: 'wt-badges' },
+                          badge(`Worker: ${row.workerStatus}`, row.workerStatus),
+                          badge(
+                            row.changes.error
+                              ? 'Git unavailable'
+                              : row.changes.count === 0
+                                ? 'Clean'
+                                : `${row.changes.count} changed ${row.changes.count === 1 ? 'file' : 'files'}`,
+                          ),
+                        ),
+                        row.cleanupUncertain &&
+                          h('span', { className: 'wt-assignment' }, 'Cleanup uncertain'),
+                        row.latestAssignment &&
+                          h('span', { className: 'wt-assignment' }, row.latestAssignment),
+                      ),
+                      () => choose({ path: row.path }),
+                      {
+                        className: 'wt-card',
+                        'aria-label': `${row.name} — ${row.branch ?? 'detached / bare'}`,
+                        'aria-pressed': selected?.path === row.path,
+                      },
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            selected
+              ? h(
+                  'section',
+                  { 'aria-label': 'Selected worktree', className: 'wt-detail' },
+                  h(
+                    'div',
+                    { className: 'wt-title' },
+                    h(
+                      'div',
+                      null,
+                      h('h3', null, selectedRow?.name ?? selected.path.split(/[\\/]/).at(-1)),
+                      h('p', { className: 'wt-branch' }, selectedRow?.branch ?? 'detached / bare'),
+                    ),
+                    button('Copy checkout path', async () => {
+                      try {
+                        await navigator.clipboard.writeText(selected.path)
+                        setCopied('Copied checkout path.')
+                      } catch {
+                        setCopied('Copy failed. Select and copy the path above.')
+                      }
+                    }),
+                  ),
+                  h('p', { className: 'wt-path' }, selected.path),
+                  h('span', { role: 'status', className: 'wt-copy-status' }, copied),
+                  h(
+                    'div',
+                    { className: 'wt-section' },
+                    h(
+                      'h4',
+                      null,
+                      'Changed files',
+                      h(
+                        'span',
+                        { className: 'wt-count' },
+                        selected.changes.error ? '—' : selected.changes.count,
+                      ),
+                    ),
+                  ),
+                  selected.changes.error
+                    ? h('p', null, selected.changes.error)
+                    : h(
+                        React.Fragment,
+                        null,
+                        selected.changes.count === 0 && h('p', null, 'No changed files.'),
+                        h(
+                          'ul',
+                          { className: 'wt-files' },
+                          selected.changes.files.map((file, index) =>
+                            h(
+                              'li',
+                              { key: index },
+                              h('code', null, file.status),
+                              h('span', null, `${file.path}${file.from ? ` ← ${file.from}` : ''}`),
+                            ),
+                          ),
+                        ),
+                        selected.changes.truncated &&
+                          h('p', null, 'Showing the first 500 changed files.'),
+                      ),
+                  h(
+                    'div',
+                    { className: 'wt-section' },
+                    h('h4', null, `This session’s recorded runs (${selected.runs.length})`),
+                  ),
+                  selected.runs.length === 0 &&
+                    h('p', { className: 'wt-empty' }, 'No recorded runs for this worktree.'),
+                  selected.runs.length > 0 &&
+                    !selected.run &&
+                    h(
+                      'p',
+                      null,
+                      'The selected run is no longer available. Select a retained run below.',
+                    ),
+                  h(
+                    'ol',
+                    { className: 'wt-runs' },
+                    selected.runs.map((run, index) =>
+                      h(
+                        'li',
+                        { key: run.id },
+                        button(
+                          h(
+                            React.Fragment,
+                            null,
+                            h(
+                              'span',
+                              { className: 'wt-muted' },
+                              `#${selected.runs.length - index}`,
+                            ),
+                            h(
+                              'span',
+                              null,
+                              run.mode === 'read-only' ? 'Read-only run' : 'Write run',
+                            ),
+                            badge(run.status, run.status),
+                          ),
+                          () => choose({ path: selected.path, runId: run.id }),
+                          {
+                            className: 'wt-run',
+                            'aria-label': `${selected.runs.length - index}. ${run.mode} · ${run.status}`,
+                            'aria-pressed': selected.run?.id === run.id,
+                          },
+                        ),
+                      ),
+                    ),
+                  ),
+                  selected.run &&
+                    h(
+                      'div',
+                      { className: 'wt-report' },
+                      h('h4', null, 'Full assignment'),
+                      h('pre', null, selected.run.task),
+                      h('h4', null, 'Available report'),
+                      h('pre', null, selected.run.report ?? 'No report available.'),
+                    ),
+                )
+              : h(
+                  'p',
+                  { className: 'wt-empty' },
+                  'Select a worktree. The previous selection may no longer be registered.',
+                ),
+          ),
+      )
     }
 
-    function watchCapability({ sessions, rpc, register, interval = setInterval, clear = clearInterval, document: doc = document }) {
+    function watchCapability({
+      sessions,
+      rpc,
+      register,
+      interval = setInterval,
+      clear = clearInterval,
+      document: doc = document,
+    }) {
       let current
       let generation = 0
       let offTab
       let stopped = false
       let pending
-      const remove = () => { offTab?.(); offTab = undefined }
+      const remove = () => {
+        offTab?.()
+        offTab = undefined
+      }
       function check() {
         const id = sessions.list.getSnapshot().current
-        if (id !== current) { current = id; generation++; pending = undefined; remove() }
+        if (id !== current) {
+          current = id
+          generation++
+          pending = undefined
+          remove()
+        }
         if (stopped || !id || doc.visibilityState === 'hidden' || pending) return
         const token = generation
-        pending = Promise.resolve().then(() => rpc.call(CHANNEL, 'capability', { sessionId: id })).then(result => {
-          if (stopped || token !== generation) return
-          const value = unwrap(result, id)
-          if (value?.sessionId === id && value.state === 'ready') { if (!offTab) offTab = register(id) }
-          else remove()
-        }).catch(() => { if (!stopped && token === generation) remove() }).finally(() => { if (token === generation) pending = undefined })
+        pending = Promise.resolve()
+          .then(() => rpc.call(CHANNEL, 'capability', { sessionId: id }))
+          .then((result) => {
+            if (stopped || token !== generation) return
+            const value = unwrap(result, id)
+            if (value?.sessionId === id && value.state === 'ready') {
+              if (!offTab) offTab = register(id)
+            } else remove()
+          })
+          .catch(() => {
+            if (!stopped && token === generation) remove()
+          })
+          .finally(() => {
+            if (token === generation) pending = undefined
+          })
       }
       const off = sessions.list.subscribe(check)
       const timer = interval(check, 10000)
       doc.addEventListener('visibilitychange', check)
       check()
-      return () => { stopped = true; generation++; remove(); off(); clear(timer); doc.removeEventListener('visibilitychange', check) }
+      return () => {
+        stopped = true
+        generation++
+        remove()
+        off()
+        clear(timer)
+        doc.removeEventListener('visibilitychange', check)
+      }
     }
     return {
-      name: 'local-worktrees', inject: ['slots', 'sessions', 'connection'],
+      name: 'local-worktrees',
+      inject: ['slots', 'sessions', 'connection'],
       apply(ctx) {
-        ctx.slots.inject('conversation.view', () => watchCapability({
-          sessions: ctx.sessions, rpc: ctx.connection.rpc,
-          register: sessionId => ctx.slots.register({ name: 'conversation.view', id: 'worktrees', order: 20, label: 'Worktrees',
-            inject: viewed => ({ sessionId: viewed }) },
-          props => props.sessionId === sessionId ? h(Panel, { key: sessionId, sessionId, sessions: ctx.sessions, rpc: ctx.connection.rpc }) : null),
-        }))
+        ctx.slots.inject('conversation.view', () =>
+          watchCapability({
+            sessions: ctx.sessions,
+            rpc: ctx.connection.rpc,
+            register: (sessionId) =>
+              ctx.slots.register(
+                {
+                  name: 'conversation.view',
+                  id: 'worktrees',
+                  order: 20,
+                  label: 'Worktrees',
+                  inject: (viewed) => ({ sessionId: viewed }),
+                },
+                (props) =>
+                  props.sessionId === sessionId
+                    ? h(Panel, {
+                        key: sessionId,
+                        sessionId,
+                        sessions: ctx.sessions,
+                        rpc: ctx.connection.rpc,
+                      })
+                    : null,
+              ),
+          }),
+        )
       },
-      createReader, watchCapability, Panel,
+      createReader,
+      watchCapability,
+      Panel,
     }
   },
 })

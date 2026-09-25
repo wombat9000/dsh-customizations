@@ -6,7 +6,8 @@ import test from 'node:test'
 import { apply, FIRECRAWL_CREDENTIAL_REF } from '../src/index.js'
 
 const ROOT = fileURLToPath(new URL('../../../', import.meta.url))
-const json = async (relative) => JSON.parse(await readFile(new URL(relative, import.meta.url), 'utf8'))
+const json = async (relative) =>
+  JSON.parse(await readFile(new URL(relative, import.meta.url), 'utf8'))
 
 // Adapted from the source package's standalone Web boot smoke test. Repository
 // wiring checks must not install profiles or start another DSH instance.
@@ -24,7 +25,10 @@ test('portable recipe installs the matching Firecrawl bundle after base and Web'
   assert.ok(manifest.dsh.client.inject.includes('@deepseek-ai/dsh-client-ui-settings-plugins'))
   assert.ok(manifest.dsh.client.inject.includes('@deepseek-ai/dsh-api-remotes'))
   assert.equal(manifest.dsh.client.platform, 'web')
-  for (const [name, version] of Object.entries({ ...manifest.dependencies, ...manifest.peerDependencies })) {
+  for (const [name, version] of Object.entries({
+    ...manifest.dependencies,
+    ...manifest.peerDependencies,
+  })) {
     if (name.startsWith('@deepseek-ai/dsh-')) assert.equal(version, '0.1.5-rc.2', name)
   }
   const patch = await readFile(new URL('../cordis.patch.yml', import.meta.url), 'utf8')
@@ -32,14 +36,24 @@ test('portable recipe installs the matching Firecrawl bundle after base and Web'
   assert.match(patch, /- id: tool-web\s+config:\s+search: true\s+fetch: true/)
   assert.match(patch, /- insert:\s+- id: local-web-firecrawl\s+name: '@local\/dsh-web-firecrawl'/)
   assert.doesNotMatch(patch, /apiKey|FIRECRAWL_API_KEY/)
-  const result = spawnSync(process.execPath, ['scripts/apply-profile.mjs', '--', 'personal-web', '--dry-run'], {
-    cwd: ROOT, encoding: 'utf8', timeout: 10000,
-    // No credentials or user DSH paths are needed for a dry run.
-    env: { PATH: process.env.PATH },
-  })
+  const result = spawnSync(
+    process.execPath,
+    ['scripts/apply-profile.mjs', '--', 'personal-web', '--dry-run'],
+    {
+      cwd: ROOT,
+      encoding: 'utf8',
+      timeout: 10000,
+      // No credentials or user DSH paths are needed for a dry run.
+      env: { PATH: process.env.PATH },
+    },
+  )
   assert.equal(result.status, 0, result.stderr)
   assert.match(result.stdout, /Applying @local\/dsh-web-firecrawl to profile personal-web/)
-  assert.ok(result.stdout.includes(JSON.stringify(fileURLToPath(new URL('../', import.meta.url)).replace(/\/$/, ''))))
+  assert.ok(
+    result.stdout.includes(
+      JSON.stringify(fileURLToPath(new URL('../', import.meta.url)).replace(/\/$/, '')),
+    ),
+  )
   assert.match(result.stdout, /Would run: .*"--dump-config"/)
   assert.match(result.stdout, /Dry run complete/)
 })
@@ -52,21 +66,42 @@ function host(config = {}) {
   const ctx = {
     inject(dependencies, install) {
       assert.deepEqual(dependencies, ['settings'])
-      install({ settings: { installSection(owner, namespace, schema, initial) {
-        settings = { owner, namespace, schema, initial }
-      } } })
+      install({
+        settings: {
+          installSection(owner, namespace, schema, initial) {
+            settings = { owner, namespace, schema, initial }
+          },
+        },
+      })
     },
     get(name) {
       assert.equal(name, 'credentials')
-      return { async resolve(ref) { refs.push(ref); return key ? { value: key } : undefined } }
+      return {
+        async resolve(ref) {
+          refs.push(ref)
+          return key ? { value: key } : undefined
+        },
+      }
     },
     web: {
-      registerSearchProvider(value) { provider = value },
-      registerFetchProvider(value) { assert.equal(value, provider) },
+      registerSearchProvider(value) {
+        provider = value
+      },
+      registerFetchProvider(value) {
+        assert.equal(value, provider)
+      },
     },
   }
   apply(ctx, config)
-  return { ctx, provider, refs, settings, rotate(value) { key = value } }
+  return {
+    ctx,
+    provider,
+    refs,
+    settings,
+    rotate(value) {
+      key = value
+    },
+  }
 }
 
 test('host settings stay empty while the provider resolves rotated credential references', async () => {
@@ -79,7 +114,9 @@ test('host settings stay empty while the provider resolves rotated credential re
   instance.rotate('fc-test-rotated')
   assert.equal(await instance.provider.apiKey(undefined, 'scrape'), 'fc-test-rotated')
   instance.rotate(undefined)
-  await assert.rejects(instance.provider.apiKey(undefined, 'search'), { code: 'WEB_PROVIDER_CREDENTIAL_MISSING' })
+  await assert.rejects(instance.provider.apiKey(undefined, 'search'), {
+    code: 'WEB_PROVIDER_CREDENTIAL_MISSING',
+  })
   assert.deepEqual(instance.refs, Array(3).fill(FIRECRAWL_CREDENTIAL_REF))
   assert.deepEqual(instance.settings.initial, {})
 })

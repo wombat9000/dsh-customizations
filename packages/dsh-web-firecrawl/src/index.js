@@ -40,11 +40,9 @@ function isAbortError(error, signal) {
 }
 
 function aborted(operation, signal, cause) {
-  return new WebError(
-    `Firecrawl ${operation} aborted`,
-    'WEB_ABORTED',
-    { cause: signal?.aborted === true ? signal.reason : cause },
-  )
+  return new WebError(`Firecrawl ${operation} aborted`, 'WEB_ABORTED', {
+    cause: signal?.aborted === true ? signal.reason : cause,
+  })
 }
 
 function abortable(operation, signal, operationName) {
@@ -93,7 +91,10 @@ export function mapFirecrawlSearchResponse(data, requestedLimit) {
   }
   const web = data.web
   if (web !== undefined && !Array.isArray(web)) {
-    throw new WebError('Firecrawl returned an unprocessable search result list', 'WEB_PROVIDER_ERROR')
+    throw new WebError(
+      'Firecrawl returned an unprocessable search result list',
+      'WEB_PROVIDER_ERROR',
+    )
   }
   return {
     sources: (web ?? []).map(mapSearchSource).filter((source) => source !== undefined),
@@ -119,9 +120,10 @@ export function mapFirecrawlScrapeResponse(data, requestedURL, maxBodyChars) {
   const finalURL = optionalText(metadata.url) ?? optionalText(metadata.sourceURL) ?? requestedURL
   const statusCode = Number.isInteger(metadata.statusCode) ? metadata.statusCode : 200
   const bodyTruncated = markdown.length > maxBodyChars
-  const documentTruncated = Number.isInteger(metadata.totalPages)
-    && Number.isInteger(metadata.numPages)
-    && metadata.totalPages > metadata.numPages
+  const documentTruncated =
+    Number.isInteger(metadata.totalPages) &&
+    Number.isInteger(metadata.numPages) &&
+    metadata.totalPages > metadata.numPages
 
   return {
     url: finalURL,
@@ -146,10 +148,12 @@ export class FirecrawlWebProvider {
   }
 
   available() {
-    return ((this.options.apiKey?.length ?? 0) > 0 || this.options.resolveApiKey !== undefined)
-      && validBaseURL(this.options.baseURL)
-      && Number.isInteger(this.options.maxBodyChars)
-      && this.options.maxBodyChars > 0
+    return (
+      ((this.options.apiKey?.length ?? 0) > 0 || this.options.resolveApiKey !== undefined) &&
+      validBaseURL(this.options.baseURL) &&
+      Number.isInteger(this.options.maxBodyChars) &&
+      this.options.maxBodyChars > 0
+    )
   }
 
   async apiKey(signal, operation) {
@@ -230,29 +234,43 @@ export class FirecrawlWebProvider {
       throw new WebError(apiErrorMessage(payload, response.status), 'WEB_PROVIDER_ERROR')
     }
     if (!isRecord(payload) || payload.success !== true || !('data' in payload)) {
-      throw new WebError(`Firecrawl returned an unprocessable ${operation} response`, 'WEB_PROVIDER_ERROR')
+      throw new WebError(
+        `Firecrawl returned an unprocessable ${operation} response`,
+        'WEB_PROVIDER_ERROR',
+      )
     }
     return payload.data
   }
 
   async search(request, signal) {
     const requestedLimit = request.maxResults
-    const limit = requestedLimit === undefined
-      ? undefined
-      : Math.min(requestedLimit, FIRECRAWL_MAX_SEARCH_RESULTS)
-    const data = await this.request('/search', {
-      query: request.query,
-      sources: [{ type: 'web' }],
-      ...(limit !== undefined ? { limit } : {}),
-    }, signal, 'search')
+    const limit =
+      requestedLimit === undefined
+        ? undefined
+        : Math.min(requestedLimit, FIRECRAWL_MAX_SEARCH_RESULTS)
+    const data = await this.request(
+      '/search',
+      {
+        query: request.query,
+        sources: [{ type: 'web' }],
+        ...(limit !== undefined ? { limit } : {}),
+      },
+      signal,
+      'search',
+    )
     return mapFirecrawlSearchResponse(data, requestedLimit)
   }
 
   async fetch(request, signal) {
-    const data = await this.request('/scrape', {
-      url: request.url,
-      formats: [{ type: 'markdown' }],
-    }, signal, 'scrape')
+    const data = await this.request(
+      '/scrape',
+      {
+        url: request.url,
+        formats: [{ type: 'markdown' }],
+      },
+      signal,
+      'scrape',
+    )
     return mapFirecrawlScrapeResponse(data, request.url, this.options.maxBodyChars)
   }
 }
@@ -261,15 +279,20 @@ export function apply(ctx, config = {}) {
   // The configurable-plugin directory only renders cards with a served namespace.
   // This card edits credentials, never settings-file secrets, so its document is empty.
   ctx.inject(['settings'], (settingsCtx) => {
-    settingsCtx.settings.installSection(ctx, 'web-firecrawl', z.object({}), {}, {
-      setSource: () => {},
-      onChange: () => {},
-    })
+    settingsCtx.settings.installSection(
+      ctx,
+      'web-firecrawl',
+      z.object({}),
+      {},
+      {
+        setSource: () => {},
+        onChange: () => {},
+      },
+    )
   })
   const apiKeyEnv = FIRECRAWL_CREDENTIAL_REF
-  const literalApiKey = config.apiKey !== undefined && config.apiKey.length > 0
-    ? config.apiKey
-    : undefined
+  const literalApiKey =
+    config.apiKey !== undefined && config.apiKey.length > 0 ? config.apiKey : undefined
   const provider = new FirecrawlWebProvider({
     ...(literalApiKey !== undefined ? { apiKey: literalApiKey } : {}),
     apiKeyEnv,

@@ -4,19 +4,33 @@ import { openSeededSession } from './session-navigation.mjs'
 
 // Locator double for the CI accessibility tree. It models group visibility,
 // strict matching and loaded content, not Playwright's browser auto-waiting.
-function fixture({ expanded = true, age = '8mo', seed = true, content = true, duplicate = false, grouped = true } = {}) {
+function fixture({
+  expanded = true,
+  age = '8mo',
+  seed = true,
+  content = true,
+  duplicate = false,
+  grouped = true,
+} = {}) {
   const clicks = []
   const waits = []
   let selected
   const workspace = { role: 'treeitem', name: grouped ? 'workspace' : 'Ungrouped', expanded }
   const blank = { role: 'treeitem', name: 'New Session', parent: workspace }
   const persisted = { role: 'treeitem', name: `workspace ${age}`, parent: workspace }
-  const tree = { role: 'tree', name: 'Sessions', children: [workspace, blank, ...(seed ? [persisted] : [])] }
+  const tree = {
+    role: 'tree',
+    name: 'Sessions',
+    children: [workspace, blank, ...(seed ? [persisted] : [])],
+  }
   if (duplicate) tree.children.push({ ...persisted })
   const message = { text: 'Review the Session recap interface.' }
-  const nodes = [tree, ...tree.children,
+  const nodes = [
+    tree,
+    ...tree.children,
     // An identical row in another tree must not affect scoped navigation.
-    { role: 'treeitem', name: `workspace ${age}` }]
+    { role: 'treeitem', name: `workspace ${age}` },
+  ]
   function matches(value, name, exact) {
     return name instanceof RegExp ? name.test(value) : exact ? value === name : value.includes(name)
   }
@@ -27,13 +41,21 @@ function fixture({ expanded = true, age = '8mo', seed = true, content = true, du
       return found[0]
     }
     function visible(node) {
-      return node === message ? selected === persisted && content : !node.parent || node.parent.expanded
+      return node === message
+        ? selected === persisted && content
+        : !node.parent || node.parent.expanded
     }
     return {
-      first() { return locator(() => resolve().slice(0, 1)) },
-      async count() { return resolve().length },
+      first() {
+        return locator(() => resolve().slice(0, 1))
+      },
+      async count() {
+        return resolve().length
+      },
       getByRole(role, { name, exact }) {
-        return locator(() => one().children.filter(node => node.role === role && matches(node.name, name, exact)))
+        return locator(() =>
+          one().children.filter((node) => node.role === role && matches(node.name, name, exact)),
+        )
       },
       async waitFor({ state }) {
         assert.equal(state, 'visible')
@@ -56,11 +78,13 @@ function fixture({ expanded = true, age = '8mo', seed = true, content = true, du
   }
   const page = {
     getByRole(role, { name, exact }) {
-      return locator(() => nodes.filter(node => node.role === role && matches(node.name, name, exact)))
+      return locator(() =>
+        nodes.filter((node) => node.role === role && matches(node.name, name, exact)),
+      )
     },
     getByText(text, { exact }) {
       assert.equal(exact, true)
-      return locator(() => matches(message.text, text, exact) ? [message] : [])
+      return locator(() => (matches(message.text, text, exact) ? [message] : []))
     },
   }
   return { page, clicks, waits }
@@ -81,12 +105,13 @@ test('expands a collapsed workspace before selecting the persisted session', asy
   assert.deepEqual(clicks, ['workspace', 'workspace 8mo'])
 })
 
-for (const expanded of [true, false]) test(`finds the root session under Ungrouped (expanded=${expanded})`, async () => {
-  const { page, clicks, waits } = fixture({ grouped: false, expanded })
-  await openSeededSession(page)
-  assert.deepEqual(clicks, [...(expanded ? [] : ['Ungrouped']), 'workspace 8mo'])
-  assert.deepEqual(waits, ['Ungrouped', 'Review the Session recap interface.'])
-})
+for (const expanded of [true, false])
+  test(`finds the root session under Ungrouped (expanded=${expanded})`, async () => {
+    const { page, clicks, waits } = fixture({ grouped: false, expanded })
+    await openSeededSession(page)
+    assert.deepEqual(clicks, [...(expanded ? [] : ['Ungrouped']), 'workspace 8mo'])
+    assert.deepEqual(waits, ['Ungrouped', 'Review the Session recap interface.'])
+  })
 
 test('does not substitute the workspace, blank session or an out-of-tree row for a missing seed', async () => {
   const { page, clicks } = fixture({ seed: false })

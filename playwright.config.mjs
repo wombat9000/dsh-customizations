@@ -14,11 +14,18 @@ export default defineConfig({
   outputDir: 'artifacts/real-ui',
   reporter: [['list']],
   use: {
-    browserName: 'chromium', headless: true,
+    browserName: 'chromium',
+    headless: true,
     viewport: { width: 1100, height: 850 },
-    locale: 'en-US', timezoneId: 'UTC', deviceScaleFactor: 1,
+    locale: 'en-US',
+    timezoneId: 'UTC',
+    deviceScaleFactor: 1,
     reducedMotion: 'reduce',
-    trace: 'off', video: 'off', screenshot: 'only-on-failure',
+    trace: 'off',
+    video: 'off',
+    screenshot: 'only-on-failure',
   },
-  expect: { toHaveScreenshot: { animations: 'disabled', caret: 'hide', maxDiffPixels: 0, threshold: 0 } },
+  expect: {
+    toHaveScreenshot: { animations: 'disabled', caret: 'hide', maxDiffPixels: 0, threshold: 0 },
+  },
 })

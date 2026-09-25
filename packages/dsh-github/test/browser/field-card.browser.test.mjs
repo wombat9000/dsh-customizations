@@ -5,27 +5,120 @@ import { page, userEvent } from 'vitest/browser'
 import source from '../../client.js?raw'
 let root, container
 const h = React.createElement
-const click = locator => act(async () => locator.click())
+const click = (locator) => act(async () => locator.click())
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
-afterEach(async () => { await act(async () => root?.unmount()); container?.remove(); document.documentElement.style.colorScheme = '' })
-const prepared = { version: 1, toolName: 'github_set_project_item_field', callId: 'call', phase: 'prepared', exactPreview: 'Exact approved payload:  two spaces\nand a new line.',
-  change: { field: { id: 'F_STATUS', name: 'Board status', dataType: 'SINGLE_SELECT' }, before: { optionId: 'OPT_OLD', name: 'In Progress', field: { id: 'F_STATUS', dataType: 'SINGLE_SELECT' } }, after: { singleSelectOptionId: 'OPT_NEW' }, selectedOption: { id: 'OPT_NEW', name: 'Done' } },
-  targets: { project: { id: 'P_TARGET', title: 'Roadmap', number: 7, url: 'https://github.com/orgs/fixture/projects/7' }, item: { id: 'ITEM', project: { id: 'P_TARGET' }, content: { __typename: 'Issue', id: 'I_TARGET', number: 34, title: 'Approved GitHub write tools', url: 'https://github.com/fixture/repo/issues/34' } } } }
-const settled = (outcome, extra = {}) => ({ kind: 'tool-result', call: { argsRaw: '{"value":{"singleSelectOptionId":"OPT_NEW"}}' }, content: [{ type: 'text', text: JSON.stringify({ host: 'github.com', operation: 'setProjectItemField', outcome, ...extra }) }] })
+afterEach(async () => {
+  await act(async () => root?.unmount())
+  container?.remove()
+  document.documentElement.style.colorScheme = ''
+})
+const prepared = {
+  version: 1,
+  toolName: 'github_set_project_item_field',
+  callId: 'call',
+  phase: 'prepared',
+  exactPreview: 'Exact approved payload:  two spaces\nand a new line.',
+  change: {
+    field: { id: 'F_STATUS', name: 'Board status', dataType: 'SINGLE_SELECT' },
+    before: {
+      optionId: 'OPT_OLD',
+      name: 'In Progress',
+      field: { id: 'F_STATUS', dataType: 'SINGLE_SELECT' },
+    },
+    after: { singleSelectOptionId: 'OPT_NEW' },
+    selectedOption: { id: 'OPT_NEW', name: 'Done' },
+  },
+  targets: {
+    project: {
+      id: 'P_TARGET',
+      title: 'Roadmap',
+      number: 7,
+      url: 'https://github.com/orgs/fixture/projects/7',
+    },
+    item: {
+      id: 'ITEM',
+      project: { id: 'P_TARGET' },
+      content: {
+        __typename: 'Issue',
+        id: 'I_TARGET',
+        number: 34,
+        title: 'Approved GitHub write tools',
+        url: 'https://github.com/fixture/repo/issues/34',
+      },
+    },
+  },
+}
+const settled = (outcome, extra = {}) => ({
+  kind: 'tool-result',
+  call: { argsRaw: '{"value":{"singleSelectOptionId":"OPT_NEW"}}' },
+  content: [
+    {
+      type: 'text',
+      text: JSON.stringify({
+        host: 'github.com',
+        operation: 'setProjectItemField',
+        outcome,
+        ...extra,
+      }),
+    },
+  ],
+})
 async function mount(handler = () => prepared, extra = {}) {
   let record
   const previous = window.__ModuleLoader__
-  window.__ModuleLoader__ = { load: value => { record = value } }
-  try { new Function(source)() } finally { window.__ModuleLoader__ = previous }
-  const plugin = record.factory(() => React), calls = []
-  const request = async (action, body, signal) => { calls.push({ action, body, signal }); return handler(action, body, signal) }
-  container = document.createElement('div'); document.body.append(container); root = createRoot(container)
-  let props = { sessionId: 'session', callId: 'call', block: { argsRaw: '{"value":{"singleSelectOptionId":"OPT_NEW"}}' }, request, ...extra }
+  window.__ModuleLoader__ = {
+    load: (value) => {
+      record = value
+    },
+  }
+  try {
+    new Function(source)()
+  } finally {
+    window.__ModuleLoader__ = previous
+  }
+  const plugin = record.factory(() => React),
+    calls = []
+  const request = async (action, body, signal) => {
+    calls.push({ action, body, signal })
+    return handler(action, body, signal)
+  }
+  container = document.createElement('div')
+  document.body.append(container)
+  root = createRoot(container)
+  let props = {
+    sessionId: 'session',
+    callId: 'call',
+    block: { argsRaw: '{"value":{"singleSelectOptionId":"OPT_NEW"}}' },
+    request,
+    ...extra,
+  }
   await act(async () => root.render(h(plugin.FieldChangeCard, props)))
-  return { calls, async render(changes) { props = { ...props, ...changes }; await act(async () => root.render(h(plugin.FieldChangeCard, props))) } }
+  return {
+    calls,
+    async render(changes) {
+      props = { ...props, ...changes }
+      await act(async () => root.render(h(plugin.FieldChangeCard, props)))
+    },
+  }
 }
 test('verified field change retains native approval preview, stable identities, and raw details', async () => {
-  const fixture = await mount(undefined, { useSessionPendingInteraction: select => select(new Map([['session', { kind: 'approval', callId: 'call', toolName: prepared.toolName, key: 'pending-1', reason: prepared.exactPreview }]])) })
+  const fixture = await mount(undefined, {
+    useSessionPendingInteraction: (select) =>
+      select(
+        new Map([
+          [
+            'session',
+            {
+              kind: 'approval',
+              callId: 'call',
+              toolName: prepared.toolName,
+              key: 'pending-1',
+              reason: prepared.exactPreview,
+            },
+          ],
+        ]),
+      ),
+  })
   expect(container.textContent).toContain('Awaiting approval')
   expect(container.textContent).toContain('Issue #34 — Approved GitHub write tools')
   expect(container.textContent).toContain('Board status')
@@ -33,29 +126,56 @@ test('verified field change retains native approval preview, stable identities, 
   expect(container.textContent).toContain('Before ID: OPT_OLD')
   expect(container.textContent).toContain('Project ID: P_TARGET; Item ID: ITEM; Field ID: F_STATUS')
   await click(page.getByText('Complete exact approval preview', { exact: true }))
-  expect(Array.from(container.querySelectorAll('pre')).some(pre => pre.textContent === prepared.exactPreview)).toBe(true)
+  expect(
+    Array.from(container.querySelectorAll('pre')).some(
+      (pre) => pre.textContent === prepared.exactPreview,
+    ),
+  ).toBe(true)
   await click(page.getByText('Technical details', { exact: true }))
   expect(container.textContent).toContain('OPT_NEW')
   expect(container.querySelectorAll('button')).toHaveLength(0)
-  expect(fixture.calls.every(call => call.action === 'status')).toBe(true)
+  expect(fixture.calls.every((call) => call.action === 'status')).toBe(true)
 })
-test.each(['prepared', 'approved', 'authorized-by-grant', 'running', 'denied', 'failed', 'unattempted'])('phase %s never reports confirmed success', async phase => {
+test.each([
+  'prepared',
+  'approved',
+  'authorized-by-grant',
+  'running',
+  'denied',
+  'failed',
+  'unattempted',
+])('phase %s never reports confirmed success', async (phase) => {
   await mount(() => ({ ...prepared, phase }))
   expect(container.querySelector('[role="status"]').textContent).not.toContain('GitHub confirmed')
   expect(container.querySelectorAll('button')).toHaveLength(0)
 })
 test('confirmation and uncertainty use explicit result evidence and preserve warnings', async () => {
-  const fixture = await mount(() => ({ ...prepared, phase: 'running' }), { block: settled('confirmed') })
+  const fixture = await mount(() => ({ ...prepared, phase: 'running' }), {
+    block: settled('confirmed'),
+  })
   expect(container.textContent).toContain('GitHub confirmed the update')
   expect(container.textContent).toContain('not a fresh read')
-  await fixture.render({ block: settled('uncertain', { message: 'Dispatched write outcome is unknown.', cleanupWarning: 'Backend fenced until verified.' }) })
+  await fixture.render({
+    block: settled('uncertain', {
+      message: 'Dispatched write outcome is unknown.',
+      cleanupWarning: 'Backend fenced until verified.',
+    }),
+  })
   expect(container.textContent).toContain('Outcome uncertain')
   expect(container.textContent).toContain('Backend fenced until verified')
   expect(container.textContent).toContain('Do not retry automatically')
   expect(container.textContent).not.toContain('GitHub confirmed the update')
 })
 test('missing names and malformed values fall back without inferring before from requested after', async () => {
-  await mount(() => ({ ...prepared, change: { field: { id: 'F_STATUS', dataType: 'SINGLE_SELECT' }, after: { singleSelectOptionId: 'OPT_NEW' }, selectedOption: { id: 'WRONG', name: 'Fake name' } }, targets: { project: { id: 'P_TARGET' }, item: { id: 'ITEM' } } }))
+  await mount(() => ({
+    ...prepared,
+    change: {
+      field: { id: 'F_STATUS', dataType: 'SINGLE_SELECT' },
+      after: { singleSelectOptionId: 'OPT_NEW' },
+      selectedOption: { id: 'WRONG', name: 'Fake name' },
+    },
+    targets: { project: { id: 'P_TARGET' }, item: { id: 'ITEM' } },
+  }))
   expect(container.textContent).toContain('Field F_STATUS')
   expect(container.textContent).not.toContain('Previous value unavailable')
   expect(container.textContent).toContain('OPT_NEW')
@@ -63,62 +183,128 @@ test('missing names and malformed values fall back without inferring before from
   expect(container.textContent).not.toContain('→')
 })
 test('expired bridge and malformed settled result do not imply success', async () => {
-  await mount(() => ({ version: 1, phase: 'expired', grants: [], history: [] }), { block: { kind: 'tool-result', isError: false, content: [{ type: 'text', text: 'not JSON' }] } })
+  await mount(() => ({ version: 1, phase: 'expired', grants: [], history: [] }), {
+    block: { kind: 'tool-result', isError: false, content: [{ type: 'text', text: 'not JSON' }] },
+  })
   expect(container.textContent).toContain('Outcome unknown')
   expect(container.textContent).not.toContain('Previous value unavailable')
   expect(container.textContent).not.toContain('GitHub confirmed')
 })
-test.each(['light', 'dark'])('no-change and failure summaries omit placeholders in narrow %s layout', async scheme => {
-  document.documentElement.style.colorScheme = scheme
-  let inspected = 0
-  const fixture = await mount(() => ({ version: 1, phase: 'expired' }), { block: settled('no-change', { dispatched: false, reason: 'FIELD_VALUE_ALREADY_SET' }), inspect: () => { inspected++ } })
-  container.style.width = '320px'
-  expect(container.textContent).toContain('No change needed')
-  expect(container.textContent).toContain('The field already has the requested value. Nothing was changed.')
-  expect(container.textContent).not.toContain('unavailable')
-  expect(container.querySelector('[aria-label="Prepared before and after values"]')).toBeNull()
-  const summary = page.getByText('Technical details', { exact: true }).element()
-  expect(summary.parentElement.open).toBe(false)
-  summary.focus()
-  await act(async () => userEvent.keyboard('{Enter}'))
-  expect(summary.parentElement.open).toBe(true)
-  await click(page.getByRole('button', { name: 'Inspect tool call' }))
-  expect(inspected).toBe(1)
-  await click(page.getByText('Technical details', { exact: true }))
-  const block = settled('failed', { error: { code: 'NOT_FOUND', message: 'The requested project was not found. ghp_syntheticsecret' } })
-  block.call.argsRaw = JSON.stringify({ owner: 'fixture', projectNumber: 7, itemId: 'PI_TARGET', fieldId: 'F_STATUS', value: { singleSelectOptionId: 'OPT_NEW' } })
-  await fixture.render({ block })
-  expect(container.querySelector('[role="alert"]').textContent).toBe('The requested project was not found. [REDACTED]')
-  expect(container.textContent).toContain('Requested target (call arguments, not verified resource metadata): Owner: fixture; Project number: 7; Item ID: PI_TARGET; Field ID: F_STATUS')
-  expect(container.textContent).not.toContain('unavailable')
-  expect(container.querySelector('[aria-label="Prepared before and after values"]')).toBeNull()
-  expect(container.scrollWidth).toBeLessThanOrEqual(320)
-})
+test.each(['light', 'dark'])(
+  'no-change and failure summaries omit placeholders in narrow %s layout',
+  async (scheme) => {
+    document.documentElement.style.colorScheme = scheme
+    let inspected = 0
+    const fixture = await mount(() => ({ version: 1, phase: 'expired' }), {
+      block: settled('no-change', { dispatched: false, reason: 'FIELD_VALUE_ALREADY_SET' }),
+      inspect: () => {
+        inspected++
+      },
+    })
+    container.style.width = '320px'
+    expect(container.textContent).toContain('No change needed')
+    expect(container.textContent).toContain(
+      'The field already has the requested value. Nothing was changed.',
+    )
+    expect(container.textContent).not.toContain('unavailable')
+    expect(container.querySelector('[aria-label="Prepared before and after values"]')).toBeNull()
+    const summary = page.getByText('Technical details', { exact: true }).element()
+    expect(summary.parentElement.open).toBe(false)
+    summary.focus()
+    await act(async () => userEvent.keyboard('{Enter}'))
+    expect(summary.parentElement.open).toBe(true)
+    await click(page.getByRole('button', { name: 'Inspect tool call' }))
+    expect(inspected).toBe(1)
+    await click(page.getByText('Technical details', { exact: true }))
+    const block = settled('failed', {
+      error: {
+        code: 'NOT_FOUND',
+        message: 'The requested project was not found. ghp_syntheticsecret',
+      },
+    })
+    block.call.argsRaw = JSON.stringify({
+      owner: 'fixture',
+      projectNumber: 7,
+      itemId: 'PI_TARGET',
+      fieldId: 'F_STATUS',
+      value: { singleSelectOptionId: 'OPT_NEW' },
+    })
+    await fixture.render({ block })
+    expect(container.querySelector('[role="alert"]').textContent).toBe(
+      'The requested project was not found. [REDACTED]',
+    )
+    expect(container.textContent).toContain(
+      'Requested target (call arguments, not verified resource metadata): Owner: fixture; Project number: 7; Item ID: PI_TARGET; Field ID: F_STATUS',
+    )
+    expect(container.textContent).not.toContain('unavailable')
+    expect(container.querySelector('[aria-label="Prepared before and after values"]')).toBeNull()
+    expect(container.scrollWidth).toBeLessThanOrEqual(320)
+  },
+)
 test('historical errors stay visible but never become structured no-change', async () => {
-  await mount(() => ({ version: 1, phase: 'expired' }), { block: { kind: 'tool-result', isError: true, content: [{ type: 'text', text: 'Error: The requested relationship or value already exists. No mutation was dispatched.' }] } })
+  await mount(() => ({ version: 1, phase: 'expired' }), {
+    block: {
+      kind: 'tool-result',
+      isError: true,
+      content: [
+        {
+          type: 'text',
+          text: 'Error: The requested relationship or value already exists. No mutation was dispatched.',
+        },
+      ],
+    },
+  })
   expect(container.querySelector('[role="alert"]').textContent).toContain('already exists')
   expect(container.querySelector('[role="status"]').textContent).toBe('Field change failed')
   expect(container.textContent).not.toContain('No change needed')
 })
 test('session changes abort requests and discard late prepared names', async () => {
   let resolveOld
-  const fixture = await mount((_action, body) => body.sessionId === 'session' ? new Promise(resolve => { resolveOld = resolve }) : { version: 1, phase: 'expired' })
+  const fixture = await mount((_action, body) =>
+    body.sessionId === 'session'
+      ? new Promise((resolve) => {
+          resolveOld = resolve
+        })
+      : { version: 1, phase: 'expired' },
+  )
   await fixture.render({ sessionId: 'other' })
   await act(async () => resolveOld(prepared))
   expect(fixture.calls[0].signal.aborted).toBe(true)
   expect(container.textContent).not.toContain('Roadmap')
 })
-test.each(['light', 'dark'])('keyboard disclosure, hostile text and long exact values fit narrow %s layout', async scheme => {
-  document.documentElement.style.colorScheme = scheme
-  await mount(() => ({ ...prepared, change: { field: { id: 'F_TEXT', name: 'Notes', dataType: 'TEXT' }, before: null, after: { text: '<script>unsafe</script>' + 'long'.repeat(250) } }, targets: { ...prepared.targets, item: { ...prepared.targets.item, content: { __typename: 'DraftIssue', id: 'DRAFT', title: '<script>title</script>', url: 'javascript:alert(1)' } } } }))
-  container.style.width = '320px'
-  expect(container.scrollWidth).toBeLessThanOrEqual(320)
-  expect(container.textContent).toContain('Not set →')
-  expect(container.textContent).toContain('Draft issue DRAFT')
-  expect(container.querySelector('script')).toBeNull()
-  expect(container.querySelector('a[href^="javascript"]')).toBeNull()
-  const summary = page.getByText('Complete exact approval preview', { exact: true }).element()
-  summary.focus()
-  await act(async () => userEvent.keyboard('{Enter}'))
-  expect(summary.parentElement.open).toBe(true)
-})
+test.each(['light', 'dark'])(
+  'keyboard disclosure, hostile text and long exact values fit narrow %s layout',
+  async (scheme) => {
+    document.documentElement.style.colorScheme = scheme
+    await mount(() => ({
+      ...prepared,
+      change: {
+        field: { id: 'F_TEXT', name: 'Notes', dataType: 'TEXT' },
+        before: null,
+        after: { text: '<script>unsafe</script>' + 'long'.repeat(250) },
+      },
+      targets: {
+        ...prepared.targets,
+        item: {
+          ...prepared.targets.item,
+          content: {
+            __typename: 'DraftIssue',
+            id: 'DRAFT',
+            title: '<script>title</script>',
+            url: 'javascript:alert(1)',
+          },
+        },
+      },
+    }))
+    container.style.width = '320px'
+    expect(container.scrollWidth).toBeLessThanOrEqual(320)
+    expect(container.textContent).toContain('Not set →')
+    expect(container.textContent).toContain('Draft issue DRAFT')
+    expect(container.querySelector('script')).toBeNull()
+    expect(container.querySelector('a[href^="javascript"]')).toBeNull()
+    const summary = page.getByText('Complete exact approval preview', { exact: true }).element()
+    summary.focus()
+    await act(async () => userEvent.keyboard('{Enter}'))
+    expect(summary.parentElement.open).toBe(true)
+  },
+)

@@ -24,10 +24,10 @@ Draft template v1. Replace or remove all placeholders. Commands below are **unve
 
 ## Validation evidence
 
-| Status | Exact command and working directory | Prerequisites and side effects | Evidence |
-| --- | --- | --- | --- |
-| Unverified proposal | {{COMMAND}} | {{PREREQUISITES_AND_WRITES}} | Not run |
-| Verified definition only | {{COMMAND_FROM_SCRIPT}} | {{PREREQUISITES_AND_WRITES}} | {{SOURCE_FILE}}; execution not tested |
-| Executed successfully | {{ACTUAL_COMMAND}} | {{ACTUAL_ENVIRONMENT}} | {{DATE_RESULT_COUNTS}} |
+| Status                   | Exact command and working directory | Prerequisites and side effects | Evidence                              |
+| ------------------------ | ----------------------------------- | ------------------------------ | ------------------------------------- |
+| Unverified proposal      | {{COMMAND}}                         | {{PREREQUISITES_AND_WRITES}}   | Not run                               |
+| Verified definition only | {{COMMAND_FROM_SCRIPT}}             | {{PREREQUISITES_AND_WRITES}}   | {{SOURCE_FILE}}; execution not tested |
+| Executed successfully    | {{ACTUAL_COMMAND}}                  | {{ACTUAL_ENVIRONMENT}}         | {{DATE_RESULT_COUNTS}}                |
 
 Delete unused rows. Do not label copied examples as executed. Record skipped checks and reasons, especially when existing dependencies were borrowed rather than installed in this checkout.

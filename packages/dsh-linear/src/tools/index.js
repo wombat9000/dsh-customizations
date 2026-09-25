@@ -4,7 +4,12 @@ import { registerIssueTools } from './issues.js'
 import { registerProjectWriteTools } from './project-writes.js'
 import { registerWorkspaceTool } from './workspace.js'
 
-export function registerLinearTools(ctx, runtime, config, writes = new LinearProjectWrites(runtime)) {
+export function registerLinearTools(
+  ctx,
+  runtime,
+  config,
+  writes = new LinearProjectWrites(runtime),
+) {
   ctx.systemPrompt.section({
     name: 'tool:linear',
     order: 113,

@@ -29,6 +29,6 @@ test('standalone parsers and settings use the same error class as the runtime', 
     () => normalizeSettings({ inactivityMinutes: 0 }),
   ]
   for (const call of cases) {
-    assert.throws(call, error => error instanceof runtime.RecapError)
+    assert.throws(call, (error) => error instanceof runtime.RecapError)
   }
 })

@@ -21,7 +21,10 @@ test('YouTube bundle ships its archive provider without a workspace dependency',
     assert.ok((await stat(new URL(path, PACKAGE_ROOT))).isFile())
   }
   const patch = await readFile(new URL(manifest.dsh.bundle.patch, PACKAGE_ROOT), 'utf8')
-  assert.match(patch, /id: local-youtube-transcript-store\s+name: '@local\/dsh-tool-youtube\/transcript-store'/)
+  assert.match(
+    patch,
+    /id: local-youtube-transcript-store\s+name: '@local\/dsh-tool-youtube\/transcript-store'/,
+  )
   assert.match(patch, /dshHomePath\('archives\/youtube-transcripts\.sqlite'\)/)
   assert.match(patch, /id: local-tool-youtube\s+name: '@local\/dsh-tool-youtube'/)
   assert.doesNotMatch(patch, /agentPresets|isolate:/)
@@ -33,15 +36,21 @@ test('host serves an empty YouTube namespace for the plugin card without storing
   const ctx = {
     inject(dependencies, install) {
       assert.deepEqual(dependencies, ['settings'])
-      install({ settings: { installSection(owner, namespace, schema, initial, options) {
-        registration = { owner, namespace, schema, initial, options }
-      } } })
+      install({
+        settings: {
+          installSection(owner, namespace, schema, initial, options) {
+            registration = { owner, namespace, schema, initial, options }
+          },
+        },
+      })
     },
     get(name) {
       assert.equal(name, 'connection')
       return { rpc: { handle: () => () => {} } }
     },
-    effect(setup) { cleanups.push(setup()) },
+    effect(setup) {
+      cleanups.push(setup())
+    },
     tools: { register() {} },
     systemPrompt: { section() {} },
     youtubeTranscriptStore: {},
@@ -68,18 +77,30 @@ test('transcript progress RPC remains read-only and lifecycle-owned', async () =
   let handler
   let dispose
   let removed = false
-  const connection = { rpc: {
-    handle(channel, callback, options) {
-      assert.equal(channel, '/youtube-transcript-progress')
-      assert.equal(options.authority, 'trusted-host')
-      handler = callback
-      return () => { removed = true }
+  const connection = {
+    rpc: {
+      handle(channel, callback, options) {
+        assert.equal(channel, '/youtube-transcript-progress')
+        assert.equal(options.authority, 'trusted-host')
+        handler = callback
+        return () => {
+          removed = true
+        }
+      },
     },
-  } }
-  registerTranscriptProgressRpc({
-    get(name) { assert.equal(name, 'connection'); return connection },
-    effect(setup) { dispose = setup() },
-  }, store)
+  }
+  registerTranscriptProgressRpc(
+    {
+      get(name) {
+        assert.equal(name, 'connection')
+        return connection
+      },
+      effect(setup) {
+        dispose = setup()
+      },
+    },
+    store,
+  )
   assert.deepEqual(await handler('get', { callId: 'unknown-call' }), { ok: true, value: null })
   assert.equal((await handler('get', {})).ok, false)
   assert.equal((await handler('write', { callId: 'unknown-call' })).ok, false)

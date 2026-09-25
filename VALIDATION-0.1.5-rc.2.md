@@ -37,29 +37,29 @@ All pass. The final lock contains no RC1 version text. Traversal from the root a
 
 These are normal lockfile changes, not new direct dependency declarations:
 
-| Package | Previous | Resolved |
-| --- | --- | --- |
-| `@aws-sdk/core` | 3.977.9 | 3.978.0 |
-| `@aws-sdk/credential-provider-env` | 3.972.70 | 3.972.71 |
-| `@aws-sdk/credential-provider-http` | 3.972.72 | 3.972.73 |
-| `@aws-sdk/credential-provider-ini` | 3.973.15 | 3.973.16 |
-| `@aws-sdk/credential-provider-login` | 3.972.77 | 3.972.78 |
-| `@aws-sdk/credential-provider-node` | 3.972.82 | 3.972.83 |
-| `@aws-sdk/credential-provider-process` | 3.972.70 | 3.972.71 |
-| `@aws-sdk/credential-provider-sso` | 3.973.14 | 3.973.15 |
+| Package                                     | Previous | Resolved |
+| ------------------------------------------- | -------- | -------- |
+| `@aws-sdk/core`                             | 3.977.9  | 3.978.0  |
+| `@aws-sdk/credential-provider-env`          | 3.972.70 | 3.972.71 |
+| `@aws-sdk/credential-provider-http`         | 3.972.72 | 3.972.73 |
+| `@aws-sdk/credential-provider-ini`          | 3.973.15 | 3.973.16 |
+| `@aws-sdk/credential-provider-login`        | 3.972.77 | 3.972.78 |
+| `@aws-sdk/credential-provider-node`         | 3.972.82 | 3.972.83 |
+| `@aws-sdk/credential-provider-process`      | 3.972.70 | 3.972.71 |
+| `@aws-sdk/credential-provider-sso`          | 3.973.14 | 3.973.15 |
 | `@aws-sdk/credential-provider-web-identity` | 3.972.76 | 3.972.77 |
-| `@aws-sdk/middleware-websocket` | 3.972.52 | 3.972.53 |
-| `@aws-sdk/nested-clients` | 3.997.44 | 3.997.45 |
-| `@aws-sdk/token-providers` | 3.1116.0 | 3.1129.0 |
-| `@babel/parser` | 8.0.4 | 8.0.5 |
-| `@babel/types` | 8.0.4 | 8.0.5 |
-| `@napi-rs/wasm-runtime` | 1.2.3 | 1.2.4 |
-| `@smithy/core` | 3.33.3 | 3.34.1 |
-| `compression` | 1.8.1 | 1.8.2 |
-| `magic-string` | 1.2.3 | 1.3.1 |
-| `nanoid` | 3.3.18 | 3.3.19 |
-| `open` | 11.0.2 | 11.0.3 |
-| `vite` | 8.2.2 | 8.3.0 |
+| `@aws-sdk/middleware-websocket`             | 3.972.52 | 3.972.53 |
+| `@aws-sdk/nested-clients`                   | 3.997.44 | 3.997.45 |
+| `@aws-sdk/token-providers`                  | 3.1116.0 | 3.1129.0 |
+| `@babel/parser`                             | 8.0.4    | 8.0.5    |
+| `@babel/types`                              | 8.0.4    | 8.0.5    |
+| `@napi-rs/wasm-runtime`                     | 1.2.3    | 1.2.4    |
+| `@smithy/core`                              | 3.33.3   | 3.34.1   |
+| `compression`                               | 1.8.1    | 1.8.2    |
+| `magic-string`                              | 1.2.3    | 1.3.1    |
+| `nanoid`                                    | 3.3.18   | 3.3.19   |
+| `open`                                      | 11.0.2   | 11.0.3   |
+| `vite`                                      | 8.2.2    | 8.3.0    |
 
 `destroy@1.2.0` is an added transitive package. Lifecycle scripts remain disabled throughout installation. No browser or Trivy executable is provisioned.
 
@@ -67,16 +67,16 @@ These are normal lockfile changes, not new direct dependency declarations:
 
 Every command below runs with `NODE_PATH` unset, except the Git whitespace check and the managed Trivy tool.
 
-| Check | Result |
-| --- | --- |
-| `pnpm run check` | Pass: one recipe, 24 package references |
-| `pnpm test` | Pass: pretest builds and type-checks Session Environment host/client; 1,106 tests pass, zero failures or skips |
-| `node --test scripts/apply-profile.test.mjs` | Pass: 18 tests, including RC1 launcher rejection before profile writes |
-| `pnpm run test:browser` | Pass: 128 tests in 11 Chromium files |
-| `node tests/real-ui/migration-boot.mjs` | Pass: twelve local bundles through real Loader/Web startup, persisted synthetic fixture, authentication, shell HTTP 200, and read-only Recap/Worktree RPC responses |
-| `pnpm run test:visual` | Pass: 15 real-host tests; existing screenshots compare successfully without baseline updates |
-| Manifest and installed-graph assertions | Pass: target-only DSH pins, unrelated direct versions unchanged, byte-identical patch, 231 reachable RC2 packages |
-| `git diff --check` | Pass |
+| Check                                        | Result                                                                                                                                                              |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm run check`                             | Pass: one recipe, 24 package references                                                                                                                             |
+| `pnpm test`                                  | Pass: pretest builds and type-checks Session Environment host/client; 1,106 tests pass, zero failures or skips                                                      |
+| `node --test scripts/apply-profile.test.mjs` | Pass: 18 tests, including RC1 launcher rejection before profile writes                                                                                              |
+| `pnpm run test:browser`                      | Pass: 128 tests in 11 Chromium files                                                                                                                                |
+| `node tests/real-ui/migration-boot.mjs`      | Pass: twelve local bundles through real Loader/Web startup, persisted synthetic fixture, authentication, shell HTTP 200, and read-only Recap/Worktree RPC responses |
+| `pnpm run test:visual`                       | Pass: 15 real-host tests; existing screenshots compare successfully without baseline updates                                                                        |
+| Manifest and installed-graph assertions      | Pass: target-only DSH pins, unrelated direct versions unchanged, byte-identical patch, 231 reachable RC2 packages                                                   |
+| `git diff --check`                           | Pass                                                                                                                                                                |
 
 The browser suite emits non-failing Vitest/Vite hook and React `act(...)` warnings. Node.js emits its experimental SQLite warning. Installation reports the existing deprecated `node-domexception@1.0.0` transitive dependency. No fixture layout failures or RC2 compatibility regressions remain in these runs.
 

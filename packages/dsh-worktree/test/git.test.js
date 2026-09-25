@@ -1,10 +1,27 @@
 import test, { after, before } from 'node:test'
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
-import { chmod, lstat, mkdir, mkdtemp, readFile, realpath, rename, rm, symlink, writeFile } from 'node:fs/promises'
+import {
+  chmod,
+  lstat,
+  mkdir,
+  mkdtemp,
+  readFile,
+  realpath,
+  rename,
+  rm,
+  symlink,
+  writeFile,
+} from 'node:fs/promises'
 import { devNull, tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { createWorktree, listWorktrees, resolveWorktree, inspectWorktrees, parseStatus } from '../src/git.js'
+import {
+  createWorktree,
+  listWorktrees,
+  resolveWorktree,
+  inspectWorktrees,
+  parseStatus,
+} from '../src/git.js'
 
 // Production intentionally ignores GIT_CONFIG_* environment overrides. Isolate
 // normal user-config discovery instead, within this test file's own process.
@@ -30,19 +47,32 @@ after(async () => {
 
 function run(cwd, args) {
   return new Promise((resolve, reject) => {
-    const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_')))
-    const child = spawn('git', ['-c', 'core.hooksPath=' + devNull, '-c', 'commit.gpgSign=false', '-C', cwd, ...args], {
-      env: { ...env, GIT_CONFIG_GLOBAL: devNull, GIT_CONFIG_NOSYSTEM: '1', GIT_TERMINAL_PROMPT: '0' },
-      stdio: ['ignore', 'pipe', 'pipe'],
-    })
+    const env = Object.fromEntries(
+      Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_')),
+    )
+    const child = spawn(
+      'git',
+      ['-c', 'core.hooksPath=' + devNull, '-c', 'commit.gpgSign=false', '-C', cwd, ...args],
+      {
+        env: {
+          ...env,
+          GIT_CONFIG_GLOBAL: devNull,
+          GIT_CONFIG_NOSYSTEM: '1',
+          GIT_TERMINAL_PROMPT: '0',
+        },
+        stdio: ['ignore', 'pipe', 'pipe'],
+      },
+    )
     const output = []
     const error = []
     child.stdout.on('data', (data) => output.push(data))
     child.stderr.on('data', (data) => error.push(data))
     child.once('error', reject)
-    child.once('close', (code) => code === 0
-      ? resolve(Buffer.concat(output).toString('utf8').replace(/\n$/, ''))
-      : reject(new Error(`git ${args[0]} failed (${code}): ${Buffer.concat(error)}`)))
+    child.once('close', (code) =>
+      code === 0
+        ? resolve(Buffer.concat(output).toString('utf8').replace(/\n$/, ''))
+        : reject(new Error(`git ${args[0]} failed (${code}): ${Buffer.concat(error)}`)),
+    )
   })
 }
 
@@ -60,23 +90,25 @@ async function fixture(t) {
   return { base, repository }
 }
 
-test('UI status preserves unusual filenames, bounds lists and never refreshes the index', async t => {
+test('UI status preserves unusual filenames, bounds lists and never refreshes the index', async (t) => {
   const { repository } = await fixture(t)
   const index = await readFile(join(repository, '.git', 'index'))
   await writeFile(join(repository, 'odd\nname.txt'), 'new')
   await writeFile(join(repository, 'file.txt'), 'modified')
   const snapshot = await inspectWorktrees(repository)
   assert.equal(snapshot.worktrees[0].changes.count, 2)
-  assert.ok(snapshot.worktrees[0].changes.files.some(file => file.path === 'odd\nname.txt'))
+  assert.ok(snapshot.worktrees[0].changes.files.some((file) => file.path === 'odd\nname.txt'))
   assert.deepEqual(await readFile(join(repository, '.git', 'index')), index)
-  const parsed = parseStatus('R  new\0old\0' + Array.from({ length: 600 }, (_, i) => `?? file${i}\0`).join(''))
+  const parsed = parseStatus(
+    'R  new\0old\0' + Array.from({ length: 600 }, (_, i) => `?? file${i}\0`).join(''),
+  )
   assert.equal(parsed.count, 601)
   assert.equal(parsed.files.length, 500)
   assert.equal(parsed.files[0].from, 'old')
   assert.equal(parsed.truncated, true)
 })
 
-test('UI status refuses executable filters and handles non-Git cwd', async t => {
+test('UI status refuses executable filters and handles non-Git cwd', async (t) => {
   const { repository, base } = await fixture(t)
   await run(repository, ['config', 'filter.evil.clean', 'touch SHOULD_NOT_EXIST'])
   await writeFile(join(repository, '.gitattributes'), '* filter=evil\n')
@@ -118,7 +150,19 @@ test('creates a managed branch at HEAD without copying dirty changes or switchin
 
 test('names reject traversal, refs, flags, punctuation, uppercase, and length overflow', async (t) => {
   const { repository } = await fixture(t)
-  for (const name of ['', '../escape', 'a/b', '-flag', 'Upper', 'a.b', 'a_b', 'a b', 'a\n', 'a'.repeat(49), null]) {
+  for (const name of [
+    '',
+    '../escape',
+    'a/b',
+    '-flag',
+    'Upper',
+    'a.b',
+    'a_b',
+    'a b',
+    'a\n',
+    'a'.repeat(49),
+    null,
+  ]) {
     await assert.rejects(createWorktree(repository, name), /name must match/)
   }
   await absent(join(repository, '.dsh'))
@@ -199,22 +243,38 @@ test('refuses filters activated only by the new worktree conditional config', as
         await writeFile(filter, '#!/bin/sh\nprintf executed > "$0.ran"\ncat\n')
         await chmod(filter, 0o700)
         const config = join(base, 'conditional.config')
-        await run(repository, ['config', '--file', config, `filter.unsafe.${type}`, JSON.stringify(filter)])
-        const predicate = condition === 'onbranch'
-          ? 'onbranch:worktree/**'
-          : `gitdir:${join(repository, '.git', 'worktrees')}/**`
+        await run(repository, [
+          'config',
+          '--file',
+          config,
+          `filter.unsafe.${type}`,
+          JSON.stringify(filter),
+        ])
+        const predicate =
+          condition === 'onbranch'
+            ? 'onbranch:worktree/**'
+            : `gitdir:${join(repository, '.git', 'worktrees')}/**`
         await run(repository, ['config', `includeIf.${predicate}.path`, config])
         // The parent has no filter: only registration of the new checkout makes it effective.
         await assert.rejects(run(repository, ['config', '--get', `filter.unsafe.${type}`]))
         await assert.rejects(createWorktree(repository, 'conditional'), /checkout filters/)
         const target = join(repository, '.dsh', 'worktrees', 'conditional')
-        assert.equal(await run(target, ['config', '--get', `filter.unsafe.${type}`]), JSON.stringify(filter))
+        assert.equal(
+          await run(target, ['config', '--get', `filter.unsafe.${type}`]),
+          JSON.stringify(filter),
+        )
         await absent(`${filter}.ran`)
         await absent(join(target, 'file.txt'))
         assert.equal(await run(repository, ['branch', '--show-current']), 'main')
         // Failures retain the registered checkout and branch; never destructively roll back.
-        assert.equal(await run(repository, ['rev-parse', 'refs/heads/worktree/conditional']), await run(repository, ['rev-parse', 'HEAD']))
-        assert.equal((await listWorktrees(repository)).worktrees.some((row) => row.path === target), true)
+        assert.equal(
+          await run(repository, ['rev-parse', 'refs/heads/worktree/conditional']),
+          await run(repository, ['rev-parse', 'HEAD']),
+        )
+        assert.equal(
+          (await listWorktrees(repository)).worktrees.some((row) => row.path === target),
+          true,
+        )
       })
     }
   }
@@ -295,7 +355,8 @@ test('abort-before-start leaves repository untouched', async (t) => {
     () => createWorktree(repository, 'cancelled', { signal: controller.signal }),
     () => listWorktrees(repository, { signal: controller.signal }),
     () => resolveWorktree(repository, repository, { signal: controller.signal }),
-  ]) await assert.rejects(operation(), { name: 'AbortError', code: 'ABORT_ERR' })
+  ])
+    await assert.rejects(operation(), { name: 'AbortError', code: 'ABORT_ERR' })
   await absent(join(repository, '.dsh'))
 })
 

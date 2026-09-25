@@ -9,11 +9,26 @@ import { hasWorktreeCapability } from '../src/capability.js'
 function fixture() {
   const tools = new Map()
   const calls = []
-  const service = Object.fromEntries(['create', 'list', 'dispatch'].map(method => [method, async (...args) => {
-    calls.push({ method, args })
-    return { method }
-  }]))
-  registerWorktreeTools({ tools: { register(tool) { tools.set(tool.name, tool); return () => tools.delete(tool.name) } } }, service)
+  const service = Object.fromEntries(
+    ['create', 'list', 'dispatch'].map((method) => [
+      method,
+      async (...args) => {
+        calls.push({ method, args })
+        return { method }
+      },
+    ]),
+  )
+  registerWorktreeTools(
+    {
+      tools: {
+        register(tool) {
+          tools.set(tool.name, tool)
+          return () => tools.delete(tool.name)
+        },
+      },
+    },
+    service,
+  )
   return { tools, calls }
 }
 
@@ -35,7 +50,7 @@ test('host contributes exactly three tools that call its service', async () => {
 test('actual integration definitions grant copied presets visibility and removal revokes it', () => {
   const { tools } = fixture()
   const agent = { session: { id: 'copy', header: { agentPreset: 'my-copy' } } }
-  const ctx = { agents: { get: () => agent }, tools: { get: name => tools.get(name) } }
+  const ctx = { agents: { get: () => agent }, tools: { get: (name) => tools.get(name) } }
   assert.equal(hasWorktreeCapability(ctx, agent), true)
   tools.delete('worktree_list')
   assert.equal(hasWorktreeCapability(ctx, agent), false)
@@ -44,11 +59,17 @@ test('actual integration definitions grant copied presets visibility and removal
 })
 
 test('legacy preset entrypoint registers no duplicate definitions', () => {
-  apply({ tools: { register() { assert.fail('compatibility row must not register tools') } } })
+  apply({
+    tools: {
+      register() {
+        assert.fail('compatibility row must not register tools')
+      },
+    },
+  })
 })
 
 test('bundle owns tools through its service and remains in the portable recipe', async () => {
-  const json = async path => JSON.parse(await readFile(new URL(path, import.meta.url), 'utf8'))
+  const json = async (path) => JSON.parse(await readFile(new URL(path, import.meta.url), 'utf8'))
   const manifest = await json('../package.json')
   const recipe = await json('../../../profiles/personal-web/recipe.json')
   assert.equal(manifest.name, '@local/dsh-worktree')
@@ -56,19 +77,25 @@ test('bundle owns tools through its service and remains in the portable recipe',
   assert.deepEqual(manifest.dsh.bundle, { patch: './cordis.patch.yml' })
   assert.equal(manifest.dsh.client.platform, 'web')
   assert.equal(manifest.exports['./client'], './client.js')
-  const bundleIndex = recipe.bundles.findIndex(bundle => bundle.name === manifest.name)
+  const bundleIndex = recipe.bundles.findIndex((bundle) => bundle.name === manifest.name)
   assert.equal(recipe.bundles[bundleIndex].source, '../../packages/dsh-worktree')
-  const webIndex = recipe.bundles.findIndex(bundle => bundle.name === '@deepseek-ai/dsh-web-app')
+  const webIndex = recipe.bundles.findIndex((bundle) => bundle.name === '@deepseek-ai/dsh-web-app')
   assert.ok(webIndex >= 0 && bundleIndex > webIndex, 'worktree roster patch requires Web first')
   const patch = await readFile(new URL('../cordis.patch.yml', import.meta.url), 'utf8')
   assert.match(patch, /name: '@local\/dsh-worktree'/)
   assert.doesNotMatch(patch, /name: '@local\/dsh-worktree\/tools'/)
   const preset = await readFile(new URL('../agent.cordis.example.yml', import.meta.url), 'utf8')
   assert.match(preset, /name: '@local\/dsh-worktree\/tools'/)
-  const result = spawnSync(process.execPath, ['scripts/apply-profile.mjs', '--', 'personal-web', '--dry-run'], {
-    cwd: fileURLToPath(new URL('../../../', import.meta.url)), encoding: 'utf8', timeout: 10000,
-    env: { PATH: process.env.PATH },
-  })
+  const result = spawnSync(
+    process.execPath,
+    ['scripts/apply-profile.mjs', '--', 'personal-web', '--dry-run'],
+    {
+      cwd: fileURLToPath(new URL('../../../', import.meta.url)),
+      encoding: 'utf8',
+      timeout: 10000,
+      env: { PATH: process.env.PATH },
+    },
+  )
   assert.equal(result.status, 0, result.stderr)
   assert.match(result.stdout, /Applying @local\/dsh-worktree/)
 })

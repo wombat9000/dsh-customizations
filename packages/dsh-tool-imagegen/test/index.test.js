@@ -42,14 +42,16 @@ function clientOptions(overrides = {}) {
 
 function fakeResponse() {
   return {
-    candidates: [{
-      content: {
-        parts: [
-          { text: 'A generated image.' },
-          { inlineData: { data: imageBytes, mimeType: 'image/png' } },
-        ],
+    candidates: [
+      {
+        content: {
+          parts: [
+            { text: 'A generated image.' },
+            { inlineData: { data: imageBytes, mimeType: 'image/png' } },
+          ],
+        },
       },
-    }],
+    ],
   }
 }
 
@@ -60,10 +62,23 @@ test('uses shared Gemini defaults and validates image request bounds', () => {
     imageSize: DEFAULT_IMAGE_SIZE,
     numberOfImages: 1,
   })
-  assert.throws(() => normalizeGenerateRequest({ prompt: 'A cabin', aspectRatio: '5:7' }), /aspectRatio/)
+  assert.throws(
+    () => normalizeGenerateRequest({ prompt: 'A cabin', aspectRatio: '5:7' }),
+    /aspectRatio/,
+  )
   assert.throws(() => normalizeGenerateRequest({ prompt: 'A cabin', imageSize: '8K' }), /imageSize/)
-  assert.throws(() => normalizeGenerateRequest({ prompt: 'A cabin', numberOfImages: DEFAULT_MAX_IMAGES + 1 }, { maxImages: DEFAULT_MAX_IMAGES }), /numberOfImages/)
-  assert.throws(() => normalizeGenerateRequest({ prompt: 'x'.repeat(DEFAULT_MAX_PROMPT_CHARS + 1) }), /prompt/)
+  assert.throws(
+    () =>
+      normalizeGenerateRequest(
+        { prompt: 'A cabin', numberOfImages: DEFAULT_MAX_IMAGES + 1 },
+        { maxImages: DEFAULT_MAX_IMAGES },
+      ),
+    /numberOfImages/,
+  )
+  assert.throws(
+    () => normalizeGenerateRequest({ prompt: 'x'.repeat(DEFAULT_MAX_PROMPT_CHARS + 1) }),
+    /prompt/,
+  )
 })
 
 test('extracts text and inline image parts from Gemini output', () => {
@@ -74,40 +89,64 @@ test('extracts text and inline image parts from Gemini output', () => {
 })
 
 test('rejects missing, malformed, or unsupported image output', () => {
-  assert.throws(() => extractImageResponse({ candidates: [{ content: { parts: [{ text: 'Only text' }] } }] }), /no image output/)
-  assert.throws(() => extractImageResponse({ candidates: [{ content: { parts: [{ inlineData: { data: 'not-base64', mimeType: 'image/png' } }] } }] }), /invalid image bytes/)
-  assert.throws(() => extractImageResponse({ candidates: [{ content: { parts: [{ inlineData: { data: imageBytes, mimeType: 'image/tiff' } }] } }] }), /unsupported image type/)
+  assert.throws(
+    () => extractImageResponse({ candidates: [{ content: { parts: [{ text: 'Only text' }] } }] }),
+    /no image output/,
+  )
+  assert.throws(
+    () =>
+      extractImageResponse({
+        candidates: [
+          { content: { parts: [{ inlineData: { data: 'not-base64', mimeType: 'image/png' } }] } },
+        ],
+      }),
+    /invalid image bytes/,
+  )
+  assert.throws(
+    () =>
+      extractImageResponse({
+        candidates: [
+          { content: { parts: [{ inlineData: { data: imageBytes, mimeType: 'image/tiff' } }] } },
+        ],
+      }),
+    /unsupported image type/,
+  )
 })
 
 test('calls Gemini with image modalities and persists returned bytes', async () => {
   let observedKey
   let observedRequest
   let savedInput
-  const client = new GeminiImageClient(clientOptions({
-    clientFactory: (apiKey) => {
-      observedKey = apiKey
-      return {
-        models: {
-          generateContent: async (request) => {
-            observedRequest = request
-            return fakeResponse()
+  const client = new GeminiImageClient(
+    clientOptions({
+      clientFactory: (apiKey) => {
+        observedKey = apiKey
+        return {
+          models: {
+            generateContent: async (request) => {
+              observedRequest = request
+              return fakeResponse()
+            },
           },
-        },
-      }
-    },
-    saveImage: async (input) => {
-      savedInput = input
-      return attachment
-    },
-  }))
+        }
+      },
+      saveImage: async (input) => {
+        savedInput = input
+        return attachment
+      },
+    }),
+  )
 
   const controller = new AbortController()
-  const result = await client.generate({
-    prompt: 'A cabin',
-    aspectRatio: '16:9',
-    imageSize: '2K',
-    numberOfImages: 1,
-  }, controller.signal)
+  const result = await client.generate(
+    {
+      prompt: 'A cabin',
+      aspectRatio: '16:9',
+      imageSize: '2K',
+      numberOfImages: 1,
+    },
+    controller.signal,
+  )
 
   assert.equal(observedKey, 'gemini-test-key')
   assert.equal(observedRequest.model, DEFAULT_MODEL)
@@ -132,13 +171,15 @@ test('calls Gemini with image modalities and persists returned bytes', async () 
 
 test('surfaces the shared key credential failure without creating a provider client', async () => {
   let created = false
-  const client = new GeminiImageClient(clientOptions({
-    resolveApiKey: async () => undefined,
-    clientFactory: () => {
-      created = true
-      return {}
-    },
-  }))
+  const client = new GeminiImageClient(
+    clientOptions({
+      resolveApiKey: async () => undefined,
+      clientFactory: () => {
+        created = true
+        return {}
+      },
+    }),
+  )
   await assert.rejects(client.generate({ prompt: 'A cabin' }), /GEMINI_API_KEY is not configured/)
   assert.equal(created, false)
 })
@@ -164,7 +205,14 @@ test('registers generate_image with the DSH tool contract', async () => {
     tools: { register: (definition) => definitions.push(definition) },
     systemPrompt: { section: (section) => sections.push(section) },
   }
-  const client = { generate: async () => ({ model: DEFAULT_MODEL, prompt: 'A cabin', text: '', images: [{ attachment, index: 0 }] }) }
+  const client = {
+    generate: async () => ({
+      model: DEFAULT_MODEL,
+      prompt: 'A cabin',
+      text: '',
+      images: [{ attachment, index: 0 }],
+    }),
+  }
   registerImageTools(ctx, { generate: true, timeoutMs: DEFAULT_TIMEOUT_MS }, client)
 
   assert.equal(definitions.length, 1)

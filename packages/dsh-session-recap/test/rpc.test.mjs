@@ -24,7 +24,9 @@ test('typed RPC adapter preserves transport identity, receiver, and response', a
 })
 
 test('RPC failure envelopes retain runtime checks after typing', () => {
-  assert.throws(() => unwrap({ ok: false, error: { message: 'Configured route failed' } }), { message: 'Configured route failed' })
+  assert.throws(() => unwrap({ ok: false, error: { message: 'Configured route failed' } }), {
+    message: 'Configured route failed',
+  })
   for (const response of [null, undefined, {}, { ok: false }]) {
     assert.throws(() => unwrap(response), { message: 'Session recap is unavailable.' })
   }
@@ -34,15 +36,26 @@ test('RPC failure envelopes retain runtime checks after typing', () => {
 
 test('unknown errors become text without trusting non-string message properties', () => {
   for (const [error, expected] of [
-    [new Error('Failed'), 'Failed'], ['Failed', 'Failed'],
-    [null, 'null'], [undefined, 'undefined'], [42, '42'],
-    [{ message: 23 }, '[object Object]'], [{ message: 'Explicit message' }, 'Explicit message'],
-  ]) assert.equal(errorMessage(error), expected)
+    [new Error('Failed'), 'Failed'],
+    ['Failed', 'Failed'],
+    [null, 'null'],
+    [undefined, 'undefined'],
+    [42, '42'],
+    [{ message: 23 }, '[object Object]'],
+    [{ message: 'Explicit message' }, 'Explicit message'],
+  ])
+    assert.equal(errorMessage(error), expected)
 })
 
 test('malformed transport rejections cannot corrupt controller error state', async () => {
   for (const error of [null, undefined, { message: 23 }]) {
-    const controller = createController({ rpc: { call: async () => { throw error } } })
+    const controller = createController({
+      rpc: {
+        call: async () => {
+          throw error
+        },
+      },
+    })
     await controller.recap('fixture')
     assert.equal(controller.getSnapshot('fixture').busy, false)
     assert.equal(controller.getSnapshot('fixture').error, String(error))

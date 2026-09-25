@@ -66,15 +66,22 @@ export class WorktreeManager {
     // the user's sandbox mode by executing Git directly from a host plugin.
     const policy = this.ctx.sandboxPolicy.resolve({ session: parent.session })
     if (policy.mode !== 'danger-full-access') {
-      throw new Error('Creating a worktree requires Full access because Git updates shared repository metadata. Change permissions deliberately, then retry; this tool does not escalate automatically.')
+      throw new Error(
+        'Creating a worktree requires Full access because Git updates shared repository metadata. Change permissions deliberately, then retry; this tool does not escalate automatically.',
+      )
     }
     const { commonDir } = await this.git.listWorktrees(cwd, { signal })
-    if (this.creating.has(commonDir)) throw new Error('Another worktree creation is active for this repository; retry after it finishes')
+    if (this.creating.has(commonDir))
+      throw new Error(
+        'Another worktree creation is active for this repository; retry after it finishes',
+      )
     this.creating.add(commonDir)
     try {
       this.cwd(parent)
       signal?.throwIfAborted()
-      if (this.ctx.sandboxPolicy.resolve({ session: parent.session }).mode !== 'danger-full-access') {
+      if (
+        this.ctx.sandboxPolicy.resolve({ session: parent.session }).mode !== 'danger-full-access'
+      ) {
         throw new Error('Session permissions changed before worktree creation')
       }
       return await this.git.createWorktree(cwd, name, { signal })
@@ -89,15 +96,18 @@ export class WorktreeManager {
     const activeWorktrees = this.activeWorktrees()
     return {
       ...result,
-      worktrees: result.worktrees.map(worktree => {
+      worktrees: result.worktrees.map((worktree) => {
         const active = activeWorktrees.get(worktree.path)
-        const previous = history && [...history.values()].reverse().find(run => run.path === worktree.path)
+        const previous =
+          history && [...history.values()].reverse().find((run) => run.path === worktree.path)
         return {
           ...worktree,
           busy: Boolean(active),
           ...(active?.cleanupUncertain ? { cleanupUncertain: true } : {}),
           ...(active?.owner === parent ? { activeJobId: active.jobId } : {}),
-          ...(previous ? { latestRun: { jobId: previous.jobId, mode: previous.mode, status: previous.status } } : {}),
+          ...(previous
+            ? { latestRun: { jobId: previous.jobId, mode: previous.mode, status: previous.status } }
+            : {}),
         }
       }),
     }
@@ -108,23 +118,44 @@ export class WorktreeManager {
     const task = requiredText(args.task, 'task')
     const mode = args.mode ?? 'read-only'
     if (!['write', 'read-only'].includes(mode)) throw new Error('mode must be write or read-only')
-    const { worktree } = await this.git.resolveWorktree(cwd, requiredText(args.worktree, 'worktree', 8192), { signal })
+    const { worktree } = await this.git.resolveWorktree(
+      cwd,
+      requiredText(args.worktree, 'worktree', 8192),
+      { signal },
+    )
     signal?.throwIfAborted()
     this.cwd(parent)
-    if (this.activeWorktrees().has(worktree.path)) throw new Error('This worktree already has an active assignment; collect or cancel its job before dispatching another')
+    if (this.activeWorktrees().has(worktree.path))
+      throw new Error(
+        'This worktree already has an active assignment; collect or cancel its job before dispatching another',
+      )
     let history = this.history.get(parent)
-    if (!history) this.history.set(parent, history = new Map())
+    if (!history) this.history.set(parent, (history = new Map()))
     let handoff
     if (args.context_from !== undefined) {
       const previous = history.get(requiredText(args.context_from, 'context_from', 200))
-      if (!previous || previous.path !== worktree.path) throw new Error('context_from must identify a retained run owned by this agent in this worktree')
+      if (!previous || previous.path !== worktree.path)
+        throw new Error(
+          'context_from must identify a retained run owned by this agent in this worktree',
+        )
       if (previous.status === 'running') throw new Error('The context source has not finished')
       handoff = `Previous assignment (${previous.status}):\n${bounded(previous.task, 4000)}\n\nPrevious report:\n${bounded(previous.report || '(no report available)', 26000)}`
     }
-    if (history.size >= MAX_REPORTS && [...history.values()].every(run => run.status === 'running')) {
+    if (
+      history.size >= MAX_REPORTS &&
+      [...history.values()].every((run) => run.status === 'running')
+    ) {
       throw new Error('Recorded run limit reached; wait for an assignment to finish')
     }
-    const record = { owner: parent, path: worktree.path, mode, task, status: 'running', report: '', jobId: undefined }
+    const record = {
+      owner: parent,
+      path: worktree.path,
+      mode,
+      task,
+      status: 'running',
+      report: '',
+      jobId: undefined,
+    }
     this.active.set(worktree.path, record)
     try {
       const jobId = this.ctx.jobs.start({
@@ -137,15 +168,26 @@ export class WorktreeManager {
           // background signal, matching DSH's stock one-shot adapter.
           const controller = new AbortController()
           return {
-            cancel: reason => controller.abort(reason ?? 'Worktree assignment cancelled'),
+            cancel: (reason) => controller.abort(reason ?? 'Worktree assignment cancelled'),
             done: (async () => {
               let outcome
               try {
-                const run = await this.startWorker(this.ctx, { parent, cwd: worktree.path, mode, task, handoff, signal: controller.signal })
+                const run = await this.startWorker(this.ctx, {
+                  parent,
+                  cwd: worktree.path,
+                  mode,
+                  task,
+                  handoff,
+                  signal: controller.signal,
+                })
                 outcome = await this.settleRun({
-                  id: run.id, localAgent: run.localAgent, result: run.result,
+                  id: run.id,
+                  localAgent: run.localAgent,
+                  result: run.result,
                   dispose: async () => {
-                    try { await run.dispose() } catch (error) {
+                    try {
+                      await run.dispose()
+                    } catch (error) {
                       record.cleanupUncertain = true
                       throw error
                     }
@@ -154,17 +196,26 @@ export class WorktreeManager {
               } catch (error) {
                 // A startup rollback that also failed cannot prove quiescence.
                 if (error instanceof AggregateError) record.cleanupUncertain = true
-                outcome = { status: controller.signal.aborted && !record.cleanupUncertain ? 'killed' : 'failed', detail: String(error).slice(0, 2000) }
+                outcome = {
+                  status:
+                    controller.signal.aborted && !record.cleanupUncertain ? 'killed' : 'failed',
+                  detail: String(error).slice(0, 2000),
+                }
               }
               if (record.cleanupUncertain) {
-                outcome = { ...outcome, status: 'failed', detail: `${CLEANUP_FAILED} ${outcome.detail ?? ''}`.slice(0, 2000) }
+                outcome = {
+                  ...outcome,
+                  status: 'failed',
+                  detail: `${CLEANUP_FAILED} ${outcome.detail ?? ''}`.slice(0, 2000),
+                }
               }
               record.status = outcome.status
               record.report = bounded(outcome.output ?? outcome.detail ?? '', MAX_TEXT)
               return outcome
             })().finally(() => {
               // settleRun releases the child before this lease becomes reusable.
-              if (!record.cleanupUncertain && this.active.get(worktree.path) === record) this.active.delete(worktree.path)
+              if (!record.cleanupUncertain && this.active.get(worktree.path) === record)
+                this.active.delete(worktree.path)
             }),
           }
         },
@@ -175,7 +226,14 @@ export class WorktreeManager {
         if (history.size <= MAX_REPORTS) break
         if (run.status !== 'running') history.delete(id)
       }
-      return { jobId, worktree: worktree.path, branch: worktree.branch, mode, message: 'Background assignment started. Use job_output/job_kill; DSH reports completion. Follow-ups require a fresh dispatch.' }
+      return {
+        jobId,
+        worktree: worktree.path,
+        branch: worktree.branch,
+        mode,
+        message:
+          'Background assignment started. Use job_output/job_kill; DSH reports completion. Follow-ups require a fresh dispatch.',
+      }
     } catch (error) {
       if (this.active.get(worktree.path) === record) this.active.delete(worktree.path)
       throw error
@@ -191,11 +249,19 @@ export default class WorktreeService extends Service {
     // Preset-neutral inherited contributions, owned by this service's Fiber.
     // DSH applies each agent's restrictions before lookup or execution.
     registerWorktreeTools(ctx, this)
-    ctx.inject(['connection', 'webServer'], connectionCtx => {
-      connectionCtx.effect(() => connectionCtx.connection.rpc.handle(CHANNEL, createSnapshotRpcHandler(ctx, this.manager)))
+    ctx.inject(['connection', 'webServer'], (connectionCtx) => {
+      connectionCtx.effect(() =>
+        connectionCtx.connection.rpc.handle(CHANNEL, createSnapshotRpcHandler(ctx, this.manager)),
+      )
     })
   }
-  create(parent, name, signal) { return this.manager.create(parent, name, signal) }
-  list(parent, signal) { return this.manager.list(parent, signal) }
-  dispatch(parent, args, signal) { return this.manager.dispatch(parent, args, signal) }
+  create(parent, name, signal) {
+    return this.manager.create(parent, name, signal)
+  }
+  list(parent, signal) {
+    return this.manager.list(parent, signal)
+  }
+  dispatch(parent, args, signal) {
+    return this.manager.dispatch(parent, args, signal)
+  }
 }

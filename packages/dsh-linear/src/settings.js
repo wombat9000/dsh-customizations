@@ -42,9 +42,11 @@ export function apiKeyFailure(value) {
   if (!/^[\x21-\x7e]+$/u.test(trimmed)) {
     return 'Use an unquoted API key containing printable characters only.'
   }
-  if (/^[A-Za-z_][A-Za-z0-9_]*=/u.test(trimmed)
-    || ((trimmed.startsWith('"') && trimmed.endsWith('"'))
-      || (trimmed.startsWith("'") && trimmed.endsWith("'")))) {
+  if (
+    /^[A-Za-z_][A-Za-z0-9_]*=/u.test(trimmed) ||
+    (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+    (trimmed.startsWith("'") && trimmed.endsWith("'"))
+  ) {
     return 'Paste only the API key, without LINEAR_API_KEY= or surrounding quotes.'
   }
 }
@@ -58,7 +60,9 @@ export function installLinearSettings(ctx, entry = {}) {
       LinearSettingsSchema,
       { ...EMPTY_LINEAR_SETTINGS, ...entry },
       {
-        setSource(current) { source = current },
+        setSource(current) {
+          source = current
+        },
         onChange() {},
       },
     )
@@ -102,11 +106,12 @@ export function registerLinearSettingsRpc(ctx, options) {
     await service.update(LINEAR_SETTINGS_NAMESPACE, patch)
   }
 
-  const bindWorkspace = async (workspace) => writeSettings({
-    organizationId: workspace.id,
-    organizationName: workspace.name,
-    organizationUrlKey: workspace.urlKey,
-  })
+  const bindWorkspace = async (workspace) =>
+    writeSettings({
+      organizationId: workspace.id,
+      organizationName: workspace.name,
+      organizationUrlKey: workspace.urlKey,
+    })
 
   const probeKey = async (apiKey, signal) => {
     const client = runtime.createClient(apiKey, signal)
@@ -117,68 +122,84 @@ export function registerLinearSettingsRpc(ctx, options) {
     }
   }
 
-  ctx.effect(() => connection.rpc.handle(
-    LINEAR_SETTINGS_CHANNEL,
-    async (endpoint, payload, signal) => {
-      try {
-        if (endpoint === 'status') return { ok: true, value: await localStatus() }
+  ctx.effect(
+    () =>
+      connection.rpc.handle(
+        LINEAR_SETTINGS_CHANNEL,
+        async (endpoint, payload, signal) => {
+          try {
+            if (endpoint === 'status') return { ok: true, value: await localStatus() }
 
-        if (endpoint === 'test') {
-          const live = await runtime.workspace(signal)
-          if (!settings().organizationId) await bindWorkspace(live.workspace)
-          return {
-            ok: true,
-            value: {
-              ...(await localStatus()),
-              workspace: live.workspace,
-              viewer: live.viewer,
-              live: true,
-            },
-          }
-        }
+            if (endpoint === 'test') {
+              const live = await runtime.workspace(signal)
+              if (!settings().organizationId) await bindWorkspace(live.workspace)
+              return {
+                ok: true,
+                value: {
+                  ...(await localStatus()),
+                  workspace: live.workspace,
+                  viewer: live.viewer,
+                  live: true,
+                },
+              }
+            }
 
-        if (endpoint === 'connect') {
-          if (typeof literalApiKey === 'string' && literalApiKey.length > 0) {
-            throw new Error('The Linear key is fixed by the composition and cannot be replaced here.')
-          }
-          const failure = apiKeyFailure(payload?.apiKey)
-          if (failure !== undefined) throw new Error(failure)
-          const credentials = ctx.get('credentials')
-          if (credentials === undefined) throw new Error('DSH credential storage is unavailable.')
-          const info = await credentials.describe(LINEAR_CREDENTIAL_REF)
-          if (!info.writable) throw new Error('LINEAR_API_KEY is supplied by a read-only source and cannot be replaced here.')
-          const value = payload.apiKey.trim()
-          const live = await probeKey(value, signal)
-          await credentials.set(LINEAR_CREDENTIAL_REF, value)
-          await bindWorkspace(live.workspace)
-          return {
-            ok: true,
-            value: {
-              ...(await localStatus()),
-              ...live,
-              live: true,
-            },
-          }
-        }
+            if (endpoint === 'connect') {
+              if (typeof literalApiKey === 'string' && literalApiKey.length > 0) {
+                throw new Error(
+                  'The Linear key is fixed by the composition and cannot be replaced here.',
+                )
+              }
+              const failure = apiKeyFailure(payload?.apiKey)
+              if (failure !== undefined) throw new Error(failure)
+              const credentials = ctx.get('credentials')
+              if (credentials === undefined)
+                throw new Error('DSH credential storage is unavailable.')
+              const info = await credentials.describe(LINEAR_CREDENTIAL_REF)
+              if (!info.writable)
+                throw new Error(
+                  'LINEAR_API_KEY is supplied by a read-only source and cannot be replaced here.',
+                )
+              const value = payload.apiKey.trim()
+              const live = await probeKey(value, signal)
+              await credentials.set(LINEAR_CREDENTIAL_REF, value)
+              await bindWorkspace(live.workspace)
+              return {
+                ok: true,
+                value: {
+                  ...(await localStatus()),
+                  ...live,
+                  live: true,
+                },
+              }
+            }
 
-        if (endpoint === 'disconnect') {
-          if (typeof literalApiKey === 'string' && literalApiKey.length > 0) {
-            throw new Error('The Linear key is fixed by the composition and cannot be removed here.')
-          }
-          const credentials = ctx.get('credentials')
-          if (credentials === undefined) throw new Error('DSH credential storage is unavailable.')
-          const info = await credentials.describe(LINEAR_CREDENTIAL_REF)
-          if (!info.writable) throw new Error('LINEAR_API_KEY is supplied by a read-only source and cannot be removed here.')
-          await credentials.unset(LINEAR_CREDENTIAL_REF)
-          await writeSettings({ ...EMPTY_LINEAR_SETTINGS })
-          return { ok: true, value: await localStatus() }
-        }
+            if (endpoint === 'disconnect') {
+              if (typeof literalApiKey === 'string' && literalApiKey.length > 0) {
+                throw new Error(
+                  'The Linear key is fixed by the composition and cannot be removed here.',
+                )
+              }
+              const credentials = ctx.get('credentials')
+              if (credentials === undefined)
+                throw new Error('DSH credential storage is unavailable.')
+              const info = await credentials.describe(LINEAR_CREDENTIAL_REF)
+              if (!info.writable)
+                throw new Error(
+                  'LINEAR_API_KEY is supplied by a read-only source and cannot be removed here.',
+                )
+              await credentials.unset(LINEAR_CREDENTIAL_REF)
+              await writeSettings({ ...EMPTY_LINEAR_SETTINGS })
+              return { ok: true, value: await localStatus() }
+            }
 
-        throw new Error('Unknown Linear settings endpoint.')
-      } catch (error) {
-        return internalError(error)
-      }
-    },
-    { authority: 'trusted-host' },
-  ), 'linear: settings RPC')
+            throw new Error('Unknown Linear settings endpoint.')
+          } catch (error) {
+            return internalError(error)
+          }
+        },
+        { authority: 'trusted-host' },
+      ),
+    'linear: settings RPC',
+  )
 }

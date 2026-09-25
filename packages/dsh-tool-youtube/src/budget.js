@@ -29,7 +29,10 @@ export function isRetryableProviderFailure(error, signal) {
     return false
   }
   const status = providerStatus(error)
-  return RETRYABLE_PROVIDER_STATUSES.has(status) || (status !== undefined && status >= 500 && status <= 599)
+  return (
+    RETRYABLE_PROVIDER_STATUSES.has(status) ||
+    (status !== undefined && status >= 500 && status <= 599)
+  )
 }
 
 export function estimateRequestInputTokens(input, options = {}) {
@@ -101,9 +104,8 @@ export function createYoutubeOperationBudget(options, onUpdate) {
   const estimatedInputCostPerMillionTokensUsd = options.estimatedInputCostPerMillionTokensUsd
   const maxEstimatedCostUsd = options.maxEstimatedCostUsd
 
-  const estimateCost = (tokens) => roundedUsd(
-    tokens * estimatedInputCostPerMillionTokensUsd / 1_000_000,
-  )
+  const estimateCost = (tokens) =>
+    roundedUsd((tokens * estimatedInputCostPerMillionTokensUsd) / 1_000_000)
 
   const snapshot = () => ({
     providerCalls,
@@ -138,7 +140,11 @@ export function createYoutubeOperationBudget(options, onUpdate) {
       throw new YoutubeOperationLimitError(
         'PROVIDER_CALL_LIMIT_EXCEEDED',
         `YouTube operation requires at least ${projectedCalls} provider calls, exceeding the configured limit of ${options.maxProviderCalls}`,
-        safeDetails(context, { providerCalls, projectedCalls, providerCallLimit: options.maxProviderCalls }),
+        safeDetails(context, {
+          providerCalls,
+          projectedCalls,
+          providerCallLimit: options.maxProviderCalls,
+        }),
       )
     }
     if (projectedTokens > options.maxEstimatedInputTokens) {

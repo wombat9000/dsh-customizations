@@ -11,12 +11,31 @@
     "./client": "./client.js",
     "./package.json": "./package.json"
   },
-  "files": ["src", "client.js", "cordis.patch.yml", "README.md", "docs/pdf-runtime.md", "docs/sheets.md"],
-  "scripts": { "test": "node --test test/*.test.js" },
-  "engines": { "node": "^22.19.0 || >=24.0.0" },
+  "files": [
+    "src",
+    "client.js",
+    "cordis.patch.yml",
+    "README.md",
+    "docs/pdf-runtime.md",
+    "docs/sheets.md"
+  ],
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  },
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0"
+  },
   "dsh": {
-    "bundle": { "patch": "./cordis.patch.yml" },
-    "client": { "inject": ["@deepseek-ai/dsh-client-ui-tool", "@deepseek-ai/dsh-client-ui-layout"], "platform": "web" }
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-tool",
+        "@deepseek-ai/dsh-client-ui-layout"
+      ],
+      "platform": "web"
+    }
   },
   "license": "UNLICENSED"
 }

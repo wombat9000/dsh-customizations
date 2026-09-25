@@ -9,7 +9,12 @@ async function cardMetrics(header) {
     const heading = button.firstElementChild
     const text = ['fontSize', 'fontWeight', 'lineHeight', 'color']
     return {
-      card: pick(button.parentElement, ['backgroundColor', 'borderColor', 'borderWidth', 'borderRadius']),
+      card: pick(button.parentElement, [
+        'backgroundColor',
+        'borderColor',
+        'borderWidth',
+        'borderRadius',
+      ]),
       header: pick(button, ['padding', 'borderRadius', 'gap', 'alignItems']),
       heading: pick(heading, ['display', 'flexDirection', 'gap', 'minWidth']),
       title: pick(heading.firstElementChild, text),
@@ -75,7 +80,9 @@ for (const scheme of ['light', 'dark']) {
     await expect(dialog.getByLabel('Provider ID')).toHaveCount(0)
 
     await recap.hover()
-    await recap.evaluate(async (button) => { await Promise.all(button.parentElement.getAnimations().map((animation) => animation.finished)) })
+    await recap.evaluate(async (button) => {
+      await Promise.all(button.parentElement.getAnimations().map((animation) => animation.finished))
+    })
     const hoverBorder = (await cardMetrics(recap)).card.borderColor
     await shell.hover()
     await expect.poll(async () => (await cardMetrics(shell)).card.borderColor).toBe(hoverBorder)

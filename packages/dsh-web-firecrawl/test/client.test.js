@@ -16,7 +16,14 @@ async function loadClient(React = {}, confirm = () => true) {
   vm.runInNewContext(source, {
     // Share Error's realm so injected remote rejections behave like browser errors.
     Error,
-    window: { confirm, __ModuleLoader__: { load(value) { record = value } } },
+    window: {
+      confirm,
+      __ModuleLoader__: {
+        load(value) {
+          record = value
+        },
+      },
+    },
   })
   assert.ok(record)
   return {
@@ -40,18 +47,23 @@ function createHarness() {
   let props
   let tree
   const React = {
-    createElement(type, props, ...children) { return { type, props: props ?? {}, children } },
+    createElement(type, props, ...children) {
+      return { type, props: props ?? {}, children }
+    },
     useState(initial) {
       const index = cursor++
       if (!(index in hooks)) hooks[index] = { value: initial }
-      return [hooks[index].value, (next) => {
-        if (!mounted) return
-        const value = typeof next === 'function' ? next(hooks[index].value) : next
-        if (!Object.is(value, hooks[index].value)) {
-          hooks[index].value = value
-          dirty = true
-        }
-      }]
+      return [
+        hooks[index].value,
+        (next) => {
+          if (!mounted) return
+          const value = typeof next === 'function' ? next(hooks[index].value) : next
+          if (!Object.is(value, hooks[index].value)) {
+            hooks[index].value = value
+            dirty = true
+          }
+        },
+      ]
     },
     useEffect(effect, deps) {
       const index = cursor++
@@ -75,11 +87,19 @@ function createHarness() {
   }
   function nodes(predicate, node = tree) {
     if (!node || typeof node !== 'object') return []
-    return [...(predicate(node) ? [node] : []), ...node.children.flatMap((child) => nodes(predicate, child))]
+    return [
+      ...(predicate(node) ? [node] : []),
+      ...node.children.flatMap((child) => nodes(predicate, child)),
+    ]
   }
   return {
     React,
-    mount(fn, value) { component = fn; props = value; mounted = true; render() },
+    mount(fn, value) {
+      component = fn
+      props = value
+      mounted = true
+      render()
+    },
     async settle() {
       // Drain promise continuations before rendering their queued state updates.
       for (let turn = 0; turn < 20; turn++) {
@@ -100,7 +120,9 @@ function createHarness() {
       return matches[0]
     },
     nodes,
-    text() { return text(tree) },
+    text() {
+      return text(tree)
+    },
   }
 }
 
@@ -108,13 +130,22 @@ function text(node) {
   if (node == null || node === false) return ''
   return typeof node === 'object' ? node.children.map(text).join(' ') : String(node)
 }
-function input(h) { return h.one((node) => node.type === 'input') }
-function button(h, label) { return h.one((node) => node.type === 'button' && text(node) === label) }
-function alert(h) { return text(h.one((node) => node.props.role === 'alert')) }
+function input(h) {
+  return h.one((node) => node.type === 'input')
+}
+function button(h, label) {
+  return h.one((node) => node.type === 'button' && text(node) === label)
+}
+function alert(h) {
+  return text(h.one((node) => node.props.role === 'alert'))
+}
 function deferred() {
   let resolve
   let reject
-  const promise = new Promise((yes, no) => { resolve = yes; reject = no })
+  const promise = new Promise((yes, no) => {
+    resolve = yes
+    reject = no
+  })
   return { promise, resolve, reject }
 }
 
@@ -122,25 +153,39 @@ async function setup(t, overrides = {}, confirm) {
   const h = createHarness()
   t.after(() => h.unmount())
   const calls = { describe: [], set: [], unset: [] }
-  const credentials = Object.fromEntries(Object.entries({
-    describe: () => description(), set: () => ok(undefined), unset: () => ok(undefined), ...overrides,
-  }).map(([method, implementation]) => [method, (...args) => {
-    // Normalize the VM's arrays without normalizing or losing the call shape.
-    calls[method].push(args.map((arg) => Array.isArray(arg) ? Array.from(arg) : arg))
-    return implementation(...args)
-  }]))
+  const credentials = Object.fromEntries(
+    Object.entries({
+      describe: () => description(),
+      set: () => ok(undefined),
+      unset: () => ok(undefined),
+      ...overrides,
+    }).map(([method, implementation]) => [
+      method,
+      (...args) => {
+        // Normalize the VM's arrays without normalizing or losing the call shape.
+        calls[method].push(args.map((arg) => (Array.isArray(arg) ? Array.from(arg) : arg)))
+        return implementation(...args)
+      },
+    ]),
+  )
   const events = new Map()
   const disposed = []
   const on = (event, listener) => {
     assert.equal(events.has(event), false, 'Subscription must not accumulate across renders')
     events.set(event, listener)
-    return () => { disposed.push(event); events.delete(event) }
+    return () => {
+      disposed.push(event)
+      events.delete(event)
+    }
   }
   let registration
   const { record, exports } = await loadClient(h.React, confirm)
   const remote = {
     get credentials() {
-      assert.ok(exports.inject.includes('remote.credentials'), 'Credential namespace must be explicitly injected')
+      assert.ok(
+        exports.inject.includes('remote.credentials'),
+        'Credential namespace must be explicitly injected',
+      )
       return credentials
     },
     $on: on,
@@ -150,8 +195,14 @@ async function setup(t, overrides = {}, confirm) {
     on,
     // Deliberately no connection or get(): the remote is the credentials API.
     slots: {
-      inject(name, callback) { assert.equal(name, 'settings.plugin.item'); return callback() },
-      register(options, component) { registration = { options, component }; return () => {} },
+      inject(name, callback) {
+        assert.equal(name, 'settings.plugin.item')
+        return callback()
+      },
+      register(options, component) {
+        registration = { options, component }
+        return () => {}
+      },
     },
   })
   h.mount(registration.component, registration.options.inject())
@@ -179,8 +230,18 @@ test('client registers a collapsed Firecrawl plugin card, not an additional tab'
 
 for (const [name, response, status, writable] of [
   ['writable missing key', description(), 'Not configured', true],
-  ['stored key', description({ configured: true, writable: true, source: 'file' }), 'Configured via DSH credential store', true],
-  ['read-only environment key', description({ configured: true, writable: false, source: 'env' }), 'Configured via launch environment', false],
+  [
+    'stored key',
+    description({ configured: true, writable: true, source: 'file' }),
+    'Configured via DSH credential store',
+    true,
+  ],
+  [
+    'read-only environment key',
+    description({ configured: true, writable: false, source: 'env' }),
+    'Configured via launch environment',
+    false,
+  ],
   ['absent reference', ok({}), 'Not configured', false],
 ]) {
   test(`describe renders ${name}`, async (t) => {
@@ -193,14 +254,32 @@ for (const [name, response, status, writable] of [
     assert.equal(input(h).props.type, 'password')
     assert.equal(input(h).props.value, '')
     assert.equal(input(h).props.disabled, !writable)
-    if (!writable) assert.equal(h.nodes((node) => node.type === 'button' && text(node) === 'Remove key').length, 0)
+    if (!writable)
+      assert.equal(
+        h.nodes((node) => node.type === 'button' && text(node) === 'Remove key').length,
+        0,
+      )
   })
 }
 
 for (const [name, implementation, message] of [
-  ['error result', () => ({ ok: false, error: { message: 'Credential access denied' } }), 'Credential access denied'],
-  ['rejection', () => Promise.reject(new Error('Transport disconnected')), 'Transport disconnected'],
-  ['synchronous throw', () => { throw new Error('Remote unavailable') }, 'Remote unavailable'],
+  [
+    'error result',
+    () => ({ ok: false, error: { message: 'Credential access denied' } }),
+    'Credential access denied',
+  ],
+  [
+    'rejection',
+    () => Promise.reject(new Error('Transport disconnected')),
+    'Transport disconnected',
+  ],
+  [
+    'synchronous throw',
+    () => {
+      throw new Error('Remote unavailable')
+    },
+    'Remote unavailable',
+  ],
 ]) {
   test(`describe handles ${name}`, async (t) => {
     const { h } = await setup(t, { describe: implementation })
@@ -218,7 +297,8 @@ test('save trims the key, disables controls while pending, clears draft and refr
   const pending = deferred()
   let stored = false
   const { h, calls } = await setup(t, {
-    describe: () => description({ configured: stored, writable: true, source: stored ? 'file' : undefined }),
+    describe: () =>
+      description({ configured: stored, writable: true, source: stored ? 'file' : undefined }),
     set: () => pending.promise,
   })
   await h.settle()
@@ -243,10 +323,17 @@ test('remove confirms, disables controls while pending, clears draft and refresh
   const pending = deferred()
   const prompts = []
   let stored = true
-  const { h, calls } = await setup(t, {
-    describe: () => description({ configured: stored, writable: true }),
-    unset: () => pending.promise,
-  }, (message) => { prompts.push(message); return true })
+  const { h, calls } = await setup(
+    t,
+    {
+      describe: () => description({ configured: stored, writable: true }),
+      unset: () => pending.promise,
+    },
+    (message) => {
+      prompts.push(message)
+      return true
+    },
+  )
   await h.settle()
   input(h).props.onChange({ target: { value: 'fc-unsaved' } })
   await h.settle()
@@ -272,9 +359,10 @@ for (const method of ['set', 'unset']) {
       const message = `${method} failed`
       const { h, calls } = await setup(t, {
         describe: () => description({ configured: true, writable: true }),
-        [method]: () => kind === 'rejection'
-          ? Promise.reject(new Error(message))
-          : { ok: false, error: { message } },
+        [method]: () =>
+          kind === 'rejection'
+            ? Promise.reject(new Error(message))
+            : { ok: false, error: { message } },
       })
       await h.settle()
       input(h).props.onChange({ target: { value: 'fc-retry' } })
@@ -294,9 +382,13 @@ for (const method of ['set', 'unset']) {
 }
 
 test('cancelled removal never calls unset', async (t) => {
-  const { h, calls } = await setup(t, {
-    describe: () => description({ configured: true, writable: true }),
-  }, () => false)
+  const { h, calls } = await setup(
+    t,
+    {
+      describe: () => description({ configured: true, writable: true }),
+    },
+    () => false,
+  )
   await h.settle()
   button(h, 'Remove key').props.onClick()
   await h.settle()
@@ -346,7 +438,10 @@ test('a stale describe response cannot overwrite the latest refreshed status', a
   const pending = deferred()
   let count = 0
   const { h, events } = await setup(t, {
-    describe: () => ++count === 1 ? pending.promise : description({ configured: true, writable: true, source: 'file' }),
+    describe: () =>
+      ++count === 1
+        ? pending.promise
+        : description({ configured: true, writable: true, source: 'file' }),
   })
   await h.settle()
   events.get('connection/reset')()

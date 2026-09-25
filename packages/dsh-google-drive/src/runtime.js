@@ -6,7 +6,16 @@ const LIMIT = 10 * 60 * 1000
 // Browser methods never accept an Agent supplied over the wire. The registry
 // resolves the current exact root, and each request retains that same identity.
 export class DriveAccessRuntime {
-  constructor({ client, googleAuth, agents, approval, onChange = () => {}, mode = 'read', isEnabled = () => true, enableRevision = () => 0 }) {
+  constructor({
+    client,
+    googleAuth,
+    agents,
+    approval,
+    onChange = () => {},
+    mode = 'read',
+    isEnabled = () => true,
+    enableRevision = () => 0,
+  }) {
     if (!['read', 'edit'].includes(mode)) throw new Error('Invalid Drive access mode.')
     this.mode = mode
     this.auth = googleAuth
@@ -18,11 +27,12 @@ export class DriveAccessRuntime {
     this.records = new Map()
     this.committing = new Set()
     this.closed = false
-    this.permissions = new DrivePermissions({ client,
+    this.permissions = new DrivePermissions({
+      client,
       ...(mode === 'edit' ? { selectionMimeType: 'application/vnd.google-apps.spreadsheet' } : {}),
       getAccountGeneration: () => googleAuth.getAccessGeneration(),
-      isOwnerLive: owner => this.isLive(owner) && this.isEnabled(owner),
-      onChange: owner => onChange(owner),
+      isOwnerLive: (owner) => this.isLive(owner) && this.isEnabled(owner),
+      onChange: (owner) => onChange(owner),
     })
     this.unsubscribe = googleAuth.onAccessChange(() => {
       this.permissions.invalidate()
@@ -30,16 +40,32 @@ export class DriveAccessRuntime {
     })
   }
   isLive(agent) {
-    return !this.closed && !!agent?.session && this.agents.get(agent.session.id) === agent
-      && this.agents.roots().includes(agent)
+    return (
+      !this.closed &&
+      !!agent?.session &&
+      this.agents.get(agent.session.id) === agent &&
+      this.agents.roots().includes(agent)
+    )
   }
   assertOwner(agent) {
-    if (!this.isLive(agent)) throw new Error('Drive access requires the exact live top-level session; subagents do not inherit access.')
+    if (!this.isLive(agent))
+      throw new Error(
+        'Drive access requires the exact live top-level session; subagents do not inherit access.',
+      )
   }
-  key(agent, callId) { return `${agent.session.id}:${callId}` }
+  key(agent, callId) {
+    return `${agent.session.id}:${callId}`
+  }
   resolve(sessionId, callId) {
-    if (typeof sessionId !== 'string' || !sessionId || sessionId.length > 200
-      || typeof callId !== 'string' || !callId || callId.length > 200) throw new Error(EXPIRED)
+    if (
+      typeof sessionId !== 'string' ||
+      !sessionId ||
+      sessionId.length > 200 ||
+      typeof callId !== 'string' ||
+      !callId ||
+      callId.length > 200
+    )
+      throw new Error(EXPIRED)
     const agent = this.agents.get(sessionId)
     this.assertOwner(agent)
     const record = this.records.get(this.key(agent, callId))
@@ -48,21 +74,31 @@ export class DriveAccessRuntime {
   }
   requirePrompt(agent, revision = this.enableRevision(agent)) {
     this.assertOwner(agent)
-    if (!this.isEnabled(agent) || revision !== this.enableRevision(agent)) throw new Error('Enable Google Drive in the session toolbar before requesting access.')
-    if (!this.approval || (this.approval.overrideOf(agent.session) ?? this.approval.config?.policy ?? 'ask') !== 'ask') {
+    if (!this.isEnabled(agent) || revision !== this.enableRevision(agent))
+      throw new Error('Enable Google Drive in the session toolbar before requesting access.')
+    if (
+      !this.approval ||
+      (this.approval.overrideOf(agent.session) ?? this.approval.config?.policy ?? 'ask') !== 'ask'
+    ) {
       throw new Error('Interactive Drive access is disabled by the session approval policy.')
     }
   }
   async connected() {
     const generation = this.auth.getAccessGeneration()
     const status = await this.auth.status()
-    if (generation !== this.auth.getAccessGeneration()) throw new Error('Google account connection changed. Request access again.')
+    if (generation !== this.auth.getAccessGeneration())
+      throw new Error('Google account connection changed. Request access again.')
     const integration = this.mode === 'edit' ? 'google-sheets-edit' : 'google-drive'
-    if (!status.connected || !status.integrations.some(item => item.id === integration && item.authorized)
-      || !status.integrations.some(item => item.id === 'google-drive' && item.authorized)) {
-      throw new Error(this.mode === 'edit'
-        ? 'Connect Google account or grant the missing Drive and Sheets permissions in Settings → Plugins → Google accounts, then request session access again.'
-        : 'Connect Google account or grant the missing Drive read permission in Settings → Plugins → Google accounts, then request session access again.')
+    if (
+      !status.connected ||
+      !status.integrations.some((item) => item.id === integration && item.authorized) ||
+      !status.integrations.some((item) => item.id === 'google-drive' && item.authorized)
+    ) {
+      throw new Error(
+        this.mode === 'edit'
+          ? 'Connect Google account or grant the missing Drive and Sheets permissions in Settings → Plugins → Google accounts, then request session access again.'
+          : 'Connect Google account or grant the missing Drive read permission in Settings → Plugins → Google accounts, then request session access again.',
+      )
     }
   }
   audit(record, action, resources) {
@@ -70,10 +106,21 @@ export class DriveAccessRuntime {
     // cannot emit the required ignorable envelope marker. Keep informational
     // transition records local; grants are never reconstructed from an audit.
     const entries = record.audit ?? []
-    record.audit = [...entries.slice(-19), {
-      action, callId: record.callId,
-      ...(resources ? { resources: resources.map(item => ({ id: item.id, recursive: item.recursive === true })) } : {}),
-    }]
+    record.audit = [
+      ...entries.slice(-19),
+      {
+        action,
+        callId: record.callId,
+        ...(resources
+          ? {
+              resources: resources.map((item) => ({
+                id: item.id,
+                recursive: item.recursive === true,
+              })),
+            }
+          : {}),
+      },
+    ]
   }
   async request(agent, { callId, reason, signal }) {
     this.requirePrompt(agent)
@@ -82,26 +129,46 @@ export class DriveAccessRuntime {
     await this.connected()
     this.requirePrompt(agent, enableRevision)
     signal?.throwIfAborted()
-    if (typeof callId !== 'string' || !callId || callId.length > 200) throw new Error('Drive access requires a tool call identity.')
-    if ([...this.records.values()].some(item => item.agent === agent && item.state === 'pending')) {
+    if (typeof callId !== 'string' || !callId || callId.length > 200)
+      throw new Error('Drive access requires a tool call identity.')
+    if (
+      [...this.records.values()].some((item) => item.agent === agent && item.state === 'pending')
+    ) {
       throw new Error('This session already has a pending Drive access request.')
     }
     const key = this.key(agent, callId)
     if (this.records.has(key)) throw new Error(EXPIRED)
     // Bound historical UI records; previous cards become inert, never authoritative.
-    const settled = [...this.records.entries()].filter(([, item]) => item.agent === agent && item.state !== 'pending')
-    for (const [oldKey] of settled.slice(0, Math.max(0, settled.length - 19))) this.records.delete(oldKey)
-    const record = { agent, callId, reason, enableRevision, state: 'pending', requestId: this.permissions.request(agent).requestId }
+    const settled = [...this.records.entries()].filter(
+      ([, item]) => item.agent === agent && item.state !== 'pending',
+    )
+    for (const [oldKey] of settled.slice(0, Math.max(0, settled.length - 19)))
+      this.records.delete(oldKey)
+    const record = {
+      agent,
+      callId,
+      reason,
+      enableRevision,
+      state: 'pending',
+      requestId: this.permissions.request(agent).requestId,
+    }
     this.records.set(key, record)
-    try { this.audit(record, 'requested') } catch (error) {
+    try {
+      this.audit(record, 'requested')
+    } catch (error) {
       this.permissions.cancel(agent, record.requestId)
       this.records.delete(key)
       throw error
     }
-    const result = new Promise(resolve => { record.resolve = resolve })
+    const result = new Promise((resolve) => {
+      record.resolve = resolve
+    })
     const cancel = () => this.finish(record, 'cancelled')
     signal?.addEventListener('abort', cancel, { once: true })
-    record.cleanup = () => { signal?.removeEventListener('abort', cancel); clearTimeout(record.timer) }
+    record.cleanup = () => {
+      signal?.removeEventListener('abort', cancel)
+      clearTimeout(record.timer)
+    }
     record.timer = setTimeout(cancel, LIMIT)
     record.timer.unref?.()
     if (signal?.aborted) cancel()
@@ -110,34 +177,57 @@ export class DriveAccessRuntime {
   finish(record, state) {
     if (record.state !== 'pending') return
     if (state !== 'granted') {
-      try { this.permissions.cancel(record.agent, record.requestId) } catch { /* Dead owner already denies access. */ }
+      try {
+        this.permissions.cancel(record.agent, record.requestId)
+      } catch {
+        /* Dead owner already denies access. */
+      }
     }
     record.state = state
     record.cleanup?.()
     const resources = state === 'granted' ? this.resources(record.agent) : []
-    try { this.audit(record, state, state === 'granted' ? resources : undefined) }
-    catch {
+    try {
+      this.audit(record, state, state === 'granted' ? resources : undefined)
+    } catch {
       // A grant without its audit record must never become usable.
       this.permissions.invalidate(record.agent)
       record.state = 'cancelled'
     }
-    record.resolve?.({ state: record.state,
-      ...(record.state === 'granted' ? { resources, skill: this.mode === 'edit' ? 'google-sheets' : 'google-drive-read' } : {}) })
+    record.resolve?.({
+      state: record.state,
+      ...(record.state === 'granted'
+        ? { resources, skill: this.mode === 'edit' ? 'google-sheets' : 'google-drive-read' }
+        : {}),
+    })
     record.resolve = undefined
     this.onChange(record.agent)
   }
   resources(agent) {
-    try { return this.permissions.grants(agent).flatMap(grant => grant.resources).map(item => ({
-      id: item.id, name: item.name, mimeType: item.mimeType, recursive: item.recursive === true,
-    })) } catch { return [] }
+    try {
+      return this.permissions
+        .grants(agent)
+        .flatMap((grant) => grant.resources)
+        .map((item) => ({
+          id: item.id,
+          name: item.name,
+          mimeType: item.mimeType,
+          recursive: item.recursive === true,
+        }))
+    } catch {
+      return []
+    }
   }
   status({ sessionId, callId }) {
     const record = this.resolve(sessionId, callId)
     const current = record.enableRevision === this.enableRevision(record.agent)
     const grants = current ? this.resources(record.agent) : []
-    return { ...(this.mode === 'edit' ? { mode: 'edit' } : {}), state: record.state === 'granted' && !grants.length ? 'none' : record.state,
+    return {
+      ...(this.mode === 'edit' ? { mode: 'edit' } : {}),
+      state: record.state === 'granted' && !grants.length ? 'none' : record.state,
       ...(typeof record.reason === 'string' ? { reason: record.reason } : {}),
-      ...(record.state === 'pending' ? { requestId: record.requestId } : {}), grants }
+      ...(record.state === 'pending' ? { requestId: record.requestId } : {}),
+      grants,
+    }
   }
   pending(input) {
     const record = this.resolve(input.sessionId, input.callId)
@@ -148,25 +238,58 @@ export class DriveAccessRuntime {
   async browse(input, signal) {
     const record = this.pending(input)
     const result = await this.permissions.pickerList(record.agent, record.requestId, {
-      parentId: input.parentId, search: input.search, view: input.view, pageToken: input.pageToken, pageSize: 50, signal,
+      parentId: input.parentId,
+      search: input.search,
+      view: input.view,
+      pageToken: input.pageToken,
+      pageSize: 50,
+      signal,
     })
     if (this.mode !== 'edit') return result
-    return { ...result, files: result.files.filter(file => ['application/vnd.google-apps.spreadsheet', 'application/vnd.google-apps.folder'].includes(file.mimeType)) }
+    return {
+      ...result,
+      files: result.files.filter((file) =>
+        ['application/vnd.google-apps.spreadsheet', 'application/vnd.google-apps.folder'].includes(
+          file.mimeType,
+        ),
+      ),
+    }
   }
   async grant(input, signal) {
     const record = this.pending(input)
-    if (!Array.isArray(input.selected) || input.selected.length < 1 || input.selected.length > 100
-      || input.selected.some(item => !item || typeof item.id !== 'string' || typeof item.recursive !== 'boolean'
-        || Object.keys(item).some(key => !['id', 'recursive'].includes(key)))) throw new Error('Select between 1 and 100 files or folders.')
-    if (this.committing.has(record.agent)) throw new Error('Drive access confirmation is already in progress.')
+    if (
+      !Array.isArray(input.selected) ||
+      input.selected.length < 1 ||
+      input.selected.length > 100 ||
+      input.selected.some(
+        (item) =>
+          !item ||
+          typeof item.id !== 'string' ||
+          typeof item.recursive !== 'boolean' ||
+          Object.keys(item).some((key) => !['id', 'recursive'].includes(key)),
+      )
+    )
+      throw new Error('Select between 1 and 100 files or folders.')
+    if (this.committing.has(record.agent))
+      throw new Error('Drive access confirmation is already in progress.')
     this.committing.add(record.agent)
     try {
-      await this.permissions.approve(record.agent, record.requestId, {
-        fileIds: input.selected.filter(item => !item.recursive).map(item => item.id),
-        folderIds: input.selected.filter(item => item.recursive).map(item => item.id),
-        replace: true,
-      }, { signal })
-      try { this.pending(input) } catch (error) { this.permissions.invalidate(record.agent); throw error }
+      await this.permissions.approve(
+        record.agent,
+        record.requestId,
+        {
+          fileIds: input.selected.filter((item) => !item.recursive).map((item) => item.id),
+          folderIds: input.selected.filter((item) => item.recursive).map((item) => item.id),
+          replace: true,
+        },
+        { signal },
+      )
+      try {
+        this.pending(input)
+      } catch (error) {
+        this.permissions.invalidate(record.agent)
+        throw error
+      }
       this.finish(record, 'granted')
       return this.status(input)
     } catch (error) {
@@ -189,14 +312,23 @@ export class DriveAccessRuntime {
     this.requirePrompt(record.agent, record.enableRevision)
     if (this.resolve(input.sessionId, input.callId) !== record) throw new Error(EXPIRED)
     if (record.state === 'pending') return this.status(input)
-    if ([...this.records.values()].some(item => item.agent === record.agent && item.state === 'pending')) throw new Error('Another Drive request is already pending in this session.')
+    if (
+      [...this.records.values()].some(
+        (item) => item.agent === record.agent && item.state === 'pending',
+      )
+    )
+      throw new Error('Another Drive request is already pending in this session.')
     record.requestId = this.permissions.request(record.agent).requestId
     record.state = 'pending'
     record.timer = setTimeout(() => this.finish(record, 'cancelled'), LIMIT)
     record.timer.unref?.()
     record.cleanup = () => clearTimeout(record.timer)
-    try { this.audit(record, 'manage-requested') }
-    catch (error) { this.finish(record, 'cancelled'); throw error }
+    try {
+      this.audit(record, 'manage-requested')
+    } catch (error) {
+      this.finish(record, 'cancelled')
+      throw error
+    }
     return this.status(input)
   }
   revoke(input) {
@@ -205,24 +337,40 @@ export class DriveAccessRuntime {
     // old toolbar epoch cannot mutate the next epoch's independently granted access.
     if (record.enableRevision !== this.enableRevision(record.agent)) throw new Error(EXPIRED)
     this.permissions.revoke(record.agent)
-    for (const item of this.records.values()) if (item.agent === record.agent) this.finish(item, 'cancelled')
+    for (const item of this.records.values())
+      if (item.agent === record.agent) this.finish(item, 'cancelled')
     this.audit(record, 'revoked')
     this.onChange(record.agent)
     return this.status(input)
   }
   revokeOwner(agent) {
     let failure
-    try { this.permissions.invalidate(agent) } catch (error) { failure = error }
-    for (const record of this.records.values()) if (record.agent === agent) {
-      try { this.finish(record, 'cancelled') } catch (error) { failure ??= error }
+    try {
+      this.permissions.invalidate(agent)
+    } catch (error) {
+      failure = error
     }
-    try { this.onChange(agent) } catch (error) { failure ??= error }
+    for (const record of this.records.values())
+      if (record.agent === agent) {
+        try {
+          this.finish(record, 'cancelled')
+        } catch (error) {
+          failure ??= error
+        }
+      }
+    try {
+      this.onChange(agent)
+    } catch (error) {
+      failure ??= error
+    }
     if (failure) throw failure
   }
   release(agent) {
-    for (const [key, record] of this.records) if (record.agent === agent) {
-      this.finish(record, 'cancelled'); this.records.delete(key)
-    }
+    for (const [key, record] of this.records)
+      if (record.agent === agent) {
+        this.finish(record, 'cancelled')
+        this.records.delete(key)
+      }
     this.permissions.invalidate(agent)
   }
   dispose() {

@@ -43,7 +43,9 @@ export class RecapRuntime {
     for (const event of session.snapshotEvents()) {
       if (event.type === 'turn/start') running = true
       if (event.type === 'turn/end') running = false
-      const conversation = event.type === 'turn/end' || event.type === 'assistant/message' ||
+      const conversation =
+        event.type === 'turn/end' ||
+        event.type === 'assistant/message' ||
         (event.type === 'user/message' && event.data.source?.kind === 'user')
       if (conversation && Number.isFinite(event.time) && event.time >= 0) {
         latestActivity = Math.max(latestActivity ?? 0, event.time)
@@ -54,7 +56,8 @@ export class RecapRuntime {
 
   jevContext(settings) {
     if (!settings.useJev) return { identity: null }
-    let service, instance = null
+    let service,
+      instance = null
     try {
       service = this.getJev()
       if (!service || !['object', 'function'].includes(typeof service)) return { identity: null }
@@ -82,7 +85,10 @@ export class RecapRuntime {
       throw new RecapError('stale', 'The session or recap settings changed. Request a fresh recap.')
     }
     if (session.snapshotEvents && this.activity({ sessionId }).running) {
-      throw new RecapError('session-running', 'Wait until the agent finishes before requesting a recap.')
+      throw new RecapError(
+        'session-running',
+        'Wait until the agent finishes before requesting a recap.',
+      )
     }
   }
 
@@ -102,14 +108,20 @@ export class RecapRuntime {
       throw new RecapError('auto-disabled', 'Automatic recaps are disabled.')
     }
     if (!settings.provider || !settings.model) {
-      throw new RecapError('not-configured', 'Choose a provider and model in Settings → Plugins → Session Recap.')
+      throw new RecapError(
+        'not-configured',
+        'Choose a provider and model in Settings → Plugins → Session Recap.',
+      )
     }
     const session = this.sessions.get(payload.sessionId)
     if (!session) {
       throw new RecapError('session-unavailable', 'Open this session before requesting a recap.')
     }
     if (session.snapshotEvents && this.activity(payload).running) {
-      throw new RecapError('session-running', 'Wait until the agent finishes before requesting a recap.')
+      throw new RecapError(
+        'session-running',
+        'Wait until the agent finishes before requesting a recap.',
+      )
     }
 
     const revision = session.seq
@@ -127,10 +139,11 @@ export class RecapRuntime {
     }
 
     const promise = this.generate(payload.sessionId, revision, settings, history, session, jev)
-      .then(value => {
+      .then((value) => {
         this.checkCurrent(payload.sessionId, session, revision, settings, jev)
         if (!settings.useJev || value.selection.mode === 'jev') this.cache.set(key, value)
-        while (this.cache.size > LIMITS.cacheEntries) this.cache.delete(this.cache.keys().next().value)
+        while (this.cache.size > LIMITS.cacheEntries)
+          this.cache.delete(this.cache.keys().next().value)
         return value
       })
       .finally(() => this.pending.delete(key))
