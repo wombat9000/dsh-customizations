@@ -1,38 +1,61 @@
 import { test, expect, pluginSettings } from '../../../../tests/real-ui/fixtures.mjs'
-import { githubFieldWorkspaceName, githubFieldPrompt } from '../../../../tests/real-ui/github-field-fixture.mjs'
+import {
+  githubFieldWorkspaceName,
+  githubFieldPrompt,
+} from '../../../../tests/real-ui/github-field-fixture.mjs'
 
-for (const theme of ['light', 'dark']) test(`field no-change and failure in narrow real shell (${theme})`, async ({ app }, testInfo) => {
-  const settings = await pluginSettings(app, theme)
-  await settings.getByRole('button', { name: 'Close', exact: true }).click()
-  const sessions = app.getByRole('tree', { name: 'Sessions', exact: true })
-  const workspace = sessions.getByRole('treeitem', { name: 'Ungrouped', exact: true })
-  if (await workspace.getAttribute('aria-expanded') !== 'true') await workspace.click()
-  await sessions.getByRole('treeitem', { name: new RegExp(`^${githubFieldWorkspaceName}\\s`) }).click()
-  await expect(app.getByText(githubFieldPrompt, { exact: true })).toBeVisible()
-  const cards = app.getByRole('region', { name: 'GitHub project field change', exact: true })
-  await expect(cards).toHaveCount(2)
-  const neutral = cards.filter({ has: app.getByRole('status', { name: '' }).filter({ hasText: 'No change needed' }) })
-  const failed = cards.filter({ hasText: 'Field change failed' })
-  await expect(neutral.getByRole('status')).toHaveText('No change needed')
-  await expect(neutral.getByText('The field already has the requested value. Nothing was changed.', { exact: true })).toBeVisible()
-  await expect(failed.getByRole('alert')).toHaveText('The requested project or item was not found.')
-  for (const [index, card] of [neutral, failed].entries()) {
-    await card.evaluate(element => { element.style.width = '320px'; element.style.maxWidth = '100%' })
-    await expect(card.getByText(/Requested target \(call arguments, not verified resource metadata\)/)).toBeVisible()
-    await expect(card.getByText(/unavailable/)).toHaveCount(0)
-    await expect(card.locator('[aria-label="Prepared before and after values"]')).toHaveCount(0)
-    const details = card.locator('details').filter({ has: app.locator('summary').filter({ hasText: /^Technical details$/ }) })
-    await expect(details).not.toHaveAttribute('open')
-    await details.locator('summary').focus()
-    await details.locator('summary').press('Enter')
-    await expect(details).toHaveAttribute('open', '')
-    await expect(details.locator('pre')).toContainText('OPT_TODO')
-    await expect(details.getByRole('button', { name: 'Inspect tool call' })).toBeVisible()
-    await details.locator('summary').press('Enter')
-    expect(await card.evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true)
-    await app.evaluate(() => document.fonts.ready)
-    const path = testInfo.outputPath(`field-${index}-${theme}-narrow.png`)
-    await card.screenshot({ path })
-    await testInfo.attach(`field-${index}-${theme}-narrow`, { path, contentType: 'image/png' })
-  }
-})
+for (const theme of ['light', 'dark'])
+  test(`field no-change and failure in narrow real shell (${theme})`, async ({ app }, testInfo) => {
+    const settings = await pluginSettings(app, theme)
+    await settings.getByRole('button', { name: 'Close', exact: true }).click()
+    const sessions = app.getByRole('tree', { name: 'Sessions', exact: true })
+    const workspace = sessions.getByRole('treeitem', { name: 'Ungrouped', exact: true })
+    if ((await workspace.getAttribute('aria-expanded')) !== 'true') await workspace.click()
+    await sessions
+      .getByRole('treeitem', { name: new RegExp(`^${githubFieldWorkspaceName}\\s`) })
+      .click()
+    await expect(app.getByText(githubFieldPrompt, { exact: true })).toBeVisible()
+    const cards = app.getByRole('region', { name: 'GitHub project field change', exact: true })
+    await expect(cards).toHaveCount(2)
+    const neutral = cards.filter({
+      has: app.getByRole('status', { name: '' }).filter({ hasText: 'No change needed' }),
+    })
+    const failed = cards.filter({ hasText: 'Field change failed' })
+    await expect(neutral.getByRole('status')).toHaveText('No change needed')
+    await expect(
+      neutral.getByText('The field already has the requested value. Nothing was changed.', {
+        exact: true,
+      }),
+    ).toBeVisible()
+    await expect(failed.getByRole('alert')).toHaveText(
+      'The requested project or item was not found.',
+    )
+    for (const [index, card] of [neutral, failed].entries()) {
+      await card.evaluate((element) => {
+        element.style.width = '320px'
+        element.style.maxWidth = '100%'
+      })
+      await expect(
+        card.getByText(/Requested target \(call arguments, not verified resource metadata\)/),
+      ).toBeVisible()
+      await expect(card.getByText(/unavailable/)).toHaveCount(0)
+      await expect(card.locator('[aria-label="Prepared before and after values"]')).toHaveCount(0)
+      const details = card
+        .locator('details')
+        .filter({ has: app.locator('summary').filter({ hasText: /^Technical details$/ }) })
+      await expect(details).not.toHaveAttribute('open')
+      await details.locator('summary').focus()
+      await details.locator('summary').press('Enter')
+      await expect(details).toHaveAttribute('open', '')
+      await expect(details.locator('pre')).toContainText('OPT_TODO')
+      await expect(details.getByRole('button', { name: 'Inspect tool call' })).toBeVisible()
+      await details.locator('summary').press('Enter')
+      expect(await card.evaluate((element) => element.scrollWidth <= element.clientWidth + 1)).toBe(
+        true,
+      )
+      await app.evaluate(() => document.fonts.ready)
+      const path = testInfo.outputPath(`field-${index}-${theme}-narrow.png`)
+      await card.screenshot({ path })
+      await testInfo.attach(`field-${index}-${theme}-narrow`, { path, contentType: 'image/png' })
+    }
+  })

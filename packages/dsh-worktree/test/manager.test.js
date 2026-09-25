@@ -2,35 +2,65 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { WorktreeManager } from '../src/index.js'
 
-const defer = () => { let resolve; const promise = new Promise(r => { resolve = r }); return { promise, resolve } }
+const defer = () => {
+  let resolve
+  const promise = new Promise((r) => {
+    resolve = r
+  })
+  return { promise, resolve }
+}
 function fixture() {
   const parent = { session: { id: 'parent', header: { cwd: '/repo' } } }
   const sibling = { session: { id: 'other', header: { cwd: '/repo' } } }
-  const agents = new Map([['parent', parent], ['other', sibling]])
+  const agents = new Map([
+    ['parent', parent],
+    ['other', sibling],
+  ])
   const jobs = new Map()
   const starts = []
   let mode = 'danger-full-access'
   let admissionError
   let creates = 0
   const ctx = {
-    agents: { get: id => agents.get(id), list: () => [...agents.values()] },
+    agents: { get: (id) => agents.get(id), list: () => [...agents.values()] },
     sandboxPolicy: { resolve: () => ({ mode, workspaceRoot: '/repo' }) },
-    jobs: { start(spec) {
-      if (admissionError) throw admissionError
-      const id = `job-${jobs.size + 1}`
-      const hooks = spec.run()
-      const record = { ...hooks, id, owner: spec.owner, kind: spec.kind, label: spec.label, status: 'running' }
-      record.done = hooks.done.then(outcome => { Object.assign(record, outcome); return outcome })
-      jobs.set(id, record)
-      return id
-    }, list(owner) { return [...jobs.values()].filter(job => job.owner === owner) } },
+    jobs: {
+      start(spec) {
+        if (admissionError) throw admissionError
+        const id = `job-${jobs.size + 1}`
+        const hooks = spec.run()
+        const record = {
+          ...hooks,
+          id,
+          owner: spec.owner,
+          kind: spec.kind,
+          label: spec.label,
+          status: 'running',
+        }
+        record.done = hooks.done.then((outcome) => {
+          Object.assign(record, outcome)
+          return outcome
+        })
+        jobs.set(id, record)
+        return id
+      },
+      list(owner) {
+        return [...jobs.values()].filter((job) => job.owner === owner)
+      },
+    },
   }
-  const rows = ['/repo', '/repo/.dsh/worktrees/a', '/repo/.dsh/worktrees/b'].map(path => ({ path, branch: path.split('/').at(-1) }))
+  const rows = ['/repo', '/repo/.dsh/worktrees/a', '/repo/.dsh/worktrees/b'].map((path) => ({
+    path,
+    branch: path.split('/').at(-1),
+  }))
   const git = {
     listWorktrees: async () => ({ repository: '/repo', commonDir: '/repo/.git', worktrees: rows }),
-    createWorktree: async () => { creates++; return { worktree: rows[1] } },
+    createWorktree: async () => {
+      creates++
+      return { worktree: rows[1] }
+    },
     resolveWorktree: async (_cwd, path) => {
-      const worktree = rows.find(row => row.path === path)
+      const worktree = rows.find((row) => row.path === path)
       if (!worktree || path === '/repo') throw new Error('Not a linked worktree')
       return { worktree }
     },
@@ -42,14 +72,47 @@ function fixture() {
       const cleaned = defer()
       const item = { request, done, cleaned, disposed: false }
       starts.push(item)
-      request.signal.addEventListener('abort', () => done.resolve({ status: 'killed' }), { once: true })
-      return { result: done.promise, async dispose() { await cleaned.promise; item.disposed = true } }
+      request.signal.addEventListener('abort', () => done.resolve({ status: 'killed' }), {
+        once: true,
+      })
+      return {
+        result: done.promise,
+        async dispose() {
+          await cleaned.promise
+          item.disposed = true
+        },
+      }
     },
-    async settleRun(run) { const outcome = await run.result; await run.dispose(); return outcome },
+    async settleRun(run) {
+      const outcome = await run.result
+      await run.dispose()
+      return outcome
+    },
   })
-  return { ctx, manager, parent, sibling, jobs, starts, git, setMode(v) { mode = v }, deny(v) { admissionError = v }, get creates() { return creates } }
+  return {
+    ctx,
+    manager,
+    parent,
+    sibling,
+    jobs,
+    starts,
+    git,
+    setMode(v) {
+      mode = v
+    },
+    deny(v) {
+      admissionError = v
+    },
+    get creates() {
+      return creates
+    },
+  }
 }
-const task = (name = 'a') => ({ worktree: `/repo/.dsh/worktrees/${name}`, task: 'Implement feature', mode: 'write' })
+const task = (name = 'a') => ({
+  worktree: `/repo/.dsh/worktrees/${name}`,
+  task: 'Implement feature',
+  mode: 'write',
+})
 async function finish(f, id, index, output = 'Tests passed') {
   f.starts[index].done.resolve({ status: 'completed', output })
   f.starts[index].cleaned.resolve()
@@ -88,7 +151,11 @@ test('background dispatch permits different worktrees, locks same worktree acros
 test('replacement manager recovers active worktree fences from the public job registry', async () => {
   const f = fixture()
   const a = await f.manager.dispatch(f.parent, task())
-  const replacement = new WorktreeManager(f.ctx, { git: f.git, startWorker: f.manager.startWorker, settleRun: f.manager.settleRun })
+  const replacement = new WorktreeManager(f.ctx, {
+    git: f.git,
+    startWorker: f.manager.startWorker,
+    settleRun: f.manager.settleRun,
+  })
   await assert.rejects(replacement.dispatch(f.sibling, task()), /active assignment/)
   assert.equal((await replacement.list(f.parent)).worktrees[1].activeJobId, a.jobId)
   await finish(f, a.jobId, 0)
@@ -112,8 +179,14 @@ test('optional handoff is bounded, explicit, same-owner and same-worktree only',
   const f = fixture()
   const a = await f.manager.dispatch(f.parent, task())
   await finish(f, a.jobId, 0, 'Review: missing validation')
-  await assert.rejects(f.manager.dispatch(f.sibling, { ...task(), context_from: a.jobId }), /owned by this agent/)
-  await assert.rejects(f.manager.dispatch(f.parent, { ...task('b'), context_from: a.jobId }), /this worktree/)
+  await assert.rejects(
+    f.manager.dispatch(f.sibling, { ...task(), context_from: a.jobId }),
+    /owned by this agent/,
+  )
+  await assert.rejects(
+    f.manager.dispatch(f.parent, { ...task('b'), context_from: a.jobId }),
+    /this worktree/,
+  )
   const b = await f.manager.dispatch(f.parent, { ...task(), context_from: a.jobId })
   assert.match(f.starts[1].request.handoff, /missing validation/)
   assert.equal(f.starts[1].request.parent, f.parent)
@@ -158,7 +231,9 @@ test('tool signal ends at admission; job cancellation reaches worker and awaits 
 
 test('startup errors settle as failed and release the checkout lease', async () => {
   const f = fixture()
-  f.manager.startWorker = async () => { throw new Error('Cannot enforce sandbox') }
+  f.manager.startWorker = async () => {
+    throw new Error('Cannot enforce sandbox')
+  }
   const a = await f.manager.dispatch(f.parent, task())
   const result = await f.jobs.get(a.jobId).done
   assert.equal(result.status, 'failed')
@@ -170,7 +245,9 @@ test('failed resource cleanup keeps the worktree fenced instead of permitting ov
   const f = fixture()
   f.manager.startWorker = async () => ({
     result: Promise.resolve({ status: 'completed', output: 'done' }),
-    async dispose() { throw new Error('cleanup failed') },
+    async dispose() {
+      throw new Error('cleanup failed')
+    },
   })
   const a = await f.manager.dispatch(f.parent, task())
   assert.equal((await f.jobs.get(a.jobId).done).status, 'failed')
@@ -199,8 +276,13 @@ test('recorded history retains at most 100 runs with bounded reports, not lifeti
 
 test('pre-admission abort and invalid arguments never start a job', async () => {
   const f = fixture()
-  await assert.rejects(f.manager.dispatch(f.parent, task(), AbortSignal.abort()), { name: 'AbortError' })
+  await assert.rejects(f.manager.dispatch(f.parent, task(), AbortSignal.abort()), {
+    name: 'AbortError',
+  })
   await assert.rejects(f.manager.dispatch(f.parent, { ...task(), mode: 'full' }), /mode/)
-  await assert.rejects(f.manager.dispatch(f.parent, { ...task(), task: 'x'.repeat(32001) }), /32000/)
+  await assert.rejects(
+    f.manager.dispatch(f.parent, { ...task(), task: 'x'.repeat(32001) }),
+    /32000/,
+  )
   assert.equal(f.jobs.size, 0)
 })

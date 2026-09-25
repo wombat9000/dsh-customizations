@@ -22,9 +22,13 @@ function copySnapshot(snapshot) {
     ...(snapshot.revision === undefined ? {} : { revision: snapshot.revision }),
     phase: snapshot.phase,
     ...(snapshot.strategy === undefined ? {} : { strategy: snapshot.strategy }),
-    ...(snapshot.durationSeconds === undefined ? {} : { durationSeconds: snapshot.durationSeconds }),
+    ...(snapshot.durationSeconds === undefined
+      ? {}
+      : { durationSeconds: snapshot.durationSeconds }),
     ...(snapshot.totalChunks === undefined ? {} : { totalChunks: snapshot.totalChunks }),
-    ...(snapshot.completedChunks === undefined ? {} : { completedChunks: snapshot.completedChunks }),
+    ...(snapshot.completedChunks === undefined
+      ? {}
+      : { completedChunks: snapshot.completedChunks }),
     ...(snapshot.activeChunks === undefined ? {} : { activeChunks: snapshot.activeChunks }),
     ...(snapshot.collectedSegments === undefined
       ? {}
@@ -75,9 +79,12 @@ export function createTranscriptProgressTracker(chunks, durationSeconds, strateg
     currentPhase = phase
     if (phase === 'complete' || phase === 'failed') terminal = true
     const progressChunks = [...leaves.values()]
-      .sort((left, right) => left.startSeconds - right.startSeconds
-        || left.endSeconds - right.endSeconds
-        || left.id.localeCompare(right.id))
+      .sort(
+        (left, right) =>
+          left.startSeconds - right.startSeconds ||
+          left.endSeconds - right.endSeconds ||
+          left.id.localeCompare(right.id),
+      )
       .map((chunk, index) => ({ index, ...chunk }))
     lastSnapshot = {
       phase,
@@ -85,9 +92,8 @@ export function createTranscriptProgressTracker(chunks, durationSeconds, strateg
       durationSeconds,
       totalChunks: progressChunks.length,
       completedChunks: progressChunks.filter((chunk) => chunk.status === 'complete').length,
-      activeChunks: progressChunks.filter(
-        (chunk) => ACTIVE_TRANSCRIPT_STATUSES.has(chunk.status),
-      ).length,
+      activeChunks: progressChunks.filter((chunk) => ACTIVE_TRANSCRIPT_STATUSES.has(chunk.status))
+        .length,
       collectedSegments: progressChunks.reduce(
         (total, chunk) => total + (chunk.status === 'complete' ? chunk.segmentCount : 0),
         0,
@@ -173,18 +179,27 @@ export function createTranscriptProgressStore(limit = DEFAULT_TRANSCRIPT_PROGRES
 export function registerTranscriptProgressRpc(ctx, store) {
   const connection = ctx.get('connection')
   if (connection === undefined) return
-  ctx.effect(() => connection.rpc.handle(
-    TRANSCRIPT_PROGRESS_CHANNEL,
-    async (endpoint, payload) => {
-      if (endpoint !== TRANSCRIPT_PROGRESS_ENDPOINT) {
-        return internalError('Unknown YouTube transcript progress endpoint')
-      }
-      if (typeof payload !== 'object' || payload === null || Array.isArray(payload)
-        || typeof payload.callId !== 'string' || payload.callId.length === 0) {
-        return internalError('YouTube transcript progress requires a callId')
-      }
-      return { ok: true, value: store.get(payload.callId) ?? null }
-    },
-    { authority: 'trusted-host' },
-  ), 'tool-youtube: transcript progress RPC')
+  ctx.effect(
+    () =>
+      connection.rpc.handle(
+        TRANSCRIPT_PROGRESS_CHANNEL,
+        async (endpoint, payload) => {
+          if (endpoint !== TRANSCRIPT_PROGRESS_ENDPOINT) {
+            return internalError('Unknown YouTube transcript progress endpoint')
+          }
+          if (
+            typeof payload !== 'object' ||
+            payload === null ||
+            Array.isArray(payload) ||
+            typeof payload.callId !== 'string' ||
+            payload.callId.length === 0
+          ) {
+            return internalError('YouTube transcript progress requires a callId')
+          }
+          return { ok: true, value: store.get(payload.callId) ?? null }
+        },
+        { authority: 'trusted-host' },
+      ),
+    'tool-youtube: transcript progress RPC',
+  )
 }

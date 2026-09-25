@@ -5,15 +5,37 @@
   "description": "Host-only Jev structured decisions through shared OpenRouter credentials",
   "type": "module",
   "main": "src/index.js",
-  "exports": { ".": "./src/index.js", "./client": "./client.js", "./package.json": "./package.json" },
-  "files": ["src", "client.js", "cordis.patch.yml", "README.md"],
-  "scripts": { "test": "node --test test/host.test.js" },
-  "engines": { "node": "^22.19.0 || >=24.0.0" },
-  "dsh": {
-    "bundle": { "patch": "./cordis.patch.yml" },
-    "client": { "inject": ["@deepseek-ai/dsh-client-ui-settings-plugins"], "platform": "web" }
+  "exports": {
+    ".": "./src/index.js",
+    "./client": "./client.js",
+    "./package.json": "./package.json"
   },
-  "dependencies": { "@deepseek-ai/schemastery": "3.18.2" },
+  "files": [
+    "src",
+    "client.js",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "node --test test/host.test.js"
+  },
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-settings-plugins"
+      ],
+      "platform": "web"
+    }
+  },
+  "dependencies": {
+    "@deepseek-ai/schemastery": "3.18.2"
+  },
   "peerDependencies": {
     "@deepseek-ai/cordis": "4.0.2",
     "@deepseek-ai/dsh-settings": "0.1.5-rc.2",

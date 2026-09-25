@@ -14,7 +14,12 @@ test('Trivy bundle ships its client, skill, and controlled scanner inputs', asyn
   assert.equal(manifest.dsh.client.platform, 'web')
   assert.ok(manifest.files.includes('assets'))
   assert.ok(manifest.files.includes('src/**/*.js'))
-  for (const path of [...Object.values(manifest.exports), 'assets/trivy-audit.md', 'assets/trivy-empty.yaml', 'assets/trivy-empty.ignore']) {
+  for (const path of [
+    ...Object.values(manifest.exports),
+    'assets/trivy-audit.md',
+    'assets/trivy-empty.yaml',
+    'assets/trivy-empty.ignore',
+  ]) {
     assert.ok((await stat(new URL(path, PACKAGE_ROOT))).isFile())
   }
   const patch = await readFile(new URL(manifest.dsh.bundle.patch, PACKAGE_ROOT), 'utf8')
@@ -31,29 +36,49 @@ test('personal-web selects the portable Trivy source', async () => {
 
 test('Trivy status RPC strips executable paths and owns its lifecycle', async () => {
   const calls = []
-  const runtime = { async check(options) {
-    calls.push(options)
-    return { state: 'ready', version: '0.69.2', path: '/private/example/trivy' }
-  } }
+  const runtime = {
+    async check(options) {
+      calls.push(options)
+      return { state: 'ready', version: '0.69.2', path: '/private/example/trivy' }
+    },
+  }
   let handler
   let dispose
   let removed = false
-  const connection = { rpc: {
-    handle(channel, callback, options) {
-      assert.equal(channel, '/trivy-status')
-      assert.equal(options.authority, 'trusted-host')
-      handler = callback
-      return () => { removed = true }
+  const connection = {
+    rpc: {
+      handle(channel, callback, options) {
+        assert.equal(channel, '/trivy-status')
+        assert.equal(options.authority, 'trusted-host')
+        handler = callback
+        return () => {
+          removed = true
+        }
+      },
     },
-  } }
-  registerTrivyStatusRpc({
-    get(name) { assert.equal(name, 'connection'); return connection },
-    effect(setup) { dispose = setup() },
-  }, runtime)
+  }
+  registerTrivyStatusRpc(
+    {
+      get(name) {
+        assert.equal(name, 'connection')
+        return connection
+      },
+      effect(setup) {
+        dispose = setup()
+      },
+    },
+    runtime,
+  )
   const signal = new AbortController().signal
-  assert.deepEqual(await handler('get', {}, signal), { ok: true, value: { state: 'ready', version: '0.69.2' } })
+  assert.deepEqual(await handler('get', {}, signal), {
+    ok: true,
+    value: { state: 'ready', version: '0.69.2' },
+  })
   await handler('recheck', {}, signal)
-  assert.deepEqual(calls, [{ force: false, signal }, { force: true, signal }])
+  assert.deepEqual(calls, [
+    { force: false, signal },
+    { force: true, signal },
+  ])
   assert.equal((await handler('scan', {}, signal)).ok, false)
   assert.equal(calls.length, 2)
   dispose()

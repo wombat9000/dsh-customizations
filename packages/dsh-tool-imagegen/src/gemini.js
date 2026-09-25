@@ -27,11 +27,14 @@ function providerError(error, operation, signal) {
     return aborted(operation)
   }
   const status = statusOf(error)
-  if (status === 401 || status === 403) return new Error('Gemini rejected the configured API credential')
+  if (status === 401 || status === 403)
+    return new Error('Gemini rejected the configured API credential')
   if (status === 429) return new Error('Gemini rate limit or quota exceeded')
-  return new Error(status === undefined
-    ? `Gemini ${operation} failed`
-    : `Gemini ${operation} failed (HTTP ${status})`)
+  return new Error(
+    status === undefined
+      ? `Gemini ${operation} failed`
+      : `Gemini ${operation} failed (HTTP ${status})`,
+  )
 }
 
 function awaitWithSignal(promise, signal, operation) {
@@ -61,20 +64,24 @@ function nonEmptyString(value, name) {
 }
 
 function positiveInteger(value, name) {
-  if (!Number.isSafeInteger(value) || value < 1) throw new Error(`${name} must be a positive integer`)
+  if (!Number.isSafeInteger(value) || value < 1)
+    throw new Error(`${name} must be a positive integer`)
   return value
 }
 
 export function normalizeGenerateRequest(request, options = {}) {
   const prompt = nonEmptyString(request?.prompt, 'prompt')
   const maxPromptChars = options.maxPromptChars ?? DEFAULT_MAX_PROMPT_CHARS
-  if (prompt.length > maxPromptChars) throw new Error(`prompt must contain at most ${maxPromptChars} characters`)
+  if (prompt.length > maxPromptChars)
+    throw new Error(`prompt must contain at most ${maxPromptChars} characters`)
 
   const aspectRatio = request?.aspectRatio ?? DEFAULT_ASPECT_RATIO
-  if (!ASPECT_RATIOS.has(aspectRatio)) throw new Error(`aspectRatio must be one of: ${[...ASPECT_RATIOS].join(', ')}`)
+  if (!ASPECT_RATIOS.has(aspectRatio))
+    throw new Error(`aspectRatio must be one of: ${[...ASPECT_RATIOS].join(', ')}`)
 
   const imageSize = request?.imageSize ?? DEFAULT_IMAGE_SIZE
-  if (!IMAGE_SIZES.has(imageSize)) throw new Error(`imageSize must be one of: ${[...IMAGE_SIZES].join(', ')}`)
+  if (!IMAGE_SIZES.has(imageSize))
+    throw new Error(`imageSize must be one of: ${[...IMAGE_SIZES].join(', ')}`)
 
   const numberOfImages = positiveInteger(request?.numberOfImages ?? 1, 'numberOfImages')
   const maxImages = options.maxImages ?? DEFAULT_MAX_IMAGES
@@ -84,11 +91,17 @@ export function normalizeGenerateRequest(request, options = {}) {
 }
 
 function decodeBase64(value) {
-  if (typeof value !== 'string' || value.length === 0 || value.length % 4 !== 0 || !/^[A-Za-z0-9+/]+={0,2}$/u.test(value)) {
+  if (
+    typeof value !== 'string' ||
+    value.length === 0 ||
+    value.length % 4 !== 0 ||
+    !/^[A-Za-z0-9+/]+={0,2}$/u.test(value)
+  ) {
     throw new Error('Gemini returned invalid image bytes')
   }
   const bytes = Buffer.from(value, 'base64')
-  if (bytes.length === 0 || bytes.toString('base64') !== value) throw new Error('Gemini returned invalid image bytes')
+  if (bytes.length === 0 || bytes.toString('base64') !== value)
+    throw new Error('Gemini returned invalid image bytes')
   return new Uint8Array(bytes)
 }
 
@@ -97,7 +110,8 @@ function imagePartOf(part) {
   if (inline === undefined || inline === null) return undefined
   const data = inline.data ?? inline.imageBytes ?? inline.image_bytes
   const mimeType = inline.mimeType ?? inline.mime_type
-  if (!MEDIA_TYPE_SET.has(mimeType)) throw new Error(`Gemini returned unsupported image type: ${String(mimeType)}`)
+  if (!MEDIA_TYPE_SET.has(mimeType))
+    throw new Error(`Gemini returned unsupported image type: ${String(mimeType)}`)
   return { data: decodeBase64(data), mediaType: mimeType }
 }
 
@@ -114,10 +128,14 @@ export function extractImageResponse(response) {
     }
   }
   if (images.length === 0) {
-    const finishMessage = candidates.find((candidate) => typeof candidate?.finishMessage === 'string')?.finishMessage
-    throw new Error(finishMessage === undefined
-      ? 'Gemini returned no image output; the prompt may have been blocked'
-      : `Gemini returned no image output: ${finishMessage}`)
+    const finishMessage = candidates.find(
+      (candidate) => typeof candidate?.finishMessage === 'string',
+    )?.finishMessage
+    throw new Error(
+      finishMessage === undefined
+        ? 'Gemini returned no image output; the prompt may have been blocked'
+        : `Gemini returned no image output: ${finishMessage}`,
+    )
   }
   return { text: [...new Set(text)].join('\n\n'), images }
 }
@@ -151,7 +169,9 @@ export class GeminiImageClient {
       throw new Error('Gemini credential resolution failed')
     }
     if (typeof apiKey !== 'string' || apiKey.length === 0) {
-      throw new Error('GEMINI_API_KEY is not configured; save it in the existing Gemini Settings card or export it in the launching environment')
+      throw new Error(
+        'GEMINI_API_KEY is not configured; save it in the existing Gemini Settings card or export it in the launching environment',
+      )
     }
     return apiKey
   }
@@ -188,10 +208,16 @@ export class GeminiImageClient {
     }
     const store = this.options.attachmentStore
     if (typeof this.options.saveImage === 'function') {
-      return awaitWithSignal(Promise.resolve().then(() => this.options.saveImage(input)), signal, 'image persistence')
+      return awaitWithSignal(
+        Promise.resolve().then(() => this.options.saveImage(input)),
+        signal,
+        'image persistence',
+      )
     }
     if (store === undefined || typeof store.saveImage !== 'function') {
-      throw new Error('DSH durable image attachments are unavailable; mount the local attachment provider')
+      throw new Error(
+        'DSH durable image attachments are unavailable; mount the local attachment provider',
+      )
     }
     return awaitWithSignal(store.saveImage(input), signal, 'image persistence')
   }

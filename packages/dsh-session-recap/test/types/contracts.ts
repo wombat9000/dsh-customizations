@@ -13,7 +13,8 @@ export async function rpcContracts(rpc: Rpc) {
   if (response.ok) {
     const settings: Settings = response.value
     const scope: string = response.value.storageScope
-    void settings; void scope
+    void settings
+    void scope
     // @ts-expect-error Successful responses have a value, not an error.
     response.error
   } else {
@@ -38,7 +39,10 @@ export async function rpcContracts(rpc: Rpc) {
 
 export function dataContracts(controller: Controller, onChange: SettingsFormProps['onChange']) {
   const bullets: Recap = { bullets: ['A remembered direction.'] }
-  const cards: Recap = { headline: 'Current direction', cards: [{ label: 'direction', text: 'Explore options.' }] }
+  const cards: Recap = {
+    headline: 'Current direction',
+    cards: [{ label: 'direction', text: 'Explore options.' }],
+  }
   const result: RpcResult<Recap> = { ok: true, value: cards }
   void result
   // @ts-expect-error Cards and bullets are mutually exclusive host response shapes.
@@ -61,15 +65,25 @@ export function dataContracts(controller: Controller, onChange: SettingsFormProp
   onChange('useJev', true)
   // @ts-expect-error A boolean draft field cannot receive a text value.
   onChange('useJev', 'true')
-  void mixed; void missingHeadline; void unknownCard; void invalidPanel; void invalidAction; void invalidMessage
+  void mixed
+  void missingHeadline
+  void unknownCard
+  void invalidPanel
+  void invalidAction
+  void invalidMessage
 }
 
 export function slotContracts(ctx: RecapRegistrationContext, controller: Controller) {
   // @ts-expect-error A slot name cannot silently widen to string/any.
   ctx.slots.inject('conversation.unknown', () => {})
-  ctx.slots.register<'conversation.input.dock'>({
-    name: 'conversation.input.dock', id: 'fixture', order: 10,
-    // @ts-expect-error Session injection must include a string identity.
-    inject: () => ({ sessionId: 42, controller }),
-  }, () => null)
+  ctx.slots.register<'conversation.input.dock'>(
+    {
+      name: 'conversation.input.dock',
+      id: 'fixture',
+      order: 10,
+      // @ts-expect-error Session injection must include a string identity.
+      inject: () => ({ sessionId: 42, controller }),
+    },
+    () => null,
+  )
 }

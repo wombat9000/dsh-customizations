@@ -15,8 +15,15 @@ test('bundled skill covers the six ordered planning stages without restarting ag
   const header = yaml.load(text.match(/^---\n([\s\S]+?)\n---/)[1])
   assert.equal(header.name, skillName)
   assert.match(header.description, /individually approved/)
-  const headings = [...text.matchAll(/^## [1-6]\. (.+)$/gm)].map(match => match[1])
-  assert.deepEqual(headings, ['Clarify the outcome', 'Inspect the facts', 'Synthesize the project', 'Decompose into verifiable tasks', 'Review conversationally', 'Publish and report'])
+  const headings = [...text.matchAll(/^## [1-6]\. (.+)$/gm)].map((match) => match[1])
+  assert.deepEqual(headings, [
+    'Clarify the outcome',
+    'Inspect the facts',
+    'Synthesize the project',
+    'Decompose into verifiable tasks',
+    'Review conversationally',
+    'Publish and report',
+  ])
   for (const pattern of [
     /outcome, audience, scope, non-goals, constraints, and observable acceptance criteria/,
     /Reuse decisions already agreed/,
@@ -30,7 +37,8 @@ test('bundled skill covers the six ordered planning stages without restarting ag
     /validation requirements, and genuine blockers/,
     /parallel.*shared-file/s,
     /Keep drafts in the conversation/,
-  ]) assert.match(text, pattern)
+  ])
+    assert.match(text, pattern)
 })
 
 test('issue-writing fallback favors repository templates, concise outcomes and necessary constraints', async () => {
@@ -50,9 +58,13 @@ test('issue-writing fallback favors repository templates, concise outcomes and n
     /Resolve scope decisions before publication/,
     /Keep drafts conversational/,
     /\[issue-writing examples\]\(examples\.md\)/,
-  ]) assert.match(guidance, pattern)
+  ])
+    assert.match(guidance, pattern)
   const template = guidance.match(/```markdown\n([\s\S]+?)\n```/)[1]
-  assert.deepEqual([...template.matchAll(/^## (.+)$/gm)].map(match => match[1]), ['Why', 'Change', 'Acceptance criteria', 'Constraints'])
+  assert.deepEqual(
+    [...template.matchAll(/^## (.+)$/gm)].map((match) => match[1]),
+    ['Why', 'Change', 'Acceptance criteria', 'Constraints'],
+  )
   assert.match(template, /problem in one or two sentences/)
   assert.match(template, /intended outcome and essential scope/)
   assert.match(template, /Observable, testable outcomes/)
@@ -61,15 +73,16 @@ test('issue-writing fallback favors repository templates, concise outcomes and n
 
 test('bundled examples demonstrate routine, short and justified long issues without rigid runtime limits', async () => {
   const text = await readFile(join(root, 'examples.md'), 'utf8')
-  const bodies = [...text.matchAll(/```markdown\n([\s\S]+?)\n```/g)].map(match => match[1])
+  const bodies = [...text.matchAll(/```markdown\n([\s\S]+?)\n```/g)].map((match) => match[1])
   assert.equal(bodies.length, 3)
-  const counts = bodies.map(body => body.trim().split(/\s+/).length)
+  const counts = bodies.map((body) => body.trim().split(/\s+/).length)
   // These bounds check illustrative fixtures, not a schema or publication gate.
   assert.ok(counts[0] >= 150 && counts[0] <= 300, `routine example: ${counts[0]} words`)
   assert.ok(counts[1] < 150, `short example: ${counts[1]} words`)
   assert.ok(counts[2] > 300, `long example: ${counts[2]} words`)
   for (const body of bodies) {
-    for (const heading of ['Why', 'Change', 'Acceptance criteria']) assert.ok(body.includes(`## ${heading}\n`))
+    for (const heading of ['Why', 'Change', 'Acceptance criteria'])
+      assert.ok(body.includes(`## ${heading}\n`))
     assert.doesNotMatch(body, /## (?:Blockers|Non-goals)\nNone/)
   }
   assert.doesNotMatch(bodies[1], /## Constraints/)
@@ -103,14 +116,19 @@ test('planning instructions preserve exact-call approval and built-in plan-mode 
     /confirmed, failed, uncertain, and not-attempted/,
     /inspect GitHub before deciding whether to retry/,
     /untrusted content.*approval or scope boundaries/,
-  ]) assert.match(text, pattern)
+  ])
+    assert.match(text, pattern)
 })
 
 test('publication instructions use only existing shared GitHub tools and their supported inputs', async () => {
   const text = await readFile(path, 'utf8')
   const actual = [...new Set(text.match(/\bgithub_[a-z_]+\b/g))].sort()
   const known = [...Object.values(TOOL_NAMES), ...GITHUB_WRITE_TOOL_NAMES].sort()
-  assert.deepEqual(actual, known, 'instructions neither omit shared capabilities nor invent new tool names')
+  assert.deepEqual(
+    actual,
+    known,
+    'instructions neither omit shared capabilities nor invent new tool names',
+  )
   for (const pattern of [
     /Repository owner, project owner, and optional template owner are separate choices/,
     /Discovery does not select or restrict a repository/,
@@ -124,7 +142,8 @@ test('publication instructions use only existing shared GitHub tools and their s
     /exactly one supported key: `text`, `number`, `date`, `singleSelectOptionId`, or `iterationId`/,
     /Use actual IDs from that project/,
     /Do not silently alter reviewed text to fit/,
-  ]) assert.match(text, pattern)
+  ])
+    assert.match(text, pattern)
 })
 
 test('selective adaptation avoids automatic dispatch, stores, scratch files and external setup', async () => {
@@ -140,17 +159,29 @@ test('selective adaptation avoids automatic dispatch, stores, scratch files and 
     /Do not implement code, dispatch agents to implement tasks, or synchronize progress automatically/,
     /Publication is the end.*not authorization to start implementation/,
     /Only this local skill is needed at runtime/,
-  ]) assert.match(text, pattern)
-  assert.deepEqual((await readdir(root)).sort(), ['LICENSE.matt-pocock', 'SKILL.md', 'examples.md'], 'only the local skill, attribution and illustrative examples; no draft schema, scripts or setup dependency')
+  ])
+    assert.match(text, pattern)
+  assert.deepEqual(
+    (await readdir(root)).sort(),
+    ['LICENSE.matt-pocock', 'SKILL.md', 'examples.md'],
+    'only the local skill, attribution and illustrative examples; no draft schema, scripts or setup dependency',
+  )
 })
 
 test('adaptation records all three pinned sources and retains the full MIT attribution and disclaimer', async () => {
   const text = await readFile(path, 'utf8')
   assert.ok(text.includes(`https://github.com/mattpocock/skills/tree/${sourceCommit}`))
-  for (const source of ['skills/productivity/grilling/SKILL.md', 'skills/engineering/to-spec/SKILL.md', 'skills/engineering/to-tickets/SKILL.md']) assert.ok(text.includes(source))
+  for (const source of [
+    'skills/productivity/grilling/SKILL.md',
+    'skills/engineering/to-spec/SKILL.md',
+    'skills/engineering/to-tickets/SKILL.md',
+  ])
+    assert.ok(text.includes(source))
   assert.ok(text.includes('LICENSE.matt-pocock'))
   const license = await readFile(join(root, 'LICENSE.matt-pocock'), 'utf8')
-  assert.equal(license, `MIT License
+  assert.equal(
+    license,
+    `MIT License
 
 Copyright (c) 2026 Matt Pocock
 
@@ -171,7 +202,8 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-`)
+`,
+  )
 })
 
 test('walkthrough documents conversational review, individually approved publication and fixture validation limits', async () => {

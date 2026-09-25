@@ -51,14 +51,16 @@ test('parses branch, upstream divergence, dirty file count, and tracked line tot
   const snapshot = parseGitEnvironmentResult({
     cwd: '/repo',
     home: '/home/tester',
-    result: shellResult(repositoryOutput({
-      branch: 'feature/native-plugin',
-      upstream: 'origin/feature/native-plugin',
-      ahead: 2,
-      behind: 3,
-      status: [' M tracked.txt', '?? untracked.txt'],
-      numstat: ['3\t2\ttracked.txt', '-\t-\tbinary.dat'],
-    })),
+    result: shellResult(
+      repositoryOutput({
+        branch: 'feature/native-plugin',
+        upstream: 'origin/feature/native-plugin',
+        ahead: 2,
+        behind: 3,
+        status: [' M tracked.txt', '?? untracked.txt'],
+        numstat: ['3\t2\ttracked.txt', '-\t-\tbinary.dat'],
+      }),
+    ),
   })
 
   assert.deepEqual(snapshot, {
@@ -96,40 +98,54 @@ test('parses synced, ahead, behind, diverged, and no-upstream states', () => {
 })
 
 test('handles non-repositories and repositories without commits', () => {
-  assert.equal(parseGitEnvironmentResult({
-    cwd: '/tmp',
-    home: '/home/tester',
-    result: shellResult('__DSH_NOT_REPO__\n'),
-  }).repo, false)
+  assert.equal(
+    parseGitEnvironmentResult({
+      cwd: '/tmp',
+      home: '/home/tester',
+      result: shellResult('__DSH_NOT_REPO__\n'),
+    }).repo,
+    false,
+  )
 
-  assert.deepEqual(parseGitEnvironmentResult({
-    cwd: '/repo',
-    home: '/home/tester',
-    result: shellResult('__DSH_INSIDE__\ntrue\n__DSH_NO_HEAD__\n'),
-  }), {
-    cwd: '/repo',
-    home: '/home/tester',
-    repo: true,
-    hasHead: false,
-    branch: null,
-    upstream: null,
-    ahead: null,
-    behind: null,
-    dirtyFiles: null,
-    additions: null,
-    deletions: null,
-  })
+  assert.deepEqual(
+    parseGitEnvironmentResult({
+      cwd: '/repo',
+      home: '/home/tester',
+      result: shellResult('__DSH_INSIDE__\ntrue\n__DSH_NO_HEAD__\n'),
+    }),
+    {
+      cwd: '/repo',
+      home: '/home/tester',
+      repo: true,
+      hasHead: false,
+      branch: null,
+      upstream: null,
+      ahead: null,
+      behind: null,
+      dirtyFiles: null,
+      additions: null,
+      deletions: null,
+    },
+  )
 })
 
 test('reports bounded execution failures', () => {
-  assert.equal(parseGitEnvironmentResult({
-    cwd: '/repo', home: '/home/tester', result: shellResult('', { timedOut: true }),
-  }).error, 'Git check timed out')
-  assert.equal(parseGitEnvironmentResult({
-    cwd: '/repo',
-    home: '/home/tester',
-    result: shellResult('', { stdout: { text: '', truncated: true } }),
-  }).error, 'Repository status is too large')
+  assert.equal(
+    parseGitEnvironmentResult({
+      cwd: '/repo',
+      home: '/home/tester',
+      result: shellResult('', { timedOut: true }),
+    }).error,
+    'Git check timed out',
+  )
+  assert.equal(
+    parseGitEnvironmentResult({
+      cwd: '/repo',
+      home: '/home/tester',
+      result: shellResult('', { stdout: { text: '', truncated: true } }),
+    }).error,
+    'Repository status is too large',
+  )
 })
 
 test('reads the live session cwd through the Shell service', async () => {
@@ -172,5 +188,7 @@ test('validates config and publishes a strict cancellable Remote descriptor', ()
   assert.equal(descriptor.method, 'read')
   assert.deepEqual(descriptor.cancellation, { parameter: 'signal' })
   assert.equal(descriptor.parameters[0].codec.mode, 'strict')
-  assert.deepEqual(descriptor.parameters[0].codec.schema.parse({ sessionId: 'abc' }), { sessionId: 'abc' })
+  assert.deepEqual(descriptor.parameters[0].codec.schema.parse({ sessionId: 'abc' }), {
+    sessionId: 'abc',
+  })
 })

@@ -28,10 +28,13 @@ export function createSettingsReader(rpc: Rpc) {
   let pending: Promise<ScopedSettings> | undefined
 
   function settings() {
-    pending ??= rpc.call(CHANNEL, 'settings', {}).then(unwrap).catch((error: unknown) => {
-      pending = undefined
-      throw error
-    })
+    pending ??= rpc
+      .call(CHANNEL, 'settings', {})
+      .then(unwrap)
+      .catch((error: unknown) => {
+        pending = undefined
+        throw error
+      })
     return pending
   }
 
@@ -45,6 +48,12 @@ export function createSettingsReader(rpc: Rpc) {
 export function errorMessage(error: unknown): string {
   // Retain ordinary Error and string messages while safely normalizing malformed
   // thrown values (including null and objects with a non-string message).
-  return (error !== null && (typeof error === 'object' || typeof error === 'function')
-    && 'message' in error && typeof error.message === 'string' && error.message) || String(error)
+  return (
+    (error !== null &&
+      (typeof error === 'object' || typeof error === 'function') &&
+      'message' in error &&
+      typeof error.message === 'string' &&
+      error.message) ||
+    String(error)
+  )
 }

@@ -34,8 +34,12 @@ test('apply serves a credential-only plugin namespace when settings becomes avai
       install = callback
     },
     web: {
-      registerSearchProvider(value) { providers.push(value) },
-      registerFetchProvider(value) { providers.push(value) },
+      registerSearchProvider(value) {
+        providers.push(value)
+      },
+      registerFetchProvider(value) {
+        providers.push(value)
+      },
     },
   }
   apply(ctx, { apiKey: 'fc-private-key' })
@@ -43,45 +47,58 @@ test('apply serves a credential-only plugin namespace when settings becomes avai
   assert.equal(providers[0], providers[1])
   assert.ok(providers[0] instanceof FirecrawlWebProvider)
   let registrations = 0
-  install({ settings: {
-    installSection(owner, namespace, schema, initial, hooks) {
-      registrations++
-      assert.equal(owner, ctx)
-      assert.equal(namespace, 'web-firecrawl')
-      assert.equal(schema.type, 'object')
-      assert.deepEqual(schema.dict, {})
-      assert.deepEqual(schema({}), {})
-      assert.deepEqual(initial, {})
-      assert.equal(typeof hooks.setSource, 'function')
-      assert.equal(typeof hooks.onChange, 'function')
+  install({
+    settings: {
+      installSection(owner, namespace, schema, initial, hooks) {
+        registrations++
+        assert.equal(owner, ctx)
+        assert.equal(namespace, 'web-firecrawl')
+        assert.equal(schema.type, 'object')
+        assert.deepEqual(schema.dict, {})
+        assert.deepEqual(schema({}), {})
+        assert.deepEqual(initial, {})
+        assert.equal(typeof hooks.setSource, 'function')
+        assert.equal(typeof hooks.onChange, 'function')
+      },
     },
-  } })
+  })
   assert.equal(registrations, 1)
 })
 
 test('reports availability from local configuration only', () => {
   assert.equal(provider(async () => jsonResponse({})).available(), true)
   assert.equal(provider(async () => jsonResponse({}), { apiKey: '' }).available(), false)
-  assert.equal(provider(async () => jsonResponse({}), {
-    apiKey: '',
-    resolveApiKey: async () => undefined,
-  }).available(), true)
+  assert.equal(
+    provider(async () => jsonResponse({}), {
+      apiKey: '',
+      resolveApiKey: async () => undefined,
+    }).available(),
+    true,
+  )
   assert.equal(provider(async () => jsonResponse({}), { baseURL: 'not a url' }).available(), false)
-  assert.equal(provider(async () => jsonResponse({}), { baseURL: 'http://firecrawl.example.com/v2' }).available(), false)
+  assert.equal(
+    provider(async () => jsonResponse({}), {
+      baseURL: 'http://firecrawl.example.com/v2',
+    }).available(),
+    false,
+  )
   assert.equal(provider(async () => jsonResponse({}), { maxBodyChars: 0 }).available(), false)
 })
 
 test('never sends credentials to an HTTP base URL', async () => {
   let called = false
-  const firecrawl = provider(async () => {
-    called = true
-    return jsonResponse({})
-  }, { baseURL: 'http://firecrawl.example.com/v2' })
+  const firecrawl = provider(
+    async () => {
+      called = true
+      return jsonResponse({})
+    },
+    { baseURL: 'http://firecrawl.example.com/v2' },
+  )
 
   await assert.rejects(
     firecrawl.search({ query: 'test', maxResults: 1 }),
-    (error) => error.code === 'WEB_PROVIDER_ERROR'
-      && error.message === 'Firecrawl baseURL must use HTTPS',
+    (error) =>
+      error.code === 'WEB_PROVIDER_ERROR' && error.message === 'Firecrawl baseURL must use HTTPS',
   )
   assert.equal(called, false)
 })
@@ -176,15 +193,19 @@ test('fetch maps scraped markdown and final target metadata', async () => {
 })
 
 test('fetch caps large bodies and detects partial PDF extraction', () => {
-  const result = mapFirecrawlScrapeResponse({
-    markdown: 'abcdefghij',
-    metadata: {
-      sourceURL: 'https://example.com/document.pdf',
-      statusCode: 200,
-      numPages: 2,
-      totalPages: 5,
+  const result = mapFirecrawlScrapeResponse(
+    {
+      markdown: 'abcdefghij',
+      metadata: {
+        sourceURL: 'https://example.com/document.pdf',
+        statusCode: 200,
+        numPages: 2,
+        totalPages: 5,
+      },
     },
-  }, 'https://example.com/document.pdf', 6)
+    'https://example.com/document.pdf',
+    6,
+  )
 
   assert.equal(result.body.content, 'abcdef')
   assert.equal(result.truncated, true)
@@ -192,29 +213,37 @@ test('fetch caps large bodies and detects partial PDF extraction', () => {
 
 test('rejects scrape metadata errors instead of returning them as page content', () => {
   assert.throws(
-    () => mapFirecrawlScrapeResponse({
-      metadata: {
-        sourceURL: 'https://example.com/blocked',
-        statusCode: 200,
-        error: 'Unable to scrape this page',
-      },
-    }, 'https://example.com/blocked', 100_000),
-    (error) => error.code === 'WEB_PROVIDER_ERROR'
-      && error.message === 'Unable to scrape this page',
+    () =>
+      mapFirecrawlScrapeResponse(
+        {
+          metadata: {
+            sourceURL: 'https://example.com/blocked',
+            statusCode: 200,
+            error: 'Unable to scrape this page',
+          },
+        },
+        'https://example.com/blocked',
+        100_000,
+      ),
+    (error) =>
+      error.code === 'WEB_PROVIDER_ERROR' && error.message === 'Unable to scrape this page',
   )
 })
 
 test('resolves the credential for every operation without caching it', async () => {
   let currentKey = 'fc-first-key'
   const authorizations = []
-  const firecrawl = provider(async (_url, init) => {
-    authorizations.push(init.headers.authorization)
-    return jsonResponse({ success: true, data: { web: [] } })
-  }, {
-    apiKey: '',
-    apiKeyEnv: 'FIRECRAWL_API_KEY',
-    resolveApiKey: async () => currentKey,
-  })
+  const firecrawl = provider(
+    async (_url, init) => {
+      authorizations.push(init.headers.authorization)
+      return jsonResponse({ success: true, data: { web: [] } })
+    },
+    {
+      apiKey: '',
+      apiKeyEnv: 'FIRECRAWL_API_KEY',
+      resolveApiKey: async () => currentKey,
+    },
+  )
 
   await firecrawl.search({ query: 'first', maxResults: 1 })
   currentKey = 'fc-rotated-key'
@@ -225,28 +254,37 @@ test('resolves the credential for every operation without caching it', async () 
 
 test('reports a missing dynamic credential without making a request', async () => {
   let called = false
-  const firecrawl = provider(async () => {
-    called = true
-    return jsonResponse({})
-  }, {
-    apiKey: '',
-    apiKeyEnv: 'FIRECRAWL_API_KEY',
-    resolveApiKey: async () => undefined,
-  })
+  const firecrawl = provider(
+    async () => {
+      called = true
+      return jsonResponse({})
+    },
+    {
+      apiKey: '',
+      apiKeyEnv: 'FIRECRAWL_API_KEY',
+      resolveApiKey: async () => undefined,
+    },
+  )
 
   await assert.rejects(
     firecrawl.search({ query: 'test', maxResults: 1 }),
-    (error) => error.code === 'WEB_PROVIDER_CREDENTIAL_MISSING'
-      && error.message.includes('Settings → Plugins → Plugin configuration → Firecrawl'),
+    (error) =>
+      error.code === 'WEB_PROVIDER_CREDENTIAL_MISSING' &&
+      error.message.includes('Settings → Plugins → Plugin configuration → Firecrawl'),
   )
   assert.equal(called, false)
 })
 
 test('surfaces Firecrawl API messages as provider errors', async () => {
-  const firecrawl = provider(async () => jsonResponse({
-    success: false,
-    error: 'Insufficient credits',
-  }, 402))
+  const firecrawl = provider(async () =>
+    jsonResponse(
+      {
+        success: false,
+        error: 'Insufficient credits',
+      },
+      402,
+    ),
+  )
 
   await assert.rejects(
     firecrawl.search({ query: 'test', maxResults: 1 }),
@@ -301,7 +339,8 @@ test('rejects malformed successful envelopes', async () => {
 
   await assert.rejects(
     firecrawl.search({ query: 'test', maxResults: 1 }),
-    (error) => error.code === 'WEB_PROVIDER_ERROR'
-      && error.message.includes('unprocessable search response'),
+    (error) =>
+      error.code === 'WEB_PROVIDER_ERROR' &&
+      error.message.includes('unprocessable search response'),
   )
 })

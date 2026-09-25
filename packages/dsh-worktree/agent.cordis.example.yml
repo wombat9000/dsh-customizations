@@ -4,7 +4,6 @@
 # Keep the preset's existing tool-jobs row; add it only if absent in a user copy.
 - id: local-worktree-tools
   name: '@local/dsh-worktree/tools'
-
 # Required existing job controls:
 # - id: tool-jobs
 #   name: '@deepseek-ai/dsh-tool-jobs'

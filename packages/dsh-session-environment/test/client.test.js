@@ -11,7 +11,9 @@ function loadClient(overrides = {}) {
   let registration
   const window = {
     __ModuleLoader__: {
-      load(value) { registration = value },
+      load(value) {
+        registration = value
+      },
     },
   }
   vm.runInNewContext(bundle, {
@@ -44,12 +46,17 @@ test('copy buttons write full values and report clipboard success or failure', a
           useRef: (value) => ({ current: value }),
           useEffect: () => {},
         },
-        navigator: { clipboard: { async writeText(value) {
-          writes.push(value)
-          if (failure) throw new Error('Permission denied')
-        } } },
+        navigator: {
+          clipboard: {
+            async writeText(value) {
+              writes.push(value)
+              if (failure) throw new Error('Permission denied')
+            },
+          },
+        },
       })
-      const value = label === 'CWD' ? '/home/test/projects/very-long-directory' : 'feat/very-long-branch-name'
+      const value =
+        label === 'CWD' ? '/home/test/projects/very-long-directory' : 'feat/very-long-branch-name'
       const element = client.CopyValue({ label, value, children: '…shortened' })
       const button = element.props.children[0]
       assert.equal(button.type, 'button')
@@ -58,7 +65,10 @@ test('copy buttons write full values and report clipboard success or failure', a
       button.props.onClick()
       await new Promise((resolve) => setImmediate(resolve))
       assert.deepEqual(writes, [value])
-      assert.equal(updates.at(-1), failure ? `Could not copy ${label}. Try again.` : `${label} copied`)
+      assert.equal(
+        updates.at(-1),
+        failure ? `Could not copy ${label}. Try again.` : `${label} copied`,
+      )
       assert.equal(element.props.children[1].props.role, 'status')
     }
   }
@@ -87,7 +97,11 @@ test('client describes synced, ahead, behind, diverged, and no-upstream states',
 test('client self-mounts its Remote contribution and overlay slot', async () => {
   const client = loadClient()
   const calls = []
-  const mountedRemote = { async read() { throw new Error('not called by this test') } }
+  const mountedRemote = {
+    async read() {
+      throw new Error('not called by this test')
+    },
+  }
   const ctx = {
     get(name) {
       assert.equal(name, 'remote.sessionEnvironment')
@@ -96,7 +110,9 @@ test('client self-mounts its Remote contribution and overlay slot', async () => 
     remote: {
       async $mount(contribution) {
         calls.push(['mount', contribution.package, contribution.descriptors[0].method])
-        return async () => { calls.push(['unmount']) }
+        return async () => {
+          calls.push(['unmount'])
+        }
       },
     },
     slots: {
@@ -106,7 +122,9 @@ test('client self-mounts its Remote contribution and overlay slot', async () => 
       },
       register(descriptor, component) {
         calls.push(['register', descriptor.name, descriptor.id, typeof component])
-        return () => { calls.push(['unregister']) }
+        return () => {
+          calls.push(['unregister'])
+        }
       },
     },
   }

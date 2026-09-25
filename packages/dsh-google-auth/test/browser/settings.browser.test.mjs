@@ -6,31 +6,58 @@ import { deferred, failure, integration, mountSettings, ok } from './harness.mjs
 let fixture, startTimerSpy, stopTimerSpy
 const timers = new Map()
 afterEach(async () => {
-  try { await fixture?.unmount() } finally {
-    fixture = undefined; startTimerSpy?.mockRestore(); stopTimerSpy?.mockRestore()
-    startTimerSpy = undefined; stopTimerSpy = undefined; timers.clear(); vi.restoreAllMocks()
+  try {
+    await fixture?.unmount()
+  } finally {
+    fixture = undefined
+    startTimerSpy?.mockRestore()
+    stopTimerSpy?.mockRestore()
+    startTimerSpy = undefined
+    stopTimerSpy = undefined
+    timers.clear()
+    vi.restoreAllMocks()
   }
 })
-const click = (locator) => act(async () => { await locator.click() })
-const fill = (locator, value) => act(async () => { await locator.fill(value) })
-const toggle = () => click(page.getByText('Shared account and integration permissions.', { exact: true }))
+const click = (locator) =>
+  act(async () => {
+    await locator.click()
+  })
+const fill = (locator, value) =>
+  act(async () => {
+    await locator.fill(value)
+  })
+const toggle = () =>
+  click(page.getByText('Shared account and integration permissions.', { exact: true }))
 const input = () => page.getByLabelText('Desktop OAuth client JSON')
 const button = (name) => page.getByRole('button', { name, exact: true })
-const clientJson = JSON.stringify({ installed: { client_id: 'fixture.apps.googleusercontent.com', client_secret: 'fixture-not-a-real-secret' } })
-const callbackMode = () => page.getByRole('checkbox', { name: 'Use sandbox callback forwarding', exact: true })
-for (const useSandbox of [false, undefined]) test(`callback forwarding defaults off for ${useSandbox}`, async () => {
-  fixture = await mountSettings({ status: { useSandbox } }); await toggle()
-  await expect.element(callbackMode()).not.toBeChecked()
-  await expect.element(callbackMode()).toBeEnabled()
-  expect(fixture.handlers['callback-mode']).not.toHaveBeenCalled()
-  expect(fixture.container.textContent).toContain('directly on the DSH host')
-  expect(fixture.container.textContent).toContain('Docker')
+const clientJson = JSON.stringify({
+  installed: {
+    client_id: 'fixture.apps.googleusercontent.com',
+    client_secret: 'fixture-not-a-real-secret',
+  },
 })
+const callbackMode = () =>
+  page.getByRole('checkbox', { name: 'Use sandbox callback forwarding', exact: true })
+for (const useSandbox of [false, undefined])
+  test(`callback forwarding defaults off for ${useSandbox}`, async () => {
+    fixture = await mountSettings({ status: { useSandbox } })
+    await toggle()
+    await expect.element(callbackMode()).not.toBeChecked()
+    await expect.element(callbackMode()).toBeEnabled()
+    expect(fixture.handlers['callback-mode']).not.toHaveBeenCalled()
+    expect(fixture.container.textContent).toContain('directly on the DSH host')
+    expect(fixture.container.textContent).toContain('Docker')
+  })
 test('callback forwarding saves true and false immediately and stays busy through status refresh', async () => {
-  fixture = await mountSettings({ status: { configured: true } }); await toggle()
-  const save = deferred(), refreshed = deferred()
+  fixture = await mountSettings({ status: { configured: true } })
+  await toggle()
+  const save = deferred(),
+    refreshed = deferred()
   const original = fixture.handlers['callback-mode'].getMockImplementation()
-  fixture.handlers['callback-mode'].mockImplementationOnce(async (body) => { await save.promise; return original(body) })
+  fixture.handlers['callback-mode'].mockImplementationOnce(async (body) => {
+    await save.promise
+    return original(body)
+  })
   await click(callbackMode())
   expect(fixture.handlers['callback-mode']).toHaveBeenCalledExactlyOnceWith({ useSandbox: true })
   await expect.element(callbackMode()).toBeDisabled()
@@ -39,43 +66,75 @@ test('callback forwarding saves true and false immediately and stays busy throug
   await act(async () => save.resolve())
   await expect.element(callbackMode()).toBeDisabled()
   await expect.element(button('Connect Google account')).toBeDisabled()
-  await act(async () => refreshed.resolve(ok({ configured: true, connected: false, pending: false, useSandbox: true, sandboxAvailable: true, requiredScopes: integration().scopes, missingScopes: integration().missingScopes, integrations: [integration()] })))
+  await act(async () =>
+    refreshed.resolve(
+      ok({
+        configured: true,
+        connected: false,
+        pending: false,
+        useSandbox: true,
+        sandboxAvailable: true,
+        requiredScopes: integration().scopes,
+        missingScopes: integration().missingScopes,
+        integrations: [integration()],
+      }),
+    ),
+  )
   await expect.element(callbackMode()).toBeChecked()
   await expect.element(callbackMode()).toBeEnabled()
   await click(callbackMode())
   expect(fixture.handlers['callback-mode']).toHaveBeenNthCalledWith(2, { useSandbox: false })
   await expect.element(callbackMode()).not.toBeChecked()
 })
-for (const useSandbox of [false, true]) test(`unavailable bridge with forwarding ${useSandbox} preserves mode and controls Connect`, async () => {
-  fixture = await mountSettings({ status: { configured: true, useSandbox, sandboxAvailable: false } }); await toggle()
-  await expect.element(callbackMode()).toBeEnabled()
-  if (useSandbox) {
-    await expect.element(callbackMode()).toBeChecked()
-    await expect.element(button('Connect Google account')).toBeDisabled()
-    await expect.element(page.getByRole('alert')).toHaveTextContent('Sandbox callback bridge unavailable. Restore the Docker sandbox bridge or turn off sandbox callback forwarding before connecting. DSH will not fall back to a direct host callback.')
-    expect(fixture.container.textContent).toContain('will not fall back')
-  } else {
-    await expect.element(button('Connect Google account')).toBeEnabled()
-    await expect.element(page.getByRole('alert')).not.toBeInTheDocument()
+for (const useSandbox of [false, true])
+  test(`unavailable bridge with forwarding ${useSandbox} preserves mode and controls Connect`, async () => {
+    fixture = await mountSettings({
+      status: { configured: true, useSandbox, sandboxAvailable: false },
+    })
+    await toggle()
+    await expect.element(callbackMode()).toBeEnabled()
+    if (useSandbox) {
+      await expect.element(callbackMode()).toBeChecked()
+      await expect.element(button('Connect Google account')).toBeDisabled()
+      await expect
+        .element(page.getByRole('alert'))
+        .toHaveTextContent(
+          'Sandbox callback bridge unavailable. Restore the Docker sandbox bridge or turn off sandbox callback forwarding before connecting. DSH will not fall back to a direct host callback.',
+        )
+      expect(fixture.container.textContent).toContain('will not fall back')
+    } else {
+      await expect.element(button('Connect Google account')).toBeEnabled()
+      await expect.element(page.getByRole('alert')).not.toBeInTheDocument()
+      await click(callbackMode())
+      await expect.element(callbackMode()).toBeChecked()
+      await expect.element(button('Connect Google account')).toBeDisabled()
+    }
+    expect(fixture.handlers.connect).not.toHaveBeenCalled()
+  })
+for (const useSandbox of [false, true])
+  test(`failed callback save retains previous ${useSandbox} and hides raw error`, async () => {
+    fixture = await mountSettings({
+      status: { configured: true, useSandbox },
+      overrides: { 'callback-mode': async () => failure('SECRET callback exception') },
+    })
+    await toggle()
+    const checks = fixture.handlers.status.mock.calls.length
     await click(callbackMode())
-    await expect.element(callbackMode()).toBeChecked()
-    await expect.element(button('Connect Google account')).toBeDisabled()
-  }
-  expect(fixture.handlers.connect).not.toHaveBeenCalled()
-})
-for (const useSandbox of [false, true]) test(`failed callback save retains previous ${useSandbox} and hides raw error`, async () => {
-  fixture = await mountSettings({ status: { configured: true, useSandbox }, overrides: { 'callback-mode': async () => failure('SECRET callback exception') } }); await toggle()
-  const checks = fixture.handlers.status.mock.calls.length
-  await click(callbackMode())
-  expect(fixture.handlers['callback-mode']).toHaveBeenCalledExactlyOnceWith({ useSandbox: !useSandbox })
-  expect(fixture.handlers.status.mock.calls.length).toBeGreaterThan(checks)
-  expect(fixture.container.querySelector('input[type="checkbox"]').checked).toBe(useSandbox)
-  await expect.element(callbackMode()).toBeEnabled()
-  await expect.element(page.getByRole('alert')).toHaveTextContent('Could not save callback mode. Check the local DSH GUI and retry.')
-  expect(fixture.container.textContent).not.toContain('SECRET')
-})
+    expect(fixture.handlers['callback-mode']).toHaveBeenCalledExactlyOnceWith({
+      useSandbox: !useSandbox,
+    })
+    expect(fixture.handlers.status.mock.calls.length).toBeGreaterThan(checks)
+    expect(fixture.container.querySelector('input[type="checkbox"]').checked).toBe(useSandbox)
+    await expect.element(callbackMode()).toBeEnabled()
+    await expect
+      .element(page.getByRole('alert'))
+      .toHaveTextContent('Could not save callback mode. Check the local DSH GUI and retry.')
+    expect(fixture.container.textContent).not.toContain('SECRET')
+  })
 test('pending login permits callback toggle but cancellation confirmation can refuse it', async () => {
-  capturePolling(); fixture = await mountSettings({ status: { configured: true, pending: true } }); await toggle()
+  capturePolling()
+  fixture = await mountSettings({ status: { configured: true, pending: true } })
+  await toggle()
   const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true)
   await expect.element(callbackMode()).toBeEnabled()
   await click(callbackMode())
@@ -91,69 +150,125 @@ test('pending login permits callback toggle but cancellation confirmation can re
   expect(timers.size).toBe(0)
 })
 test('host callback-mode refusal preserves the pending login and its authorization link', async () => {
-  capturePolling(); fixture = await mountSettings({ status: { configured: true }, overrides: { 'callback-mode': async () => failure('SECRET precommit refusal') } }); await toggle()
+  capturePolling()
+  fixture = await mountSettings({
+    status: { configured: true },
+    overrides: { 'callback-mode': async () => failure('SECRET precommit refusal') },
+  })
+  await toggle()
   await click(button('Connect Google account'))
   vi.spyOn(window, 'confirm').mockReturnValue(true)
   await click(callbackMode())
   await expect.element(callbackMode()).not.toBeChecked()
   await expect.element(callbackMode()).toBeEnabled()
   await expect.element(button('Cancel')).toBeEnabled()
-  await expect.element(page.getByRole('link', { name: 'Continue with Google' })).toHaveAttribute('href', 'https://accounts.google.com/o/oauth2/v2/auth?state=browser-fixture')
-  await expect.element(page.getByRole('alert')).toHaveTextContent('Could not save callback mode. Check the local DSH GUI and retry.')
+  await expect
+    .element(page.getByRole('link', { name: 'Continue with Google' }))
+    .toHaveAttribute('href', 'https://accounts.google.com/o/oauth2/v2/auth?state=browser-fixture')
+  await expect
+    .element(page.getByRole('alert'))
+    .toHaveTextContent('Could not save callback mode. Check the local DSH GUI and retry.')
   expect(fixture.handlers.cancel).not.toHaveBeenCalled()
   expect(timers.size).toBe(1)
 })
 test('failed callback-mode response refreshes the actual committed server mode', async () => {
-  fixture = await mountSettings({ status: { configured: true } }); await toggle()
-  fixture.handlers['callback-mode'].mockImplementationOnce(async () => { fixture.setStatus({ useSandbox: true }); return failure('SECRET response failure') })
+  fixture = await mountSettings({ status: { configured: true } })
+  await toggle()
+  fixture.handlers['callback-mode'].mockImplementationOnce(async () => {
+    fixture.setStatus({ useSandbox: true })
+    return failure('SECRET response failure')
+  })
   await click(callbackMode())
   await expect.element(callbackMode()).toBeChecked()
-  await expect.element(page.getByRole('alert')).toHaveTextContent('Could not save callback mode. Check the local DSH GUI and retry.')
+  await expect
+    .element(page.getByRole('alert'))
+    .toHaveTextContent('Could not save callback mode. Check the local DSH GUI and retry.')
 })
 test('initial status keeps callback mode disabled until loaded', async () => {
   const initial = deferred()
-  fixture = await mountSettings({ overrides: { status: () => initial.promise } }); await toggle()
+  fixture = await mountSettings({ overrides: { status: () => initial.promise } })
+  await toggle()
   await expect.element(callbackMode()).toBeDisabled()
   await expect.element(callbackMode()).not.toBeChecked()
-  await act(async () => initial.resolve(ok({ configured: false, connected: false, pending: false, useSandbox: true, sandboxAvailable: true, requiredScopes: [], missingScopes: [], integrations: [] })))
+  await act(async () =>
+    initial.resolve(
+      ok({
+        configured: false,
+        connected: false,
+        pending: false,
+        useSandbox: true,
+        sandboxAvailable: true,
+        requiredScopes: [],
+        missingScopes: [],
+        integrations: [],
+      }),
+    ),
+  )
   await expect.element(callbackMode()).toBeEnabled()
   await expect.element(callbackMode()).toBeChecked()
 })
 function capturePolling() {
-  const set = window.setTimeout.bind(window), clear = window.clearTimeout.bind(window)
+  const set = window.setTimeout.bind(window),
+    clear = window.clearTimeout.bind(window)
   let id = -1000
   startTimerSpy = vi.spyOn(window, 'setTimeout').mockImplementation((fn, delay, ...args) => {
     if (delay !== 1000) return set(fn, delay, ...args)
-    timers.set(--id, fn); return id
+    timers.set(--id, fn)
+    return id
   })
-  stopTimerSpy = vi.spyOn(window, 'clearTimeout').mockImplementation((value) => { if (timers.has(value)) timers.delete(value); else clear(value) })
+  stopTimerSpy = vi.spyOn(window, 'clearTimeout').mockImplementation((value) => {
+    if (timers.has(value)) timers.delete(value)
+    else clear(value)
+  })
 }
 async function poll() {
   expect(timers.size).toBe(1)
-  const [id, callback] = [...timers][0]; timers.delete(id)
-  await act(async () => { await callback() })
+  const [id, callback] = [...timers][0]
+  timers.delete(id)
+  await act(async () => {
+    await callback()
+  })
 }
 test('collapsed shared card saves write-only JSON and clears draft after success', async () => {
   fixture = await mountSettings()
   expect(fixture.container.querySelector('details').open).toBe(false)
-  await expect.element(input()).not.toBeVisible(); await toggle()
+  await expect.element(input()).not.toBeVisible()
+  await toggle()
   await expect.element(input()).toHaveValue('')
   await expect.element(input()).toHaveAttribute('autocomplete', 'off')
   await expect.element(input()).toHaveAttribute('maxlength', '32768')
-  const pending = deferred(), save = fixture.handlers.configure.getMockImplementation()
-  fixture.handlers.configure.mockImplementationOnce(async (body) => { await pending.promise; return save(body) })
-  await fill(input(), clientJson); await click(button('Save client configuration'))
+  const pending = deferred(),
+    save = fixture.handlers.configure.getMockImplementation()
+  fixture.handlers.configure.mockImplementationOnce(async (body) => {
+    await pending.promise
+    return save(body)
+  })
+  await fill(input(), clientJson)
+  await click(button('Save client configuration'))
   expect(fixture.handlers.configure).toHaveBeenCalledExactlyOnceWith({ clientJson })
   await expect.element(input()).toBeDisabled()
   await act(async () => pending.resolve())
-  await expect.element(input()).toHaveValue(''); await expect.element(button('Connect Google account')).toBeEnabled()
+  await expect.element(input()).toHaveValue('')
+  await expect.element(button('Connect Google account')).toBeEnabled()
   expect(fixture.container.textContent).not.toContain('fixture-not-a-real-secret')
   expect(fixture.handlers.connect).not.toHaveBeenCalled()
 })
 test('incremental permissions require one explicit account-level click', async () => {
   capturePolling()
-  const extra = integration({ id: 'calendar-exact-id', label: 'Google Calendar', scopes: ['calendar.readonly', 'calendar.events.readonly'], missingScopes: ['calendar.events.readonly'] })
-  fixture = await mountSettings({ status: { configured: true, connected: true, account: { id: 'safe-id', email: 'fixture@example.test' }, integrations: [integration({ authorized: true, missingScopes: [] }), extra] } })
+  const extra = integration({
+    id: 'calendar-exact-id',
+    label: 'Google Calendar',
+    scopes: ['calendar.readonly', 'calendar.events.readonly'],
+    missingScopes: ['calendar.events.readonly'],
+  })
+  fixture = await mountSettings({
+    status: {
+      configured: true,
+      connected: true,
+      account: { id: 'safe-id', email: 'fixture@example.test' },
+      integrations: [integration({ authorized: true, missingScopes: [] }), extra],
+    },
+  })
   await toggle()
   expect(fixture.container.textContent).toContain('fixture@example.test')
   expect(fixture.container.textContent).toContain('one Google account per credential store')
@@ -172,23 +287,36 @@ test('incremental permissions require one explicit account-level click', async (
   await expect.element(button('Remove client configuration')).toBeDisabled()
   await expect.element(input()).toBeDisabled()
   const link = page.getByRole('link', { name: 'Continue with Google' })
-  await expect.element(link).toHaveAttribute('href', 'https://accounts.google.com/o/oauth2/v2/auth?state=browser-fixture')
+  await expect
+    .element(link)
+    .toHaveAttribute('href', 'https://accounts.google.com/o/oauth2/v2/auth?state=browser-fixture')
   await expect.element(link).toHaveAttribute('target', '_blank')
   await expect.element(link).toHaveAttribute('rel', 'noopener noreferrer')
   await poll()
-  fixture.setStatus({ pending: false, integrations: [integration({ authorized: true, missingScopes: [] }), { ...extra, authorized: true, missingScopes: [] }] })
-  await poll(); expect(timers.size).toBe(0)
+  fixture.setStatus({
+    pending: false,
+    integrations: [
+      integration({ authorized: true, missingScopes: [] }),
+      { ...extra, authorized: true, missingScopes: [] },
+    ],
+  })
+  await poll()
+  expect(timers.size).toBe(0)
   await expect.element(link).not.toBeInTheDocument()
   await expect.element(button('Grant additional permissions')).not.toBeInTheDocument()
 })
 test('first connection sends no integration ID and shared disconnect warns about all integrations', async () => {
-  capturePolling(); fixture = await mountSettings({ status: { configured: true } }); await toggle()
+  capturePolling()
+  fixture = await mountSettings({ status: { configured: true } })
+  await toggle()
   await click(button('Connect Google account'))
   expect(fixture.handlers.connect).toHaveBeenCalledExactlyOnceWith({})
-  fixture.setStatus({ connected: true, pending: false, account: { id: 'safe-account-id' } }); await poll()
+  fixture.setStatus({ connected: true, pending: false, account: { id: 'safe-account-id' } })
+  await poll()
   expect(fixture.container.textContent).toContain('safe-account-id')
   const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true)
-  await click(button('Disconnect')); expect(fixture.handlers.disconnect).not.toHaveBeenCalled()
+  await click(button('Disconnect'))
+  expect(fixture.handlers.disconnect).not.toHaveBeenCalled()
   await click(button('Disconnect'))
   expect(confirm.mock.calls[1][0]).toContain('ALL integrations lose local access')
   expect(confirm.mock.calls[1][0]).toContain('does not revoke access')
@@ -198,90 +326,194 @@ test('one account connect covers Drive and Sheets with transparent account-wide 
   capturePolling()
   const drive = 'https://www.googleapis.com/auth/drive.readonly'
   const sheets = 'https://www.googleapis.com/auth/spreadsheets'
-  fixture = await mountSettings({ status: { configured: true, integrations: [
-    integration({ scopes: [drive], missingScopes: [drive] }),
-    integration({ id: 'google-sheets-edit', label: 'Google Sheets editing (account-wide)', scopes: [sheets], missingScopes: [sheets] }),
-  ] } })
+  fixture = await mountSettings({
+    status: {
+      configured: true,
+      integrations: [
+        integration({ scopes: [drive], missingScopes: [drive] }),
+        integration({
+          id: 'google-sheets-edit',
+          label: 'Google Sheets editing (account-wide)',
+          scopes: [sheets],
+          missingScopes: [sheets],
+        }),
+      ],
+    },
+  })
   await toggle()
-  const actions = () => [...fixture.container.querySelectorAll('button')].filter(node => /Connect|Grant additional/.test(node.textContent))
+  const actions = () =>
+    [...fixture.container.querySelectorAll('button')].filter((node) =>
+      /Connect|Grant additional/.test(node.textContent),
+    )
   expect(actions()).toHaveLength(1)
   expect(actions()[0].textContent).toBe('Connect Google account')
   const summary = fixture.container.querySelector('[aria-label="Account permissions"]')
-  expect([...summary.querySelectorAll('li')].map(node => node.textContent)).toEqual([drive, sheets])
+  expect([...summary.querySelectorAll('li')].map((node) => node.textContent)).toEqual([
+    drive,
+    sheets,
+  ])
   expect(summary.textContent).toContain('Google Sheets edit permission is account-wide')
-  expect(summary.textContent).toContain('separate session read/edit grants and approval for each write')
+  expect(summary.textContent).toContain(
+    'separate session read/edit grants and approval for each write',
+  )
   expect(summary.textContent).toContain('Existing granted scopes are retained')
   await click(button('Connect Google account'))
   expect(fixture.handlers.connect).toHaveBeenCalledExactlyOnceWith({})
   expect(actions()).toHaveLength(0)
-  fixture.setStatus({ pending: false, connected: true, integrations: [
-    integration({ authorized: true, scopes: [drive], missingScopes: [] }),
-    integration({ id: 'google-sheets-edit', label: 'Sheets', authorized: true, scopes: [sheets], missingScopes: [] }),
-  ] })
+  fixture.setStatus({
+    pending: false,
+    connected: true,
+    integrations: [
+      integration({ authorized: true, scopes: [drive], missingScopes: [] }),
+      integration({
+        id: 'google-sheets-edit',
+        label: 'Sheets',
+        authorized: true,
+        scopes: [sheets],
+        missingScopes: [],
+      }),
+    ],
+  })
   await poll()
   expect(actions()).toHaveLength(0)
   expect(fixture.container.textContent).toContain('Granted / Ready')
 })
 
 test('no integrations explains installation and never renders connect controls', async () => {
-  fixture = await mountSettings({ status: { configured: true, integrations: [] } }); await toggle()
+  fixture = await mountSettings({ status: { configured: true, integrations: [] } })
+  await toggle()
   expect(fixture.container.textContent).toContain('Install and enable a Google integration first')
-  expect([...fixture.container.querySelectorAll('button')].some((node) => /Connect|Grant additional/.test(node.textContent))).toBe(false)
-  await click(button('Refresh status')); expect(fixture.handlers.connect).not.toHaveBeenCalled()
+  expect(
+    [...fixture.container.querySelectorAll('button')].some((node) =>
+      /Connect|Grant additional/.test(node.textContent),
+    ),
+  ).toBe(false)
+  await click(button('Refresh status'))
+  expect(fixture.handlers.connect).not.toHaveBeenCalled()
 })
 test('labels, account text, and all required and missing scopes render as escaped React text', async () => {
-  const label = '<img src=x onerror=alert(1)>', scope = '<script>alert(1)</script>'
-  fixture = await mountSettings({ status: { configured: true, connected: true, account: { id: '<b>account</b>' }, integrations: [integration({ label, scopes: [scope], missingScopes: [scope] })] } }); await toggle()
-  expect(fixture.container.textContent).toContain(label); expect(fixture.container.textContent).toContain(scope)
+  const label = '<img src=x onerror=alert(1)>',
+    scope = '<script>alert(1)</script>'
+  fixture = await mountSettings({
+    status: {
+      configured: true,
+      connected: true,
+      account: { id: '<b>account</b>' },
+      integrations: [integration({ label, scopes: [scope], missingScopes: [scope] })],
+    },
+  })
+  await toggle()
+  expect(fixture.container.textContent).toContain(label)
+  expect(fixture.container.textContent).toContain(scope)
   expect(fixture.container.textContent).toContain('<b>account</b>')
   expect(fixture.container.querySelector('img, script, b')).toBeNull()
   await expect.element(button('Grant additional permissions')).toBeEnabled()
 })
 test('configuration failures retain draft without reflecting server secrets; invalid JSON stays local', async () => {
-  fixture = await mountSettings({ overrides: { configure: async () => failure(`Rejected: ${clientJson}`) } }); await toggle()
-  await fill(input(), 'not-json'); await click(button('Save client configuration'))
+  fixture = await mountSettings({
+    overrides: { configure: async () => failure(`Rejected: ${clientJson}`) },
+  })
+  await toggle()
+  await fill(input(), 'not-json')
+  await click(button('Save client configuration'))
   expect(fixture.handlers.configure).not.toHaveBeenCalled()
-  await fill(input(), clientJson); await click(button('Save client configuration'))
-  await expect.element(input()).toHaveValue(clientJson)
-  await expect.element(page.getByRole('alert')).toHaveTextContent('Could not save or remove the client configuration. Check the Desktop OAuth JSON and retry from the local DSH GUI.')
-  expect(fixture.container.querySelector('[role="alert"]').textContent).not.toContain('fixture-not-a-real-secret')
-})
-for (const method of ['configure', 'clear-config']) test(`${method} confirms all-integrations configuration reset`, async () => {
-  fixture = await mountSettings({ status: { configured: true, connected: true } }); await toggle()
-  const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true)
   await fill(input(), clientJson)
-  const label = method === 'configure' ? 'Save client configuration' : 'Remove client configuration'
-  await click(button(label)); expect(fixture.handlers[method]).not.toHaveBeenCalled()
-  await click(button(label)); expect(fixture.handlers[method]).toHaveBeenCalledTimes(1)
-  expect(confirm.mock.calls[1][0]).toContain('ALL integrations lose local access')
-  await expect.element(input()).toHaveValue('')
+  await click(button('Save client configuration'))
+  await expect.element(input()).toHaveValue(clientJson)
+  await expect
+    .element(page.getByRole('alert'))
+    .toHaveTextContent(
+      'Could not save or remove the client configuration. Check the Desktop OAuth JSON and retry from the local DSH GUI.',
+    )
+  expect(fixture.container.querySelector('[role="alert"]').textContent).not.toContain(
+    'fixture-not-a-real-secret',
+  )
 })
+for (const method of ['configure', 'clear-config'])
+  test(`${method} confirms all-integrations configuration reset`, async () => {
+    fixture = await mountSettings({ status: { configured: true, connected: true } })
+    await toggle()
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true)
+    await fill(input(), clientJson)
+    const label =
+      method === 'configure' ? 'Save client configuration' : 'Remove client configuration'
+    await click(button(label))
+    expect(fixture.handlers[method]).not.toHaveBeenCalled()
+    await click(button(label))
+    expect(fixture.handlers[method]).toHaveBeenCalledTimes(1)
+    expect(confirm.mock.calls[1][0]).toContain('ALL integrations lose local access')
+    await expect.element(input()).toHaveValue('')
+  })
 test('pending cancellation requires confirmation and stops polling', async () => {
-  capturePolling(); fixture = await mountSettings({ status: { configured: true, pending: true, pendingIntegrationId: 'google-drive' } }); await toggle()
+  capturePolling()
+  fixture = await mountSettings({
+    status: { configured: true, pending: true, pendingIntegrationId: 'google-drive' },
+  })
+  await toggle()
   const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true)
-  await click(button('Cancel')); expect(fixture.handlers.cancel).not.toHaveBeenCalled()
-  await click(button('Cancel')); expect(fixture.handlers.cancel).toHaveBeenCalledExactlyOnceWith({})
-  expect(confirm).toHaveBeenCalledTimes(2); expect(timers.size).toBe(0)
+  await click(button('Cancel'))
+  expect(fixture.handlers.cancel).not.toHaveBeenCalled()
+  await click(button('Cancel'))
+  expect(fixture.handlers.cancel).toHaveBeenCalledExactlyOnceWith({})
+  expect(confirm).toHaveBeenCalledTimes(2)
+  expect(timers.size).toBe(0)
 })
 test('invalid authorization links never render and host failures remain visible', async () => {
-  fixture = await mountSettings({ status: { configured: true }, overrides: { connect: async () => failure('Use the local loopback GUI.') } }); await toggle()
-  await click(button('Connect Google account')); await expect.element(page.getByRole('alert')).toHaveTextContent('Use the local loopback GUI.')
-  fixture.handlers.connect.mockResolvedValueOnce(ok({ authorizationUrl: 'https://accounts.google.com.evil.example/o/oauth2/v2/auth' }))
-  await click(button('Connect Google account')); await expect.element(page.getByRole('alert')).toHaveTextContent('Google returned an invalid authorization link. Cancel and try connecting again.')
-  await expect.element(page.getByRole('link', { name: 'Continue with Google' })).not.toBeInTheDocument()
+  fixture = await mountSettings({
+    status: { configured: true },
+    overrides: { connect: async () => failure('Use the local loopback GUI.') },
+  })
+  await toggle()
+  await click(button('Connect Google account'))
+  await expect.element(page.getByRole('alert')).toHaveTextContent('Use the local loopback GUI.')
+  fixture.handlers.connect.mockResolvedValueOnce(
+    ok({ authorizationUrl: 'https://accounts.google.com.evil.example/o/oauth2/v2/auth' }),
+  )
+  await click(button('Connect Google account'))
+  await expect
+    .element(page.getByRole('alert'))
+    .toHaveTextContent(
+      'Google returned an invalid authorization link. Cancel and try connecting again.',
+    )
+  await expect
+    .element(page.getByRole('link', { name: 'Continue with Google' }))
+    .not.toBeInTheDocument()
 })
 test('polls do not overlap; reset ignores stale responses and unmount clears timers', async () => {
-  capturePolling(); fixture = await mountSettings({ status: { configured: true, pending: true } })
-  const pending = deferred(); fixture.handlers.status.mockImplementationOnce(() => pending.promise)
-  const [id, callback] = [...timers][0]; timers.delete(id)
+  capturePolling()
+  fixture = await mountSettings({ status: { configured: true, pending: true } })
+  const pending = deferred()
+  fixture.handlers.status.mockImplementationOnce(() => pending.promise)
+  const [id, callback] = [...timers][0]
+  timers.delete(id)
   let running
-  await act(async () => { running = callback() })
-  expect(timers.size).toBe(0); expect(fixture.handlers.status).toHaveBeenCalledTimes(2)
+  await act(async () => {
+    running = callback()
+  })
+  expect(timers.size).toBe(0)
+  expect(fixture.handlers.status).toHaveBeenCalledTimes(2)
   fixture.setStatus({ pending: false })
   await act(async () => fixture.listeners.get('connection/reset')())
-  await act(async () => { pending.resolve(ok({ configured: true, connected: false, pending: true, useSandbox: false, sandboxAvailable: true, requiredScopes: integration().scopes, missingScopes: integration().missingScopes, integrations: [integration()] })); await running })
+  await act(async () => {
+    pending.resolve(
+      ok({
+        configured: true,
+        connected: false,
+        pending: true,
+        useSandbox: false,
+        sandboxAvailable: true,
+        requiredScopes: integration().scopes,
+        missingScopes: integration().missingScopes,
+        integrations: [integration()],
+      }),
+    )
+    await running
+  })
   expect(timers.size).toBe(0)
-  fixture.setStatus({ pending: true }); await act(async () => fixture.listeners.get('connection/reset')())
+  fixture.setStatus({ pending: true })
+  await act(async () => fixture.listeners.get('connection/reset')())
   expect(timers.size).toBe(1)
-  await fixture.unmount(); fixture = undefined; expect(timers.size).toBe(0)
+  await fixture.unmount()
+  fixture = undefined
+  expect(timers.size).toBe(0)
 })

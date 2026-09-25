@@ -16,5 +16,11 @@
     "skipLibCheck": true,
     "noEmit": true
   },
-  "include": ["client/**/*.ts", "client/**/*.tsx", "shared/**/*.ts", "test/types/**/*.ts", "test/types/**/*.tsx"]
+  "include": [
+    "client/**/*.ts",
+    "client/**/*.tsx",
+    "shared/**/*.ts",
+    "test/types/**/*.ts",
+    "test/types/**/*.tsx"
+  ]
 }

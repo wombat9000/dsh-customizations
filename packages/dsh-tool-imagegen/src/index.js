@@ -89,10 +89,10 @@ function safePrompt(prompt) {
 }
 
 export function formatImageOutput(value) {
-  const generated = value.images.length === 1 ? 'Generated 1 image' : `Generated ${value.images.length} images`
-  const providerText = typeof value.text === 'string' && value.text.trim().length > 0
-    ? `\n\n${value.text.trim()}`
-    : ''
+  const generated =
+    value.images.length === 1 ? 'Generated 1 image' : `Generated ${value.images.length} images`
+  const providerText =
+    typeof value.text === 'string' && value.text.trim().length > 0 ? `\n\n${value.text.trim()}` : ''
   return `${generated} with ${value.model}.${providerText}`
 }
 
@@ -111,47 +111,50 @@ export function registerImageTools(ctx, config, client) {
   })
 
   if (!config.generate) return
-  ctx.tools.register(defineTool({
-    name: 'generate_image',
-    description: 'Generate one or more images with Gemini from a text prompt and return durable image attachments.',
-    parameters: {
-      prompt: {
-        type: 'string',
-        required: true,
-        description: 'A specific description of the image to generate.',
+  ctx.tools.register(
+    defineTool({
+      name: 'generate_image',
+      description:
+        'Generate one or more images with Gemini from a text prompt and return durable image attachments.',
+      parameters: {
+        prompt: {
+          type: 'string',
+          required: true,
+          description: 'A specific description of the image to generate.',
+        },
+        aspectRatio: {
+          type: 'string',
+          description: 'Optional aspect ratio: 1:1, 2:3, 3:2, 3:4, 4:3, 9:16, 16:9, or 21:9.',
+        },
+        imageSize: {
+          type: 'string',
+          description: 'Optional output size: 1K, 2K, or 4K.',
+        },
+        numberOfImages: {
+          type: 'integer',
+          description: 'Optional number of images, bounded by the plugin maxImages setting.',
+        },
       },
-      aspectRatio: {
-        type: 'string',
-        description: 'Optional aspect ratio: 1:1, 2:3, 3:2, 3:4, 4:3, 9:16, 16:9, or 21:9.',
+      output: {
+        schema: IMAGE_OUTPUT_SCHEMA,
+        render: renderImageOutput,
       },
-      imageSize: {
-        type: 'string',
-        description: 'Optional output size: 1K, 2K, or 4K.',
-      },
-      numberOfImages: {
-        type: 'integer',
-        description: 'Optional number of images, bounded by the plugin maxImages setting.',
-      },
-    },
-    output: {
-      schema: IMAGE_OUTPUT_SCHEMA,
-      render: renderImageOutput,
-    },
-    timeoutMs: config.timeoutMs,
-    isConcurrencySafe: () => false,
-    execute: (args, exec) => client.generate(args, exec.signal),
-    presentCall: (args) => ({
-      card: 'generic',
-      title: `Generate image — ${safePrompt(args.prompt)}`,
-      kind: 'execute',
-      rawInput: {
-        prompt: args.prompt,
-        ...(args.aspectRatio === undefined ? {} : { aspectRatio: args.aspectRatio }),
-        ...(args.imageSize === undefined ? {} : { imageSize: args.imageSize }),
-        ...(args.numberOfImages === undefined ? {} : { numberOfImages: args.numberOfImages }),
-      },
+      timeoutMs: config.timeoutMs,
+      isConcurrencySafe: () => false,
+      execute: (args, exec) => client.generate(args, exec.signal),
+      presentCall: (args) => ({
+        card: 'generic',
+        title: `Generate image — ${safePrompt(args.prompt)}`,
+        kind: 'execute',
+        rawInput: {
+          prompt: args.prompt,
+          ...(args.aspectRatio === undefined ? {} : { aspectRatio: args.aspectRatio }),
+          ...(args.imageSize === undefined ? {} : { imageSize: args.imageSize }),
+          ...(args.numberOfImages === undefined ? {} : { numberOfImages: args.numberOfImages }),
+        },
+      }),
     }),
-  }))
+  )
 }
 
 export function resolveConfig(config = {}) {
@@ -161,11 +164,15 @@ export function resolveConfig(config = {}) {
     maxPromptChars: config.maxPromptChars ?? DEFAULT_MAX_PROMPT_CHARS,
     maxImages: config.maxImages ?? DEFAULT_MAX_IMAGES,
     generate: config.generate ?? true,
-    ...(typeof config.apiKey === 'string' && config.apiKey.length > 0 ? { apiKey: config.apiKey } : {}),
+    ...(typeof config.apiKey === 'string' && config.apiKey.length > 0
+      ? { apiKey: config.apiKey }
+      : {}),
   }
-  if (typeof resolved.model !== 'string' || resolved.model.trim().length === 0) throw new Error('tool-imagegen: model must be a non-empty string')
+  if (typeof resolved.model !== 'string' || resolved.model.trim().length === 0)
+    throw new Error('tool-imagegen: model must be a non-empty string')
   for (const key of ['timeoutMs', 'maxPromptChars', 'maxImages']) {
-    if (!Number.isSafeInteger(resolved[key]) || resolved[key] < 1) throw new Error(`tool-imagegen: ${key} must be a positive integer`)
+    if (!Number.isSafeInteger(resolved[key]) || resolved[key] < 1)
+      throw new Error(`tool-imagegen: ${key} must be a positive integer`)
   }
   return resolved
 }
@@ -179,7 +186,8 @@ export function apply(ctx, config = {}) {
     resolveApiKey: async () => {
       if (literalApiKey !== undefined) return literalApiKey
       const credentials = ctx.get('credentials')
-      if (credentials !== undefined) return (await credentials.resolve(GEMINI_CREDENTIAL_REF))?.value
+      if (credentials !== undefined)
+        return (await credentials.resolve(GEMINI_CREDENTIAL_REF))?.value
       return launchEnvironmentOf(ctx).get(GEMINI_CREDENTIAL_REF)?.value
     },
   })

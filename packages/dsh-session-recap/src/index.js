@@ -14,26 +14,32 @@ export const Config = z.object({
 })
 
 async function listModels(llm) {
-  const providers = await Promise.all(llm.listProviders().map(async provider => ({
-    id: provider.id,
-    name: provider.name,
-    models: (await llm.listModels(provider.id)).map(model => ({
-      id: model.id,
-      name: model.name,
+  const providers = await Promise.all(
+    llm.listProviders().map(async (provider) => ({
+      id: provider.id,
+      name: provider.name,
+      models: (await llm.listModels(provider.id)).map((model) => ({
+        id: model.id,
+        name: model.name,
+      })),
     })),
-  })))
+  )
   return { providers }
 }
 
 async function validateRoute(llm, settings) {
   if (!settings.provider) return
 
-  const prepared = await llm.prepareCall({
-    provider: settings.provider,
-    model: settings.model,
-    maxTokens: 1400,
-  }, AbortSignal.timeout(10000))
-  const routeChanged = prepared.config.provider !== settings.provider || prepared.config.model !== settings.model
+  const prepared = await llm.prepareCall(
+    {
+      provider: settings.provider,
+      model: settings.model,
+      maxTokens: 1400,
+    },
+    AbortSignal.timeout(10000),
+  )
+  const routeChanged =
+    prepared.config.provider !== settings.provider || prepared.config.model !== settings.model
   const rejectsText = prepared.inputModalities && !prepared.inputModalities.includes('text')
   if (routeChanged || rejectsText) {
     throw new RecapError('invalid-model', 'Choose a valid model that accepts text.')
@@ -42,7 +48,7 @@ async function validateRoute(llm, settings) {
 
 function updatedSettings(source, payload) {
   const invalidPayload = !payload || typeof payload !== 'object' || Array.isArray(payload)
-  if (invalidPayload || Object.keys(payload).some(key => !Object.hasOwn(DEFAULT_SETTINGS, key))) {
+  if (invalidPayload || Object.keys(payload).some((key) => !Object.hasOwn(DEFAULT_SETTINGS, key))) {
     throw new RecapError('invalid-settings', 'Provide only Session Recap settings.')
   }
 
@@ -60,7 +66,9 @@ function rpcFailure(error) {
     ok: false,
     error: {
       code: known ? error.code : 'recap-error',
-      message: known ? error.message : 'Session Recap could not complete this request. Check the provider configuration.',
+      message: known
+        ? error.message
+        : 'Session Recap could not complete this request. Check the provider configuration.',
       details: {},
     },
   }
@@ -69,7 +77,9 @@ function rpcFailure(error) {
 export function apply(ctx, config = {}) {
   let source = () => normalizeSettings({ ...DEFAULT_SETTINGS, ...config })
   ctx.settings.installSection(ctx, name, Config, source(), {
-    setSource(current) { source = current },
+    setSource(current) {
+      source = current
+    },
     onChange() {},
   })
   const runtime = new RecapRuntime({
@@ -107,11 +117,13 @@ export function apply(ctx, config = {}) {
   }
 
   ctx.effect(() => () => runtime.dispose())
-  ctx.effect(() => ctx.connection.rpc.handle(CHANNEL, async (endpoint, payload) => {
-    try {
-      return { ok: true, value: await handle(endpoint, payload) }
-    } catch (error) {
-      return rpcFailure(error)
-    }
-  }))
+  ctx.effect(() =>
+    ctx.connection.rpc.handle(CHANNEL, async (endpoint, payload) => {
+      try {
+        return { ok: true, value: await handle(endpoint, payload) }
+      } catch (error) {
+        return rpcFailure(error)
+      }
+    }),
+  )
 }

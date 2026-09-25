@@ -6,7 +6,8 @@ import test from 'node:test'
 import { apply, GEMINI_CREDENTIAL_REF, GeminiImageClient } from '../src/index.js'
 
 const ROOT = fileURLToPath(new URL('../../../', import.meta.url))
-const json = async (relative) => JSON.parse(await readFile(new URL(relative, import.meta.url), 'utf8'))
+const json = async (relative) =>
+  JSON.parse(await readFile(new URL(relative, import.meta.url), 'utf8'))
 
 // Repository wiring only: never install into a user profile or invoke Gemini.
 // Real Loader/Web coexistence is exercised by tests/real-ui/migration-boot.mjs.
@@ -18,14 +19,23 @@ test('personal-web selects imagegen once after base, Web and shared Gemini crede
   assert.equal(selected.length, 1)
   assert.equal(selected[0].source, '../../packages/dsh-tool-imagegen')
   const index = recipe.bundles.indexOf(selected[0])
-  for (const name of ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', '@local/dsh-tool-youtube']) {
+  for (const name of [
+    '@deepseek-ai/dsh-base',
+    '@deepseek-ai/dsh-web-app',
+    '@local/dsh-tool-youtube',
+  ]) {
     const prerequisite = recipe.bundles.findIndex((bundle) => bundle.name === name)
     assert.ok(prerequisite >= 0 && prerequisite < index, name)
   }
   assert.equal(manifest.dsh.bundle.patch, './cordis.patch.yml')
   assert.deepEqual(manifest.dsh.client.inject, ['@deepseek-ai/dsh-client-ui-conversation'])
   assert.equal(manifest.dsh.client.platform, 'web')
-  for (const section of ['dependencies', 'peerDependencies', 'devDependencies', 'optionalDependencies']) {
+  for (const section of [
+    'dependencies',
+    'peerDependencies',
+    'devDependencies',
+    'optionalDependencies',
+  ]) {
     for (const [name, version] of Object.entries(manifest[section] ?? {})) {
       if (/^@deepseek-ai\/dsh(?:$|-)/.test(name)) assert.equal(version, '0.1.5-rc.2', name)
     }
@@ -35,9 +45,16 @@ test('personal-web selects imagegen once after base, Web and shared Gemini crede
   const patch = await readFile(new URL('../cordis.patch.yml', import.meta.url), 'utf8')
   assert.match(patch, /- insert:\s+- id: local-tool-imagegen\s+name: '@local\/dsh-tool-imagegen'/)
   assert.doesNotMatch(patch, /apiKey|GEMINI_API_KEY|agent-presets|searchProvider|fetchProvider/)
-  const result = spawnSync(process.execPath, ['scripts/apply-profile.mjs', '--', 'personal-web', '--dry-run'], {
-    cwd: ROOT, encoding: 'utf8', timeout: 10000, env: { PATH: process.env.PATH },
-  })
+  const result = spawnSync(
+    process.execPath,
+    ['scripts/apply-profile.mjs', '--', 'personal-web', '--dry-run'],
+    {
+      cwd: ROOT,
+      encoding: 'utf8',
+      timeout: 10000,
+      env: { PATH: process.env.PATH },
+    },
+  )
   assert.equal(result.status, 0, result.stderr)
   assert.match(result.stdout, /Applying @local\/dsh-tool-imagegen to profile personal-web/)
   assert.match(result.stdout, /Dry run complete/)
@@ -45,17 +62,34 @@ test('personal-web selects imagegen once after base, Web and shared Gemini crede
 
 test('host resolves the shared credential on each invocation without a second settings/provider registration', async (t) => {
   // Intercept before SDK construction: no Gemini call even with fixture keys.
-  t.mock.method(GeminiImageClient.prototype, 'generate', async function () { return this.apiKey() })
+  t.mock.method(GeminiImageClient.prototype, 'generate', async function () {
+    return this.apiKey()
+  })
   let key = 'fixture-first'
-  const refs = [], definitions = [], sections = []
+  const refs = [],
+    definitions = [],
+    sections = []
   const ctx = {
     attachments: {},
     get(name) {
       assert.equal(name, 'credentials')
-      return { async resolve(ref) { refs.push(ref); return key ? { value: key } : undefined } }
+      return {
+        async resolve(ref) {
+          refs.push(ref)
+          return key ? { value: key } : undefined
+        },
+      }
     },
-    tools: { register(definition) { definitions.push(definition) } },
-    systemPrompt: { section(section) { sections.push(section) } },
+    tools: {
+      register(definition) {
+        definitions.push(definition)
+      },
+    },
+    systemPrompt: {
+      section(section) {
+        sections.push(section)
+      },
+    },
   }
   apply(ctx)
   assert.equal(definitions.length, 1)
@@ -67,7 +101,10 @@ test('host resolves the shared credential on each invocation without a second se
   key = 'fixture-rotated'
   assert.equal(await definitions[0].execute({ prompt: 'fixture' }, {}), 'fixture-rotated')
   key = undefined
-  await assert.rejects(definitions[0].execute({ prompt: 'fixture' }, {}), /GEMINI_API_KEY is not configured/)
+  await assert.rejects(
+    definitions[0].execute({ prompt: 'fixture' }, {}),
+    /GEMINI_API_KEY is not configured/,
+  )
   assert.deepEqual(refs, Array(3).fill(GEMINI_CREDENTIAL_REF))
   definitions.length = 0
   apply(ctx, { apiKey: 'fixture-literal' })

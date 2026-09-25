@@ -1,31 +1,58 @@
 import { randomUUID } from 'node:crypto'
-import { CARD_QUESTIONS, cardPrompt, cardSelectionDiagnostics, evaluateCardSelection } from './cards.js'
+import {
+  CARD_QUESTIONS,
+  cardPrompt,
+  cardSelectionDiagnostics,
+  evaluateCardSelection,
+} from './cards.js'
 import { RecapError, invalidRecap } from './errors.js'
 import { RECAP_PROMPT, parseCards, parseRecap } from './recap-schema.js'
 import { LIMITS } from './settings.js'
 
 // One controller and deadline cover selection, writing, and optional shortening.
-export async function generateRecap({ runtime, sessionId, revision, settings, history, session, jev }) {
+export async function generateRecap({
+  runtime,
+  sessionId,
+  revision,
+  settings,
+  history,
+  session,
+  jev,
+}) {
   const controller = new AbortController()
   runtime.controllers.add(controller)
   let timer
   const timeout = new Promise((_, reject) => {
-    const abort = () => reject(new RecapError('cancelled', 'The recap request timed out or was cancelled.'))
+    const abort = () =>
+      reject(new RecapError('cancelled', 'The recap request timed out or was cancelled.'))
     controller.signal.addEventListener('abort', abort, { once: true })
     timer = setTimeout(() => controller.abort(), runtime.timeoutMs)
   })
-  const check = () => runtime.checkCurrent(sessionId, session, revision, settings, jev, controller.signal)
+  const check = () =>
+    runtime.checkCurrent(sessionId, session, revision, settings, jev, controller.signal)
   // Resolve the writer at its original stage, not before the Jev await.
   const prepareCall = (config, signal) => runtime.llm.prepareCall(config, signal)
   try {
     return await Promise.race([
-      runGeneration({ sessionId, revision, settings, history, jev, controller, check, prepareCall }),
+      runGeneration({
+        sessionId,
+        revision,
+        settings,
+        history,
+        jev,
+        controller,
+        check,
+        prepareCall,
+      }),
       timeout,
     ])
   } catch (error) {
     if (error instanceof RecapError) throw error
     // Provider exceptions can contain credentials or request bodies; never echo them.
-    throw new RecapError('generation-failed', 'Recap generation failed. Check the configured provider, model, and existing provider credentials.')
+    throw new RecapError(
+      'generation-failed',
+      'Recap generation failed. Check the configured provider, model, and existing provider credentials.',
+    )
   } finally {
     clearTimeout(timer)
     controller.abort()
@@ -33,7 +60,16 @@ export async function generateRecap({ runtime, sessionId, revision, settings, hi
   }
 }
 
-async function runGeneration({ sessionId, revision, settings, history, jev, controller, check, prepareCall }) {
+async function runGeneration({
+  sessionId,
+  revision,
+  settings,
+  history,
+  jev,
+  controller,
+  check,
+  prepareCall,
+}) {
   let labels = []
   let selection = { mode: 'standard' }
 
@@ -72,18 +108,21 @@ async function runGeneration({ sessionId, revision, settings, history, jev, cont
 
   // Prepare exactly the configured route, then reuse it for both writer requests.
   check()
-  const prepared = await prepareCall({
-    provider: settings.provider,
-    model: settings.model,
-    maxTokens: 1400,
-  }, controller.signal)
+  const prepared = await prepareCall(
+    {
+      provider: settings.provider,
+      model: settings.model,
+      maxTokens: 1400,
+    },
+    controller.signal,
+  )
   validatePreparedRoute(prepared, settings)
   if (controller.signal.aborted) {
     throw new RecapError('cancelled', 'The recap request was cancelled.')
   }
   const request = createRecapRequest(prepared, controller, check)
   const prompt = labels.length ? cardPrompt(labels) : RECAP_PROMPT
-  const parse = labels.length ? text => parseCards(text, labels) : parseRecap
+  const parse = labels.length ? (text) => parseCards(text, labels) : parseRecap
 
   // Parse the draft before deciding whether its only defect permits shortening.
   const output = await request(JSON.stringify(history), prompt)
@@ -131,12 +170,14 @@ function createRecapRequest(prepared, controller, check) {
       signal: controller.signal,
       tools: [],
       system,
-      messages: [{
-        id: randomUUID(),
-        role: 'user',
-        source: { kind: 'user' },
-        content: [{ type: 'text', text: data }],
-      }],
+      messages: [
+        {
+          id: randomUUID(),
+          role: 'user',
+          source: { kind: 'user' },
+          content: [{ type: 'text', text: data }],
+        },
+      ],
     })) {
       if (controller.signal.aborted) {
         throw new RecapError('cancelled', 'The recap request was cancelled.')
@@ -150,7 +191,10 @@ function createRecapRequest(prepared, controller, check) {
       if (isToolCallChunk(chunk)) throw invalidRecap('tool-call')
       if (chunk.type === 'finish') {
         if (chunk.reason.kind !== 'stop') {
-          throw new RecapError('generation-failed', 'The recap model did not finish successfully. Check the provider configuration and try again.')
+          throw new RecapError(
+            'generation-failed',
+            'The recap model did not finish successfully. Check the provider configuration and try again.',
+          )
         }
         finished = true
       }
@@ -163,14 +207,18 @@ function createRecapRequest(prepared, controller, check) {
 }
 
 function isToolCallChunk(chunk) {
-  return chunk.type === 'tool-call-delta' ||
+  return (
+    chunk.type === 'tool-call-delta' ||
     (chunk.type === 'block-start' && chunk.blockType === 'tool-call') ||
     (chunk.type === 'block-end' && chunk.block?.type === 'tool-call')
+  )
 }
 
 function isLengthError(error) {
-  return error instanceof RecapError &&
+  return (
+    error instanceof RecapError &&
     ['headline-length', 'bullet-length', 'card-length', 'combined-length'].includes(error.reason)
+  )
 }
 
 function shorteningPrompt(labels, prompt) {

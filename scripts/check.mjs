@@ -41,7 +41,9 @@ function checkBundleManifest(directory, expectedName) {
     report(`${manifestPath}: package name is required`)
   }
   if (expectedName && manifest.name !== expectedName) {
-    report(`${manifestPath}: package name ${JSON.stringify(manifest.name)} does not match recipe name ${JSON.stringify(expectedName)}`)
+    report(
+      `${manifestPath}: package name ${JSON.stringify(manifest.name)} does not match recipe name ${JSON.stringify(expectedName)}`,
+    )
   }
 
   const patch = manifest.dsh?.bundle?.patch
@@ -75,7 +77,8 @@ for (const directory of childDirectories(join(repositoryRoot, 'profiles'))) {
   } else {
     const patchPath = resolve(directory, recipe.patch)
     if (!existsSync(patchPath)) report(`${recipePath}: patch does not exist: ${recipe.patch}`)
-    else if (!readFileSync(patchPath, 'utf8').trim()) report(`${patchPath}: patch must not be empty`)
+    else if (!readFileSync(patchPath, 'utf8').trim())
+      report(`${patchPath}: patch must not be empty`)
   }
 
   for (const [index, bundle] of recipe.bundles.entries()) {

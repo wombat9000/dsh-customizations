@@ -12,19 +12,19 @@ All subprocesses run through DSH’s managed backend. Do not assume a host proce
 
 ## Read tool inventory
 
-| Tool | Purpose |
-| --- | --- |
-| `github_connection_status` | Check CLI availability, effective GitHub account/host, and known permission information. |
+| Tool                         | Purpose                                                                                                                              |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `github_connection_status`   | Check CLI availability, effective GitHub account/host, and known permission information.                                             |
 | `github_detect_repositories` | Inspect the Git repository containing the calling session’s working directory; return resolved GitHub candidates and source remotes. |
-| `github_list_repositories` | List accessible repositories for an explicit owner. |
-| `github_get_repository` | Read identity, description, visibility, default branch, and permission information. |
-| `github_list_projects` | List an owner’s projects, including template flags and an optional template-only filter. |
-| `github_get_project` | Read metadata, description, README, fields/status options, and linked repositories. |
-| `github_list_project_items` | Read project items and their field values. |
-| `github_list_issues` | List repository issues using state, label, and assignee filters. |
-| `github_search_issues` | Search issue text within an explicit repository or owner scope. |
-| `github_get_issue` | Read an issue, hierarchy, and native blocking dependencies. |
-| `github_get_issue_comments` | Read paginated comments for an issue. |
+| `github_list_repositories`   | List accessible repositories for an explicit owner.                                                                                  |
+| `github_get_repository`      | Read identity, description, visibility, default branch, and permission information.                                                  |
+| `github_list_projects`       | List an owner’s projects, including template flags and an optional template-only filter.                                             |
+| `github_get_project`         | Read metadata, description, README, fields/status options, and linked repositories.                                                  |
+| `github_list_project_items`  | Read project items and their field values.                                                                                           |
+| `github_list_issues`         | List repository issues using state, label, and assignee filters.                                                                     |
+| `github_search_issues`       | Search issue text within an explicit repository or owner scope.                                                                      |
+| `github_get_issue`           | Read an issue, hierarchy, and native blocking dependencies.                                                                          |
+| `github_get_issue_comments`  | Read paginated comments for an issue.                                                                                                |
 
 Repository- and owner-scoped tools require explicit targets. Repository, project owner, and template owner are separate identities: for example, a repository under a user account can use an organization-owned project template later.
 
@@ -61,15 +61,15 @@ Issue state and project board fields have separate labels. Cards never infer one
 
 ## Write tool inventory
 
-| Tool | Purpose |
-| --- | --- |
-| `github_create_project` | Create a project with a title, optionally copying an explicitly selected template. |
-| `github_update_project` | Update project title, description, or README. |
-| `github_link_project_repository` | Link an explicit repository to a project. |
-| `github_create_issue` | Create an issue with a title and body in an explicit repository. |
-| `github_add_project_item` | Add an existing issue to a project. |
-| `github_set_project_item_field` | Set an item field using its actual project field definition. |
-| `github_add_issue_dependency` | Mark one issue as blocked by another, using the native GitHub relationship. |
+| Tool                             | Purpose                                                                            |
+| -------------------------------- | ---------------------------------------------------------------------------------- |
+| `github_create_project`          | Create a project with a title, optionally copying an explicitly selected template. |
+| `github_update_project`          | Update project title, description, or README.                                      |
+| `github_link_project_repository` | Link an explicit repository to a project.                                          |
+| `github_create_issue`            | Create an issue with a title and body in an explicit repository.                   |
+| `github_add_project_item`        | Add an existing issue to a project.                                                |
+| `github_set_project_item_field`  | Set an item field using its actual project field definition.                       |
+| `github_add_issue_dependency`    | Mark one issue as blocked by another, using the native GitHub relationship.        |
 
 Write inputs use the same explicit project/repository identities as reads:
 

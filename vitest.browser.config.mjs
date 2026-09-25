@@ -10,8 +10,11 @@ export default defineConfig({
       headless: true,
       provider: playwright({
         contextOptions: {
-          locale: 'en-US', timezoneId: 'UTC', colorScheme: 'light',
-          reducedMotion: 'reduce', deviceScaleFactor: 1,
+          locale: 'en-US',
+          timezoneId: 'UTC',
+          colorScheme: 'light',
+          reducedMotion: 'reduce',
+          deviceScaleFactor: 1,
         },
       }),
       instances: [{ browser: 'chromium' }],

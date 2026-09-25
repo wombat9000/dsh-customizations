@@ -30,21 +30,27 @@ export function fakeSubprocess(runs = [], options = {}) {
           stdout: reader(run.stdout ?? '', run.lossy === true),
           stderr: reader(run.stderr ?? '', run.stderrLossy === true),
         },
-        done: run.pending ? new Promise(resolve => {
-          const finish = () => resolve({ exitCode: null, signal: 'SIGTERM' })
-          if (spec.signal.aborted) finish()
-          else spec.signal.addEventListener('abort', finish, { once: true })
-        }) : Promise.resolve({ exitCode: run.exitCode ?? 0, signal: run.signal ?? null }),
-        terminate() { run.onTerminate?.() },
-        waitForExit: async signal => run.waitForExit ? run.waitForExit(signal) : true,
+        done: run.pending
+          ? new Promise((resolve) => {
+              const finish = () => resolve({ exitCode: null, signal: 'SIGTERM' })
+              if (spec.signal.aborted) finish()
+              else spec.signal.addEventListener('abort', finish, { once: true })
+            })
+          : Promise.resolve({ exitCode: run.exitCode ?? 0, signal: run.signal ?? null }),
+        terminate() {
+          run.onTerminate?.()
+        },
+        waitForExit: async (signal) => (run.waitForExit ? run.waitForExit(signal) : true),
       }
     },
   }
   return subprocess
 }
 
-export const json = value => ({ stdout: JSON.stringify(value) })
+export const json = (value) => ({ stdout: JSON.stringify(value) })
 export const connection = (nodes = [], hasNextPage = false, endCursor = null) => ({
-  nodes, totalCount: nodes.length, pageInfo: { hasNextPage, endCursor },
+  nodes,
+  totalCount: nodes.length,
+  pageInfo: { hasNextPage, endCursor },
 })
 export const exec = { cwd: '/fixture/workspace' }

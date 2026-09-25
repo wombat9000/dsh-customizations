@@ -42,7 +42,11 @@ function baseSnapshot(cwd: string | null, home: string): SessionEnvironmentSnaps
   }
 }
 
-export function unavailableSnapshot(cwd: string | null, home: string, error: string): SessionEnvironmentSnapshot {
+export function unavailableSnapshot(
+  cwd: string | null,
+  home: string,
+  error: string,
+): SessionEnvironmentSnapshot {
   return { ...baseSnapshot(cwd, home), error }
 }
 
@@ -62,14 +66,14 @@ export function parseGitEnvironmentResult(input: {
   const { cwd, home, result } = input
   if (result.timedOut) return unavailableSnapshot(cwd, home, 'Git check timed out')
   if (result.aborted) return unavailableSnapshot(cwd, home, 'Git check cancelled')
-  if (result.stdout.truncated) return unavailableSnapshot(cwd, home, 'Repository status is too large')
+  if (result.stdout.truncated)
+    return unavailableSnapshot(cwd, home, 'Repository status is too large')
 
   const lines = result.stdout.text.split('\n')
   const insideIndex = lines.indexOf('__DSH_INSIDE__')
   const insideValue = lines[insideIndex + 1]
-  const insideWorkTree = insideIndex >= 0
-    && typeof insideValue === 'string'
-    && insideValue.trim() === 'true'
+  const insideWorkTree =
+    insideIndex >= 0 && typeof insideValue === 'string' && insideValue.trim() === 'true'
   if (!insideWorkTree) return nonRepositorySnapshot(cwd, home)
 
   if (lines.includes('__DSH_NO_HEAD__')) {
@@ -86,14 +90,21 @@ export function parseGitEnvironmentResult(input: {
   const noUpstreamIndex = lines.indexOf('__DSH_NO_UPSTREAM__')
   const statusIndex = lines.indexOf('__DSH_STATUS__')
   const numstatIndex = lines.indexOf('__DSH_NUMSTAT__')
-  if (result.exitCode !== 0 || branchIndex < 0 || upstreamIndex < 0 || statusIndex < 0 || numstatIndex < 0) {
+  if (
+    result.exitCode !== 0 ||
+    branchIndex < 0 ||
+    upstreamIndex < 0 ||
+    statusIndex < 0 ||
+    numstatIndex < 0
+  ) {
     return unavailableSnapshot(cwd, home, 'Unable to read Git state')
   }
 
-  const branch = lines
-    .slice(branchIndex + 1, upstreamIndex)
-    .map((line) => line.trim())
-    .find(Boolean) ?? null
+  const branch =
+    lines
+      .slice(branchIndex + 1, upstreamIndex)
+      .map((line) => line.trim())
+      .find(Boolean) ?? null
   let upstream: string | null = null
   let ahead: number | null = null
   let behind: number | null = null
@@ -101,25 +112,29 @@ export function parseGitEnvironmentResult(input: {
     if (aheadBehindIndex < upstreamIndex || aheadBehindIndex > statusIndex) {
       return unavailableSnapshot(cwd, home, 'Unable to read Git upstream state')
     }
-    upstream = lines
-      .slice(upstreamIndex + 1, aheadBehindIndex)
-      .map((line) => line.trim())
-      .find(Boolean) ?? null
+    upstream =
+      lines
+        .slice(upstreamIndex + 1, aheadBehindIndex)
+        .map((line) => line.trim())
+        .find(Boolean) ?? null
     const counts = lines
       .slice(aheadBehindIndex + 1, statusIndex)
       .map((line) => line.trim())
       .find(Boolean)
       ?.split(/\s+/)
       .map(Number)
-    if (upstream === null || counts?.length !== 2 || counts.some((count) => !Number.isSafeInteger(count) || count < 0)) {
+    if (
+      upstream === null ||
+      counts?.length !== 2 ||
+      counts.some((count) => !Number.isSafeInteger(count) || count < 0)
+    ) {
       return unavailableSnapshot(cwd, home, 'Unable to read Git upstream state')
     }
     ;[ahead, behind] = counts as [number, number]
   }
   const dirtyFiles = lines
     .slice(statusIndex + 1, numstatIndex)
-    .filter((line) => line.length > 0)
-    .length
+    .filter((line) => line.length > 0).length
   let additions = 0
   let deletions = 0
   for (const line of lines.slice(numstatIndex + 1)) {

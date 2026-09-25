@@ -11,7 +11,11 @@ async function loadClient(react = {}) {
   let record
   const browserWindow = {
     confirm: () => true,
-    __ModuleLoader__: { load(value) { record = value } },
+    __ModuleLoader__: {
+      load(value) {
+        record = value
+      },
+    },
   }
   vm.runInNewContext(await readFile(CLIENT_PATH, 'utf8'), { window: browserWindow })
   return {
@@ -30,13 +34,20 @@ function fakeReact(stateValues, runEffects = false) {
   return {
     updates,
     Fragment: Symbol('Fragment'),
-    createElement(type, props, ...children) { return { type, props: props ?? {}, children: children.flat(Infinity) } },
+    createElement(type, props, ...children) {
+      return { type, props: props ?? {}, children: children.flat(Infinity) }
+    },
     useState(initial) {
       const index = stateIndex++
       updates[index] = []
-      return [index < stateValues.length ? stateValues[index] : initial, (value) => updates[index].push(value)]
+      return [
+        index < stateValues.length ? stateValues[index] : initial,
+        (value) => updates[index].push(value),
+      ]
     },
-    useEffect(effect) { if (runEffects) effect() },
+    useEffect(effect) {
+      if (runEffects) effect()
+    },
   }
 }
 
@@ -68,11 +79,20 @@ test('client registers only a Linear plugin configuration card', async () => {
   const rpc = { call: async () => ({ ok: true, value: {} }) }
   const ctx = {
     remote: { $on: () => () => {} },
-    get(name) { assert.equal(name, 'connection'); return { rpc } },
+    get(name) {
+      assert.equal(name, 'connection')
+      return { rpc }
+    },
     on: () => () => {},
     slots: {
-      inject(name, callback) { assert.equal(name, 'settings.plugin.item'); callback() },
-      register(options, component) { registrations.push({ options, component }); return () => {} },
+      inject(name, callback) {
+        assert.equal(name, 'settings.plugin.item')
+        callback()
+      },
+      register(options, component) {
+        registrations.push({ options, component })
+        return () => {}
+      },
     },
   }
   exports.apply(ctx)
@@ -86,11 +106,19 @@ test('client registers only a Linear plugin configuration card', async () => {
 })
 
 test('Linear card starts collapsed with its connection controls inside', async () => {
-  const react = fakeReact([{
-    credential: { configured: true, writable: true, source: 'file' },
-    workspace: { id: 'org', name: 'Acme', urlKey: 'acme' },
-    viewer: null, live: true,
-  }, '', false, undefined, undefined, 0])
+  const react = fakeReact([
+    {
+      credential: { configured: true, writable: true, source: 'file' },
+      workspace: { id: 'org', name: 'Acme', urlKey: 'acme' },
+      viewer: null,
+      live: true,
+    },
+    '',
+    false,
+    undefined,
+    undefined,
+    0,
+  ])
   const { exports } = await loadClient(react)
   const tree = exports.LinearSettingsSection({ rpc: {}, subscribe: () => () => {} })
   assert.equal(tree.type, 'details')
@@ -102,17 +130,26 @@ test('Linear card starts collapsed with its connection controls inside', async (
   assert.equal(group.props['aria-labelledby'], 'linear-connection-title')
   assert.match(textOf(group), /Workspace connectionConnectedWorkspaceAcme/)
   assert.deepEqual(findElements(group, (element) => element.type === 'button').map(textOf), [
-    'Replace and connect', 'Test connection', 'Disconnect',
+    'Replace and connect',
+    'Test connection',
+    'Disconnect',
   ])
 })
 
 test('settings card never renders or retains an existing secret', async () => {
-  const react = fakeReact([{
-    credential: { configured: true, writable: true, source: 'file' },
-    workspace: { id: 'org', name: 'Acme', urlKey: 'acme' },
-    viewer: null,
-    live: false,
-  }, '', false, undefined, undefined, 0])
+  const react = fakeReact([
+    {
+      credential: { configured: true, writable: true, source: 'file' },
+      workspace: { id: 'org', name: 'Acme', urlKey: 'acme' },
+      viewer: null,
+      live: false,
+    },
+    '',
+    false,
+    undefined,
+    undefined,
+    0,
+  ])
   const { exports } = await loadClient(react)
   const tree = exports.LinearSettingsSection({ rpc: {}, subscribe: () => () => {} })
   const [input] = findElements(tree, (element) => element.type === 'input')
@@ -124,8 +161,17 @@ test('settings card never renders or retains an existing secret', async () => {
 
 test('connect sends the draft write-only and clears it after success', async () => {
   const react = fakeReact([
-    { credential: { configured: false, writable: true }, workspace: null, viewer: null, live: false },
-    '  lin_api_secret  ', false, undefined, undefined, 0,
+    {
+      credential: { configured: false, writable: true },
+      workspace: null,
+      viewer: null,
+      live: false,
+    },
+    '  lin_api_secret  ',
+    false,
+    undefined,
+    undefined,
+    0,
   ])
   const calls = []
   const { exports } = await loadClient(react)
@@ -138,7 +184,8 @@ test('connect sends the draft write-only and clears it after success', async () 
           value: {
             credential: { configured: true, writable: true, source: 'file' },
             workspace: { id: 'org', name: 'Acme', urlKey: 'acme' },
-            viewer: null, live: true,
+            viewer: null,
+            live: true,
           },
         }
       },
@@ -149,9 +196,9 @@ test('connect sends the draft write-only and clears it after success', async () 
   connect.props.onClick()
   await Promise.resolve()
   await new Promise((resolve) => setImmediate(resolve))
-  assert.deepEqual(JSON.parse(JSON.stringify(calls)), [[
-    '/linear-integration', 'connect', { apiKey: 'lin_api_secret' },
-  ]])
+  assert.deepEqual(JSON.parse(JSON.stringify(calls)), [
+    ['/linear-integration', 'connect', { apiKey: 'lin_api_secret' }],
+  ])
   assert.ok(react.updates[1].includes(''))
   assert.equal(JSON.stringify(react.updates).includes('lin_api_secret'), false)
 })

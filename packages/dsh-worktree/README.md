@@ -53,11 +53,11 @@ Git inspection includes tracked and untracked files, but excludes ignored files 
 
 ## Tools
 
-| Tool | Inputs | Result |
-|---|---|---|
-| `worktree_create` | `name` | New checkout path and branch; coordinator unchanged |
-| `worktree_list` | None | Registered checkouts, branches, busy state, and this agent's active/latest job IDs |
-| `worktree_dispatch` | `worktree`, `task`, optional `mode`, optional `context_from` | Background job ID immediately |
+| Tool                | Inputs                                                       | Result                                                                             |
+| ------------------- | ------------------------------------------------------------ | ---------------------------------------------------------------------------------- |
+| `worktree_create`   | `name`                                                       | New checkout path and branch; coordinator unchanged                                |
+| `worktree_list`     | None                                                         | Registered checkouts, branches, busy state, and this agent's active/latest job IDs |
+| `worktree_dispatch` | `worktree`, `task`, optional `mode`, optional `context_from` | Background job ID immediately                                                      |
 
 `name` is a unique lowercase slug, up to 48 letters, digits, or hyphens, starting with a letter or digit. Creation uses branch `worktree/<name>` at the invoking checkout's current `HEAD` and directory `<original-checkout>/.dsh/worktrees/<name>`. It does not copy uncommitted changes, install dependencies, commit changes, or reuse existing branches. Add `.dsh/worktrees/` to your repository's ignore rules if needed; the plugin does not edit them automatically.
 

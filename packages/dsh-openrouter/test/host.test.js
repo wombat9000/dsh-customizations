@@ -1,16 +1,38 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { createOpenRouterRuntime, mountOpenRouter, RECORD_KEY, DEFAULT_REFERENCE, CHANNEL } from '../src/runtime.js'
+import {
+  createOpenRouterRuntime,
+  mountOpenRouter,
+  RECORD_KEY,
+  DEFAULT_REFERENCE,
+  CHANNEL,
+} from '../src/runtime.js'
 
 function fixture() {
   const state = { profile: {}, record: undefined, refs: new Map(), writable: true, writes: [] }
   const credentials = {
-    async readRecord(key) { assert.equal(key, RECORD_KEY); return state.record },
-    async describeRecord(key) { assert.equal(key, RECORD_KEY); return { configured: !!state.record, writable: state.writable } },
-    async describe(ref) { return { configured: !!state.refs.get(ref)?.value, writable: true, ...state.refs.get(ref) } },
-    async resolve(ref) { return state.refs.get(ref) },
-    async set(ref, value) { state.writes.push(['set', ref]); state.refs.set(ref, { value }) },
-    async unset(ref) { state.writes.push(['unset', ref]); state.refs.delete(ref) },
+    async readRecord(key) {
+      assert.equal(key, RECORD_KEY)
+      return state.record
+    },
+    async describeRecord(key) {
+      assert.equal(key, RECORD_KEY)
+      return { configured: !!state.record, writable: state.writable }
+    },
+    async describe(ref) {
+      return { configured: !!state.refs.get(ref)?.value, writable: true, ...state.refs.get(ref) }
+    },
+    async resolve(ref) {
+      return state.refs.get(ref)
+    },
+    async set(ref, value) {
+      state.writes.push(['set', ref])
+      state.refs.set(ref, { value })
+    },
+    async unset(ref) {
+      state.writes.push(['unset', ref])
+      state.refs.delete(ref)
+    },
     async modifyRecord(key, mutate) {
       assert.equal(key, RECORD_KEY)
       await state.beforeCommit?.()
@@ -18,7 +40,12 @@ function fixture() {
       state.writes.push(['modify', key])
     },
   }
-  const settings = { get(name) { assert.equal(name, 'llm-pi-ai'); return { providers: { openrouter: state.profile } } } }
+  const settings = {
+    get(name) {
+      assert.equal(name, 'llm-pi-ai')
+      return { providers: { openrouter: state.profile } }
+    },
+  }
   const runtime = createOpenRouterRuntime({ credentials, settings })
   return { state, credentials, settings, runtime }
 }
@@ -27,7 +54,12 @@ async function save(f, apiKey = 'test-secret') {
 }
 test('absent sources save to canonical record; clear preserves environment metadata', async () => {
   const f = fixture()
-  assert.deepEqual(await f.runtime.service.status(), { configured: false, writable: true, source: 'none', target: `record:${RECORD_KEY}` })
+  assert.deepEqual(await f.runtime.service.status(), {
+    configured: false,
+    writable: true,
+    source: 'none',
+    target: `record:${RECORD_KEY}`,
+  })
   assert.equal(await f.runtime.service.resolveApiKey(), undefined)
   assert.equal((await save(f)).ok, true)
   assert.equal(f.state.record.key, 'test-secret')
@@ -59,7 +91,10 @@ test('record wins; an empty API-key record falls back only to the known referenc
   assert.equal(await f.runtime.service.resolveApiKey(), 'fallback-secret')
   assert.equal((await f.runtime.service.status()).source, 'env')
   assert.equal((await save(f)).ok, false)
-  assert.equal((await f.runtime.rpc('clear', { target: (await f.runtime.service.status()).target })).ok, false)
+  assert.equal(
+    (await f.runtime.rpc('clear', { target: (await f.runtime.service.status()).target })).ok,
+    false,
+  )
   assert.deepEqual(f.state.writes, [])
 })
 test('per-call reads follow key and settings changes without caching', async () => {
@@ -81,7 +116,12 @@ test('unsupported record kinds and custom endpoint fail closed without writes', 
     await assert.rejects(f.runtime.service.resolveApiKey(), /unsupported/)
     assert.equal((await save(f)).ok, false)
   }
-  for (const baseURL of ['https://custom.invalid/api/v1', 'https://openrouter.ai/api/v1?x=1', '', null]) {
+  for (const baseURL of [
+    'https://custom.invalid/api/v1',
+    'https://openrouter.ai/api/v1?x=1',
+    '',
+    null,
+  ]) {
     const f = fixture()
     f.state.profile.baseURL = baseURL
     assert.match((await f.runtime.service.status()).error, /unsupported/)
@@ -99,7 +139,9 @@ test('stale targets and queued writes cannot redirect or overwrite unsupported r
   f.state.profile.apiKeyEnv = 'NEW_REF'
   assert.equal((await f.runtime.rpc('save', { apiKey: 'secret', target })).ok, false)
   f.state.profile = {}
-  f.state.beforeCommit = () => { f.state.record = { kind: 'grant', payload: 'grant-secret' } }
+  f.state.beforeCommit = () => {
+    f.state.record = { kind: 'grant', payload: 'grant-secret' }
+  }
   assert.equal((await save(f)).ok, false)
   assert.deepEqual(f.state.writes, [])
 })
@@ -120,14 +162,28 @@ test('record writability and malformed requests fail without writes or secret ec
 test('provider exceptions and unexpected metadata never cross RPC', async () => {
   const f = fixture()
   f.state.profile.apiKeyEnv = DEFAULT_REFERENCE
-  f.state.refs.set(DEFAULT_REFERENCE, { value: 'secret-value', source: 'secret-value', writable: true, suffix: 'secret-value' })
+  f.state.refs.set(DEFAULT_REFERENCE, {
+    value: 'secret-value',
+    source: 'secret-value',
+    writable: true,
+    suffix: 'secret-value',
+  })
   const status = await f.runtime.rpc('status')
   assert.equal(JSON.stringify(status).includes('secret-value'), false)
-  f.credentials.resolve = async () => { throw new Error('secret-value') }
-  await assert.rejects(f.runtime.service.resolveApiKey(), error => !error.message.includes('secret-value'))
-  f.credentials.set = async () => { throw new Error('secret-value') }
+  f.credentials.resolve = async () => {
+    throw new Error('secret-value')
+  }
+  await assert.rejects(
+    f.runtime.service.resolveApiKey(),
+    (error) => !error.message.includes('secret-value'),
+  )
+  f.credentials.set = async () => {
+    throw new Error('secret-value')
+  }
   assert.equal(JSON.stringify(await save(f)).includes('secret-value'), false)
-  f.credentials.describe = async () => { throw new Error('secret-value') }
+  f.credentials.describe = async () => {
+    throw new Error('secret-value')
+  }
   assert.equal(JSON.stringify(await f.runtime.rpc('status')).includes('secret-value'), false)
 })
 test('mocked host mount uses trusted RPC, empty settings section, host service, and disposal', async () => {
@@ -137,15 +193,33 @@ test('mocked host mount uses trusted RPC, empty settings section, host service, 
   let registration
   let provided
   const ctx = {
-    credentials: f.credentials, settings: { ...f.settings, installSection(owner, namespace, received, defaults) {
-      assert.equal(owner, ctx); assert.equal(namespace, 'openrouter'); assert.equal(received, schema); assert.deepEqual(defaults, {})
-    } },
-    provide(name, service) { assert.equal(name, 'openrouter'); provided = service },
-    effect(effect) { disposers.push(effect()) },
-    connection: { rpc: { handle(channel, handler, options) {
-      registration = { channel, handler, options, disposed: false }
-      return () => { registration.disposed = true }
-    } } },
+    credentials: f.credentials,
+    settings: {
+      ...f.settings,
+      installSection(owner, namespace, received, defaults) {
+        assert.equal(owner, ctx)
+        assert.equal(namespace, 'openrouter')
+        assert.equal(received, schema)
+        assert.deepEqual(defaults, {})
+      },
+    },
+    provide(name, service) {
+      assert.equal(name, 'openrouter')
+      provided = service
+    },
+    effect(effect) {
+      disposers.push(effect())
+    },
+    connection: {
+      rpc: {
+        handle(channel, handler, options) {
+          registration = { channel, handler, options, disposed: false }
+          return () => {
+            registration.disposed = true
+          }
+        },
+      },
+    },
   }
   mountOpenRouter(ctx, schema)
   assert.equal(registration.channel, CHANNEL)
@@ -162,14 +236,17 @@ test('route changes during asynchronous reads reject stale operations', async ()
   const f = fixture()
   f.state.profile.apiKeyEnv = 'ORIGINAL_REF'
   const describe = f.credentials.describe
-  f.credentials.describe = async ref => {
+  f.credentials.describe = async (ref) => {
     const info = await describe(ref)
     f.state.profile.apiKeyEnv = 'CHANGED_REF'
     return info
   }
   assert.match((await f.runtime.service.status()).error, /changed/)
   f.state.profile.apiKeyEnv = 'ORIGINAL_REF'
-  const result = await f.runtime.rpc('save', { apiKey: 'secret', target: 'reference:explicit:ORIGINAL_REF' })
+  const result = await f.runtime.rpc('save', {
+    apiKey: 'secret',
+    target: 'reference:explicit:ORIGINAL_REF',
+  })
   assert.equal(result.ok, false)
   assert.deepEqual(f.state.writes, [])
 })

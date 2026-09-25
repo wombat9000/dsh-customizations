@@ -11,8 +11,22 @@
     "./client": "./client.js",
     "./package.json": "./package.json"
   },
-  "files": ["src/**/*.js", "client.js", "cordis.patch.yml", "README.md"],
-  "engines": { "node": "^22.19.0 || >=24.0.0" },
-  "dsh": { "bundle": { "patch": "./cordis.patch.yml" }, "client": { "platform": "web" } },
+  "files": [
+    "src/**/*.js",
+    "client.js",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web"
+    }
+  },
   "license": "UNLICENSED"
 }

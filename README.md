@@ -173,6 +173,21 @@ pnpm run apply -- personal-web
 
 If a package needs a build step, run its workspace build before applying the profile. Restart a running DSH process after a host or client plugin changes.
 
+## Formatting
+
+Use the exact-pinned root Prettier dependency after an approved dependency installation. From the repository root:
+
+```sh
+pnpm run format:check
+pnpm run format
+```
+
+`format:check` reports differences without changing files. `format` rewrites maintained source, tests, configuration, and documentation. For a focused edit, use `pnpm exec prettier --write <paths>` instead of reformatting unrelated files. Configure your editor to use the repository's local Prettier and `.prettierrc.json`.
+
+The configuration uses two spaces, single quotes, no semicolons, and a 100-column print width. It preserves prose wrapping and disables embedded-language formatting. `.prettierignore` excludes generated bundles, the pnpm lockfile, byte-controlled fixtures, patch payloads, legal text, and visual baselines. It also leaves CI workflows untouched; no formatting CI step or Git hook is installed. Formatting source can change generated output, so rebuild affected packages and run their freshness checks afterward. See the [engineering guide](docs/engineering.md#formatting).
+
+[Prettier](https://prettier.io/docs/install) is an MIT-licensed development tool from the [official Prettier repository](https://github.com/prettier/prettier). The pinned package has no runtime dependencies, install scripts, or native binary downloads. No third-party formatter plugins are added.
+
 ## Run tests
 
 If dependencies are missing, follow the [repository setup skill](.agents/skills/repository-setup/SKILL.md) before an approved offline install. Run repository checks with `pnpm run check` and the Node.js unit and host-integration tests with `pnpm test`. The test command first runs `pnpm run build`, which type-checks and bundles Session Environment's TypeScript host and client. Its integration tests validate recipe wiring and generated entrypoints without starting DSH; the browser suites below do not yet cover the Environment card.

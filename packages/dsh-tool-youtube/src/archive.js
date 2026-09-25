@@ -136,8 +136,10 @@ export class ArchivedYoutubeClient {
       const page = this.store.readSegments(cached.transcriptId, {
         limit: DEFAULT_TRANSCRIPT_PAGE_SEGMENTS,
       })
-      if (page !== undefined
-        && (page.nextCursor !== undefined || page.segments.length === page.transcript.segmentCount)) {
+      if (
+        page !== undefined &&
+        (page.nextCursor !== undefined || page.segments.length === page.transcript.segmentCount)
+      ) {
         const record = {
           ...page.transcript,
           segments: page.segments,
@@ -290,9 +292,14 @@ export class ArchivedYoutubeClient {
   search(input, signal) {
     throwIfAborted(signal)
     const maxResults = input.maxResults ?? DEFAULT_TRANSCRIPT_SEARCH_RESULTS
-    if (!Number.isSafeInteger(maxResults) || maxResults < 1
-      || maxResults > MAX_TRANSCRIPT_SEARCH_RESULTS) {
-      throw new Error(`maxResults must be an integer between 1 and ${MAX_TRANSCRIPT_SEARCH_RESULTS}`)
+    if (
+      !Number.isSafeInteger(maxResults) ||
+      maxResults < 1 ||
+      maxResults > MAX_TRANSCRIPT_SEARCH_RESULTS
+    ) {
+      throw new Error(
+        `maxResults must be an integer between 1 and ${MAX_TRANSCRIPT_SEARCH_RESULTS}`,
+      )
     }
     const result = this.store.search(input.transcriptId, input.query, { limit: maxResults })
     if (result === undefined) throw new Error('Archived YouTube transcript was not found')

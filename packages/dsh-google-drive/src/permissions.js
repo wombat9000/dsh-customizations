@@ -2,12 +2,18 @@ import { randomUUID } from 'node:crypto'
 
 const FOLDER = 'application/vnd.google-apps.folder'
 const SHORTCUT = 'application/vnd.google-apps.shortcut'
-const idOK = id => typeof id === 'string' && /^[A-Za-z0-9_-]{1,256}$/u.test(id)
+const idOK = (id) => typeof id === 'string' && /^[A-Za-z0-9_-]{1,256}$/u.test(id)
 const fail = () => new Error('Google Drive permission is missing, stale, or revoked.')
-const publicFile = file => {
+const publicFile = (file) => {
   const { id, name, mimeType, size, modifiedTime, webViewLink } = file
-  return { id, name, mimeType, ...(size === undefined ? {} : { size }),
-    ...(modifiedTime === undefined ? {} : { modifiedTime }), ...(webViewLink === undefined ? {} : { webViewLink }) }
+  return {
+    id,
+    name,
+    mimeType,
+    ...(size === undefined ? {} : { size }),
+    ...(modifiedTime === undefined ? {} : { modifiedTime }),
+    ...(webViewLink === undefined ? {} : { webViewLink }),
+  }
 }
 
 // Owners are stable live objects supplied by the host, never IDs received from a
@@ -20,9 +26,21 @@ export class DrivePermissions {
   #states = new Map()
   #disposed = false
   #selectionMimeType
-  constructor({ client, getAccountGeneration, isOwnerLive, onChange = () => {}, selectionMimeType } = {}) {
+  constructor({
+    client,
+    getAccountGeneration,
+    isOwnerLive,
+    onChange = () => {},
+    selectionMimeType,
+  } = {}) {
     this.#selectionMimeType = selectionMimeType
-    if (!client || typeof getAccountGeneration !== 'function' || typeof isOwnerLive !== 'function' || typeof onChange !== 'function') throw new Error('Invalid Drive permission options.')
+    if (
+      !client ||
+      typeof getAccountGeneration !== 'function' ||
+      typeof isOwnerLive !== 'function' ||
+      typeof onChange !== 'function'
+    )
+      throw new Error('Invalid Drive permission options.')
     this.#client = client
     this.#generation = getAccountGeneration
     this.#live = isOwnerLive
@@ -36,13 +54,35 @@ export class DrivePermissions {
   #state(owner) {
     const existing = this.#states.get(owner)
     const generation = this.#generation()
-    if (existing && (existing.generation !== generation || !this.#live(owner))) this.#clear(owner, existing)
-    if (this.#disposed || !owner || typeof owner !== 'object' || !this.#live(owner) || generation === undefined || generation === null) throw fail()
-    if (!this.#states.has(owner)) this.#states.set(owner, { generation, controller: new AbortController(), requests: new Map(), grants: new Map(), cursors: new Map(), revision: 0 })
+    if (existing && (existing.generation !== generation || !this.#live(owner)))
+      this.#clear(owner, existing)
+    if (
+      this.#disposed ||
+      !owner ||
+      typeof owner !== 'object' ||
+      !this.#live(owner) ||
+      generation === undefined ||
+      generation === null
+    )
+      throw fail()
+    if (!this.#states.has(owner))
+      this.#states.set(owner, {
+        generation,
+        controller: new AbortController(),
+        requests: new Map(),
+        grants: new Map(),
+        cursors: new Map(),
+        revision: 0,
+      })
     return this.#states.get(owner)
   }
   #check(owner, state, revision = state.revision) {
-    if (this.#state(owner) !== state || state.controller.signal.aborted || state.revision !== revision) throw fail()
+    if (
+      this.#state(owner) !== state ||
+      state.controller.signal.aborted ||
+      state.revision !== revision
+    )
+      throw fail()
   }
   #notify(owner, state) {
     state.revision++
@@ -59,9 +99,14 @@ export class DrivePermissions {
     this.#change(owner)
     return { requestId }
   }
-  pending(owner) { return [...this.#state(owner).requests.keys()].map(requestId => ({ requestId })) }
+  pending(owner) {
+    return [...this.#state(owner).requests.keys()].map((requestId) => ({ requestId }))
+  }
   grants(owner) {
-    return [...this.#state(owner).grants].map(([grantId, resources]) => ({ grantId, resources: resources.map(resource => ({ ...resource })) }))
+    return [...this.#state(owner).grants].map(([grantId, resources]) => ({
+      grantId,
+      resources: resources.map((resource) => ({ ...resource })),
+    }))
   }
   #request(owner, requestId) {
     const state = this.#state(owner)
@@ -77,7 +122,9 @@ export class DrivePermissions {
     state.requests.delete(requestId)
     this.#notify(owner, state)
   }
-  cancel(owner, requestId) { this.deny(owner, requestId) }
+  cancel(owner, requestId) {
+    this.deny(owner, requestId)
+  }
   revoke(owner, grantId) {
     const state = this.#state(owner)
     if (grantId === undefined) {
@@ -98,8 +145,13 @@ export class DrivePermissions {
     }
   }
   async #operation(owner, state, signal, action, request) {
-    if (signal !== undefined && !(signal instanceof AbortSignal)) throw new Error('Invalid cancellation signal.')
-    const combined = AbortSignal.any([state.controller.signal, ...(signal ? [signal] : []), ...(request ? [request.controller.signal] : [])])
+    if (signal !== undefined && !(signal instanceof AbortSignal))
+      throw new Error('Invalid cancellation signal.')
+    const combined = AbortSignal.any([
+      state.controller.signal,
+      ...(signal ? [signal] : []),
+      ...(request ? [request.controller.signal] : []),
+    ])
     const revision = state.revision
     const check = () => {
       this.#check(owner, state, revision)
@@ -107,12 +159,20 @@ export class DrivePermissions {
     }
     check()
     let abort
-    const stopped = new Promise((_resolve, reject) => { abort = () => reject(fail()); combined.addEventListener('abort', abort, { once: true }) })
+    const stopped = new Promise((_resolve, reject) => {
+      abort = () => reject(fail())
+      combined.addEventListener('abort', abort, { once: true })
+    })
     try {
-      const result = await Promise.race([Promise.resolve().then(() => action(combined, check)), stopped])
+      const result = await Promise.race([
+        Promise.resolve().then(() => action(combined, check)),
+        stopped,
+      ])
       check()
       return result
-    } finally { combined.removeEventListener('abort', abort) }
+    } finally {
+      combined.removeEventListener('abort', abort)
+    }
   }
   #page(state, scope, pageToken) {
     if (pageToken === undefined) return undefined
@@ -127,37 +187,91 @@ export class DrivePermissions {
     state.cursors.set(nextPageToken, { scope, token })
     return { nextPageToken }
   }
-  async pickerList(owner, requestId, { parentId, search, view = 'my-drive', pageSize = 20, pageToken, signal, ...extra } = {}) {
-    if (Object.keys(extra).length || !['my-drive', 'shared-with-me'].includes(view)) throw new Error('Invalid picker options.')
+  async pickerList(
+    owner,
+    requestId,
+    { parentId, search, view = 'my-drive', pageSize = 20, pageToken, signal, ...extra } = {},
+  ) {
+    if (Object.keys(extra).length || !['my-drive', 'shared-with-me'].includes(view))
+      throw new Error('Invalid picker options.')
     const { state, request } = this.#request(owner, requestId)
-    const scope = JSON.stringify(['picker', requestId, view, parentId ?? null, search ?? null, pageSize])
+    const scope = JSON.stringify([
+      'picker',
+      requestId,
+      view,
+      parentId ?? null,
+      search ?? null,
+      pageSize,
+    ])
     const token = this.#page(state, scope, pageToken)
-    return this.#operation(owner, state, signal, async (signal, check) => {
-      const result = await this.#client.pickerList({ parentId, search, view, pageSize, pageToken: token, signal })
-      check()
-      if (state.requests.get(requestId) !== request || request.busy) throw fail()
-      return { files: result.files.filter(file => file.mimeType !== SHORTCUT).map(publicFile), ...this.#cursor(state, scope, result.nextPageToken) }
-    }, request)
+    return this.#operation(
+      owner,
+      state,
+      signal,
+      async (signal, check) => {
+        const result = await this.#client.pickerList({
+          parentId,
+          search,
+          view,
+          pageSize,
+          pageToken: token,
+          signal,
+        })
+        check()
+        if (state.requests.get(requestId) !== request || request.busy) throw fail()
+        return {
+          files: result.files.filter((file) => file.mimeType !== SHORTCUT).map(publicFile),
+          ...this.#cursor(state, scope, result.nextPageToken),
+        }
+      },
+      request,
+    )
   }
-  async approve(owner, requestId, { fileIds = [], folderIds = [], replace = false } = {}, { signal } = {}) {
+  async approve(
+    owner,
+    requestId,
+    { fileIds = [], folderIds = [], replace = false } = {},
+    { signal } = {},
+  ) {
     const { state, request } = this.#request(owner, requestId)
-    if (typeof replace !== 'boolean' || (!replace && state.grants.size >= 100) || !Array.isArray(fileIds) || !Array.isArray(folderIds) || (!replace && fileIds.length + folderIds.length < 1)
-      || fileIds.length + folderIds.length > 100 || ![...fileIds, ...folderIds].every(idOK)
-      || new Set([...fileIds, ...folderIds]).size !== fileIds.length + folderIds.length) throw new Error('Invalid Google Drive selection.')
+    if (
+      typeof replace !== 'boolean' ||
+      (!replace && state.grants.size >= 100) ||
+      !Array.isArray(fileIds) ||
+      !Array.isArray(folderIds) ||
+      (!replace && fileIds.length + folderIds.length < 1) ||
+      fileIds.length + folderIds.length > 100 ||
+      ![...fileIds, ...folderIds].every(idOK) ||
+      new Set([...fileIds, ...folderIds]).size !== fileIds.length + folderIds.length
+    )
+      throw new Error('Invalid Google Drive selection.')
     request.busy = true
     try {
-      const resources = await this.#operation(owner, state, signal, async (signal, check) => {
-        const resources = []
-        for (const id of [...fileIds, ...folderIds]) {
-          const file = await this.#client.getMetadata({ fileId: id, signal })
-          check()
-          const recursive = folderIds.includes(id)
-          if (file.id !== id || file.trashed !== false || file.mimeType === SHORTCUT || (file.mimeType === FOLDER) !== recursive) throw new Error('Invalid Google Drive selection.')
-          if (this.#selectionMimeType && (recursive || file.mimeType !== this.#selectionMimeType)) throw new Error('Select individual Google Sheets spreadsheets only.')
-          resources.push({ ...publicFile(file), recursive })
-        }
-        return resources
-      }, request)
+      const resources = await this.#operation(
+        owner,
+        state,
+        signal,
+        async (signal, check) => {
+          const resources = []
+          for (const id of [...fileIds, ...folderIds]) {
+            const file = await this.#client.getMetadata({ fileId: id, signal })
+            check()
+            const recursive = folderIds.includes(id)
+            if (
+              file.id !== id ||
+              file.trashed !== false ||
+              file.mimeType === SHORTCUT ||
+              (file.mimeType === FOLDER) !== recursive
+            )
+              throw new Error('Invalid Google Drive selection.')
+            if (this.#selectionMimeType && (recursive || file.mimeType !== this.#selectionMimeType))
+              throw new Error('Select individual Google Sheets spreadsheets only.')
+            resources.push({ ...publicFile(file), recursive })
+          }
+          return resources
+        },
+        request,
+      )
       if (state.requests.get(requestId) !== request) throw fail()
       state.requests.delete(requestId)
       request.controller.abort()
@@ -165,7 +279,7 @@ export class DrivePermissions {
       if (replace) state.grants.clear()
       if (resources.length) state.grants.set(grantId, resources)
       this.#notify(owner, state)
-      return { grantId, resources: resources.map(resource => ({ ...resource })) }
+      return { grantId, resources: resources.map((resource) => ({ ...resource })) }
     } catch (error) {
       // Failed approvals are one-shot too; a retry requires a new visible request.
       if (state.requests.get(requestId) === request) {
@@ -183,8 +297,10 @@ export class DrivePermissions {
     const file = await this.#client.getMetadata({ fileId, signal })
     check()
     if (file.id !== fileId || file.trashed !== false || file.mimeType === SHORTCUT) throw fail()
-    if (resources.some(resource => resource.id === fileId)) return file
-    const roots = new Set(resources.filter(resource => resource.recursive).map(resource => resource.id))
+    if (resources.some((resource) => resource.id === fileId)) return file
+    const roots = new Set(
+      resources.filter((resource) => resource.recursive).map((resource) => resource.id),
+    )
     const queue = [...(file.parents ?? [])]
     const visited = new Set([fileId])
     let count = 0
@@ -204,7 +320,9 @@ export class DrivePermissions {
   async getMetadata(owner, { fileId, signal, ...extra } = {}) {
     if (Object.keys(extra).length) throw new Error('Invalid Google Drive metadata options.')
     const state = this.#state(owner)
-    return this.#operation(owner, state, signal, async (signal, check) => publicFile(await this.#authorized(state, fileId, signal, check)))
+    return this.#operation(owner, state, signal, async (signal, check) =>
+      publicFile(await this.#authorized(state, fileId, signal, check)),
+    )
   }
   // Trusted Host callback only; browser/model callers cannot supply an action.
   // The retained check/signal remain tied to this exact permission revision.
@@ -218,16 +336,24 @@ export class DrivePermissions {
       return result
     })
   }
-  async readText(owner, { fileId, maxBytes, startPage, endPage, ocr, languages, signal, ...extra } = {}) {
+  async readText(
+    owner,
+    { fileId, maxBytes, startPage, endPage, ocr, languages, signal, ...extra } = {},
+  ) {
     if (Object.keys(extra).length) throw new Error('Invalid Google Drive read options.')
     const state = this.#state(owner)
     return this.#operation(owner, state, signal, async (signal, check) => {
       await this.#authorized(state, fileId, signal, check)
       // Keep the entire extraction inside this permission lifetime. Omitted PDF
       // options must stay omitted so ordinary text reads retain their contract.
-      const result = await this.#client.readText({ fileId, maxBytes, signal,
-        ...(startPage === undefined ? {} : { startPage }), ...(endPage === undefined ? {} : { endPage }),
-        ...(ocr === undefined ? {} : { ocr }), ...(languages === undefined ? {} : { languages }),
+      const result = await this.#client.readText({
+        fileId,
+        maxBytes,
+        signal,
+        ...(startPage === undefined ? {} : { startPage }),
+        ...(endPage === undefined ? {} : { endPage }),
+        ...(ocr === undefined ? {} : { ocr }),
+        ...(languages === undefined ? {} : { languages }),
       })
       check()
       const file = await this.#authorized(state, fileId, signal, check)
@@ -235,18 +361,31 @@ export class DrivePermissions {
     })
   }
   async listFiles(owner, { folderId, pageSize = 20, pageToken, signal, ...extra } = {}) {
-    if (Object.keys(extra).length || !Number.isInteger(pageSize) || pageSize < 1 || pageSize > 100) throw new Error('Invalid Google Drive list options.')
+    if (Object.keys(extra).length || !Number.isInteger(pageSize) || pageSize < 1 || pageSize > 100)
+      throw new Error('Invalid Google Drive list options.')
     const state = this.#state(owner)
     const scope = JSON.stringify(['agent', folderId ?? null, pageSize])
     const token = this.#page(state, scope, pageToken)
     return this.#operation(owner, state, signal, async (signal, check) => {
       if (folderId === undefined) {
-        const resources = [...new Map([...state.grants.values()].flat().map(resource => [resource.id, resource])).values()]
+        const resources = [
+          ...new Map(
+            [...state.grants.values()].flat().map((resource) => [resource.id, resource]),
+          ).values(),
+        ]
         const offset = token ?? 0
         const files = []
-        for (const resource of resources.slice(offset, offset + pageSize)) files.push(publicFile(await this.#authorized(state, resource.id, signal, check)))
+        for (const resource of resources.slice(offset, offset + pageSize))
+          files.push(publicFile(await this.#authorized(state, resource.id, signal, check)))
         check()
-        return { files, ...this.#cursor(state, scope, offset + pageSize < resources.length ? offset + pageSize : undefined) }
+        return {
+          files,
+          ...this.#cursor(
+            state,
+            scope,
+            offset + pageSize < resources.length ? offset + pageSize : undefined,
+          ),
+        }
       }
       const folder = await this.#authorized(state, folderId, signal, check)
       if (folder.mimeType !== FOLDER) throw fail()
@@ -265,5 +404,8 @@ export class DrivePermissions {
       return { files, ...this.#cursor(state, scope, result.nextPageToken) }
     })
   }
-  dispose() { this.#disposed = true; this.invalidate() }
+  dispose() {
+    this.#disposed = true
+    this.invalidate()
+  }
 }

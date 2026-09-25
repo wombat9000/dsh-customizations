@@ -55,13 +55,13 @@ DSH's existing `web_fetch` tool.
 
 The provider accepts these optional Cordis config values:
 
-| Key | Default | Meaning |
-|---|---|---|
-| `apiKey` | unset | Legacy literal override; takes precedence over credential references. Do not commit it. |
-| `baseURL` | `https://api.firecrawl.dev/v2` | HTTPS API base URL, including `/v2`. |
-| `maxBodyChars` | `100000` | Maximum markdown characters returned by one scrape. |
-| `search` | `true` | Register the Firecrawl search provider. |
-| `fetch` | `true` | Register the Firecrawl fetch provider. |
+| Key            | Default                        | Meaning                                                                                 |
+| -------------- | ------------------------------ | --------------------------------------------------------------------------------------- |
+| `apiKey`       | unset                          | Legacy literal override; takes precedence over credential references. Do not commit it. |
+| `baseURL`      | `https://api.firecrawl.dev/v2` | HTTPS API base URL, including `/v2`.                                                    |
+| `maxBodyChars` | `100000`                       | Maximum markdown characters returned by one scrape.                                     |
+| `search`       | `true`                         | Register the Firecrawl search provider.                                                 |
+| `fetch`        | `true`                         | Register the Firecrawl fetch provider.                                                  |
 
 Example self-hosted override in a later profile patch:
 

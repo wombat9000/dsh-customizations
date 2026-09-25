@@ -1,7 +1,15 @@
 import { CHANNEL, createSettingsReader, errorMessage, unwrap } from './rpc.ts'
 import { createActivityStore, createReturnTracker } from './return-tracker.ts'
 import type { RecapResult } from '../shared/contracts.ts'
-import type { Controller, ControllerOptions, ControllerSnapshot, MountEnvironment, SessionObservation, SessionState, SnapshotListener } from './controller-types.ts'
+import type {
+  Controller,
+  ControllerOptions,
+  ControllerSnapshot,
+  MountEnvironment,
+  SessionObservation,
+  SessionState,
+  SnapshotListener,
+} from './controller-types.ts'
 
 // Session state and recap request transitions are independent of React mounts.
 export function createController({ rpc, storage, now = Date.now }: ControllerOptions): Controller {
@@ -89,13 +97,25 @@ export function createController({ rpc, storage, now = Date.now }: ControllerOpt
     return pending
   }
 
-  function mount(sessionId: string, { document, window }: MountEnvironment, listener: SnapshotListener) {
+  function mount(
+    sessionId: string,
+    { document, window }: MountEnvironment,
+    listener: SnapshotListener,
+  ) {
     const session = state(sessionId)
     session.listeners.add(listener)
     listener(session.value)
     const tracker = createReturnTracker({
-      sessionId, document, window, rpc, settings, activityStore, now,
-      state: session, publish, recap,
+      sessionId,
+      document,
+      window,
+      rpc,
+      settings,
+      activityStore,
+      now,
+      state: session,
+      publish,
+      recap,
     })
     return () => {
       tracker.leave()
@@ -131,10 +151,12 @@ export function createController({ rpc, storage, now = Date.now }: ControllerOpt
     const previous = session.observation
     // Keep the last loaded baseline through dock remounts/history reloads.
     if (!observation.ready) return
-    if (previous && (
-      (!previous.running && observation.running) ||
-      (observation.latestTurn !== undefined && (previous.latestTurn === undefined || observation.latestTurn > previous.latestTurn))
-    )) {
+    if (
+      previous &&
+      ((!previous.running && observation.running) ||
+        (observation.latestTurn !== undefined &&
+          (previous.latestTurn === undefined || observation.latestTurn > previous.latestTurn)))
+    ) {
       discard(sessionId)
     }
     session.observation = observation
@@ -143,9 +165,12 @@ export function createController({ rpc, storage, now = Date.now }: ControllerOpt
   function humanMessageSent(sessionId: string) {
     discard(sessionId)
     // A successful send counts as activity even without a mounted dock.
-    void settings().then((config) => {
-      activityStore.touch(activityStore.key(config, sessionId))
-    }, () => {})
+    void settings().then(
+      (config) => {
+        activityStore.touch(activityStore.key(config, sessionId))
+      },
+      () => {},
+    )
   }
 
   return {
@@ -154,7 +179,9 @@ export function createController({ rpc, storage, now = Date.now }: ControllerOpt
     click,
     turnStarted: discard,
     observeSession,
-    getSnapshot(sessionId) { return state(sessionId).value },
+    getSnapshot(sessionId) {
+      return state(sessionId).value
+    },
     subscribe(sessionId, listener) {
       const session = state(sessionId)
       session.listeners.add(listener)

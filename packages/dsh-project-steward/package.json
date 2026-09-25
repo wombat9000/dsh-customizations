@@ -7,9 +7,21 @@
   "exports": {
     "./package.json": "./package.json"
   },
-  "files": ["presets", "cordis.patch.yml", "README.md"],
-  "scripts": { "test": "node --test test/*.test.js" },
-  "engines": { "node": "^22.19.0 || >=24.0.0" },
-  "dsh": { "bundle": { "patch": "./cordis.patch.yml" } },
+  "files": [
+    "presets",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  },
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
   "license": "UNLICENSED"
 }

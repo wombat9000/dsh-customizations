@@ -10,7 +10,7 @@ import * as recap from '../../src/index.js'
 // Match the Steward fixture: resolve only through the repository's pinned CLI.
 const require = createRequire(import.meta.url)
 const cli = createRequire(require.resolve('@deepseek-ai/dsh/package.json'))
-const installed = name => {
+const installed = (name) => {
   const manifest = require(cli.resolve(`@deepseek-ai/${name}/package.json`))
   assert.equal(manifest.version, name === 'cordis' ? '4.0.2' : '0.1.5-rc.2')
   return import(pathToFileURL(cli.resolve(`@deepseek-ai/${name}`)).href)
@@ -24,7 +24,9 @@ export const version = require(cli.resolve('@deepseek-ai/dsh/package.json')).ver
 
 export function deferred() {
   let resolve
-  const promise = new Promise(done => { resolve = done })
+  const promise = new Promise((done) => {
+    resolve = done
+  })
   return { promise, resolve }
 }
 
@@ -53,11 +55,19 @@ export function model() {
             pending.entered.resolve(request)
             await Promise.race([
               pending.release.promise,
-              new Promise(resolve => request.signal.addEventListener('abort', resolve, { once: true })),
+              new Promise((resolve) =>
+                request.signal.addEventListener('abort', resolve, { once: true }),
+              ),
             ])
           }
           if (request.signal.aborted) return
-          yield { type: 'text-delta', text: JSON.stringify({ headline: 'Session restored', bullets: ['The user plans an offline integration test.'] }) }
+          yield {
+            type: 'text-delta',
+            text: JSON.stringify({
+              headline: 'Session restored',
+              bullets: ['The user plans an offline integration test.'],
+            }),
+          }
           yield { type: 'finish', reason: { kind: 'stop' } }
         },
       }
@@ -95,7 +105,9 @@ export async function backend(t, directory, llm = model()) {
   // Deliberate transport adapters: a traced route registry and memory streams
   // replace the listening HTTP server/socket, not Connection's RPC machinery.
   class DormantWebServer extends Service {
-    constructor(owner) { super(owner, 'webServer') }
+    constructor(owner) {
+      super(owner, 'webServer')
+    }
     register(route) {
       assert.equal(routes.has(route.path), false, 'duplicate RPC route')
       routes.set(route.path, route)
@@ -103,18 +115,28 @@ export async function backend(t, directory, llm = model()) {
     }
   }
   await ctx.plugin(DormantWebServer).await()
-  await ctx.plugin(FileSettingsProvider, { path: join(directory, 'settings.json'), watch: false }).await()
+  await ctx
+    .plugin(FileSettingsProvider, { path: join(directory, 'settings.json'), watch: false })
+    .await()
   await ctx.plugin(SessionStore).await()
-  await ctx.plugin(JsonlSessionPersistence, { root: join(directory, 'sessions'), compression: 'none' }).await()
+  await ctx
+    .plugin(JsonlSessionPersistence, { root: join(directory, 'sessions'), compression: 'none' })
+    .await()
   assert.ok(ctx.settings instanceof FileSettingsProvider)
   assert.ok(ctx.sessions instanceof SessionStore)
   assert.ok(ctx.sessionPersistence instanceof JsonlSessionPersistence)
   ctx.provide('llm', llm)
   // Authentication is a fixed fixture capability. This does not test login,
   // cookies, browser auth persistence, or the live WebServer routing stack.
-  await ctx.plugin({ apply(owner) {
-    new HostConnectionService(owner, [], { isAuthenticated: req => req.headers.authorization === 'fixture' })
-  } }).await()
+  await ctx
+    .plugin({
+      apply(owner) {
+        new HostConnectionService(owner, [], {
+          isAuthenticated: (req) => req.headers.authorization === 'fixture',
+        })
+      },
+    })
+    .await()
   let mounted
   async function mount() {
     mounted = ctx.plugin(recap)
@@ -127,13 +149,27 @@ export async function backend(t, directory, llm = model()) {
     const route = routes.get(recap.CHANNEL)
     if (!route) return { status: 404 }
     const id = `fixture-${++rpcId}`
-    const req = Readable.from([Buffer.from(JSON.stringify({ type: 'client-request', rpcId: id, method: endpoint, payload }))])
+    const req = Readable.from([
+      Buffer.from(JSON.stringify({ type: 'client-request', rpcId: id, method: endpoint, payload })),
+    ])
     req.method = 'POST'
     req.url = `${recap.CHANNEL}/${endpoint}`
-    req.headers = { host: 'localhost', authorization: 'fixture', 'content-type': 'application/json', ...headers }
+    req.headers = {
+      host: 'localhost',
+      authorization: 'fixture',
+      'content-type': 'application/json',
+      ...headers,
+    }
     const chunks = []
-    const res = new Writable({ write(chunk, encoding, done) { chunks.push(Buffer.from(chunk)); done() } })
-    res.writeHead = status => { res.status = status }
+    const res = new Writable({
+      write(chunk, encoding, done) {
+        chunks.push(Buffer.from(chunk))
+        done()
+      },
+    })
+    res.writeHead = (status) => {
+      res.status = status
+    }
     await route.handler(req, res)
     const text = Buffer.concat(chunks).toString()
     if (res.status !== 200) return { status: res.status, text }
@@ -156,7 +192,9 @@ export async function backend(t, directory, llm = model()) {
     const handle = await ctx.sessionPersistence.open(id, 'write')
     const stored = await handle.read()
     const session = ctx.sessions.create(id, {
-      seed: stored.events, meta: handle.header, eventState: stored.eventState,
+      seed: stored.events,
+      meta: handle.header,
+      eventState: stored.eventState,
       inheritedEventCount: handle.inheritedEventCount,
     })
     // The dormant fixture owns the load transaction normally owned by AgentLoop.
@@ -164,13 +202,29 @@ export async function backend(t, directory, llm = model()) {
     await handle.append(session.snapshotEvents(stored.events.length))
     return session
   }
-  return { ctx, routes, llm, rpc, request, mount, createSession, restoreSession,
-    unmount: () => mounted.dispose(), close: () => ctx.fiber.dispose() }
+  return {
+    ctx,
+    routes,
+    llm,
+    rpc,
+    request,
+    mount,
+    createSession,
+    restoreSession,
+    unmount: () => mounted.dispose(),
+    close: () => ctx.fiber.dispose(),
+  }
 }
 
 export function userMessage(session, text = 'Plan an offline integration test.') {
-  return session.append('user/message', {
-    id: `user-${session.seq}`, role: 'user', source: { kind: 'user' },
-    content: [{ type: 'text', text }],
-  }, { surfaceOp: 'append' })
+  return session.append(
+    'user/message',
+    {
+      id: `user-${session.seq}`,
+      role: 'user',
+      source: { kind: 'user' },
+      content: [{ type: 'text', text }],
+    },
+    { surfaceOp: 'append' },
+  )
 }

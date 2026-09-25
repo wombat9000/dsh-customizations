@@ -80,7 +80,11 @@ export function extractYoutubePlayerResponse(html, options = {}) {
     )
   }
   const maximumObjectChars = Math.min(maxHtmlChars, options.maxObjectChars ?? 2_000_000)
-  const markers = ['ytInitialPlayerResponse =', 'ytInitialPlayerResponse=', '"ytInitialPlayerResponse":']
+  const markers = [
+    'ytInitialPlayerResponse =',
+    'ytInitialPlayerResponse=',
+    '"ytInitialPlayerResponse":',
+  ]
   for (const marker of markers) {
     const response = jsonObjectAfterMarker(html, marker, maximumObjectChars)
     if (isRecord(response)) return response
@@ -122,15 +126,18 @@ export function normalizeYoutubeVideoMetadata(response, video, options = {}) {
   }
   const details = response.videoDetails
   const rawDuration = Number(details.lengthSeconds)
-  const durationSeconds = Number.isSafeInteger(rawDuration) && rawDuration > 0
-    ? rawDuration
-    : undefined
+  const durationSeconds =
+    Number.isSafeInteger(rawDuration) && rawDuration > 0 ? rawDuration : undefined
   const liveState = liveStateOf(response, durationSeconds)
   return {
     videoId: video.videoId,
     canonicalUrl: video.url,
-    ...(boundedString(details.title, 200) === undefined ? {} : { title: boundedString(details.title, 200) }),
-    ...(boundedString(details.author, 200) === undefined ? {} : { channel: boundedString(details.author, 200) }),
+    ...(boundedString(details.title, 200) === undefined
+      ? {}
+      : { title: boundedString(details.title, 200) }),
+    ...(boundedString(details.author, 200) === undefined
+      ? {}
+      : { channel: boundedString(details.author, 200) }),
     ...(thumbnailOf(details) === undefined ? {} : { thumbnailUrl: thumbnailOf(details) }),
     ...(durationSeconds === undefined ? {} : { durationSeconds }),
     durationVerified: durationSeconds !== undefined,
@@ -149,11 +156,17 @@ export async function inspectYoutubeVideo(url, options = {}) {
   const video = parseYoutubeUrl(url)
   const fetchImpl = options.fetchImpl ?? globalThis.fetch
   if (typeof fetchImpl !== 'function') {
-    throw new AdaptiveWatchError(ADAPTIVE_WATCH_ERROR_CODES.VIDEO_METADATA_INVALID, 'Video inspection requires fetch')
+    throw new AdaptiveWatchError(
+      ADAPTIVE_WATCH_ERROR_CODES.VIDEO_METADATA_INVALID,
+      'Video inspection requires fetch',
+    )
   }
   const response = await fetchImpl(video.url, {
     method: 'GET',
-    headers: { 'User-Agent': 'Mozilla/5.0 (compatible; DSH YouTube tool)', 'Accept-Language': 'en-US,en;q=0.9' },
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (compatible; DSH YouTube tool)',
+      'Accept-Language': 'en-US,en;q=0.9',
+    },
     signal: options.signal,
   })
   if (!response?.ok) {
@@ -173,7 +186,11 @@ export async function inspectYoutubeVideo(url, options = {}) {
     )
   }
   const html = await response.text()
-  return normalizeYoutubeVideoMetadata(extractYoutubePlayerResponse(html, { ...options, maxHtmlChars }), video, options)
+  return normalizeYoutubeVideoMetadata(
+    extractYoutubePlayerResponse(html, { ...options, maxHtmlChars }),
+    video,
+    options,
+  )
 }
 
 const EXHAUSTIVE_PATTERNS = [
@@ -196,13 +213,23 @@ export function classifyWatchQuestion(question) {
   }
   const text = question.trim()
   if (EXHAUSTIVE_PATTERNS.some((pattern) => pattern.test(text))) {
-    return { intent: 'exhaustive', source: 'deterministic', confidence: 'high', reasonCode: 'explicit-all' }
+    return {
+      intent: 'exhaustive',
+      source: 'deterministic',
+      confidence: 'high',
+      reasonCode: 'explicit-all',
+    }
   }
   if (GLOBAL_PATTERNS.some((pattern) => pattern.test(text))) {
     return { intent: 'global', source: 'deterministic', confidence: 'high', reasonCode: 'summary' }
   }
   if (TARGETED_PATTERNS.some((pattern) => pattern.test(text))) {
-    return { intent: 'targeted', source: 'deterministic', confidence: 'medium', reasonCode: 'specific-event' }
+    return {
+      intent: 'targeted',
+      source: 'deterministic',
+      confidence: 'medium',
+      reasonCode: 'specific-event',
+    }
   }
   return { intent: 'global', source: 'fallback', confidence: 'low', reasonCode: 'default-global' }
 }
@@ -211,9 +238,15 @@ export function planBalancedWatchChunks(durationSeconds, options = {}) {
   const maximumCoreSeconds = options.maximumCoreSeconds ?? DEFAULT_MAXIMUM_WATCH_CORE_SECONDS
   const overlapSeconds = options.overlapSeconds ?? DEFAULT_WATCH_CHUNK_OVERLAP_SECONDS
   const maxChunks = options.maxChunks ?? DEFAULT_MAX_WATCH_CHUNKS
-  if (!Number.isSafeInteger(durationSeconds) || durationSeconds < 1) throw new TypeError('Watch chunk duration must be positive')
-  if (!Number.isSafeInteger(maximumCoreSeconds) || maximumCoreSeconds < 1) throw new TypeError('maximumCoreSeconds must be positive')
-  if (!Number.isSafeInteger(overlapSeconds) || overlapSeconds < 0 || overlapSeconds >= maximumCoreSeconds) {
+  if (!Number.isSafeInteger(durationSeconds) || durationSeconds < 1)
+    throw new TypeError('Watch chunk duration must be positive')
+  if (!Number.isSafeInteger(maximumCoreSeconds) || maximumCoreSeconds < 1)
+    throw new TypeError('maximumCoreSeconds must be positive')
+  if (
+    !Number.isSafeInteger(overlapSeconds) ||
+    overlapSeconds < 0 ||
+    overlapSeconds >= maximumCoreSeconds
+  ) {
     throw new TypeError('overlapSeconds must be non-negative and smaller than maximumCoreSeconds')
   }
   const count = Math.ceil(durationSeconds / maximumCoreSeconds)
@@ -225,10 +258,14 @@ export function planBalancedWatchChunks(durationSeconds, options = {}) {
     )
   }
   return Array.from({ length: count }, (_value, index) => {
-    const coreStartSeconds = Math.floor(index * durationSeconds / count)
-    const coreEndSeconds = index === count - 1 ? durationSeconds : Math.floor((index + 1) * durationSeconds / count)
+    const coreStartSeconds = Math.floor((index * durationSeconds) / count)
+    const coreEndSeconds =
+      index === count - 1 ? durationSeconds : Math.floor(((index + 1) * durationSeconds) / count)
     return {
-      id: String(index + 1), index, coreStartSeconds, coreEndSeconds,
+      id: String(index + 1),
+      index,
+      coreStartSeconds,
+      coreEndSeconds,
       clipStartSeconds: Math.max(0, coreStartSeconds - overlapSeconds),
       clipEndSeconds: Math.min(durationSeconds, coreEndSeconds + overlapSeconds),
     }
@@ -247,28 +284,74 @@ export function planAdaptiveWatch(inspection, classification, options = {}) {
 
   if (liveState === 'live' || liveState === 'upcoming') {
     if (options.enableLiveSnapshots === true && intent === 'targeted' && agentic) {
-      return { strategy: 'direct-agentic', intent, durationVerified: false, liveState, coverageMode: 'live-snapshot', chunks: [] }
+      return {
+        strategy: 'direct-agentic',
+        intent,
+        durationVerified: false,
+        liveState,
+        coverageMode: 'live-snapshot',
+        chunks: [],
+      }
     }
-    throw new AdaptiveWatchError(ADAPTIVE_WATCH_ERROR_CODES.LIVE_VIDEO_UNSUPPORTED, 'Live or upcoming YouTube videos are not supported by bounded analysis', { liveState })
+    throw new AdaptiveWatchError(
+      ADAPTIVE_WATCH_ERROR_CODES.LIVE_VIDEO_UNSUPPORTED,
+      'Live or upcoming YouTube videos are not supported by bounded analysis',
+      { liveState },
+    )
   }
   if (!Number.isSafeInteger(durationSeconds) || durationSeconds < 1) {
     if (allowUnknown && intent === 'targeted' && agentic) {
-      return { strategy: 'direct-agentic', intent, durationVerified: false, liveState, coverageMode: 'selective', chunks: [] }
+      return {
+        strategy: 'direct-agentic',
+        intent,
+        durationVerified: false,
+        liveState,
+        coverageMode: 'selective',
+        chunks: [],
+      }
     }
     if (allowUnknown && intent !== 'exhaustive' && low) {
-      return { strategy: 'direct-low', intent, durationVerified: false, liveState, coverageMode: 'unknown', chunks: [] }
+      return {
+        strategy: 'direct-low',
+        intent,
+        durationVerified: false,
+        liveState,
+        coverageMode: 'unknown',
+        chunks: [],
+      }
     }
-    throw new AdaptiveWatchError(ADAPTIVE_WATCH_ERROR_CODES.VIDEO_DURATION_UNKNOWN, 'YouTube video duration is required for bounded adaptive analysis')
+    throw new AdaptiveWatchError(
+      ADAPTIVE_WATCH_ERROR_CODES.VIDEO_DURATION_UNKNOWN,
+      'YouTube video duration is required for bounded adaptive analysis',
+    )
   }
-  if (Number.isSafeInteger(options.maxVideoDurationSeconds) && durationSeconds > options.maxVideoDurationSeconds) {
-    throw new AdaptiveWatchError(ADAPTIVE_WATCH_ERROR_CODES.VIDEO_DURATION_LIMIT_EXCEEDED, 'YouTube video exceeds the adaptive watch duration limit', { durationSeconds, maxVideoDurationSeconds: options.maxVideoDurationSeconds })
+  if (
+    Number.isSafeInteger(options.maxVideoDurationSeconds) &&
+    durationSeconds > options.maxVideoDurationSeconds
+  ) {
+    throw new AdaptiveWatchError(
+      ADAPTIVE_WATCH_ERROR_CODES.VIDEO_DURATION_LIMIT_EXCEEDED,
+      'YouTube video exceeds the adaptive watch duration limit',
+      { durationSeconds, maxVideoDurationSeconds: options.maxVideoDurationSeconds },
+    )
   }
-  const base = { intent, durationSeconds, durationVerified: inspection.durationVerified === true, liveState, chunks: [] }
+  const base = {
+    intent,
+    durationSeconds,
+    durationVerified: inspection.durationVerified === true,
+    liveState,
+    chunks: [],
+  }
   if (durationSeconds <= (options.directMaxSeconds ?? DEFAULT_DIRECT_WATCH_MAX_SECONDS)) {
     return { ...base, strategy: 'direct-default', coverageMode: 'full-timeline' }
   }
-  if (intent === 'targeted' && agentic) return { ...base, strategy: 'direct-agentic', coverageMode: 'selective' }
-  if (intent !== 'exhaustive' && low && durationSeconds <= (options.lowResolutionMaxSeconds ?? DEFAULT_LOW_RESOLUTION_WATCH_MAX_SECONDS)) {
+  if (intent === 'targeted' && agentic)
+    return { ...base, strategy: 'direct-agentic', coverageMode: 'selective' }
+  if (
+    intent !== 'exhaustive' &&
+    low &&
+    durationSeconds <= (options.lowResolutionMaxSeconds ?? DEFAULT_LOW_RESOLUTION_WATCH_MAX_SECONDS)
+  ) {
     return { ...base, strategy: 'direct-low', coverageMode: 'full-timeline' }
   }
   if (chunking) {
@@ -283,7 +366,11 @@ export function planAdaptiveWatch(inspection, classification, options = {}) {
       }),
     }
   }
-  throw new AdaptiveWatchError(ADAPTIVE_WATCH_ERROR_CODES.WATCH_STRATEGY_UNAVAILABLE, 'No enabled adaptive watch strategy can safely process this video', { intent, durationSeconds })
+  throw new AdaptiveWatchError(
+    ADAPTIVE_WATCH_ERROR_CODES.WATCH_STRATEGY_UNAVAILABLE,
+    'No enabled adaptive watch strategy can safely process this video',
+    { intent, durationSeconds },
+  )
 }
 
 function evidenceSeconds(item, snakeName, camelName, timestampName) {
@@ -294,12 +381,22 @@ function evidenceSeconds(item, snakeName, camelName, timestampName) {
 
 export function normalizeWatchEvidence(item, durationSeconds, options = {}) {
   if (!isRecord(item) || !Number.isSafeInteger(durationSeconds) || durationSeconds < 1) {
-    throw new AdaptiveWatchError(ADAPTIVE_WATCH_ERROR_CODES.WATCH_EVIDENCE_INVALID, 'Adaptive watch evidence is invalid')
+    throw new AdaptiveWatchError(
+      ADAPTIVE_WATCH_ERROR_CODES.WATCH_EVIDENCE_INVALID,
+      'Adaptive watch evidence is invalid',
+    )
   }
   const startSeconds = evidenceSeconds(item, 'start_seconds', 'startSeconds', 'timestamp')
   const endSeconds = evidenceSeconds(item, 'end_seconds', 'endSeconds', 'endTimestamp')
-  if (!Number.isSafeInteger(startSeconds) || startSeconds < 0 || startSeconds > durationSeconds
-    || (endSeconds !== undefined && (!Number.isSafeInteger(endSeconds) || endSeconds < startSeconds || endSeconds > durationSeconds))) {
+  if (
+    !Number.isSafeInteger(startSeconds) ||
+    startSeconds < 0 ||
+    startSeconds > durationSeconds ||
+    (endSeconds !== undefined &&
+      (!Number.isSafeInteger(endSeconds) ||
+        endSeconds < startSeconds ||
+        endSeconds > durationSeconds))
+  ) {
     throw new AdaptiveWatchError(
       ADAPTIVE_WATCH_ERROR_CODES.WATCH_TIMESTAMP_OUT_OF_RANGE,
       'Adaptive watch evidence timestamp is outside the verified duration',
@@ -308,13 +405,18 @@ export function normalizeWatchEvidence(item, durationSeconds, options = {}) {
   }
   const description = boundedString(item.description, options.maxDescriptionChars ?? 4_000)
   if (description === undefined || !['visual', 'spoken', 'mixed'].includes(item.modality)) {
-    throw new AdaptiveWatchError(ADAPTIVE_WATCH_ERROR_CODES.WATCH_EVIDENCE_INVALID, 'Adaptive watch evidence description or modality is invalid')
+    throw new AdaptiveWatchError(
+      ADAPTIVE_WATCH_ERROR_CODES.WATCH_EVIDENCE_INVALID,
+      'Adaptive watch evidence description or modality is invalid',
+    )
   }
   const basis = item.basis === 'inference' ? 'inference' : 'observation'
   return {
     startSeconds,
     timestamp: secondsToTimestamp(startSeconds),
-    ...(endSeconds === undefined ? {} : { endSeconds, endTimestamp: secondsToTimestamp(endSeconds) }),
+    ...(endSeconds === undefined
+      ? {}
+      : { endSeconds, endTimestamp: secondsToTimestamp(endSeconds) }),
     description,
     modality: item.modality,
     basis,
@@ -328,25 +430,34 @@ export function offsetWatchChunkEvidence(items, chunk, durationSeconds) {
   return items.flatMap((item, evidenceIndex) => {
     const local = normalizeWatchEvidence(item, clipDuration)
     const globalStart = chunk.clipStartSeconds + local.startSeconds
-    const owned = globalStart >= chunk.coreStartSeconds
-      && (finalCore ? globalStart <= chunk.coreEndSeconds : globalStart < chunk.coreEndSeconds)
+    const owned =
+      globalStart >= chunk.coreStartSeconds &&
+      (finalCore ? globalStart <= chunk.coreEndSeconds : globalStart < chunk.coreEndSeconds)
     if (!owned) return []
-    const globalEnd = local.endSeconds === undefined
-      ? undefined
-      : Math.min(durationSeconds, chunk.clipStartSeconds + local.endSeconds)
-    return [{
-      ...local,
-      startSeconds: globalStart,
-      timestamp: secondsToTimestamp(globalStart),
-      ...(globalEnd === undefined ? {} : { endSeconds: globalEnd, endTimestamp: secondsToTimestamp(globalEnd) }),
-      chunkId: chunk.id ?? String(chunk.index + 1),
-      evidenceIndex,
-    }]
+    const globalEnd =
+      local.endSeconds === undefined
+        ? undefined
+        : Math.min(durationSeconds, chunk.clipStartSeconds + local.endSeconds)
+    return [
+      {
+        ...local,
+        startSeconds: globalStart,
+        timestamp: secondsToTimestamp(globalStart),
+        ...(globalEnd === undefined
+          ? {}
+          : { endSeconds: globalEnd, endTimestamp: secondsToTimestamp(globalEnd) }),
+        chunkId: chunk.id ?? String(chunk.index + 1),
+        evidenceIndex,
+      },
+    ]
   })
 }
 
 function canonicalEvidence(value) {
-  return value.toLocaleLowerCase('en-US').replace(/[^\p{L}\p{N}]+/gu, ' ').trim()
+  return value
+    .toLocaleLowerCase('en-US')
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .trim()
 }
 
 function similarity(left, right) {
@@ -362,21 +473,29 @@ function similarity(left, right) {
 export function deduplicateWatchEvidence(items, options = {}) {
   const driftSeconds = options.driftSeconds ?? 2
   const threshold = options.similarityThreshold ?? 0.8
-  const sorted = items.map((item, index) => ({ ...item, _order: index, _canonical: canonicalEvidence(item.description) }))
+  const sorted = items
+    .map((item, index) => ({
+      ...item,
+      _order: index,
+      _canonical: canonicalEvidence(item.description),
+    }))
     .sort((left, right) => left.startSeconds - right.startSeconds || left._order - right._order)
   const kept = []
   for (const candidate of sorted) {
-    const duplicateIndex = kept.findLastIndex((prior) => (
-      candidate.chunkId !== prior.chunkId
-      && candidate.startSeconds - prior.startSeconds <= driftSeconds
-      && candidate.modality === prior.modality
-      && similarity(candidate._canonical, prior._canonical) >= threshold
-    ))
+    const duplicateIndex = kept.findLastIndex(
+      (prior) =>
+        candidate.chunkId !== prior.chunkId &&
+        candidate.startSeconds - prior.startSeconds <= driftSeconds &&
+        candidate.modality === prior.modality &&
+        similarity(candidate._canonical, prior._canonical) >= threshold,
+    )
     if (duplicateIndex < 0) kept.push(candidate)
     else {
       const prior = kept[duplicateIndex]
-      if ((prior.basis === 'inference' && candidate.basis === 'observation')
-        || (prior.basis === candidate.basis && candidate.description.length > prior.description.length)) {
+      if (
+        (prior.basis === 'inference' && candidate.basis === 'observation') ||
+        (prior.basis === candidate.basis && candidate.description.length > prior.description.length)
+      ) {
         kept[duplicateIndex] = candidate
       }
     }
@@ -385,7 +504,9 @@ export function deduplicateWatchEvidence(items, options = {}) {
 }
 
 export function mergeWatchChunkEvidence(chunkResults, durationSeconds, options = {}) {
-  const values = chunkResults.flatMap((result) => offsetWatchChunkEvidence(result.evidence ?? [], result.chunk, durationSeconds))
+  const values = chunkResults.flatMap((result) =>
+    offsetWatchChunkEvidence(result.evidence ?? [], result.chunk, durationSeconds),
+  )
   return deduplicateWatchEvidence(values, options)
 }
 
@@ -401,20 +522,31 @@ function mergeRanges(ranges) {
 }
 
 export function calculateWatchCoverage(durationSeconds, chunks, successfulChunkIds) {
-  if (!Number.isSafeInteger(durationSeconds) || durationSeconds < 1) throw new TypeError('Coverage duration must be positive')
-  const successful = successfulChunkIds instanceof Set ? successfulChunkIds : new Set(successfulChunkIds)
-  const ranges = mergeRanges(chunks.filter((chunk) => successful.has(chunk.id ?? String(chunk.index + 1))).map((chunk) => ({
-    startSeconds: chunk.coreStartSeconds,
-    endSeconds: chunk.coreEndSeconds,
-  })))
-  const coveredSeconds = ranges.reduce((total, range) => total + range.endSeconds - range.startSeconds, 0)
+  if (!Number.isSafeInteger(durationSeconds) || durationSeconds < 1)
+    throw new TypeError('Coverage duration must be positive')
+  const successful =
+    successfulChunkIds instanceof Set ? successfulChunkIds : new Set(successfulChunkIds)
+  const ranges = mergeRanges(
+    chunks
+      .filter((chunk) => successful.has(chunk.id ?? String(chunk.index + 1)))
+      .map((chunk) => ({
+        startSeconds: chunk.coreStartSeconds,
+        endSeconds: chunk.coreEndSeconds,
+      })),
+  )
+  const coveredSeconds = ranges.reduce(
+    (total, range) => total + range.endSeconds - range.startSeconds,
+    0,
+  )
   const gaps = []
   let cursor = 0
   for (const range of ranges) {
-    if (range.startSeconds > cursor) gaps.push({ startSeconds: cursor, endSeconds: range.startSeconds, reason: 'failed' })
+    if (range.startSeconds > cursor)
+      gaps.push({ startSeconds: cursor, endSeconds: range.startSeconds, reason: 'failed' })
     cursor = Math.max(cursor, range.endSeconds)
   }
-  if (cursor < durationSeconds) gaps.push({ startSeconds: cursor, endSeconds: durationSeconds, reason: 'failed' })
+  if (cursor < durationSeconds)
+    gaps.push({ startSeconds: cursor, endSeconds: durationSeconds, reason: 'failed' })
   return {
     mode: 'full-timeline',
     complete: coveredSeconds === durationSeconds,

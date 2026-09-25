@@ -24,14 +24,14 @@ The default model is `gemini-3.1-flash-image`. The provider response is decoded 
 
 ## Configuration
 
-| Key | Default | Meaning |
-|---|---:|---|
-| `model` | `gemini-3.1-flash-image` | Gemini image-capable model. |
-| `timeoutMs` | `180000` | Cooperative request timeout in milliseconds. |
-| `maxPromptChars` | `8000` | Maximum prompt length. |
-| `maxImages` | `4` | Maximum requested candidates per call. |
-| `generate` | `true` | Register `generate_image`. |
-| `apiKey` | unset | Secret literal override; prefer the shared `GEMINI_API_KEY`. |
+| Key              |                  Default | Meaning                                                      |
+| ---------------- | -----------------------: | ------------------------------------------------------------ |
+| `model`          | `gemini-3.1-flash-image` | Gemini image-capable model.                                  |
+| `timeoutMs`      |                 `180000` | Cooperative request timeout in milliseconds.                 |
+| `maxPromptChars` |                   `8000` | Maximum prompt length.                                       |
+| `maxImages`      |                      `4` | Maximum requested candidates per call.                       |
+| `generate`       |                   `true` | Register `generate_image`.                                   |
+| `apiKey`         |                    unset | Secret literal override; prefer the shared `GEMINI_API_KEY`. |
 
 Supported tool values are aspect ratios `1:1`, `2:3`, `3:2`, `3:4`, `4:3`, `9:16`, `16:9`, and `21:9`; image sizes are `1K`, `2K`, and `4K`.
 

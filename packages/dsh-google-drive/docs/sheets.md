@@ -17,11 +17,11 @@ Installing or merging this version does not enable APIs, start OAuth, change Goo
 
 ### Three separate permissions
 
-| Layer | What it authorizes | Lifetime |
-| --- | --- | --- |
-| Google consent | Underlying account-wide read or Sheets write capability | Until Google authorization is revoked or expires; DSH session removal does not remove it. |
-| DSH session selection | Reading selected files/folders, or reading and proposing edits to individually selected spreadsheets | Exact live top-level session and account generation; no subagent inheritance. |
-| Apply changes | One immutable reviewed batch | One attempt only; denial, expiry, cancellation, failure, or completion makes it unusable. |
+| Layer                 | What it authorizes                                                                                   | Lifetime                                                                                  |
+| --------------------- | ---------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| Google consent        | Underlying account-wide read or Sheets write capability                                              | Until Google authorization is revoked or expires; DSH session removal does not remove it. |
+| DSH session selection | Reading selected files/folders, or reading and proposing edits to individually selected spreadsheets | Exact live top-level session and account generation; no subagent inheritance.             |
+| Apply changes         | One immutable reviewed batch                                                                         | One attempt only; denial, expiry, cancellation, failure, or completion makes it unusable. |
 
 Read grants never become edit grants. An edit grant permits Sheets reads for its selected spreadsheets but does not expose unrelated Drive files. Read and edit selections are independent: removing a read grant does not remove an existing edit grant, and removing editing does not remove an independent read grant. Manage each card separately. Removing both ends this session's access, not Google's account consent or changes already written.
 

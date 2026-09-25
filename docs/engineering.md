@@ -27,17 +27,25 @@ Follow the [repository setup procedure](../.agents/skills/repository-setup/SKILL
 - Bind effects and subscriptions to the correct lifetime. Preserve stable object identities when effect dependencies rely on them. A transport wrapper that changes identity can change behavior even when its methods return the same values.
 - Preserve defensive rendering and escaping. Keep model-provided content separate from trusted labels, icons, styles, and controls.
 
+## Formatting
+
+- Use the repository's exact-pinned Prettier through `pnpm run format` and `pnpm run format:check` from the root. The shared `.prettierrc.json` defines style; do not introduce competing package-level configurations without a specific need.
+- For a focused change, run `pnpm exec prettier --write <paths>` with explicit repository-relative paths. Avoid unrelated formatting changes in functional patches. Reserve repository-wide formatting for an approved baseline or formatter upgrade.
+- Use the local pinned version in your editor. Do not rely on a global formatter or a command that downloads an unpinned version.
+- Respect `.prettierignore`. Generated artifacts, exact-byte fixtures, patches, legal text, and visual baselines retain their own writers and checks. Regenerate affected bundles from formatted source rather than formatting those bundles directly.
+- Formatting is not type checking or behavior validation. Run the relevant checks after formatting. Keep intentional formatting changes separate from behavior changes; do not weaken regression tests to accept a formatting-induced behavior change.
+
 ## Testing layers
 
 Choose tests according to the responsibility and risk of the change. Do not require every layer for every edit.
 
-| Responsibility | Preferred evidence |
-| --- | --- |
-| Pure logic and state transitions | Source-module tests with controlled inputs and effects |
-| React rendering and interactions | Real React and DOM tests that import source components |
-| Settings, persistence, RPC ownership, and lifecycle | In-process integration with real services and temporary state |
-| Generated artifacts and plugin registration | Reproducibility, freshness, loader, and registration checks |
-| DSH mounting, inherited styles, and layout | Targeted real-shell interaction tests and screenshot comparisons |
+| Responsibility                                      | Preferred evidence                                               |
+| --------------------------------------------------- | ---------------------------------------------------------------- |
+| Pure logic and state transitions                    | Source-module tests with controlled inputs and effects           |
+| React rendering and interactions                    | Real React and DOM tests that import source components           |
+| Settings, persistence, RPC ownership, and lifecycle | In-process integration with real services and temporary state    |
+| Generated artifacts and plugin registration         | Reproducibility, freshness, loader, and registration checks      |
+| DSH mounting, inherited styles, and layout          | Targeted real-shell interaction tests and screenshot comparisons |
 
 - Do not use fake React renderers as a substitute for component tests. Keep virtual-machine bundle tests focused on packaging and registration.
 - Prefer controlled promises and fake clocks over elapsed-time sleeps for cancellation, timeout, and concurrency tests.

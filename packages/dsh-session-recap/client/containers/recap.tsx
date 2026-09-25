@@ -2,7 +2,11 @@ import React from 'react'
 import { useRecapStyles } from '../styles.ts'
 import { RecapActionButton } from '../components/RecapActionButton.tsx'
 import { RecapPanel } from '../components/RecapPanel.tsx'
-import type { ChatSnapshot, AssistantActionOwnerProps, TurnTailChatData } from '@deepseek-ai/dsh-client-ui-chat/client'
+import type {
+  ChatSnapshot,
+  AssistantActionOwnerProps,
+  TurnTailChatData,
+} from '@deepseek-ai/dsh-client-ui-chat/client'
 import type { ConversationSnapshot } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { Controller } from '../controller-types.ts'
 
@@ -10,21 +14,29 @@ import type { Controller } from '../controller-types.ts'
 // Keep only the consumed standard hook surface here, using published snapshots
 // where their declarations are self-contained; no Context or hook-wide cast.
 export type SelectorHook<S> = <T>(selector: (snapshot: S) => T) => T
-export interface SessionLifecycle { blank: boolean; openState: string; running: boolean }
+export interface SessionLifecycle {
+  blank: boolean
+  openState: string
+  running: boolean
+}
 export interface RecapSessionProps {
   sessionId: string
   useSession: SelectorHook<SessionLifecycle>
   useChat: SelectorHook<ChatSnapshot>
   controller: Controller
 }
-export interface RecapActionProps extends RecapSessionProps, Pick<AssistantActionOwnerProps, 'messageId'> {}
+export interface RecapActionProps
+  extends RecapSessionProps, Pick<AssistantActionOwnerProps, 'messageId'> {}
 export interface RecapCardProps extends RecapSessionProps {
   useConversation: SelectorHook<ConversationSnapshot>
 }
 
 function useRecapState(controller: Controller, sessionId: string) {
   return React.useSyncExternalStore(
-    React.useCallback((listener) => controller.subscribe(sessionId, listener), [controller, sessionId]),
+    React.useCallback(
+      (listener) => controller.subscribe(sessionId, listener),
+      [controller, sessionId],
+    ),
     React.useCallback(() => controller.getSnapshot(sessionId), [controller, sessionId]),
   )
 }
@@ -48,7 +60,13 @@ export function latestClosingMessage(chat: ChatSnapshot) {
   return undefined
 }
 
-export function RecapAction({ sessionId, messageId, useSession, useChat, controller }: RecapActionProps) {
+export function RecapAction({
+  sessionId,
+  messageId,
+  useSession,
+  useChat,
+  controller,
+}: RecapActionProps) {
   const blank = useSession((session) => session.blank) !== false
   const closingMessageId = useChat(latestClosingMessage)
   const state = useRecapState(controller, sessionId)
@@ -56,17 +74,27 @@ export function RecapAction({ sessionId, messageId, useSession, useChat, control
   // Historical action seats must not each install a duplicate stylesheet.
   useRecapStyles(visible)
   if (!visible) return null
-  return <RecapActionButton
-    busy={state.busy}
-    error={state.error}
-    recap={state.recap}
-    open={state.open}
-    unread={state.unread}
-    onClick={() => { void controller.click(sessionId) }}
-  />
+  return (
+    <RecapActionButton
+      busy={state.busy}
+      error={state.error}
+      recap={state.recap}
+      open={state.open}
+      unread={state.unread}
+      onClick={() => {
+        void controller.click(sessionId)
+      }}
+    />
+  )
 }
 
-export function RecapCard({ sessionId, useSession, useConversation, useChat, controller }: RecapCardProps) {
+export function RecapCard({
+  sessionId,
+  useSession,
+  useConversation,
+  useChat,
+  controller,
+}: RecapCardProps) {
   const state = useRecapState(controller, sessionId)
   const blank = useSession((session) => session.blank) !== false
   const ready = useSession((session) => session.openState === 'open')
@@ -80,18 +108,24 @@ export function RecapCard({ sessionId, useSession, useConversation, useChat, con
   // (chat isActive tests non-command nodes), NOT busy. Together with openState
   // it gates the initial loaded baseline. Pagination only adds older turns.
   React.useEffect(() => {
-    controller.observeSession(sessionId, { ready: ready && (hasChat || blank), running, latestTurn })
+    controller.observeSession(sessionId, {
+      ready: ready && (hasChat || blank),
+      running,
+      latestTurn,
+    })
   }, [controller, sessionId, ready, hasChat, blank, running, latestTurn])
   // Card visibility never controls this subscription or idle-return tracking.
   React.useEffect(() => {
     if (!blank) return controller.mount(sessionId, { document, window }, () => {})
   }, [controller, sessionId, blank])
   if (blank || running || !state.open || !(state.error || state.recap)) return null
-  return <RecapPanel
-    busy={state.busy}
-    error={state.error}
-    recap={state.recap}
-    selection={state.selection}
-    diagnosticsKey={sessionId}
-  />
+  return (
+    <RecapPanel
+      busy={state.busy}
+      error={state.error}
+      recap={state.recap}
+      selection={state.selection}
+      diagnosticsKey={sessionId}
+    />
+  )
 }

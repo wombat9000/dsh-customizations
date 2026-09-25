@@ -8,7 +8,7 @@ import { SessionDriveTools } from '../src/session-tools.js'
 // Existing pinned registries only: no active agent loop, model, OAuth or network.
 const require = createRequire(import.meta.url)
 const cli = createRequire(require.resolve('@deepseek-ai/dsh/package.json'))
-const installed = name => import(pathToFileURL(cli.resolve(name)).href)
+const installed = (name) => import(pathToFileURL(cli.resolve(name)).href)
 const { Context } = await installed('@deepseek-ai/cordis')
 const { createScope, bindScopeParent, scopeParentOf } = await installed('@deepseek-ai/dsh-scope')
 const { default: SystemPrompt } = await installed('@deepseek-ai/dsh-system-prompt')
@@ -28,12 +28,25 @@ async function fixture(t) {
   const revocations = []
   let manager
   const service = {
-    revokeSession(agent) { revocations.push(agent); allowed.delete(agent); editable.delete(agent); for (const cb of observers.get(agent) ?? []) cb() },
-    release(agent) { manager.release(agent); this.revokeSession(agent) },
-    assertOwner(agent) { if (!roots.has(agent)) throw new Error('Exact root required.') },
-    hasAccess: agent => allowed.has(agent),
-    hasEditAccess: agent => editable.has(agent),
-    async requestEdit(agent) { this.assertOwner(agent); return { state: 'pending' } },
+    revokeSession(agent) {
+      revocations.push(agent)
+      allowed.delete(agent)
+      editable.delete(agent)
+      for (const cb of observers.get(agent) ?? []) cb()
+    },
+    release(agent) {
+      manager.release(agent)
+      this.revokeSession(agent)
+    },
+    assertOwner(agent) {
+      if (!roots.has(agent)) throw new Error('Exact root required.')
+    },
+    hasAccess: (agent) => allowed.has(agent),
+    hasEditAccess: (agent) => editable.has(agent),
+    async requestEdit(agent) {
+      this.assertOwner(agent)
+      return { state: 'pending' }
+    },
     observe(agent, callback) {
       this.assertOwner(agent)
       const callbacks = observers.get(agent) ?? new Set()
@@ -41,11 +54,29 @@ async function fixture(t) {
       callbacks.add(callback)
       return () => callbacks.delete(callback)
     },
-    async request(agent) { this.assertOwner(agent); return { state: 'pending' } },
-    async listFiles(agent) { this.assertOwner(agent); assert.ok(allowed.has(agent)); return { files: [] } },
-    async readText(agent) { this.assertOwner(agent); assert.ok(allowed.has(agent)); return { text: 'synthetic' } },
+    async request(agent) {
+      this.assertOwner(agent)
+      return { state: 'pending' }
+    },
+    async listFiles(agent) {
+      this.assertOwner(agent)
+      assert.ok(allowed.has(agent))
+      return { files: [] }
+    },
+    async readText(agent) {
+      this.assertOwner(agent)
+      assert.ok(allowed.has(agent))
+      return { text: 'synthetic' }
+    },
   }
-  await ctx.plugin({ name: 'scope-test-drive-service', apply(ctx) { ctx.provide('googleDrive', service) } }).await()
+  await ctx
+    .plugin({
+      name: 'scope-test-drive-service',
+      apply(ctx) {
+        ctx.provide('googleDrive', service)
+      },
+    })
+    .await()
   const standingKey = {}
   const standing = createScope(ctx, standingKey)
   const plugin = standing.ctx.plugin(DriveTools)
@@ -65,24 +96,76 @@ async function fixture(t) {
   const child = agent('child', false)
   const registry = ctx.get('tools')
   const skills = ctx.get('skills')
-  const names = key => [...registry.view(key).visible.keys()].sort()
-  const skillNames = async key => (await skills.snapshot({ scope: key })).skills.map(skill => skill.name)
+  const names = (key) => [...registry.view(key).visible.keys()].sort()
+  const skillNames = async (key) =>
+    (await skills.snapshot({ scope: key })).skills.map((skill) => skill.name)
   const change = (owner, grant) => {
     if (grant) allowed.add(owner)
     else allowed.delete(owner)
     for (const observer of observers.get(owner) ?? []) observer()
   }
-  const prepare = owner => registry.view(owner).visible.get('request_drive_access').execute({ reason: 'Read synthetic notes' }, { agent: owner, callId: `request-${owner.session.id}`, signal: new AbortController().signal })
-  const changeEdit = (owner, grant) => { if (grant) editable.add(owner); else editable.delete(owner); for (const cb of observers.get(owner) ?? []) cb() }
-  manager = new SessionDriveTools({ service, agents: { get: id => [...roots].find(owner => owner.session.id === id), roots: () => [...roots] } })
+  const prepare = (owner) =>
+    registry
+      .view(owner)
+      .visible.get('request_drive_access')
+      .execute(
+        { reason: 'Read synthetic notes' },
+        {
+          agent: owner,
+          callId: `request-${owner.session.id}`,
+          signal: new AbortController().signal,
+        },
+      )
+  const changeEdit = (owner, grant) => {
+    if (grant) editable.add(owner)
+    else editable.delete(owner)
+    for (const cb of observers.get(owner) ?? []) cb()
+  }
+  manager = new SessionDriveTools({
+    service,
+    agents: {
+      get: (id) => [...roots].find((owner) => owner.session.id === id),
+      roots: () => [...roots],
+    },
+  })
   t.after(() => manager.dispose())
-  const set = (owner, enabled) => manager.set({ sessionId: owner.session.id, ...manager.status({ sessionId: owner.session.id }), enabled })
-  return { ctx, standingKey, standing, plugin, a, b, child, names, skillNames, change, changeEdit, prepare, registry, skills, observers, manager, set, roots, agent, service, revocations }
+  const set = (owner, enabled) =>
+    manager.set({
+      sessionId: owner.session.id,
+      ...manager.status({ sessionId: owner.session.id }),
+      enabled,
+    })
+  return {
+    ctx,
+    standingKey,
+    standing,
+    plugin,
+    a,
+    b,
+    child,
+    names,
+    skillNames,
+    change,
+    changeEdit,
+    prepare,
+    registry,
+    skills,
+    observers,
+    manager,
+    set,
+    roots,
+    agent,
+    service,
+    revocations,
+  }
 }
 
-test('OFF revokes all groups and old executors stay invalid after re-enable', async t => {
-  const f = await fixture(t), owner = f.a.value
-  f.set(owner, true); f.change(owner, true); f.changeEdit(owner, true)
+test('OFF revokes all groups and old executors stay invalid after re-enable', async (t) => {
+  const f = await fixture(t),
+    owner = f.a.value
+  f.set(owner, true)
+  f.change(owner, true)
+  f.changeEdit(owner, true)
   const tools = [...f.registry.view(owner).visible.values()]
   assert.equal(tools.length, 7)
   f.set(owner, false)
@@ -92,13 +175,16 @@ test('OFF revokes all groups and old executors stay invalid after re-enable', as
   assert.equal(f.service.hasAccess(owner), false)
   assert.equal(f.service.hasEditAccess(owner), false)
   for (const tool of tools) assert.throws(() => tool.execute({}, { agent: owner }), /disabled/)
-  f.set(owner, true); f.set(owner, true)
+  f.set(owner, true)
+  f.set(owner, true)
   assert.equal(f.names(owner).length, 2)
   for (const tool of tools) assert.throws(() => tool.execute({}, { agent: owner }), /disabled/)
 })
 
-test('browser revisions and replacement owners cannot reuse stale toggle authority', async t => {
-  const f = await fixture(t), sessionId = 'a', initial = f.manager.status({ sessionId })
+test('browser revisions and replacement owners cannot reuse stale toggle authority', async (t) => {
+  const f = await fixture(t),
+    sessionId = 'a',
+    initial = f.manager.status({ sessionId })
   const enabled = f.manager.set({ sessionId, ...initial, enabled: true })
   assert.throws(() => f.manager.set({ sessionId, ...initial, enabled: false }), /changed/)
   assert.throws(() => f.manager.set({ sessionId, ...enabled, enabled: 'false' }), /changed/)
@@ -111,7 +197,7 @@ test('browser revisions and replacement owners cannot reuse stale toggle authori
   assert.deepEqual(f.names(f.a.value), [])
 })
 
-test('real registry views and skill snapshots isolate granted roots sharing one preset', async t => {
+test('real registry views and skill snapshots isolate granted roots sharing one preset', async (t) => {
   const f = await fixture(t)
   for (const owner of [f.a.value, f.b.value, f.child.value]) {
     assert.equal(scopeParentOf(owner), f.standingKey)
@@ -129,13 +215,23 @@ test('real registry views and skill snapshots isolate granted roots sharing one 
   assert.throws(() => f.set(f.child.value, true), /not live/)
   const cached = f.registry.view(f.a.value).visible.get('request_drive_access')
   assert.throws(() => cached.execute({ reason: 'Read' }, { agent: f.b.value }), /disabled/)
-  const expected = ['google_drive_list_files', 'google_drive_read_file', 'google_sheets_list_tabs', 'google_sheets_read_range', 'request_drive_access', 'request_sheets_edit_access']
+  const expected = [
+    'google_drive_list_files',
+    'google_drive_read_file',
+    'google_sheets_list_tabs',
+    'google_sheets_read_range',
+    'request_drive_access',
+    'request_sheets_edit_access',
+  ]
   f.change(f.a.value, true)
   // No reload, remount or registry rebuild: each next view sees the mutation.
   assert.deepEqual(f.names(f.a.value), expected)
   assert.deepEqual(await f.skillNames(f.a.value), ['google-drive-read', 'google-sheets'])
   for (const key of [f.b.value, f.child.value, f.standingKey]) {
-    assert.deepEqual(f.names(key), key === f.b.value ? ['request_drive_access', 'request_sheets_edit_access'] : [])
+    assert.deepEqual(
+      f.names(key),
+      key === f.b.value ? ['request_drive_access', 'request_sheets_edit_access'] : [],
+    )
     assert.deepEqual(await f.skillNames(key), [])
   }
   assert.deepEqual(f.names(), [])
@@ -152,13 +248,22 @@ test('real registry views and skill snapshots isolate granted roots sharing one 
   assert.deepEqual(await f.skillNames(f.child.value), [])
 })
 
-test('edit-only and mixed grants remain exact-root scoped through independent revocation', async t => {
+test('edit-only and mixed grants remain exact-root scoped through independent revocation', async (t) => {
   const f = await fixture(t)
   const owner = f.a.value
   f.set(owner, true)
-  await f.registry.view(owner).visible.get('request_sheets_edit_access').execute({ reason: 'Edit budget' }, { agent: owner, callId: 'edit' })
+  await f.registry
+    .view(owner)
+    .visible.get('request_sheets_edit_access')
+    .execute({ reason: 'Edit budget' }, { agent: owner, callId: 'edit' })
   f.changeEdit(owner, true)
-  const editOnly = ['google_sheets_list_tabs', 'google_sheets_propose_edit', 'google_sheets_read_range', 'request_drive_access', 'request_sheets_edit_access']
+  const editOnly = [
+    'google_sheets_list_tabs',
+    'google_sheets_propose_edit',
+    'google_sheets_read_range',
+    'request_drive_access',
+    'request_sheets_edit_access',
+  ]
   assert.deepEqual(f.names(owner), editOnly)
   assert.deepEqual(await f.skillNames(owner), ['google-sheets'])
   assert.deepEqual(f.names(f.b.value), [])
@@ -169,14 +274,15 @@ test('edit-only and mixed grants remain exact-root scoped through independent re
   f.changeEdit(owner, false)
   assert.ok(!f.names(owner).includes('google_sheets_propose_edit'))
   assert.equal(f.names(owner).length, 6)
-  f.changeEdit(owner, true); f.change(owner, false)
+  f.changeEdit(owner, true)
+  f.change(owner, false)
   assert.deepEqual(f.names(owner), editOnly)
   f.changeEdit(owner, false)
   assert.deepEqual(f.names(owner), ['request_drive_access', 'request_sheets_edit_access'])
   assert.deepEqual(await f.skillNames(owner), [])
 })
 
-test('real agent fiber disposal and manager disposal remove progressive registrations', async t => {
+test('real agent fiber disposal and manager disposal remove progressive registrations', async (t) => {
   const f = await fixture(t)
   f.set(f.a.value, true)
   f.set(f.b.value, true)

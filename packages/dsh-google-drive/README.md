@@ -50,17 +50,17 @@ Google does not offer an atomic transaction combining ancestry checks with conte
 
 ## Tools and skill
 
-| Capability | Availability | Behavior |
-| --- | --- | --- |
-| `request_drive_access` | While the session toggle is on | Requests selection with a task-specific reason; never accepts a model-supplied grant. |
-| `google_drive_list_files` | After a grant | Lists selected roots, or current children of an authorized `folderId`; defaults to ten entries, maximum 100. |
-| `google_drive_read_file` | After a grant | Reads supported text or a PDF page range; default text limit 65,536 UTF-8 bytes, maximum 262,144. Oversized text fails rather than silently truncating. |
-| `google-drive-read` | After a read grant | On-demand trusted instructions for browsing, reading, citations, and handling untrusted file content. |
-| `request_sheets_edit_access` | While the session toggle is on | Requests individual spreadsheets for session editing; selection never applies a write. |
-| `google_sheets_list_tabs` | After a read or edit grant | Lists at most 100 grid tabs for an authorized spreadsheet. |
-| `google_sheets_read_range` | After a read or edit grant | Reads an explicit tab-qualified rectangle: at most 200 cells, 20 columns, and 100 rows. |
-| `google_sheets_propose_edit` | After an edit grant | Prepares a local before/after preview and waits for exact human approval; no model-callable apply operation. |
-| `google-sheets` | After a read or edit grant | Trusted instructions for bounded reads, changes, approval, concurrency, and uncertain outcomes. |
+| Capability                   | Availability                   | Behavior                                                                                                                                                |
+| ---------------------------- | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `request_drive_access`       | While the session toggle is on | Requests selection with a task-specific reason; never accepts a model-supplied grant.                                                                   |
+| `google_drive_list_files`    | After a grant                  | Lists selected roots, or current children of an authorized `folderId`; defaults to ten entries, maximum 100.                                            |
+| `google_drive_read_file`     | After a grant                  | Reads supported text or a PDF page range; default text limit 65,536 UTF-8 bytes, maximum 262,144. Oversized text fails rather than silently truncating. |
+| `google-drive-read`          | After a read grant             | On-demand trusted instructions for browsing, reading, citations, and handling untrusted file content.                                                   |
+| `request_sheets_edit_access` | While the session toggle is on | Requests individual spreadsheets for session editing; selection never applies a write.                                                                  |
+| `google_sheets_list_tabs`    | After a read or edit grant     | Lists at most 100 grid tabs for an authorized spreadsheet.                                                                                              |
+| `google_sheets_read_range`   | After a read or edit grant     | Reads an explicit tab-qualified rectangle: at most 200 cells, 20 columns, and 100 rows.                                                                 |
+| `google_sheets_propose_edit` | After an edit grant            | Prepares a local before/after preview and waits for exact human approval; no model-callable apply operation.                                            |
+| `google-sheets`              | After a read or edit grant     | Trusted instructions for bounded reads, changes, approval, concurrency, and uncertain outcomes.                                                         |
 
 Listing cursors are opaque and bound to the session, folder, page size, and grant revision. Picker cursors additionally bind the pending request, active view, and search; a cursor from one tab cannot be reused in another. The agent has no account-wide query operation. The private picker supports literal name search. Revocation removes tool/skill registrations; service checks remain authoritative even if a model retains an old schema or loaded skill text.
 
@@ -68,11 +68,11 @@ Listing cursors are opaque and bound to the session, folder, page size, and gran
 
 The existing `google_drive_read_file` tool accepts these PDF-only options:
 
-| Option | Behavior |
-| --- | --- |
-| `startPage`, `endPage` | One-based inclusive page range, at most five pages per call. Defaults to pages 1–5, or the remaining pages of a shorter document. |
-| `ocr` | `auto` (default) extracts embedded text and applies OCR to sparse pages; `off` extracts only embedded text; `force` applies OCR to every requested page. |
-| `languages` | One to three installed OCR language codes, default `["eng"]`. Supported codes: `eng`, `deu`, `fra`, `spa`, `ita`, `por`. No models are downloaded automatically. |
+| Option                 | Behavior                                                                                                                                                         |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `startPage`, `endPage` | One-based inclusive page range, at most five pages per call. Defaults to pages 1–5, or the remaining pages of a shorter document.                                |
+| `ocr`                  | `auto` (default) extracts embedded text and applies OCR to sparse pages; `off` extracts only embedded text; `force` applies OCR to every requested page.         |
+| `languages`            | One to three installed OCR language codes, default `["eng"]`. Supported codes: `eng`, `deu`, `fra`, `spa`, `ita`, `por`. No models are downloaded automatically. |
 
 For example, read the first three pages of an approved German PDF with `{"fileId":"approved-file-id","startPage":1,"endPage":3,"languages":["deu","eng"]}`. Do not supply page or OCR options for non-PDF files.
 

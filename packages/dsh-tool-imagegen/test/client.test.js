@@ -11,9 +11,15 @@ function fakeReact() {
   return {
     Fragment: Symbol('Fragment'),
     createElement(type, props, ...children) {
-      return { type, props: props ?? {}, children: children.flat(Infinity).filter((child) => child !== null) }
+      return {
+        type,
+        props: props ?? {},
+        children: children.flat(Infinity).filter((child) => child !== null),
+      }
     },
-    useState(initial) { return [initial, () => {}] },
+    useState(initial) {
+      return [initial, () => {}]
+    },
     useEffect() {},
   }
 }
@@ -22,7 +28,13 @@ async function loadClient(react = fakeReact()) {
   let record
   const source = await readFile(CLIENT_PATH, 'utf8')
   vm.runInNewContext(source, {
-    window: { __ModuleLoader__: { load(value) { record = value } } },
+    window: {
+      __ModuleLoader__: {
+        load(value) {
+          record = value
+        },
+      },
+    },
   })
   assert.ok(record)
   return {
@@ -61,9 +73,7 @@ test('package exposes the Web client bundle', async () => {
   assert.equal(pkg.exports['./client'], './client.js')
   assert.ok(pkg.files.includes('client.js'))
   assert.equal(pkg.dsh.client.platform, 'web')
-  assert.deepEqual(pkg.dsh.client.inject, [
-    '@deepseek-ai/dsh-client-ui-conversation',
-  ])
+  assert.deepEqual(pkg.dsh.client.inject, ['@deepseek-ai/dsh-client-ui-conversation'])
 })
 
 test('client registers a generate_image Tool view with authorized attachment loading', async () => {
@@ -133,9 +143,15 @@ test('client renders running and empty-result states without raw JSON', async ()
   assert.match(JSON.stringify(plain(running)), /Generating image/)
 
   const empty = exports.GenerateImageToolView({
-    block: { kind: 'tool-result', content: [{ type: 'text', text: 'No image output.' }], isError: true },
+    block: {
+      kind: 'tool-result',
+      content: [{ type: 'text', text: 'No image output.' }],
+      isError: true,
+    },
     sessionId: 'session-1',
-    readAttachment: async () => { throw new Error('unused') },
+    readAttachment: async () => {
+      throw new Error('unused')
+    },
   })
   assert.match(JSON.stringify(plain(empty)), /No image output/)
 })

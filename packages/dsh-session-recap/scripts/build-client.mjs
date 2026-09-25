@@ -40,14 +40,16 @@ export async function buildClient() {
     },
   })
   try {
-    const chunks = bundles.flatMap(bundle => bundle.chunks)
+    const chunks = bundles.flatMap((bundle) => bundle.chunks)
     if (chunks.length !== 1 || chunks[0].type !== 'chunk' || !chunks[0].isEntry) {
       throw new Error('Expected exactly one executable client bundle.')
     }
     const chunk = chunks[0]
-    const unsupported = chunk.imports.filter(id => !allowedExternals.has(id))
+    const unsupported = chunk.imports.filter((id) => !allowedExternals.has(id))
     if (unsupported.length || chunk.dynamicImports.length) {
-      throw new Error(`Unsupported client imports: ${[...unsupported, ...chunk.dynamicImports].join(', ')}`)
+      throw new Error(
+        `Unsupported client imports: ${[...unsupported, ...chunk.dynamicImports].join(', ')}`,
+      )
     }
     if (/\bprocess\.env\b/u.test(chunk.code)) {
       throw new Error('Client bundle must not depend on the Node.js process environment.')
@@ -67,7 +69,9 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   const output = await buildClient()
   if (args[0] === '--check') {
     if (readFileSync(clientPath, 'utf8') !== output) {
-      throw new Error('client.js is stale. Run node packages/dsh-session-recap/scripts/build-client.mjs from the repository root.')
+      throw new Error(
+        'client.js is stale. Run node packages/dsh-session-recap/scripts/build-client.mjs from the repository root.',
+      )
     }
   } else {
     writeFileSync(clientPath, output)

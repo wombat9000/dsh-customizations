@@ -6,7 +6,10 @@ import type { SettingsDraft } from '../components/SettingsForm.tsx'
 import type { ModelsResult, Rpc } from '../../shared/contracts.ts'
 import type { Controller } from '../controller-types.ts'
 
-export interface SettingsCardProps { rpc: Rpc; controller: Controller }
+export interface SettingsCardProps {
+  rpc: Rpc
+  controller: Controller
+}
 
 // Keep original raw RPC envelopes/messages, separate from cached controller settings.
 export function SettingsCard({ rpc, controller }: SettingsCardProps) {
@@ -34,13 +37,16 @@ export function SettingsCard({ rpc, controller }: SettingsCardProps) {
       }
     }
     void load()
-    rpc.call(CHANNEL, 'models', {}).then((result) => {
-      if (!alive) return
-      if (result.ok) setProviders(result.value.providers)
-      else setNotice('Model catalog unavailable. You can enter an exact route below.')
-    }, () => {
-      if (alive) setNotice('Model catalog unavailable. You can enter an exact route below.')
-    })
+    rpc.call(CHANNEL, 'models', {}).then(
+      (result) => {
+        if (!alive) return
+        if (result.ok) setProviders(result.value.providers)
+        else setNotice('Model catalog unavailable. You can enter an exact route below.')
+      },
+      () => {
+        if (alive) setNotice('Model catalog unavailable. You can enter an exact route below.')
+      },
+    )
     return () => {
       alive = false
       style?.remove()
@@ -68,8 +74,11 @@ export function SettingsCard({ rpc, controller }: SettingsCardProps) {
     try {
       const { autoRecap, inactivityMinutes, provider, model } = draft!
       const result = await rpc.call(CHANNEL, 'configure', {
-        autoRecap, useJev: draft!.useJev === true,
-        inactivityMinutes: Number(inactivityMinutes), provider, model,
+        autoRecap,
+        useJev: draft!.useJev === true,
+        inactivityMinutes: Number(inactivityMinutes),
+        provider,
+        model,
       })
       if (!result.ok) throw new Error(result.error.message)
       setDraft(result.value)
@@ -82,16 +91,20 @@ export function SettingsCard({ rpc, controller }: SettingsCardProps) {
     }
   }
 
-  return <SettingsForm
-    open={open}
-    draft={draft}
-    providers={providers}
-    error={error}
-    notice={notice}
-    busy={busy}
-    onToggle={() => setOpen(value => !value)}
-    onChange={change}
-    onChooseModel={chooseModel}
-    onSave={() => { void save() }}
-  />
+  return (
+    <SettingsForm
+      open={open}
+      draft={draft}
+      providers={providers}
+      error={error}
+      notice={notice}
+      busy={busy}
+      onToggle={() => setOpen((value) => !value)}
+      onChange={change}
+      onChooseModel={chooseModel}
+      onSave={() => {
+        void save()
+      }}
+    />
+  )
 }

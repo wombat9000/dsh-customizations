@@ -1,6 +1,10 @@
 // Test-only host plugin. Seed a completed user turn without invoking an agent or provider.
 import assert from 'node:assert/strict'
-import { registerApprovalFixture, approvalCommandSeed, commandWorkspace } from './github-approval-fixture.mjs'
+import {
+  registerApprovalFixture,
+  approvalCommandSeed,
+  commandWorkspace,
+} from './github-approval-fixture.mjs'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { githubSessionSeed, githubWorkspaceName } from './github-grants-fixture.mjs'
 import { githubItemsSeed, githubItemsWorkspace } from './github-items-fixture.mjs'
@@ -34,8 +38,35 @@ export async function seedSession(ctx) {
     meta: { cwd: process.cwd(), createdAt: time },
     seed: [
       { seq: 0, time, type: 'turn/start', data: { turn: 1 } },
-      { seq: 1, time, type: 'user/message', surfaceOp: 'append', data: { id: 'visual-test-message', role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text: 'Review the Session recap interface.' }] } },
-      { seq: 2, time, type: 'assistant/message', surfaceOp: 'append', data: { turn: 1, step: 1, stream: [], message: { id: 'visual-test-assistant', role: 'assistant', source: { kind: 'model', provider: 'synthetic-fixture', model: 'never-dispatched' }, content: [{ type: 'text', text: 'The recap is available from the latest response.' }] } } },
+      {
+        seq: 1,
+        time,
+        type: 'user/message',
+        surfaceOp: 'append',
+        data: {
+          id: 'visual-test-message',
+          role: 'user',
+          source: { kind: 'user' },
+          content: [{ type: 'text', text: 'Review the Session recap interface.' }],
+        },
+      },
+      {
+        seq: 2,
+        time,
+        type: 'assistant/message',
+        surfaceOp: 'append',
+        data: {
+          turn: 1,
+          step: 1,
+          stream: [],
+          message: {
+            id: 'visual-test-assistant',
+            role: 'assistant',
+            source: { kind: 'model', provider: 'synthetic-fixture', model: 'never-dispatched' },
+            content: [{ type: 'text', text: 'The recap is available from the latest response.' }],
+          },
+        },
+      },
       { seq: 3, time, type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } },
     ],
   })

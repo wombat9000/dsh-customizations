@@ -9,11 +9,11 @@ Apply this procedure to changed integration boundaries, not every UI element. If
 
 ## Choose the smallest sufficient path
 
-| Change | Work needed |
-| --- | --- |
-| **Presentation only:** text, spacing, color, or markup inside an existing component | Review the affected rendering and run the relevant existing component tests. Do not repeat contract discovery or create a native fixture solely for this change. Check the real shell if inherited styles or layout are involved. |
-| **Established behavior:** interaction changes using already-verified registrations and hooks | Add or update focused behavior tests and run the relevant existing integration tests. Reuse fixtures and contract evidence. |
-| **Integration boundary:** new or changed registration, unfamiliar hook/service, missing contract evidence, or a DSH version change affecting the integration | Follow the contract check and registration smoke test below before building the full interface. Limit investigation to affected APIs. |
+| Change                                                                                                                                                       | Work needed                                                                                                                                                                                                                       |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Presentation only:** text, spacing, color, or markup inside an existing component                                                                          | Review the affected rendering and run the relevant existing component tests. Do not repeat contract discovery or create a native fixture solely for this change. Check the real shell if inherited styles or layout are involved. |
+| **Established behavior:** interaction changes using already-verified registrations and hooks                                                                 | Add or update focused behavior tests and run the relevant existing integration tests. Reuse fixtures and contract evidence.                                                                                                       |
+| **Integration boundary:** new or changed registration, unfamiliar hook/service, missing contract evidence, or a DSH version change affecting the integration | Follow the contract check and registration smoke test below before building the full interface. Limit investigation to affected APIs.                                                                                             |
 
 Classify by behavior and risk, not diff size. Changes to authorization, approval data binding, unsafe-content handling, or lifecycle behavior need the corresponding safety tests even when the diff is small. Escalate only the affected part when a focused check exposes an integration problem.
 
@@ -59,6 +59,7 @@ Follow [repository setup](../repository-setup/SKILL.md) for prerequisites and [r
 - Reuse host startup, authentication, navigation, and cleanup helpers. Restore shared state changed by a test. Do not introduce live credentials, tool execution, or paid model calls into display fixtures.
 
 Existing references, not a new generic fixture API:
+
 - [Disposable host setup](../../../tests/real-ui/global-setup.mjs)
 - [Browser fixtures](../../../tests/real-ui/fixtures.mjs)
 - [GitHub native approval fixture](../../../tests/real-ui/github-approval-fixture.mjs)

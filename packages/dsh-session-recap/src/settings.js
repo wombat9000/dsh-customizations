@@ -29,7 +29,10 @@ export function normalizeSettings(value = {}) {
     settings.inactivityMinutes < 1 ||
     settings.inactivityMinutes > 10080
   ) {
-    throw new RecapError('invalid-settings', 'Use an inactivity interval between 1 and 10080 minutes.')
+    throw new RecapError(
+      'invalid-settings',
+      'Use an inactivity interval between 1 and 10080 minutes.',
+    )
   }
   if (typeof settings.useJev !== 'boolean') {
     throw new RecapError('invalid-settings', 'Use a boolean for Jev selection.')

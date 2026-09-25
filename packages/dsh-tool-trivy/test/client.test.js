@@ -16,12 +16,19 @@ function fakeReact(stateValues = [], runEffects = false) {
     updates,
     cleanups,
     createElement(type, props, ...children) {
-      return { type, props: props ?? {}, children: children.flat(Infinity).filter((value) => value !== null) }
+      return {
+        type,
+        props: props ?? {},
+        children: children.flat(Infinity).filter((value) => value !== null),
+      }
     },
     useState(initial) {
       const index = stateIndex++
       updates[index] = []
-      return [index < stateValues.length ? stateValues[index] : initial, (value) => updates[index].push(value)]
+      return [
+        index < stateValues.length ? stateValues[index] : initial,
+        (value) => updates[index].push(value),
+      ]
     },
     useEffect(effect) {
       if (!runEffects) return
@@ -35,7 +42,13 @@ async function loadClient(react = fakeReact()) {
   let record
   const source = await readFile(CLIENT_PATH, 'utf8')
   vm.runInNewContext(source, {
-    window: { __ModuleLoader__: { load(value) { record = value } } },
+    window: {
+      __ModuleLoader__: {
+        load(value) {
+          record = value
+        },
+      },
+    },
   })
   assert.ok(record)
   return {
@@ -69,9 +82,7 @@ test('package exposes the Trivy Web Settings client', async () => {
   assert.equal(pkg.exports['./client'], './client.js')
   assert.ok(pkg.files.includes('client.js'))
   assert.ok(pkg.files.includes('assets'))
-  assert.deepEqual(pkg.dsh.client.inject, [
-    '@deepseek-ai/dsh-client-ui-settings',
-  ])
+  assert.deepEqual(pkg.dsh.client.inject, ['@deepseek-ai/dsh-client-ui-settings'])
 })
 
 test('client registers the Trivy settings section', async () => {
@@ -107,13 +118,18 @@ test('client registers the Trivy settings section', async () => {
 })
 
 test('settings renders ready status without editable controls', async () => {
-  const react = fakeReact([{
-    state: 'ready',
-    version: '0.69.2',
-    minimumVersion: '0.50.0',
-    checkedAt: '2026-01-01T00:00:00.000Z',
-    message: 'Trivy 0.69.2 is ready.',
-  }, false, undefined, 0])
+  const react = fakeReact([
+    {
+      state: 'ready',
+      version: '0.69.2',
+      minimumVersion: '0.50.0',
+      checkedAt: '2026-01-01T00:00:00.000Z',
+      message: 'Trivy 0.69.2 is ready.',
+    },
+    false,
+    undefined,
+    0,
+  ])
   const { exports } = await loadClient(react)
   const tree = exports.TrivySettingsSection({ rpc: {}, subscribe: () => () => {} })
   assert.match(textOf(tree), /Ready/)
@@ -127,22 +143,28 @@ test('settings renders ready status without editable controls', async () => {
 })
 
 test('settings renders not-found and unsupported guidance', async () => {
-  for (const status of [{
-    state: 'not-found',
-    minimumVersion: '0.50.0',
-    checkedAt: '2026-01-01T00:00:00.000Z',
-    message: 'DSH could not find `trivy` on its effective PATH.',
-  }, {
-    state: 'unsupported-version',
-    version: '0.49.0',
-    minimumVersion: '0.50.0',
-    checkedAt: '2026-01-01T00:00:00.000Z',
-    message: 'Trivy 0.49.0 is installed, but this plugin requires 0.50.0 or newer.',
-  }]) {
+  for (const status of [
+    {
+      state: 'not-found',
+      minimumVersion: '0.50.0',
+      checkedAt: '2026-01-01T00:00:00.000Z',
+      message: 'DSH could not find `trivy` on its effective PATH.',
+    },
+    {
+      state: 'unsupported-version',
+      version: '0.49.0',
+      minimumVersion: '0.50.0',
+      checkedAt: '2026-01-01T00:00:00.000Z',
+      message: 'Trivy 0.49.0 is installed, but this plugin requires 0.50.0 or newer.',
+    },
+  ]) {
     const react = fakeReact([status, false, undefined, 0])
     const { exports } = await loadClient(react)
     const tree = exports.TrivySettingsSection({ rpc: {}, subscribe: () => () => {} })
-    assert.match(textOf(tree), status.state === 'not-found' ? /effective PATH/ : /Unsupported version/)
+    assert.match(
+      textOf(tree),
+      status.state === 'not-found' ? /effective PATH/ : /Unsupported version/,
+    )
     assert.match(textOf(tree), /never installs or updates/)
   }
 })
@@ -164,15 +186,27 @@ test('initial effect requests status and connection reset subscription disposes'
   const { exports } = await loadClient(react)
   const registrations = []
   exports.apply({
-    get: () => ({ rpc: { call: async (...args) => { calls.push(args); return { ok: true, value: { state: 'ready' } } } } }),
+    get: () => ({
+      rpc: {
+        call: async (...args) => {
+          calls.push(args)
+          return { ok: true, value: { state: 'ready' } }
+        },
+      },
+    }),
     on(name, handler) {
       assert.equal(name, 'connection/reset')
       resetHandler = handler
-      return () => { disposed = true }
+      return () => {
+        disposed = true
+      }
     },
     slots: {
       inject: (_name, callback) => callback(),
-      register(options) { registrations.push(options); return () => {} },
+      register(options) {
+        registrations.push(options)
+        return () => {}
+      },
     },
   })
   const props = registrations[0].inject()
@@ -189,7 +223,12 @@ test('Recheck calls the force endpoint and disables while busy', async () => {
   const calls = []
   const { exports } = await loadClient(react)
   const tree = exports.TrivySettingsSection({
-    rpc: { call: async (...args) => { calls.push(args); return { ok: true, value: { state: 'ready' } } } },
+    rpc: {
+      call: async (...args) => {
+        calls.push(args)
+        return { ok: true, value: { state: 'ready' } }
+      },
+    },
     subscribe: () => () => {},
   })
   const [button] = findElements(tree, (node) => node.type === 'button')

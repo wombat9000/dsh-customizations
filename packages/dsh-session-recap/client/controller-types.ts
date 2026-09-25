@@ -10,7 +10,11 @@ export interface ControllerSnapshot {
   recap?: Recap | undefined
   selection?: Selection | undefined
 }
-export interface SessionObservation { ready: boolean; running: boolean; latestTurn?: number | undefined }
+export interface SessionObservation {
+  ready: boolean
+  running: boolean
+  latestTurn?: number | undefined
+}
 export type SnapshotListener = (snapshot: ControllerSnapshot) => void
 export interface SessionState {
   value: ControllerSnapshot

@@ -7,19 +7,49 @@ import { markIntegrationTool } from '../src/capability.js'
 import { registerWorktreeTools } from '../src/tools.js'
 let plugin
 vm.runInNewContext(await readFile(new URL('../client.js', import.meta.url), 'utf8'), {
-  window: { __ModuleLoader__: { load: ({ factory }) => { plugin = factory(() => ({})) } } },
+  window: {
+    __ModuleLoader__: {
+      load: ({ factory }) => {
+        plugin = factory(() => ({}))
+      },
+    },
+  },
 })
-const flush = async () => { for (let i = 0; i < 10; i++) await Promise.resolve() }
+const flush = async () => {
+  for (let i = 0; i < 10; i++) await Promise.resolve()
+}
 
 test('reader shows loading, rejects stale responses, preserves selection and cleans up', async () => {
-  const requests = [], states = []
-  const reader = plugin.createReader({ call: (_channel, _method, args) => new Promise(resolve => requests.push({ args, resolve: value => resolve({ ok: true, value }) })) }, 'a', state => states.push(state))
+  const requests = [],
+    states = []
+  const reader = plugin.createReader(
+    {
+      call: (_channel, _method, args) =>
+        new Promise((resolve) =>
+          requests.push({ args, resolve: (value) => resolve({ ok: true, value }) }),
+        ),
+    },
+    'a',
+    (state) => states.push(state),
+  )
   const first = reader.refresh({ path: '/repo/a', runId: 'old' })
   assert.equal(states.at(-1).loading, true)
   const second = reader.refresh({ path: '/repo/b' })
-  requests[1].resolve({ sessionId: 'a', state: 'ready', worktrees: [], marker: 'new', selected: { path: '/repo/b', run: { id: 'b-run' } } })
+  requests[1].resolve({
+    sessionId: 'a',
+    state: 'ready',
+    worktrees: [],
+    marker: 'new',
+    selected: { path: '/repo/b', run: { id: 'b-run' } },
+  })
   await second
-  requests[0].resolve({ sessionId: 'a', state: 'ready', worktrees: [], marker: 'stale', selected: { path: '/repo/a', run: { id: 'old' } } })
+  requests[0].resolve({
+    sessionId: 'a',
+    state: 'ready',
+    worktrees: [],
+    marker: 'stale',
+    selected: { path: '/repo/a', run: { id: 'old' } },
+  })
   await first
   assert.equal(states.at(-1).value.marker, 'new')
   const third = reader.refresh()
@@ -34,18 +64,53 @@ test('reader shows loading, rejects stale responses, preserves selection and cle
 
 // Exercise the real server selection projection, not a response that ignores args.
 function readerFixture({ empty = false } = {}) {
-  const agent = { session: { id: 'a' } }, tool = markIntegrationTool({})
+  const agent = { session: { id: 'a' } },
+    tool = markIntegrationTool({})
   const history = new Map()
-  const addRun = (id, path = '/repo/a') => history.set(id, { jobId: id, path, task: id, status: 'completed', mode: 'write' })
+  const addRun = (id, path = '/repo/a') =>
+    history.set(id, { jobId: id, path, task: id, status: 'completed', mode: 'write' })
   if (!empty) addRun('initial')
-  let paths = ['/repo/a', '/repo/b'], state
-  const handler = createSnapshotRpcHandler({ agents: { get: () => agent }, tools: { get: () => tool } }, {
-    history: new WeakMap([[agent, history]]), cwd: () => '/repo', activeWorktrees: () => new Map(),
-    git: { inspectWorktrees: async () => ({ repository: '/repo', worktrees: paths.map(path => ({ path, changes: { count: 0, files: [] } })) }) },
-  })
+  let paths = ['/repo/a', '/repo/b'],
+    state
+  const handler = createSnapshotRpcHandler(
+    { agents: { get: () => agent }, tools: { get: () => tool } },
+    {
+      history: new WeakMap([[agent, history]]),
+      cwd: () => '/repo',
+      activeWorktrees: () => new Map(),
+      git: {
+        inspectWorktrees: async () => ({
+          repository: '/repo',
+          worktrees: paths.map((path) => ({ path, changes: { count: 0, files: [] } })),
+        }),
+      },
+    },
+  )
   const requests = []
-  const reader = plugin.createReader({ call: (_channel, method, args) => { requests.push(args); return handler(method, args) } }, 'a', next => { state = next })
-  return { reader, requests, history, addRun, setPaths: next => { paths = next }, get value() { return state.value } }
+  const reader = plugin.createReader(
+    {
+      call: (_channel, method, args) => {
+        requests.push(args)
+        return handler(method, args)
+      },
+    },
+    'a',
+    (next) => {
+      state = next
+    },
+  )
+  return {
+    reader,
+    requests,
+    history,
+    addRun,
+    setPaths: (next) => {
+      paths = next
+    },
+    get value() {
+      return state.value
+    },
+  }
 }
 
 test('implicit checkout and run stay selected after new runs and checkout disappearance', async () => {
@@ -104,8 +169,20 @@ test('reader reports failed and malformed responses without stale data or raw er
     { ok: false, error: { code: 'internal', message: 'SECRET', details: {} } },
     new Error('SECRET transport failure'),
   ]) {
-    let state, response = { ok: true, value: { sessionId: 'a', state: 'ready', worktrees: [] } }
-    const reader = plugin.createReader({ call: async () => { if (response instanceof Error) throw response; return response } }, 'a', next => { state = next })
+    let state,
+      response = { ok: true, value: { sessionId: 'a', state: 'ready', worktrees: [] } }
+    const reader = plugin.createReader(
+      {
+        call: async () => {
+          if (response instanceof Error) throw response
+          return response
+        },
+      },
+      'a',
+      (next) => {
+        state = next
+      },
+    )
     await reader.refresh()
     assert.equal(state.value.state, 'ready')
     response = failure
@@ -119,58 +196,166 @@ test('reader reports failed and malformed responses without stale data or raw er
 
 test('copied-preset tab follows real integration definitions and same-session capability changes', async () => {
   const tools = new Map()
-  const install = () => registerWorktreeTools({ tools: { register: tool => { tools.set(tool.name, tool); return () => tools.delete(tool.name) } } }, {})
+  const install = () =>
+    registerWorktreeTools(
+      {
+        tools: {
+          register: (tool) => {
+            tools.set(tool.name, tool)
+            return () => tools.delete(tool.name)
+          },
+        },
+      },
+      {},
+    )
   const copy = { session: { id: 'copy', header: { agentPreset: 'my-copy' } } }
   const standard = { session: { id: 'standard', header: { agentPreset: 'worktree-coordinator' } } }
-  const agents = new Map([['copy', copy], ['standard', standard]])
-  const handler = createSnapshotRpcHandler({ agents: { get: id => agents.get(id) }, tools: { get: (name, owner) => owner === copy ? tools.get(name) : undefined } }, {})
-  let current = 'copy', notify, tick, registered
+  const agents = new Map([
+    ['copy', copy],
+    ['standard', standard],
+  ])
+  const handler = createSnapshotRpcHandler(
+    {
+      agents: { get: (id) => agents.get(id) },
+      tools: { get: (name, owner) => (owner === copy ? tools.get(name) : undefined) },
+    },
+    {},
+  )
+  let current = 'copy',
+    notify,
+    tick,
+    registered
   const stop = plugin.watchCapability({
-    sessions: { list: { getSnapshot: () => ({ current }), subscribe: cb => { notify = cb; return () => {} } } },
+    sessions: {
+      list: {
+        getSnapshot: () => ({ current }),
+        subscribe: (cb) => {
+          notify = cb
+          return () => {}
+        },
+      },
+    },
     rpc: { call: (_channel, method, args) => handler(method, args) },
     document: { visibilityState: 'visible', addEventListener() {}, removeEventListener() {} },
-    interval: cb => { tick = cb }, clear() {},
-    register: id => { registered = id; return () => { registered = undefined } },
+    interval: (cb) => {
+      tick = cb
+    },
+    clear() {},
+    register: (id) => {
+      registered = id
+      return () => {
+        registered = undefined
+      }
+    },
   })
   try {
-    await flush(); assert.equal(registered, undefined)
-    install(); tick(); await flush(); assert.equal(registered, 'copy')
-    tools.delete('worktree_list'); notify(); await flush(); assert.equal(registered, undefined)
-    tools.set('worktree_list', { name: 'worktree_list' }); tick(); await flush(); assert.equal(registered, undefined)
-    install(); tick(); await flush(); assert.equal(registered, 'copy')
-    current = 'standard'; notify(); assert.equal(registered, undefined)
-    await flush(); assert.equal(registered, undefined)
-    current = 'copy'; notify(); await flush(); assert.equal(registered, 'copy')
-    agents.delete('copy'); tick(); await flush(); assert.equal(registered, undefined)
-  } finally { stop() }
+    await flush()
+    assert.equal(registered, undefined)
+    install()
+    tick()
+    await flush()
+    assert.equal(registered, 'copy')
+    tools.delete('worktree_list')
+    notify()
+    await flush()
+    assert.equal(registered, undefined)
+    tools.set('worktree_list', { name: 'worktree_list' })
+    tick()
+    await flush()
+    assert.equal(registered, undefined)
+    install()
+    tick()
+    await flush()
+    assert.equal(registered, 'copy')
+    current = 'standard'
+    notify()
+    assert.equal(registered, undefined)
+    await flush()
+    assert.equal(registered, undefined)
+    current = 'copy'
+    notify()
+    await flush()
+    assert.equal(registered, 'copy')
+    agents.delete('copy')
+    tick()
+    await flush()
+    assert.equal(registered, undefined)
+  } finally {
+    stop()
+  }
 })
 
 test('tab registration follows current capability; subscription, timers and pending checks clean up', async () => {
-  let current = 'a', callback, tick, removed = 0, off = 0, cleared = 0
-  const events = new Map(), pending = [], registered = []
-  const document = { visibilityState: 'visible', addEventListener: (name, cb) => events.set(name, cb), removeEventListener: name => events.delete(name) }
-  const stop = plugin.watchCapability({ document,
-    sessions: { list: { getSnapshot: () => ({ current }), subscribe: cb => { callback = cb; return () => off++ } } },
-    rpc: { call: (_channel, _method, args) => new Promise(resolve => pending.push({ args, resolve: value => resolve({ ok: true, value }) })) },
-    register: id => { registered.push(id); return () => removed++ },
-    interval: cb => { tick = cb; return 1 }, clear: () => cleared++,
+  let current = 'a',
+    callback,
+    tick,
+    removed = 0,
+    off = 0,
+    cleared = 0
+  const events = new Map(),
+    pending = [],
+    registered = []
+  const document = {
+    visibilityState: 'visible',
+    addEventListener: (name, cb) => events.set(name, cb),
+    removeEventListener: (name) => events.delete(name),
+  }
+  const stop = plugin.watchCapability({
+    document,
+    sessions: {
+      list: {
+        getSnapshot: () => ({ current }),
+        subscribe: (cb) => {
+          callback = cb
+          return () => off++
+        },
+      },
+    },
+    rpc: {
+      call: (_channel, _method, args) =>
+        new Promise((resolve) =>
+          pending.push({ args, resolve: (value) => resolve({ ok: true, value }) }),
+        ),
+    },
+    register: (id) => {
+      registered.push(id)
+      return () => removed++
+    },
+    interval: (cb) => {
+      tick = cb
+      return 1
+    },
+    clear: () => cleared++,
   })
   await flush()
-  current = 'b'; callback(); await flush()
-  pending[0].resolve({ sessionId: 'a', state: 'ready' }); await flush()
+  current = 'b'
+  callback()
+  await flush()
+  pending[0].resolve({ sessionId: 'a', state: 'ready' })
+  await flush()
   assert.equal(registered.length, 0)
-  pending[1].resolve({ sessionId: 'b', state: 'ready' }); await flush()
+  pending[1].resolve({ sessionId: 'b', state: 'ready' })
+  await flush()
   assert.deepEqual(registered, ['b'])
-  current = 'c'; callback()
+  current = 'c'
+  callback()
   assert.equal(removed, 1)
   await flush()
-  pending[2].resolve({ sessionId: 'c', state: 'disabled' }); await flush()
+  pending[2].resolve({ sessionId: 'c', state: 'disabled' })
+  await flush()
   assert.equal(registered.length, 1)
-  document.visibilityState = 'hidden'; tick(); await flush()
+  document.visibilityState = 'hidden'
+  tick()
+  await flush()
   assert.equal(pending.length, 3)
-  document.visibilityState = 'visible'; events.get('visibilitychange')(); await flush()
+  document.visibilityState = 'visible'
+  events.get('visibilitychange')()
+  await flush()
   stop()
-  pending[3].resolve({ sessionId: 'c', state: 'ready' }); await flush()
+  pending[3].resolve({ sessionId: 'c', state: 'ready' })
+  await flush()
   assert.equal(registered.length, 1)
-  assert.equal(off, 1); assert.equal(cleared, 1); assert.equal(events.size, 0)
+  assert.equal(off, 1)
+  assert.equal(cleared, 1)
+  assert.equal(events.size, 0)
 })

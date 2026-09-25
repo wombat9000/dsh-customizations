@@ -37,7 +37,8 @@ export const Config = z.object({
 
 function resolvedConfig(config = {}) {
   return {
-    apiKey: typeof config.apiKey === 'string' && config.apiKey.length > 0 ? config.apiKey : undefined,
+    apiKey:
+      typeof config.apiKey === 'string' && config.apiKey.length > 0 ? config.apiKey : undefined,
     organizationId: config.organizationId ?? '',
     organizationName: config.organizationName ?? '',
     organizationUrlKey: config.organizationUrlKey ?? '',
@@ -62,7 +63,8 @@ export function apply(ctx, config = {}) {
     resolveApiKey: async () => {
       if (resolved.apiKey !== undefined) return resolved.apiKey
       const credentials = ctx.get('credentials')
-      if (credentials !== undefined) return (await credentials.resolve(LINEAR_CREDENTIAL_REF))?.value
+      if (credentials !== undefined)
+        return (await credentials.resolve(LINEAR_CREDENTIAL_REF))?.value
       return launchEnvironmentOf(ctx).get(LINEAR_CREDENTIAL_REF)?.value
     },
   })

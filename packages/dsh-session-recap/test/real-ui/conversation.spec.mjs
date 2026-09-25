@@ -1,23 +1,63 @@
-import { test, expect, pluginSettings, openSeededSession } from '../../../../tests/real-ui/fixtures.mjs'
+import {
+  test,
+  expect,
+  pluginSettings,
+  openSeededSession,
+} from '../../../../tests/real-ui/fixtures.mjs'
 import { cardSelectionDiagnostics, CARD_LABELS } from '../../src/cards.js'
 
-test('selection diagnostics expand and copy in the real shell without another evaluation', async ({ app }, testInfo) => {
+test('selection diagnostics expand and copy in the real shell without another evaluation', async ({
+  app,
+}, testInfo) => {
   let calls = 0
-  const diagnostics = cardSelectionDiagnostics({ model: 'typesafe/jev-1.13', answers: Object.fromEntries(CARD_LABELS.flatMap(label => [
-    [`support_${label}`, { type: 'noul', noul: .91 }],
-    [`usefulness_${label}`, { type: 'score', score: 2.4, confidence: .25, probabilities: { '0': 0, '1': 0, '2': .6, '3': .4 } }],
-  ])) })
-  await app.route('**/session-recap/*', async route => {
+  const diagnostics = cardSelectionDiagnostics({
+    model: 'typesafe/jev-1.13',
+    answers: Object.fromEntries(
+      CARD_LABELS.flatMap((label) => [
+        [`support_${label}`, { type: 'noul', noul: 0.91 }],
+        [
+          `usefulness_${label}`,
+          {
+            type: 'score',
+            score: 2.4,
+            confidence: 0.25,
+            probabilities: { 0: 0, 1: 0, 2: 0.6, 3: 0.4 },
+          },
+        ],
+      ]),
+    ),
+  })
+  await app.route('**/session-recap/*', async (route) => {
     const request = route.request().postDataJSON()
     if (request.method !== 'recap') return route.fallback()
     calls++
-    await route.fulfill({ json: { type: 'server-response', rpcId: request.rpcId, result: { ok: true, value: {
-      sessionId: request.payload.sessionId, selection: { mode: 'standard', reason: 'no-labels', diagnostics },
-      recap: { headline: 'Diagnostics fixture', bullets: ['Private fixture conversation text.'] },
-    } } } })
+    await route.fulfill({
+      json: {
+        type: 'server-response',
+        rpcId: request.rpcId,
+        result: {
+          ok: true,
+          value: {
+            sessionId: request.payload.sessionId,
+            selection: { mode: 'standard', reason: 'no-labels', diagnostics },
+            recap: {
+              headline: 'Diagnostics fixture',
+              bullets: ['Private fixture conversation text.'],
+            },
+          },
+        },
+      },
+    })
   })
   await openSeededSession(app)
-  await app.evaluate(() => { Object.defineProperty(navigator.clipboard, 'writeText', { configurable: true, value: async text => { window.__copiedRecapDiagnostics = text } }) })
+  await app.evaluate(() => {
+    Object.defineProperty(navigator.clipboard, 'writeText', {
+      configurable: true,
+      value: async (text) => {
+        window.__copiedRecapDiagnostics = text
+      },
+    })
+  })
   await app.getByRole('button', { name: 'Generate recap', exact: true }).click()
   const dock = app.getByRole('complementary', { name: 'Session recap' })
   const details = dock.locator('.dsh-session-recap-card__diagnostics')
@@ -25,7 +65,9 @@ test('selection diagnostics expand and copy in the real shell without another ev
   await details.locator('summary').first().focus()
   await app.keyboard.press('Enter')
   await expect(details).toHaveAttribute('open', '')
-  await expect(details.getByText('Not selected: confidence below 0.3', { exact: true })).toHaveCount(6)
+  await expect(
+    details.getByText('Not selected: confidence below 0.3', { exact: true }),
+  ).toHaveCount(6)
   await details.getByRole('button', { name: 'Copy diagnostics JSON' }).click()
   await expect(details.getByText('Diagnostics copied.', { exact: true })).toBeVisible()
   const copied = await app.evaluate(() => window.__copiedRecapDiagnostics)
@@ -33,28 +75,47 @@ test('selection diagnostics expand and copy in the real shell without another ev
   expect(copied).not.toContain('Private fixture conversation text.')
   await dock.screenshot({ path: testInfo.outputPath('selection-details.png') })
   expect(calls).toBe(1)
-  await dock.evaluate(el => { el.style.width = '300px' })
-  expect(await dock.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true)
+  await dock.evaluate((el) => {
+    el.style.width = '300px'
+  })
+  expect(await dock.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true)
   await app.getByRole('button', { name: 'Hide recap', exact: true }).click()
   await app.getByRole('button', { name: 'Show recap', exact: true }).click()
   await expect(dock.locator('.dsh-session-recap-card__diagnostics')).not.toHaveAttribute('open', '')
   expect(calls).toBe(1)
 })
 
-test('recap action mounts in the latest assistant footer and toggles without another request', async ({ app }) => {
+test('recap action mounts in the latest assistant footer and toggles without another request', async ({
+  app,
+}) => {
   let calls = 0
-  await app.route('**/session-recap/*', async route => {
+  await app.route('**/session-recap/*', async (route) => {
     const request = route.request().postDataJSON()
     if (request.method !== 'recap') return route.fallback()
     calls++
-    await route.fulfill({ json: { type: 'server-response', rpcId: request.rpcId, result: { ok: true, value: {
-      sessionId: request.payload.sessionId, recap: { headline: 'Recap interaction', bullets: ['The recap opens only when requested.'] },
-    } } } })
+    await route.fulfill({
+      json: {
+        type: 'server-response',
+        rpcId: request.rpcId,
+        result: {
+          ok: true,
+          value: {
+            sessionId: request.payload.sessionId,
+            recap: {
+              headline: 'Recap interaction',
+              bullets: ['The recap opens only when requested.'],
+            },
+          },
+        },
+      },
+    })
   })
   await openSeededSession(app)
   const action = app.getByRole('button', { name: 'Generate recap', exact: true })
   await expect(action).toHaveCount(1)
-  await expect(app.locator('[data-turn-tail]').getByRole('button', { name: 'Generate recap', exact: true })).toBeVisible()
+  await expect(
+    app.locator('[data-turn-tail]').getByRole('button', { name: 'Generate recap', exact: true }),
+  ).toBeVisible()
   await expect(app.getByRole('button', { name: 'Recap', exact: true })).toHaveCount(0)
   await action.click()
   const dock = app.getByRole('complementary', { name: 'Session recap' })
@@ -69,20 +130,36 @@ test('recap action mounts in the latest assistant footer and toggles without ano
   await expect(app.locator('.dsh-session-recap-action')).toHaveCount(0)
 })
 
-test('automatic recap stays hidden, shimmers while pending, and glows when unread', async ({ app }) => {
+test('automatic recap stays hidden, shimmers while pending, and glows when unread', async ({
+  app,
+}) => {
   let finish
   let calls = 0
-  const pending = new Promise(resolve => { finish = resolve })
-  await app.route('**/session-recap/*', async route => {
+  const pending = new Promise((resolve) => {
+    finish = resolve
+  })
+  await app.route('**/session-recap/*', async (route) => {
     const request = route.request().postDataJSON()
     let value
-    if (request.method === 'settings') value = { autoRecap: true, inactivityMinutes: 30, provider: 'fixture', model: 'never-dispatched', storageScope: 'recap-native-test' }
+    if (request.method === 'settings')
+      value = {
+        autoRecap: true,
+        inactivityMinutes: 30,
+        provider: 'fixture',
+        model: 'never-dispatched',
+        storageScope: 'recap-native-test',
+      }
     else if (request.method === 'recap') {
       calls++
       await pending
-      value = { sessionId: request.payload.sessionId, recap: { bullets: ['Prepared in the background.'] } }
+      value = {
+        sessionId: request.payload.sessionId,
+        recap: { bullets: ['Prepared in the background.'] },
+      }
     } else return route.fallback()
-    await route.fulfill({ json: { type: 'server-response', rpcId: request.rpcId, result: { ok: true, value } } })
+    await route.fulfill({
+      json: { type: 'server-response', rpcId: request.rpcId, result: { ok: true, value } },
+    })
   })
   await openSeededSession(app)
   const action = app.locator('.dsh-session-recap-action')
@@ -91,14 +168,22 @@ test('automatic recap stays hidden, shimmers while pending, and glows when unrea
     await expect(action).toHaveAttribute('data-busy', 'true')
     await expect(dock).toHaveCount(0)
     await app.emulateMedia({ reducedMotion: 'no-preference' })
-    await expect.poll(() => action.evaluate(el => getComputedStyle(el, '::after').animationName)).toBe('dsh-session-recap-shimmer')
+    await expect
+      .poll(() => action.evaluate((el) => getComputedStyle(el, '::after').animationName))
+      .toBe('dsh-session-recap-shimmer')
     await app.emulateMedia({ reducedMotion: 'reduce' })
-    await expect.poll(() => action.evaluate(el => getComputedStyle(el, '::after').animationName)).toBe('none')
-  } finally { finish() }
+    await expect
+      .poll(() => action.evaluate((el) => getComputedStyle(el, '::after').animationName))
+      .toBe('none')
+  } finally {
+    finish()
+  }
   await expect(action).toHaveAttribute('data-unread', 'true')
   await expect(action).toHaveAttribute('data-busy', 'false')
   await expect(dock).toHaveCount(0)
-  await expect.poll(() => action.locator('svg').evaluate(el => getComputedStyle(el).filter)).toContain('drop-shadow')
+  await expect
+    .poll(() => action.locator('svg').evaluate((el) => getComputedStyle(el).filter))
+    .toContain('drop-shadow')
   await action.click()
   await expect(dock).toBeVisible()
   await expect(action).toHaveAttribute('data-unread', 'false')
@@ -106,19 +191,45 @@ test('automatic recap stays hidden, shimmers while pending, and glows when unrea
   expect(calls).toBe(1)
 })
 
-for (const [theme, narrow] of [['light', false], ['dark', false], ['light', true]]) {
+for (const [theme, narrow] of [
+  ['light', false],
+  ['dark', false],
+  ['light', true],
+]) {
   test(`Jev-selected visual recap cards (${theme}${narrow ? ', narrow' : ''})`, async ({ app }) => {
-    await app.route('**/session-recap/*', async route => {
+    await app.route('**/session-recap/*', async (route) => {
       const request = route.request().postDataJSON()
       if (request.method !== 'recap') return route.fallback()
-      await route.fulfill({ json: { type: 'server-response', rpcId: request.rpcId, result: { ok: true, value: {
-        sessionId: request.payload.sessionId, selection: { mode: 'jev' },
-        recap: { headline: 'Visual recaps with conversation-specific cards', cards: [
-          { label: 'direction', text: 'Replace long recap bullets with compact cards that highlight the most useful parts of the conversation.' },
-          { label: 'decision', text: 'Choose headings from a fixed vocabulary, with consistent icons and subtle accent colors.' },
-          { label: 'question', text: 'Which categories best help you remember the thread when you return?' },
-        ] },
-      } } } })
+      await route.fulfill({
+        json: {
+          type: 'server-response',
+          rpcId: request.rpcId,
+          result: {
+            ok: true,
+            value: {
+              sessionId: request.payload.sessionId,
+              selection: { mode: 'jev' },
+              recap: {
+                headline: 'Visual recaps with conversation-specific cards',
+                cards: [
+                  {
+                    label: 'direction',
+                    text: 'Replace long recap bullets with compact cards that highlight the most useful parts of the conversation.',
+                  },
+                  {
+                    label: 'decision',
+                    text: 'Choose headings from a fixed vocabulary, with consistent icons and subtle accent colors.',
+                  },
+                  {
+                    label: 'question',
+                    text: 'Which categories best help you remember the thread when you return?',
+                  },
+                ],
+              },
+            },
+          },
+        },
+      })
     })
     const settings = await pluginSettings(app, theme)
     await settings.getByRole('button', { name: 'Close', exact: true }).click()
@@ -127,29 +238,53 @@ for (const [theme, narrow] of [['light', false], ['dark', false], ['light', true
     const dock = app.getByRole('complementary', { name: 'Session recap' })
     await expect(dock.locator('[data-recap-card]')).toHaveCount(3)
     await expect(dock.getByRole('heading', { name: 'Decision', exact: true })).toBeVisible()
-    if (narrow) await dock.evaluate(element => { element.style.width = '300px' })
-    const boxes = await dock.locator('[data-recap-card]').evaluateAll(elements => elements.map(el => { const rect = el.getBoundingClientRect(); return { top: rect.top, left: rect.left } }))
+    if (narrow)
+      await dock.evaluate((element) => {
+        element.style.width = '300px'
+      })
+    const boxes = await dock.locator('[data-recap-card]').evaluateAll((elements) =>
+      elements.map((el) => {
+        const rect = el.getBoundingClientRect()
+        return { top: rect.top, left: rect.left }
+      }),
+    )
     if (narrow) expect(boxes[1].top).toBeGreaterThan(boxes[0].top)
     else expect(boxes[1].top).toBe(boxes[0].top)
-    expect(await dock.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true)
+    expect(await dock.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true)
     await app.evaluate(() => document.fonts.ready)
     await expect(dock).toHaveScreenshot(`recap-cards-${theme}${narrow ? '-narrow' : ''}.png`)
   })
 }
 
-for (const [theme, narrow] of [['light', false], ['dark', false], ['light', true]]) {
+for (const [theme, narrow] of [
+  ['light', false],
+  ['dark', false],
+  ['light', true],
+]) {
   test(`concise generated recap (${theme}${narrow ? ', narrow' : ''})`, async ({ app }) => {
-    await app.route('**/session-recap/*', async route => {
+    await app.route('**/session-recap/*', async (route) => {
       const request = route.request().postDataJSON()
       if (request.method !== 'recap') return route.fallback()
-      await route.fulfill({ json: { type: 'server-response', rpcId: request.rpcId, result: { ok: true, value: {
-        sessionId: request.payload.sessionId, generatedAt: '2026-01-02T03:04:05.000Z',
-        recap: { bullets: [
-          'The recap should refresh your memory of the thread, not report task status.',
-          'Keep the topic, key direction, and stopping point in three short bullets.',
-          'We paused at reviewing the simpler card and its send-to-hide behavior.',
-        ] },
-      } } } })
+      await route.fulfill({
+        json: {
+          type: 'server-response',
+          rpcId: request.rpcId,
+          result: {
+            ok: true,
+            value: {
+              sessionId: request.payload.sessionId,
+              generatedAt: '2026-01-02T03:04:05.000Z',
+              recap: {
+                bullets: [
+                  'The recap should refresh your memory of the thread, not report task status.',
+                  'Keep the topic, key direction, and stopping point in three short bullets.',
+                  'We paused at reviewing the simpler card and its send-to-hide behavior.',
+                ],
+              },
+            },
+          },
+        },
+      })
     })
     const settings = await pluginSettings(app, theme)
     await settings.getByRole('button', { name: 'Close', exact: true }).click()
@@ -158,26 +293,35 @@ for (const [theme, narrow] of [['light', false], ['dark', false], ['light', true
     const dock = app.getByRole('complementary', { name: 'Session recap' })
     await expect(dock.getByRole('listitem')).toHaveCount(3)
     await expect(dock.locator('button, svg, small, strong')).toHaveCount(0)
-    if (narrow) await dock.evaluate(element => { element.style.width = '300px' })
+    if (narrow)
+      await dock.evaluate((element) => {
+        element.style.width = '300px'
+      })
     await app.evaluate(() => document.fonts.ready)
     await expect(dock).toHaveScreenshot(`recap-bullets-${theme}${narrow ? '-narrow' : ''}.png`)
   })
 }
 
 for (const theme of ['light', 'dark']) {
-  test(`real dock follows persisted and blank sessions without calling a provider (${theme})`, async ({ app }) => {
+  test(`real dock follows persisted and blank sessions without calling a provider (${theme})`, async ({
+    app,
+  }) => {
     const settings = await pluginSettings(app, theme)
     const prefix = theme === 'light' ? 'recap' : 'recap-dark'
     await settings.getByRole('button', { name: 'Close', exact: true }).click()
     await openSeededSession(app)
-    await expect(app.getByText('Review the Session recap interface.', { exact: true })).toBeVisible()
+    await expect(
+      app.getByText('Review the Session recap interface.', { exact: true }),
+    ).toBeVisible()
     const dock = app.getByRole('complementary', { name: 'Session recap' })
     await expect(dock).toHaveCount(0)
     const recap = app.getByRole('button', { name: 'Generate recap', exact: true })
     await expect(recap).toBeVisible()
     await expect(recap).toHaveScreenshot(`${prefix}-existing-session.png`)
     await recap.click()
-    await expect(dock.getByRole('alert')).toHaveText('Choose a provider and model in Settings → Plugins → Session Recap.')
+    await expect(dock.getByRole('alert')).toHaveText(
+      'Choose a provider and model in Settings → Plugins → Session Recap.',
+    )
     await expect(dock).toHaveScreenshot(`${prefix}-no-provider.png`)
     await expect(dock.getByRole('button')).toHaveCount(0)
     await expect(dock.locator('svg, small, strong')).toHaveCount(0)

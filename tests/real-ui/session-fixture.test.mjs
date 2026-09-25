@@ -22,9 +22,18 @@ function fixture(failure) {
         assert.equal(header.id, 'visual-test-history')
         calls.push('create')
         return {
-          async append(batch) { calls.push('append'); assert.equal(batch, events); if (failure === 'append') throw Error(failure) },
-          async flush() { calls.push('flush'); if (failure === 'flush') throw Error(failure) },
-          async close() { calls.push('close writer') },
+          async append(batch) {
+            calls.push('append')
+            assert.equal(batch, events)
+            if (failure === 'append') throw Error(failure)
+          },
+          async flush() {
+            calls.push('flush')
+            if (failure === 'flush') throw Error(failure)
+          },
+          async close() {
+            calls.push('close writer')
+          },
         }
       },
       async open(id, access) {
@@ -32,8 +41,14 @@ function fixture(failure) {
         assert.equal(access, 'read')
         calls.push('open reader')
         return {
-          async read() { calls.push('read'); if (failure === 'read') throw Error(failure); return { events: failure === 'mismatch' ? [] : events } },
-          async close() { calls.push('close reader') },
+          async read() {
+            calls.push('read')
+            if (failure === 'read') throw Error(failure)
+            return { events: failure === 'mismatch' ? [] : events }
+          },
+          async close() {
+            calls.push('close reader')
+          },
         }
       },
     },
@@ -44,7 +59,16 @@ function fixture(failure) {
 test('visual seed owns, flushes, closes and reopens its persistence handle without an agent', async () => {
   const { ctx, calls } = fixture()
   assert.equal(await seedSession(ctx), 'visual-test-history')
-  assert.deepEqual(calls, ['prepare', 'create', 'append', 'flush', 'close writer', 'open reader', 'read', 'close reader'])
+  assert.deepEqual(calls, [
+    'prepare',
+    'create',
+    'append',
+    'flush',
+    'close writer',
+    'open reader',
+    'read',
+    'close reader',
+  ])
 })
 for (const failure of ['append', 'flush', 'read', 'mismatch']) {
   test(`visual seed closes its handle on ${failure} failure`, async () => {
@@ -64,5 +88,7 @@ test('bootstrap refuses a ready Web listener without a verified seed', async () 
     await assert.rejects(waitForFixture(directory, 1), /Unexpected visual fixture identity/)
     await writeFile(join(directory, '.visual-fixture-ready'), 'visual-test-history')
     await waitForFixture(directory, 1)
-  } finally { await rm(directory, { recursive: true, force: true }) }
+  } finally {
+    await rm(directory, { recursive: true, force: true })
+  }
 })

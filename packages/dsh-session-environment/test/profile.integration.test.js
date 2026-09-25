@@ -5,7 +5,8 @@ import { fileURLToPath } from 'node:url'
 import test from 'node:test'
 
 const ROOT = fileURLToPath(new URL('../../../', import.meta.url))
-const json = async (relative) => JSON.parse(await readFile(new URL(relative, import.meta.url), 'utf8'))
+const json = async (relative) =>
+  JSON.parse(await readFile(new URL(relative, import.meta.url), 'utf8'))
 
 // Adapted from the source package's standalone Web boot smoke test. Repository
 // wiring checks must not install profiles or start another DSH instance.
@@ -24,21 +25,38 @@ test('portable recipe selects the local environment bundle after base and Web', 
   assert.equal(manifest.name, '@local/dsh-session-environment')
   assert.equal(manifest.dsh.bundle.patch, './cordis.patch.yml')
   assert.deepEqual(manifest.dsh.client.inject, [
-    '@deepseek-ai/dsh-api-remotes', '@deepseek-ai/dsh-client-ui-renderer',
+    '@deepseek-ai/dsh-api-remotes',
+    '@deepseek-ai/dsh-client-ui-renderer',
   ])
   assert.equal(manifest.dsh.client.platform, 'web')
-  for (const [name, version] of Object.entries({ ...manifest.dependencies, ...manifest.peerDependencies })) {
+  for (const [name, version] of Object.entries({
+    ...manifest.dependencies,
+    ...manifest.peerDependencies,
+  })) {
     if (name.startsWith('@deepseek-ai/dsh-')) assert.equal(version, '0.1.5-rc.2', name)
   }
   const patch = await readFile(new URL('../cordis.patch.yml', import.meta.url), 'utf8')
-  assert.match(patch, /- insert:\s+- id: local-session-environment\s+name: '@local\/dsh-session-environment'/)
-  const result = spawnSync(process.execPath, ['scripts/apply-profile.mjs', '--', 'personal-web', '--dry-run'], {
-    cwd: ROOT, encoding: 'utf8', timeout: 10000,
-    env: { PATH: process.env.PATH },
-  })
+  assert.match(
+    patch,
+    /- insert:\s+- id: local-session-environment\s+name: '@local\/dsh-session-environment'/,
+  )
+  const result = spawnSync(
+    process.execPath,
+    ['scripts/apply-profile.mjs', '--', 'personal-web', '--dry-run'],
+    {
+      cwd: ROOT,
+      encoding: 'utf8',
+      timeout: 10000,
+      env: { PATH: process.env.PATH },
+    },
+  )
   assert.equal(result.status, 0, result.stderr)
   assert.match(result.stdout, /Applying @local\/dsh-session-environment to profile personal-web/)
-  assert.ok(result.stdout.includes(JSON.stringify(fileURLToPath(new URL('../', import.meta.url)).replace(/\/$/, ''))))
+  assert.ok(
+    result.stdout.includes(
+      JSON.stringify(fileURLToPath(new URL('../', import.meta.url)).replace(/\/$/, '')),
+    ),
+  )
   assert.match(result.stdout, /Would run: .*"--dump-config"/)
   assert.match(result.stdout, /Dry run complete/)
 })

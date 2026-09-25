@@ -1,8 +1,4 @@
-const YOUTUBE_HOSTS = new Set([
-  'youtube.com',
-  'www.youtube.com',
-  'm.youtube.com',
-])
+const YOUTUBE_HOSTS = new Set(['youtube.com', 'www.youtube.com', 'm.youtube.com'])
 
 const VIDEO_ID = /^[A-Za-z0-9_-]{11}$/u
 

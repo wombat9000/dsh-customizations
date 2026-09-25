@@ -4,27 +4,89 @@ import * as host from '../src/index.js'
 import { createListTool, createReadTool, createRequestTool, apply } from '../src/tools.js'
 
 test('host declares read scope and browser routes without authenticating on mount', async () => {
-  const registrations = [], cleanups = [], routes = [], events = []
+  const registrations = [],
+    cleanups = [],
+    routes = [],
+    events = []
   let service
   const googleAuth = {
-    registerIntegration(value) { registrations.push(value); return () => registrations.pop() },
-    withAccessToken() { assert.fail('install must not request tokens') },
-    getAccessGeneration() { return 0 }, onAccessChange() { return () => {} },
+    registerIntegration(value) {
+      registrations.push(value)
+      return () => registrations.pop()
+    },
+    withAccessToken() {
+      assert.fail('install must not request tokens')
+    },
+    getAccessGeneration() {
+      return 0
+    },
+    onAccessChange() {
+      return () => {}
+    },
   }
   assert.deepEqual(host.inject, ['googleAuth', 'agents', 'approval', 'webServer'])
-  host.apply({ googleAuth, agents: { get() {}, roots() { return [] } }, approval: {},
-    webServer: { port: 3000, register(route) { routes.push(route); return () => {} } },
-    effect(fn) { cleanups.push(fn()) }, on(event) { events.push(event) },
-    provide(name, value) { assert.equal(name, 'googleDrive'); service = value },
+  host.apply({
+    googleAuth,
+    agents: {
+      get() {},
+      roots() {
+        return []
+      },
+    },
+    approval: {},
+    webServer: {
+      port: 3000,
+      register(route) {
+        routes.push(route)
+        return () => {}
+      },
+    },
+    effect(fn) {
+      cleanups.push(fn())
+    },
+    on(event) {
+      events.push(event)
+    },
+    provide(name, value) {
+      assert.equal(name, 'googleDrive')
+      service = value
+    },
   })
   assert.deepEqual(registrations, [
-    { id: 'google-drive', label: 'Google Drive', scopes: ['https://www.googleapis.com/auth/drive.readonly'] },
-    { id: 'google-sheets-edit', label: 'Google Sheets editing (account-wide)', scopes: ['https://www.googleapis.com/auth/spreadsheets'] },
+    {
+      id: 'google-drive',
+      label: 'Google Drive',
+      scopes: ['https://www.googleapis.com/auth/drive.readonly'],
+    },
+    {
+      id: 'google-sheets-edit',
+      label: 'Google Sheets editing (account-wide)',
+      scopes: ['https://www.googleapis.com/auth/spreadsheets'],
+    },
   ])
-  assert.deepEqual(routes.map(route => route.path), ['status', 'manage', 'revoke', 'browse', 'grant', 'deny',
-    'edit-status', 'edit-manage', 'edit-revoke', 'edit-browse', 'edit-grant', 'edit-deny',
-    'preview-status', 'preview-apply', 'preview-deny', 'session-status', 'session-set'].map(action => `/api/plugins/google-drive/${action}`))
-  assert.ok(routes.every(route => route.kind === 'exact' && typeof route.handler === 'function'))
+  assert.deepEqual(
+    routes.map((route) => route.path),
+    [
+      'status',
+      'manage',
+      'revoke',
+      'browse',
+      'grant',
+      'deny',
+      'edit-status',
+      'edit-manage',
+      'edit-revoke',
+      'edit-browse',
+      'edit-grant',
+      'edit-deny',
+      'preview-status',
+      'preview-apply',
+      'preview-deny',
+      'session-status',
+      'session-set',
+    ].map((action) => `/api/plugins/google-drive/${action}`),
+  )
+  assert.ok(routes.every((route) => route.kind === 'exact' && typeof route.handler === 'function'))
   assert.deepEqual(events, ['agent/disposed'])
   await assert.rejects(service.listFiles({}, {}), /exact live/)
   for (const cleanup of cleanups.reverse()) cleanup()
@@ -34,14 +96,31 @@ test('host declares read scope and browser routes without authenticating on moun
 test('tools validate input, require caller and pass exact owner plus cancellation', async () => {
   const calls = []
   const service = {
-    listFiles(owner, args) { calls.push([owner, args]); return { files: [] } },
-    readText(owner, args) { calls.push([owner, args]); return { text: 'hello' } },
-    request(owner, args) { calls.push([owner, args]); return { state: 'denied' } },
+    listFiles(owner, args) {
+      calls.push([owner, args])
+      return { files: [] }
+    },
+    readText(owner, args) {
+      calls.push([owner, args])
+      return { text: 'hello' }
+    },
+    request(owner, args) {
+      calls.push([owner, args])
+      return { state: 'denied' }
+    },
   }
-  const list = createListTool(service), read = createReadTool(service), request = createRequestTool(service)
+  const list = createListTool(service),
+    read = createReadTool(service),
+    request = createRequestTool(service)
   const exec = { agent: {}, callId: 'call', signal: new AbortController().signal }
   await assert.rejects(list.execute({}, {}), /calling agent/)
-  for (const args of [{ pageSize: 101 }, { pageSize: 0 }, { pageSize: 1.2 }, { query: 'x' }, { token: 'x' }]) {
+  for (const args of [
+    { pageSize: 101 },
+    { pageSize: 0 },
+    { pageSize: 1.2 },
+    { query: 'x' },
+    { token: 'x' },
+  ]) {
     await assert.rejects(list.execute(args, exec))
   }
   assert.equal(calls.length, 0)
@@ -59,29 +138,90 @@ test('tools validate input, require caller and pass exact owner plus cancellatio
 
 test('PDF read tool validates bounded options without changing text defaults or output', async () => {
   const calls = []
-  const result = { text: '[Page 2]\nrecognized', pages: [{ pageNumber: 2, method: 'ocr' }],
-    totalPages: 9, actualRange: { startPage: 2, endPage: 2 }, nextStartPage: 3, warnings: [], mimeType: 'text/plain', format: 'pdf' }
-  const tool = createReadTool({ readText(owner, args) { calls.push({ owner, args }); return result } })
+  const result = {
+    text: '[Page 2]\nrecognized',
+    pages: [{ pageNumber: 2, method: 'ocr' }],
+    totalPages: 9,
+    actualRange: { startPage: 2, endPage: 2 },
+    nextStartPage: 3,
+    warnings: [],
+    mimeType: 'text/plain',
+    format: 'pdf',
+  }
+  const tool = createReadTool({
+    readText(owner, args) {
+      calls.push({ owner, args })
+      return result
+    },
+  })
   const exec = { agent: {}, signal: new AbortController().signal }
-  const serialized = await tool.execute({ fileId: 'pdf', startPage: 2, endPage: 2, ocr: 'force', languages: ['deu', 'eng'], maxBytes: 262144 }, exec)
+  const serialized = await tool.execute(
+    {
+      fileId: 'pdf',
+      startPage: 2,
+      endPage: 2,
+      ocr: 'force',
+      languages: ['deu', 'eng'],
+      maxBytes: 262144,
+    },
+    exec,
+  )
   assert.deepEqual(JSON.parse(serialized), result)
   assert.equal(tool.output.schema.type, 'string')
   assert.deepEqual(tool.output.render({}, serialized), [{ type: 'text', text: serialized }])
   assert.equal(calls[0].owner, exec.agent)
-  assert.deepEqual(calls[0].args, { fileId: 'pdf', startPage: 2, endPage: 2, ocr: 'force', languages: ['deu', 'eng'], maxBytes: 262144, signal: exec.signal })
+  assert.deepEqual(calls[0].args, {
+    fileId: 'pdf',
+    startPage: 2,
+    endPage: 2,
+    ocr: 'force',
+    languages: ['deu', 'eng'],
+    maxBytes: 262144,
+    signal: exec.signal,
+  })
   await tool.execute({ fileId: 'text' }, exec)
   assert.deepEqual(calls[1].args, { fileId: 'text', maxBytes: 65536, signal: exec.signal })
-  for (const options of [{ startPage: 0 }, { startPage: 201 }, { startPage: 1.5 }, { startPage: '1' },
-    { endPage: 0 }, { endPage: 201 }, { endPage: 2.5 }, { endPage: '2' }, { startPage: 3, endPage: 2 }, { endPage: 6 },
-    { startPage: 5, endPage: 10 }, { ocr: 'yes' }, { ocr: null }, { languages: [] }, { languages: 'eng' },
-    { languages: ['eng', 'eng'] }, { languages: ['eng', 'deu', 'fra', 'spa'] }, { languages: ['../eng'] },
-    { languages: ['ENG'] }, { languages: [null] }, { startPage: null }, { extra: true }]) {
-    await assert.rejects(tool.execute({ fileId: 'pdf', ...options }, exec), undefined, JSON.stringify(options))
+  for (const options of [
+    { startPage: 0 },
+    { startPage: 201 },
+    { startPage: 1.5 },
+    { startPage: '1' },
+    { endPage: 0 },
+    { endPage: 201 },
+    { endPage: 2.5 },
+    { endPage: '2' },
+    { startPage: 3, endPage: 2 },
+    { endPage: 6 },
+    { startPage: 5, endPage: 10 },
+    { ocr: 'yes' },
+    { ocr: null },
+    { languages: [] },
+    { languages: 'eng' },
+    { languages: ['eng', 'eng'] },
+    { languages: ['eng', 'deu', 'fra', 'spa'] },
+    { languages: ['../eng'] },
+    { languages: ['ENG'] },
+    { languages: [null] },
+    { startPage: null },
+    { extra: true },
+  ]) {
+    await assert.rejects(
+      tool.execute({ fileId: 'pdf', ...options }, exec),
+      undefined,
+      JSON.stringify(options),
+    )
   }
   assert.equal(calls.length, 2)
-  for (const options of [{ startPage: 200 }, { startPage: 196, endPage: 200 }, { endPage: 5 },
-    { ocr: 'off', languages: ['fra', 'spa', 'ita'] }, { ocr: 'auto', languages: ['por'] }]) await tool.execute({ fileId: 'pdf', ...options }, exec)
-  const aborted = new AbortController(); aborted.abort()
+  for (const options of [
+    { startPage: 200 },
+    { startPage: 196, endPage: 200 },
+    { endPage: 5 },
+    { ocr: 'off', languages: ['fra', 'spa', 'ita'] },
+    { ocr: 'auto', languages: ['por'] },
+  ])
+    await tool.execute({ fileId: 'pdf', ...options }, exec)
+  const aborted = new AbortController()
+  aborted.abort()
   await assert.rejects(tool.execute({ fileId: 'pdf' }, { ...exec, signal: aborted.signal }))
   assert.equal(calls.length, 7)
   assert.deepEqual(tool.parameters.properties.ocr.enum, ['auto', 'off', 'force'])
@@ -91,7 +231,14 @@ test('PDF read tool validates bounded options without changing text defaults or 
 })
 
 test('legacy tools composition remains loadable without enabling tools or accessing Google', () => {
-  const forbidden = new Proxy({}, { get() { assert.fail('legacy compatibility row must not register or grant anything') } })
+  const forbidden = new Proxy(
+    {},
+    {
+      get() {
+        assert.fail('legacy compatibility row must not register or grant anything')
+      },
+    },
+  )
   apply(forbidden)
   apply(forbidden)
 })

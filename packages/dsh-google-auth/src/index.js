@@ -7,25 +7,33 @@ export const inject = ['credentials', 'webServer', 'settings']
 export const Config = z.object({ useSandbox: z.boolean().default(false) })
 export const CLIENT_KEY = 'google-auth/client'
 export const CREDENTIAL_KEY = 'google-auth/default'
-const CONFIG_ERROR = 'Configure a Google Desktop OAuth client in Settings → Plugins → Google accounts.'
+const CONFIG_ERROR =
+  'Configure a Google Desktop OAuth client in Settings → Plugins → Google accounts.'
 
 function validClient(value) {
-  return value && typeof value.clientId === 'string'
-    && /^[A-Za-z0-9_-]+\.apps\.googleusercontent\.com$/u.test(value.clientId)
-    && value.clientId.length <= 512
-    && (value.clientSecret === undefined || (typeof value.clientSecret === 'string'
-      && /^[\x21-\x7e]{1,1024}$/u.test(value.clientSecret)))
+  return (
+    value &&
+    typeof value.clientId === 'string' &&
+    /^[A-Za-z0-9_-]+\.apps\.googleusercontent\.com$/u.test(value.clientId) &&
+    value.clientId.length <= 512 &&
+    (value.clientSecret === undefined ||
+      (typeof value.clientSecret === 'string' && /^[\x21-\x7e]{1,1024}$/u.test(value.clientSecret)))
+  )
 }
 
 export function parseClientJson(text) {
   try {
     if (typeof text !== 'string' || text.length > 32768) throw new Error()
     const installed = JSON.parse(text)?.installed
-    const value = { clientId: installed?.client_id,
-      ...(installed?.client_secret !== undefined ? { clientSecret: installed.client_secret } : {}) }
+    const value = {
+      clientId: installed?.client_id,
+      ...(installed?.client_secret !== undefined ? { clientSecret: installed.client_secret } : {}),
+    }
     if (!validClient(value)) throw new Error()
     return value // Discard all supplied endpoints; OAuth uses fixed Google URLs.
-  } catch { throw new Error('Paste valid downloaded Google Desktop OAuth client JSON (maximum 32 KiB).') }
+  } catch {
+    throw new Error('Paste valid downloaded Google Desktop OAuth client JSON (maximum 32 KiB).')
+  }
 }
 
 export function credentialAdapter(provider, clientId, isCurrent = () => true) {
@@ -35,10 +43,16 @@ export function credentialAdapter(provider, clientId, isCurrent = () => true) {
         if (!isCurrent()) throw new Error()
         const record = await provider.readRecord(CREDENTIAL_KEY)
         if (!isCurrent()) throw new Error()
-        if (record?.kind !== 'grant' || record.payload?.version !== 1
-          || record.payload.clientId !== clientId) return undefined
+        if (
+          record?.kind !== 'grant' ||
+          record.payload?.version !== 1 ||
+          record.payload.clientId !== clientId
+        )
+          return undefined
         return record.payload.tokens
-      } catch { throw new Error('Could not read the Google credential store.') }
+      } catch {
+        throw new Error('Could not read the Google credential store.')
+      }
     },
     async set(tokens, isValid = () => true) {
       try {
@@ -48,30 +62,60 @@ export function credentialAdapter(provider, clientId, isCurrent = () => true) {
           if (!isCurrent() || !isValid()) throw new Error()
           return { kind: 'grant', payload: { version: 1, clientId, tokens } }
         })
-      } catch { throw new Error('Could not save the Google credential store.') }
+      } catch {
+        throw new Error('Could not save the Google credential store.')
+      }
     },
     async delete() {
-      try { await provider.deleteRecord(CREDENTIAL_KEY) }
-      catch { throw new Error('Could not remove the Google credential store.') }
+      try {
+        await provider.deleteRecord(CREDENTIAL_KEY)
+      } catch {
+        throw new Error('Could not remove the Google credential store.')
+      }
     },
   }
 }
 
 function integrationDefinition(value) {
-  if (!value || typeof value !== 'object' || Array.isArray(value)
-    || typeof value.id !== 'string' || !/^[a-z][a-z0-9-]{0,63}$/u.test(value.id)
-    || typeof value.label !== 'string' || !value.label.trim() || value.label.length > 80
-    || !Array.isArray(value.scopes) || value.scopes.length < 1 || value.scopes.length > 32
-    || Array.from(value.scopes).some(scope => typeof scope !== 'string' || scope.length > 256
-      || !(/^(openid|email|profile)$/u.test(scope) || /^https:\/\/www\.googleapis\.com\/auth\/[A-Za-z0-9._/-]+$/u.test(scope)))) {
+  if (
+    !value ||
+    typeof value !== 'object' ||
+    Array.isArray(value) ||
+    typeof value.id !== 'string' ||
+    !/^[a-z][a-z0-9-]{0,63}$/u.test(value.id) ||
+    typeof value.label !== 'string' ||
+    !value.label.trim() ||
+    value.label.length > 80 ||
+    !Array.isArray(value.scopes) ||
+    value.scopes.length < 1 ||
+    value.scopes.length > 32 ||
+    Array.from(value.scopes).some(
+      (scope) =>
+        typeof scope !== 'string' ||
+        scope.length > 256 ||
+        !(
+          /^(openid|email|profile)$/u.test(scope) ||
+          /^https:\/\/www\.googleapis\.com\/auth\/[A-Za-z0-9._/-]+$/u.test(scope)
+        ),
+    )
+  ) {
     throw new Error('Register an integration ID, label, and explicit Google permission scopes.')
   }
-  return Object.freeze({ id: value.id, label: value.label.trim(), scopes: Object.freeze(normalizeScopes(value.scopes).sort()) })
+  return Object.freeze({
+    id: value.id,
+    label: value.label.trim(),
+    scopes: Object.freeze(normalizeScopes(value.scopes).sort()),
+  })
 }
 
 export class GoogleAuthService {
-  constructor({ credentials, createClient = options => new GoogleOAuthClient(options),
-    getCallbackMode = () => false, saveCallbackMode, getPublisher = () => undefined }) {
+  constructor({
+    credentials,
+    createClient = (options) => new GoogleOAuthClient(options),
+    getCallbackMode = () => false,
+    saveCallbackMode,
+    getPublisher = () => undefined,
+  }) {
     this.credentials = credentials
     this.createClient = createClient
     this.getCallbackMode = getCallbackMode
@@ -103,7 +147,11 @@ export class GoogleAuthService {
   }
 
   sandboxAvailable() {
-    try { return this.getPublisher()?.available() === true } catch { return false }
+    try {
+      return this.getPublisher()?.available() === true
+    } catch {
+      return false
+    }
   }
 
   async setCallbackMode(useSandbox) {
@@ -112,14 +160,19 @@ export class GoogleAuthService {
     this.syncCallbackMode()
     if (useSandbox !== this.useSandbox) {
       // Interrupt publication immediately instead of waiting behind begin().
-      if (this.client?.cancel() === false) throw new Error('Google sign-in is finishing. Wait before changing callback mode.')
+      if (this.client?.cancel() === false)
+        throw new Error('Google sign-in is finishing. Wait before changing callback mode.')
       this.modeRevision++
       this.pendingIntegrations = undefined
     }
     return this.serialize(async () => {
-      if (typeof this.saveCallbackMode !== 'function') throw new Error('Google callback settings are read-only.')
-      try { await this.saveCallbackMode(useSandbox) }
-      catch { throw new Error('Could not save Google callback settings.') }
+      if (typeof this.saveCallbackMode !== 'function')
+        throw new Error('Google callback settings are read-only.')
+      try {
+        await this.saveCallbackMode(useSandbox)
+      } catch {
+        throw new Error('Could not save Google callback settings.')
+      }
       this.syncCallbackMode()
       await this.client?.cleanup?.()
       return {}
@@ -128,10 +181,13 @@ export class GoogleAuthService {
 
   // Host-only, non-secret account lifetime. Reconnecting also invalidates local
   // resource grants, even when Google ultimately returns the same account.
-  getAccessGeneration() { return this.accessGeneration }
+  getAccessGeneration() {
+    return this.accessGeneration
+  }
 
   onAccessChange(listener) {
-    if (this.closed || typeof listener !== 'function') throw new Error('Google access observer is unavailable.')
+    if (this.closed || typeof listener !== 'function')
+      throw new Error('Google access observer is unavailable.')
     this.accessListeners.add(listener)
     return () => this.accessListeners.delete(listener)
   }
@@ -139,18 +195,25 @@ export class GoogleAuthService {
   invalidateAccess(integrationId) {
     this.accessGeneration++
     for (const listener of this.accessListeners) {
-      try { listener() } catch { /* An observer cannot prevent revocation. */ }
+      try {
+        listener()
+      } catch {
+        /* An observer cannot prevent revocation. */
+      }
     }
     for (const operation of this.accessOperations) {
-      if (integrationId === undefined || operation.integration.id === integrationId) operation.controller.abort()
+      if (integrationId === undefined || operation.integration.id === integrationId)
+        operation.controller.abort()
     }
   }
 
   registerIntegration(value) {
     if (this.closed) throw new Error('Google auth plugin has stopped.')
     const definition = integrationDefinition(value)
-    if (this.integrations.has(definition.id)) throw new Error('Google integration ID is already registered.')
-    if (this.integrations.size >= 32) throw new Error('Google integration registration limit reached.')
+    if (this.integrations.has(definition.id))
+      throw new Error('Google integration ID is already registered.')
+    if (this.integrations.size >= 32)
+      throw new Error('Google integration registration limit reached.')
     this.integrations.set(definition.id, definition)
     // Registration is declaration only: no credential reads, login or consent.
     return () => {
@@ -166,12 +229,14 @@ export class GoogleAuthService {
   }
 
   integration(id) {
-    if (typeof id !== 'string' || !this.integrations.has(id)) throw new Error('Google integration is not registered.')
+    if (typeof id !== 'string' || !this.integrations.has(id))
+      throw new Error('Google integration is not registered.')
     return this.integrations.get(id)
   }
 
   assertIntegration(definition) {
-    if (this.closed || this.integrations.get(definition.id) !== definition) throw new Error('Google integration changed; retry.')
+    if (this.closed || this.integrations.get(definition.id) !== definition)
+      throw new Error('Google integration changed; retry.')
   }
 
   async load() {
@@ -181,16 +246,33 @@ export class GoogleAuthService {
       const generation = this.generation
       this.loading = (async () => {
         let record
-        try { record = await this.credentials.readRecord(CLIENT_KEY) }
-        catch { throw new Error('Could not read Google client configuration.') }
-        if (this.closed || this.generation !== generation) throw new Error('Google configuration changed; retry.')
-        if (record?.kind !== 'grant' || record.payload?.version !== 1 || !validClient(record.payload)) throw new Error(CONFIG_ERROR)
+        try {
+          record = await this.credentials.readRecord(CLIENT_KEY)
+        } catch {
+          throw new Error('Could not read Google client configuration.')
+        }
+        if (this.closed || this.generation !== generation)
+          throw new Error('Google configuration changed; retry.')
+        if (
+          record?.kind !== 'grant' ||
+          record.payload?.version !== 1 ||
+          !validClient(record.payload)
+        )
+          throw new Error(CONFIG_ERROR)
         const { clientId, clientSecret } = record.payload
-        this.client = this.createClient({ clientId, clientSecret,
-          credentials: credentialAdapter(this.credentials, clientId, () => !this.closed && this.generation === generation),
+        this.client = this.createClient({
+          clientId,
+          clientSecret,
+          credentials: credentialAdapter(
+            this.credentials,
+            clientId,
+            () => !this.closed && this.generation === generation,
+          ),
         })
         return this.client
-      })().finally(() => { this.loading = undefined })
+      })().finally(() => {
+        this.loading = undefined
+      })
     }
     return this.loading
   }
@@ -224,7 +306,9 @@ export class GoogleAuthService {
           if (this.closed) throw new Error()
           return { kind: 'grant', payload: { version: 1, ...config } }
         })
-      } catch { throw new Error('Could not save Google client configuration.') }
+      } catch {
+        throw new Error('Could not save Google client configuration.')
+      }
       return {}
     })
   }
@@ -232,8 +316,11 @@ export class GoogleAuthService {
   async clearConfig() {
     return this.serialize(async () => {
       await this.resetClient()
-      try { await this.credentials.deleteRecord(CLIENT_KEY) }
-      catch { throw new Error('Could not remove Google client configuration.') }
+      try {
+        await this.credentials.deleteRecord(CLIENT_KEY)
+      } catch {
+        throw new Error('Could not remove Google client configuration.')
+      }
       return {}
     })
   }
@@ -242,78 +329,130 @@ export class GoogleAuthService {
     await this.mutation
     this.syncCallbackMode()
     let status
-    try { status = await (await this.load()).status() }
-    catch { status = { configured: false, connected: false, pending: false, grantedScopes: [], error: CONFIG_ERROR } }
+    try {
+      status = await (await this.load()).status()
+    } catch {
+      status = {
+        configured: false,
+        connected: false,
+        pending: false,
+        grantedScopes: [],
+        error: CONFIG_ERROR,
+      }
+    }
     if (!status.pending) this.pendingIntegrations = undefined
     const granted = new Set(status.connected ? status.grantedScopes : [])
-    const requiredScopes = [...new Set([...this.integrations.values()].flatMap(item => item.scopes))].sort()
+    const requiredScopes = [
+      ...new Set([...this.integrations.values()].flatMap((item) => item.scopes)),
+    ].sort()
     return {
-      configured: status.configured === true, connected: status.connected === true, pending: status.pending === true,
-      useSandbox: this.useSandbox, sandboxAvailable: this.sandboxAvailable(),
+      configured: status.configured === true,
+      connected: status.connected === true,
+      pending: status.pending === true,
+      useSandbox: this.useSandbox,
+      sandboxAvailable: this.sandboxAvailable(),
       ...(Number.isFinite(status.expiresAt) ? { expiresAt: status.expiresAt } : {}),
       ...(status.error ? { error: status.error } : {}),
-      ...(status.account ? { account: { id: status.account.id, ...(status.account.email ? { email: status.account.email } : {}) } } : {}),
-      requiredScopes, missingScopes: requiredScopes.filter(scope => !granted.has(scope)),
-      integrations: [...this.integrations.values()].map(integration => {
-        const missingScopes = integration.scopes.filter(scope => !granted.has(scope))
-        return { id: integration.id, label: integration.label, scopes: [...integration.scopes],
-          authorized: status.connected === true && missingScopes.length === 0, missingScopes }
+      ...(status.account
+        ? {
+            account: {
+              id: status.account.id,
+              ...(status.account.email ? { email: status.account.email } : {}),
+            },
+          }
+        : {}),
+      requiredScopes,
+      missingScopes: requiredScopes.filter((scope) => !granted.has(scope)),
+      integrations: [...this.integrations.values()].map((integration) => {
+        const missingScopes = integration.scopes.filter((scope) => !granted.has(scope))
+        return {
+          id: integration.id,
+          label: integration.label,
+          scopes: [...integration.scopes],
+          authorized: status.connected === true && missingScopes.length === 0,
+          missingScopes,
+        }
       }),
     }
   }
 
   async begin(...args) {
-    if (args.length) throw new Error('Google account login accepts no integration ID or caller scopes.')
+    if (args.length)
+      throw new Error('Google account login accepts no integration ID or caller scopes.')
     const integrations = [...this.integrations.values()]
     if (!integrations.length) throw new Error('No Google integrations are registered.')
     const assertSnapshot = () => {
-      if (this.integrations.size !== integrations.length) throw new Error('Google integrations changed; connect again.')
+      if (this.integrations.size !== integrations.length)
+        throw new Error('Google integrations changed; connect again.')
       for (const integration of integrations) this.assertIntegration(integration)
     }
-    const scopes = [...new Set(integrations.flatMap(item => item.scopes))].sort()
+    const scopes = [...new Set(integrations.flatMap((item) => item.scopes))].sort()
     this.syncCallbackMode()
     const modeRevision = this.modeRevision
     return this.serialize(async () => {
       this.syncCallbackMode()
-      if (this.modeRevision !== modeRevision) throw new Error('Callback mode changed; connect again.')
+      if (this.modeRevision !== modeRevision)
+        throw new Error('Callback mode changed; connect again.')
       const publisher = this.useSandbox ? this.getPublisher() : undefined
       if (this.useSandbox && (!publisher || !this.sandboxAvailable())) {
-        throw new Error('Sandbox callback forwarding is unavailable. Start the sandbox bridge or turn off sandbox forwarding.')
+        throw new Error(
+          'Sandbox callback forwarding is unavailable. Start the sandbox bridge or turn off sandbox forwarding.',
+        )
       }
       assertSnapshot()
       const client = await this.load()
       assertSnapshot()
-      if (this.modeRevision !== modeRevision) throw new Error('Callback mode changed; connect again.')
+      if (this.modeRevision !== modeRevision)
+        throw new Error('Callback mode changed; connect again.')
       this.invalidateAccess()
       assertSnapshot()
-      if (this.modeRevision !== modeRevision) throw new Error('Callback mode changed; connect again.')
+      if (this.modeRevision !== modeRevision)
+        throw new Error('Callback mode changed; connect again.')
       // Track exact registrations before OAuth starts so removal also cancels
       // an in-flight callback publication, not only an already returned link.
       this.pendingIntegrations = integrations
-      const result = await client.begin({ scopes,
-        ...(publisher ? { publishCallback: (port, signal) => publisher.publish({ port, signal }) } : {}),
+      const result = await client.begin({
+        scopes,
+        ...(publisher
+          ? { publishCallback: (port, signal) => publisher.publish({ port, signal }) }
+          : {}),
       })
       try {
         assertSnapshot()
-        if (this.modeRevision !== modeRevision) throw new Error('Callback mode changed; connect again.')
-      } catch (error) { client.cancel(); throw error }
+        if (this.modeRevision !== modeRevision)
+          throw new Error('Callback mode changed; connect again.')
+      } catch (error) {
+        client.cancel()
+        throw error
+      }
       return result
     })
   }
 
   async cancel() {
-    if (this.client?.cancel() === false) throw new Error('Google sign-in is finishing. Wait for completion, then disconnect if needed.')
+    if (this.client?.cancel() === false)
+      throw new Error(
+        'Google sign-in is finishing. Wait for completion, then disconnect if needed.',
+      )
     // Invalidate begin() even while it is still loading configuration and has
     // not created a client/listener yet. Recheck once queued mutations settle.
     this.modeRevision++
     this.pendingIntegrations = undefined
     return this.serialize(async () => {
-      if (this.client?.cancel() === false) throw new Error('Google sign-in is finishing. Wait for completion, then disconnect if needed.')
+      if (this.client?.cancel() === false)
+        throw new Error(
+          'Google sign-in is finishing. Wait for completion, then disconnect if needed.',
+        )
       await this.client?.cleanup?.()
       return {}
     })
   }
-  async disconnect() { return this.serialize(async () => { await this.resetClient(); return {} }) }
+  async disconnect() {
+    return this.serialize(async () => {
+      await this.resetClient()
+      return {}
+    })
+  }
 
   // Trusted host consumers only. No unscoped overload, browser endpoint, token
   // export tool, or automatic login; missing permissions require a UI action.
@@ -372,17 +511,28 @@ export class GoogleAuthService {
 
 export function apply(ctx, config = {}) {
   let source = () => ({ useSandbox: config.useSandbox === true })
-  const service = new GoogleAuthService({ credentials: ctx.credentials,
+  const service = new GoogleAuthService({
+    credentials: ctx.credentials,
     getCallbackMode: () => source().useSandbox,
-    saveCallbackMode: value => ctx.settings.update(name, { useSandbox: value }),
+    saveCallbackMode: (value) => ctx.settings.update(name, { useSandbox: value }),
     getPublisher: () => ctx.get('sandboxCallbackPublisher'),
   })
   ctx.effect(() => () => service.dispose())
   ctx.provide('googleAuth', service)
   registerSettingsRoutes(ctx, service)
   // This non-secret preference belongs in settings, never in OAuth credentials.
-  ctx.settings.installSection(ctx, name, Config, { useSandbox: config.useSandbox === true }, {
-    setSource(current) { source = current },
-    onChange() { service.syncCallbackMode() },
-  })
+  ctx.settings.installSection(
+    ctx,
+    name,
+    Config,
+    { useSandbox: config.useSandbox === true },
+    {
+      setSource(current) {
+        source = current
+      },
+      onChange() {
+        service.syncCallbackMode()
+      },
+    },
+  )
 }

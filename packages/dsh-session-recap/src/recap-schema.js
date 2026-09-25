@@ -15,15 +15,21 @@ export function parseRecap(text) {
   if (typeof text !== 'string') throw invalidRecap('response-type')
   if (text.length > LIMITS.outputChars) throw invalidRecap('output-limit', null, text.length)
   let value
-  try { value = JSON.parse(text.trim()) } catch { throw invalidRecap('json') }
+  try {
+    value = JSON.parse(text.trim())
+  } catch {
+    throw invalidRecap('json')
+  }
   if (
     !value ||
     typeof value !== 'object' ||
     Array.isArray(value) ||
-    Object.keys(value).some(key => !['headline', 'bullets'].includes(key)) ||
+    Object.keys(value).some((key) => !['headline', 'bullets'].includes(key)) ||
     !Array.isArray(value.bullets)
-  ) throw invalidRecap('shape')
-  if (value.bullets.length < 1 || value.bullets.length > 3) throw invalidRecap('bullet-count', null, value.bullets.length)
+  )
+    throw invalidRecap('shape')
+  if (value.bullets.length < 1 || value.bullets.length > 3)
+    throw invalidRecap('bullet-count', null, value.bullets.length)
   // Validate every bullet before checking size: malformed data never earns a repair.
   const bullets = value.bullets.map((bullet, index) => {
     if (typeof bullet !== 'string') throw invalidRecap('bullet-type', index, value.bullets.length)
@@ -38,27 +44,37 @@ export function parseRecap(text) {
     headline = value.headline.replace(/\s+/gu, ' ').trim()
     if (!headline) throw invalidRecap('empty-headline')
   }
-  if (headline?.length > LIMITS.headlineChars) throw invalidRecap('headline-length', null, headline.length)
+  if (headline?.length > LIMITS.headlineChars)
+    throw invalidRecap('headline-length', null, headline.length)
   // 320 permits a modest overrun of the 240-character prompt target, not a paragraph.
-  const oversized = bullets.findIndex(bullet => bullet.length > LIMITS.fieldChars)
+  const oversized = bullets.findIndex((bullet) => bullet.length > LIMITS.fieldChars)
   if (oversized !== -1) throw invalidRecap('bullet-length', oversized, bullets[oversized].length)
-  if (bullets.join('').length > LIMITS.recapChars) throw invalidRecap('combined-length', null, bullets.join('').length)
-  return Object.freeze({ ...(headline === undefined ? {} : { headline }), bullets: Object.freeze(bullets) })
+  if (bullets.join('').length > LIMITS.recapChars)
+    throw invalidRecap('combined-length', null, bullets.join('').length)
+  return Object.freeze({
+    ...(headline === undefined ? {} : { headline }),
+    bullets: Object.freeze(bullets),
+  })
 }
 
 export function parseCards(text, labels) {
   if (typeof text !== 'string') throw invalidRecap('response-type')
   if (text.length > LIMITS.outputChars) throw invalidRecap('output-limit')
   let value
-  try { value = JSON.parse(text.trim()) } catch { throw invalidRecap('json') }
-  const object = v => v && typeof v === 'object' && !Array.isArray(v)
+  try {
+    value = JSON.parse(text.trim())
+  } catch {
+    throw invalidRecap('json')
+  }
+  const object = (v) => v && typeof v === 'object' && !Array.isArray(v)
   if (
     !Array.isArray(labels) ||
     !labels.length ||
     labels.length > 3 ||
     new Set(labels).size !== labels.length ||
-    labels.some(label => !CARD_LABELS.includes(label))
-  ) throw invalidRecap('shape')
+    labels.some((label) => !CARD_LABELS.includes(label))
+  )
+    throw invalidRecap('shape')
   if (
     hasDuplicateKeys(text) ||
     !object(value) ||
@@ -67,12 +83,13 @@ export function parseCards(text, labels) {
     !Object.hasOwn(value, 'cards') ||
     !object(value.cards) ||
     Object.keys(value.cards).length !== labels.length ||
-    labels.some(label => !Object.hasOwn(value.cards, label))
-  ) throw invalidRecap('shape')
-  const normalize = value => typeof value === 'string' ? value.replace(/\s+/gu, ' ').trim() : ''
+    labels.some((label) => !Object.hasOwn(value.cards, label))
+  )
+    throw invalidRecap('shape')
+  const normalize = (value) => (typeof value === 'string' ? value.replace(/\s+/gu, ' ').trim() : '')
   const headline = normalize(value.headline)
   if (!headline) throw invalidRecap('headline-type')
-  const cards = labels.flatMap(label => {
+  const cards = labels.flatMap((label) => {
     if (value.cards[label] === null) return []
     const text = normalize(value.cards[label])
     if (!text) throw invalidRecap('card-type')
@@ -80,7 +97,8 @@ export function parseCards(text, labels) {
   })
   if (!cards.length) throw invalidRecap('card-count')
   if (headline.length > CARD_LIMITS.headline) throw invalidRecap('headline-length')
-  if (cards.some(card => card.text.length > CARD_LIMITS.text)) throw invalidRecap('card-length')
-  if (cards.reduce((n, card) => n + card.text.length, 0) > CARD_LIMITS.combined) throw invalidRecap('combined-length')
+  if (cards.some((card) => card.text.length > CARD_LIMITS.text)) throw invalidRecap('card-length')
+  if (cards.reduce((n, card) => n + card.text.length, 0) > CARD_LIMITS.combined)
+    throw invalidRecap('combined-length')
   return Object.freeze({ headline, cards: Object.freeze(cards) })
 }

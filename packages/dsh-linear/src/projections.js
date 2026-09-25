@@ -79,12 +79,14 @@ export function publicCycle(cycle, catalogs = {}) {
 
 export function publicProject(project, options = {}) {
   const maxDescriptionChars = options.maxDescriptionChars ?? 12_000
-  const description = typeof project.description === 'string'
-    ? project.description.slice(0, maxDescriptionChars)
-    : undefined
-  const content = options.includeContent === true && typeof project.content === 'string'
-    ? project.content.slice(0, maxDescriptionChars)
-    : undefined
+  const description =
+    typeof project.description === 'string'
+      ? project.description.slice(0, maxDescriptionChars)
+      : undefined
+  const content =
+    options.includeContent === true && typeof project.content === 'string'
+      ? project.content.slice(0, maxDescriptionChars)
+      : undefined
   return {
     id: project.id,
     name: project.name,
@@ -93,16 +95,19 @@ export function publicProject(project, options = {}) {
     url: project.url,
     slugId: project.slugId,
     priority: project.priority,
-    priorityLabel: project.priorityLabel ?? PRIORITY_LABELS[project.priority] ?? String(project.priority),
+    priorityLabel:
+      project.priorityLabel ?? PRIORITY_LABELS[project.priority] ?? String(project.priority),
     progress: project.progress,
     ...present('health', project.health ?? undefined),
     ...present('state', text(project.state)),
     ...present('leadId', project.leadId),
     ...present('statusId', project.statusId),
     ...(options.lead === undefined ? {} : { lead: publicUser(options.lead) }),
-    ...(options.status === undefined ? {} : {
-      status: { id: options.status.id, name: options.status.name, type: options.status.type },
-    }),
+    ...(options.status === undefined
+      ? {}
+      : {
+          status: { id: options.status.id, name: options.status.name, type: options.status.type },
+        }),
     ...(options.teams === undefined ? {} : { teams: options.teams.map(publicTeam) }),
     ...present('startDate', project.startDate == null ? undefined : String(project.startDate)),
     ...present('targetDate', project.targetDate == null ? undefined : String(project.targetDate)),
@@ -136,12 +141,16 @@ export async function publicIssue(issue, options = {}) {
   const project = catalogs.projects?.get(issue.projectId)
   const cycle = catalogs.cycles?.get(issue.cycleId)
   const labels = Array.isArray(issue.labelIds)
-    ? issue.labelIds.map((id) => catalogs.labels?.get(id)).filter(Boolean).map(publicLabel)
+    ? issue.labelIds
+        .map((id) => catalogs.labels?.get(id))
+        .filter(Boolean)
+        .map(publicLabel)
     : []
   const maxDescriptionChars = options.maxDescriptionChars ?? 12_000
-  const description = options.includeDescription === false || typeof issue.description !== 'string'
-    ? undefined
-    : issue.description.slice(0, maxDescriptionChars)
+  const description =
+    options.includeDescription === false || typeof issue.description !== 'string'
+      ? undefined
+      : issue.description.slice(0, maxDescriptionChars)
   return {
     id: issue.id,
     identifier: issue.identifier,
@@ -160,7 +169,9 @@ export async function publicIssue(issue, options = {}) {
     ...(state === undefined ? {} : { state: publicState(state) }),
     ...(team === undefined ? {} : { team: publicTeam(team) }),
     ...(assignee === undefined ? {} : { assignee: publicUser(assignee) }),
-    ...(project === undefined ? {} : { project: publicProject(project, { maxDescriptionChars: 500 }) }),
+    ...(project === undefined
+      ? {}
+      : { project: publicProject(project, { maxDescriptionChars: 500 }) }),
     ...(cycle === undefined ? {} : { cycle: publicCycle(cycle, catalogs) }),
     ...(labels.length === 0 ? {} : { labels }),
     createdAt: iso(issue.createdAt),

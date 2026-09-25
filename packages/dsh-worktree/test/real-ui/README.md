@@ -12,8 +12,8 @@ For local review only, set `WORKTREES_BEFORE_REF` to a trusted Git revision cont
 
 The `comparison/` images record the pre-redesign client at `00b8f09`; they are review evidence, not CI baselines. The images under `worktrees.spec.mjs-snapshots/` are the expected redesigned view used by CI.
 
-| Layout | Before | After (CI baseline) |
-| --- | --- | --- |
-| Light | ![Previous light layout](comparison/worktrees-light.png) | ![Redesigned light layout](worktrees.spec.mjs-snapshots/worktrees-light-linux.png) |
-| Dark | ![Previous dark layout](comparison/worktrees-dark.png) | ![Redesigned dark layout](worktrees.spec.mjs-snapshots/worktrees-dark-linux.png) |
+| Layout | Before                                                           | After (CI baseline)                                                                        |
+| ------ | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| Light  | ![Previous light layout](comparison/worktrees-light.png)         | ![Redesigned light layout](worktrees.spec.mjs-snapshots/worktrees-light-linux.png)         |
+| Dark   | ![Previous dark layout](comparison/worktrees-dark.png)           | ![Redesigned dark layout](worktrees.spec.mjs-snapshots/worktrees-dark-linux.png)           |
 | Narrow | ![Previous narrow layout](comparison/worktrees-light-narrow.png) | ![Redesigned narrow layout](worktrees.spec.mjs-snapshots/worktrees-light-narrow-linux.png) |
