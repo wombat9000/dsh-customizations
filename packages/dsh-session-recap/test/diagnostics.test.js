@@ -1,13 +1,15 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import {
+import { registerTypeScript } from './fixtures/typescript.mjs'
+registerTypeScript()
+const {
   CARD_LABELS,
   CARD_QUESTIONS,
   cardSelectionDiagnostics,
   evaluateCardSelection,
   selectCardLabels,
-} from '../src/cards.js'
-import { RecapRuntime } from '../src/runtime.js'
+} = await import('../src/cards.ts')
+const { RecapRuntime } = await import('../src/runtime.ts')
 
 function evaluation(labels = CARD_LABELS) {
   return {

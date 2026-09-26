@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import * as runtime from '../src/runtime.js'
-import { RecapError } from '../src/errors.js'
-import { boundedHistory } from '../src/history.js'
-import { RECAP_PROMPT, parseCards, parseRecap } from '../src/recap-schema.js'
-import { DEFAULT_SETTINGS, LIMITS, normalizeSettings } from '../src/settings.js'
+import * as runtime from '../dist/src/runtime.js'
+import { RecapError } from '../dist/src/errors.js'
+import { boundedHistory } from '../dist/src/history.js'
+import { RECAP_PROMPT, parseCards, parseRecap } from '../dist/src/recap-schema.js'
+import { DEFAULT_SETTINGS, LIMITS, normalizeSettings } from '../dist/src/settings.js'
 
 test('runtime preserves its public helper exports after module extraction', () => {
   const helpers = {

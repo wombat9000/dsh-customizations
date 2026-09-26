@@ -4,7 +4,7 @@ import {
   pluginSettings,
   openSeededSession,
 } from '../../../../tests/real-ui/fixtures.mjs'
-import { cardSelectionDiagnostics, CARD_LABELS } from '../../src/cards.js'
+import { cardSelectionDiagnostics, CARD_LABELS } from '../../dist/src/cards.js'
 
 test('selection diagnostics expand and copy in the real shell without another evaluation', async ({
   app,

@@ -3,7 +3,7 @@ import vm from 'node:vm'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { buildClient, clientPath } from '../scripts/build-client.mjs'
-import { CARD_LABELS, CARD_TITLES } from '../src/cards.js'
+import { CARD_LABELS, CARD_TITLES } from '../dist/src/cards.js'
 
 const source = readFileSync(clientPath, 'utf8')
 

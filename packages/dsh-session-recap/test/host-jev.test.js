@@ -1,8 +1,10 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { RecapRuntime } from '../src/runtime.js'
-import { boundedHistory } from '../src/history.js'
-import { CARD_LABELS } from '../src/cards.js'
+import { registerTypeScript } from './fixtures/typescript.mjs'
+registerTypeScript()
+const { RecapRuntime } = await import('../src/runtime.ts')
+const { boundedHistory } = await import('../src/history.ts')
+const { CARD_LABELS } = await import('../src/cards.ts')
 const answers = (labels = ['direction']) => ({
   answers: Object.fromEntries(
     CARD_LABELS.flatMap((label) => [

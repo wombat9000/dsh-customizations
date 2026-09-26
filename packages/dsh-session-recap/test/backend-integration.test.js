@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { backend, model, state, userMessage, version } from './fixtures/backend.js'
-import { CHANNEL, name } from '../src/index.js'
+import { CHANNEL, name } from '../dist/src/index.js'
 
 const route = { provider: 'fixture', model: 'summary' }
 const success = (result) => {

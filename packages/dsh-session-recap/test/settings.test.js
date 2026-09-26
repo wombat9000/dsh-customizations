@@ -1,6 +1,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { normalizeSettings } from '../src/settings.js'
+import { registerTypeScript } from './fixtures/typescript.mjs'
+registerTypeScript()
+const { normalizeSettings } = await import('../src/settings.ts')
 
 test('settings defaults and strict validation', () => {
   assert.deepEqual(normalizeSettings(), {

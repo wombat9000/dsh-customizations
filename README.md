@@ -194,7 +194,7 @@ If dependencies are missing, follow the [repository setup skill](.agents/skills/
 
 GitHub and Session Recap share client build/type-check helpers and exact-pinned root development tooling. Their Node suites enforce strict client/contract type checks and committed-bundle freshness. GitHub's browser suites import source components; real-shell tests load its generated bundle. See [GitHub client development](packages/dsh-github/README.md#client-development).
 
-The Node suite also runs Session Recap's source-logic tests and in-process backend integration. The root build does not regenerate Session Recap's client; use its [development commands](packages/dsh-session-recap/README.md#development) after editing client sources. Its browser coverage includes direct TSX component tests as well as generated-bundle slot tests.
+The Node suite also checks Session Recap's TypeScript backend, source-logic tests, emitted host freshness, and in-process backend integration. The root build does not regenerate Session Recap's committed client or host output; use its [development commands](packages/dsh-session-recap/README.md#development) after editing sources. Its browser coverage includes direct TSX component tests as well as generated-bundle slot tests.
 
 ### Browser interactions and real DSH screenshots
 

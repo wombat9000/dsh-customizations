@@ -1,8 +1,9 @@
 import { LIMITS } from './settings.js'
+import type { HistoryMessage, HistoryRow } from './host-types.js'
 
 // Only visible human/model text enters the auxiliary request. Never replay tools,
 // reasoning, attachments, system instructions, or provider-private metadata.
-export function boundedHistory(messages) {
+export function boundedHistory(messages: readonly HistoryMessage[]): HistoryRow[] {
   const eligible = messages.filter(
     (message) =>
       ((message.role === 'user' && message.source?.kind === 'user') ||
@@ -15,7 +16,7 @@ export function boundedHistory(messages) {
   )
   if (!eligible.length) return []
   // Reserve opening and recent context; sample adjacent pairs across the middle.
-  const indices = new Set()
+  const indices = new Set<number>()
   if (eligible.length <= LIMITS.messages) {
     eligible.forEach((_, index) => indices.add(index))
   } else {
@@ -34,8 +35,9 @@ export function boundedHistory(messages) {
   const selected = [...indices].sort((a, b) => a - b)
   let previous = -1
   const rows = selected.map((index) => {
-    const message = eligible[index]
-    const row = { role: message.role, text: historyText(message) }
+    // Selection indices above are drawn exclusively from eligible message bounds.
+    const message = eligible[index]!
+    const row: HistoryRow = { role: message.role, text: historyText(message) }
     if (index > previous + 1) row.omittedBefore = index - previous - 1
     previous = index
     if (message.content.length > LIMITS.blocks) row.truncated = true
@@ -49,31 +51,32 @@ export function boundedHistory(messages) {
   let spare = available - budgets.reduce((sum, budget) => sum + budget, 0)
   // Water-fill unused allowances; recent messages receive 1.5x the spare share.
   // Every selected message retains its initial allowance, regardless of age.
+  // All four arrays are built with one entry per selected message; indices align.
   while (spare > 0) {
-    const hungry = [...budgets.keys()].filter((i) => budgets[i] < sizes[i])
+    const hungry = [...budgets.keys()].filter((i) => budgets[i]! < sizes[i]!)
     if (!hungry.length) break
-    const weight = (i) => (selected[i] >= eligible.length - 10 ? 3 : 2)
+    const weight = (i: number) => (selected[i]! >= eligible.length - 10 ? 3 : 2)
     const totalWeight = hungry.reduce((sum, i) => sum + weight(i), 0)
     const pool = spare
     for (const i of hungry) {
       const extra = Math.min(
         spare,
-        sizes[i] - budgets[i],
+        sizes[i]! - budgets[i]!,
         Math.max(1, Math.floor((pool * weight(i)) / totalWeight)),
       )
-      budgets[i] += extra
+      budgets[i] = budgets[i]! + extra
       spare -= extra
     }
   }
-  return rows.map((row, i) => fitHistoryRow(row, budgets[i]))
+  return rows.map((row, i) => fitHistoryRow(row, budgets[i]!))
 }
 
-const serializedBytes = (value) => Buffer.byteLength(JSON.stringify(value))
+const serializedBytes = (value: HistoryRow) => Buffer.byteLength(JSON.stringify(value))
 const MIDDLE_OMITTED = '\n[Middle omitted]\n'
 
 // Retain bounded character windows before serializing: giant text blocks must not
 // require a second unbounded copy. Each window alone exceeds any row's byte budget.
-function historyText(message) {
+function historyText(message: HistoryMessage) {
   const cap = LIMITS.inputBytes
   let head = ''
   let tail = ''
@@ -90,7 +93,7 @@ function historyText(message) {
   return head + tail.slice(-Math.min(cap, length - cap))
 }
 
-function historyEdges(text, retained, natural = false) {
+function historyEdges(text: string, retained: number, natural = false) {
   const headLength = Math.ceil((retained * 2) / 3)
   const tailLength = retained - headLength
   let head = text.slice(0, headLength).replace(/[\uD800-\uDBFF]$/u, '')
@@ -112,7 +115,7 @@ function historyEdges(text, retained, natural = false) {
   return head + MIDDLE_OMITTED + tail
 }
 
-function fitHistoryRow(row, budget) {
+function fitHistoryRow(row: HistoryRow, budget: number) {
   if (serializedBytes(row) <= budget) return row
   const shortened = { ...row, truncated: true }
   let low = 0

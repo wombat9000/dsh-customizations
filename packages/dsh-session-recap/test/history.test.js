@@ -1,7 +1,9 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { boundedHistory } from '../src/history.js'
-import { LIMITS } from '../src/settings.js'
+import { registerTypeScript } from './fixtures/typescript.mjs'
+registerTypeScript()
+const { boundedHistory } = await import('../src/history.ts')
+const { LIMITS } = await import('../src/settings.ts')
 
 const message = (text, role = 'user', kind = 'user') => ({
   role,

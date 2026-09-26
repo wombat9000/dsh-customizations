@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { Context, Service } from '@deepseek-ai/cordis'
 import { HostConnectionService } from '@deepseek-ai/dsh-client-connection'
-import * as recap from '../src/index.js'
+import * as recap from '../dist/src/index.js'
 
 test('real Cordis and host RPC mount recap without starting a GUI', async (t) => {
   const ctx = new Context()

@@ -1,7 +1,9 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { RecapRuntime } from '../src/runtime.js'
-import { LIMITS } from '../src/settings.js'
+import { registerTypeScript } from './fixtures/typescript.mjs'
+registerTypeScript()
+const { RecapRuntime } = await import('../src/runtime.ts')
+const { LIMITS } = await import('../src/settings.ts')
 
 const answer = {
   bullets: [

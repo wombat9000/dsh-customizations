@@ -11,6 +11,19 @@ let registered = false
 export function registerTypeScript() {
   if (registered) return
   registerHooks({
+    resolve(specifier, context, nextResolve) {
+      // Backend source uses Node-compatible .js specifiers for emitted modules.
+      // Redirect only intra-backend source imports during source-level tests.
+      const sourceUrl = new URL('src/', packageUrl).href
+      if (
+        context.parentURL?.startsWith(sourceUrl) &&
+        specifier.startsWith('./') &&
+        specifier.endsWith('.js')
+      ) {
+        return nextResolve(new URL(specifier.slice(0, -3) + '.ts', context.parentURL).href, context)
+      }
+      return nextResolve(specifier, context)
+    },
     load(url, context, nextLoad) {
       if (!url.startsWith(packageUrl) || !/\.tsx?$/u.test(url)) return nextLoad(url, context)
       const fileName = fileURLToPath(url)
