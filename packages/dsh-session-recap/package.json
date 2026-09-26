@@ -4,9 +4,9 @@
   "private": true,
   "description": "Return-to-session recaps with an instance-configured model for DSH Web",
   "type": "module",
-  "main": "src/index.js",
+  "main": "dist/src/index.js",
   "exports": {
-    ".": "./src/index.js",
+    ".": "./dist/src/index.js",
     "./client": "./client.js",
     "./package.json": "./package.json"
   },
@@ -18,12 +18,15 @@
     "scripts/*.mjs",
     "tsconfig.json",
     "cordis.patch.yml",
-    "src/**/*.js",
+    "src/**/*.ts",
+    "dist/**/*.js",
+    "tsconfig.host.json",
     "README.md"
   ],
   "scripts": {
     "typecheck": "node scripts/typecheck.mjs",
-    "build": "node scripts/build-client.mjs",
+    "build": "node scripts/build-host.mjs && node scripts/build-client.mjs",
+    "build:host": "node scripts/build-host.mjs",
     "build:client": "node scripts/build-client.mjs",
     "test": "node --test test/*.test.*"
   },

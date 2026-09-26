@@ -78,47 +78,49 @@ This version regenerates from bounded conversation excerpts after a revision cha
 
 ## Development
 
-Edit the focused source files, not the generated `client.js`:
+Both the backend and frontend use TypeScript. Edit source files, not the generated `dist/` modules or `client.js`:
 
-- `src/index.js` registers settings and RPC handlers.
-- `src/runtime.js` owns session checks, caching, concurrent requests, and disposal. It re-exports the existing helper API for compatibility.
-- `src/history.js` selects and bounds conversation text.
-- `src/recap-schema.js` defines the standard writer prompt and validates bullet and card responses.
-- `src/generation.js` handles the shared deadline, Jev selection, writer stream, and optional shortening request.
-- `src/settings.js` and `src/errors.js` define shared host settings, limits, and errors.
-- `src/cards.js` defines Jev questions, ranking, diagnostics, and card-writing instructions.
+- `src/index.ts` registers settings and RPC handlers, with each handler checked against its shared endpoint result type.
+- `src/runtime.ts` owns session checks, caching, concurrent requests, and disposal. It re-exports the existing helper API for compatibility.
+- `src/history.ts` selects and bounds conversation text.
+- `src/recap-schema.ts` defines the standard writer prompt and validates bullet and card responses.
+- `src/generation.ts` handles the shared deadline, Jev selection, writer stream, and optional shortening request.
+- `src/settings.ts` and `src/errors.ts` define shared host settings, limits, and errors.
+- `src/cards.ts` defines Jev questions, ranking, diagnostics, and card-writing instructions.
+- `src/host-types.ts` describes the consumed injected-service surfaces. Cordis and settings use their published types; the writer/session interfaces cover only what Recap consumes, and optional Jev responses remain untrusted.
 - `client/` contains TypeScript modules for RPC helpers, activity storage, return tracking, controller transitions, styles, and registration. `client/index.ts` is the browser entrypoint.
 - `client/containers/` connects TSX views to DSH session hooks, controller subscriptions, and settings RPC calls.
 - `client/components/` contains TSX views with typed props and callbacks: the recap action, panel, tiles, bullet list, selection table, and settings form.
-- `shared/contracts.ts` describes the host protocol: settings, endpoint-specific RPC payloads/results, recap shapes, and selection diagnostics. `client/controller-types.ts` describes client state and subscriptions. The host stays JavaScript and retains its runtime validation.
+- `shared/contracts.ts` describes the host protocol: settings, endpoint-specific RPC payloads/results, recap shapes, and selection diagnostics. `client/controller-types.ts` describes client state and subscriptions. Backend producers and frontend consumers share these types. Settings, requests, model output, and Jev answers retain their runtime validation.
 
-`tsconfig.json` enables strict checking, checked indexed access, exact optional properties, and type-only import enforcement. The pinned TypeScript `6.0.3` compiler checks client code and compile-time regression cases without emitting files. Run it independently with `node packages/dsh-session-recap/scripts/typecheck.mjs`. Both the build command and the Node test suite enforce this check; tsdown transpilation alone is not a type check.
+`tsconfig.json` (client) and `tsconfig.host.json` (backend) enable strict checking, checked indexed access, exact optional properties, and type-only import enforcement. The pinned TypeScript `6.0.3` compiler checks both sides and compile-time regression cases without emitting files. Run it independently with `node packages/dsh-session-recap/scripts/typecheck.mjs`. Both the build command and the Node test suite enforce this check; tsdown transpilation alone is not a type check.
 
-GitHub and Session Recap share repository-level build and type-check helpers, with TypeScript, React types, and tsdown pinned in the root development dependencies. Package scripts retain the commands below.
+GitHub and Session Recap share repository-level client build and type-check helpers, with TypeScript, Node/React types, and tsdown pinned in the root development dependencies. The shared `scripts/build-host.mjs` compiler emits ordinary ESM modules under `dist/`; the package entrypoint is `dist/src/index.js`. It does not bundle extra copies of DSH services or change class identity across backend modules. Generated host output is tracked so installation needs no compiler or lifecycle script. Package scripts retain the commands below.
 
 The pinned DSH loader serves one client file. After type checking, `scripts/build-client.mjs` uses pinned tsdown `0.22.2` to compile TS/TSX into one lazy CommonJS factory. React stays external and is supplied by DSH. The build rejects extra output files, unsupported external imports, dynamic imports, and unresolved `process.env` references. It does not bundle another copy of React or register additional loader modules. The committed `client.js` retains the existing installation and hot-reload contract. DSH needs no TypeScript loader at runtime.
 
 Types do not validate received JSON. The RPC adapter records the existing host-validated protocol without changing transport identity. Rendering keeps its defensive filters. Where RC2's published slot declarations reference absent type packages, registration uses a narrow interface for the three existing slots, backed by the real-shell tests; it does not claim complete DSH type coverage.
 
-From the repository root, regenerate `client.js` after changing client sources, then run the focused tests:
+From the repository root, regenerate the affected outputs after editing source, then run the focused tests. `build-host.mjs --check` checks committed backend output without rewriting it. The root test command does not silently regenerate Recap artifacts before checking freshness.
 
 ```sh
+node packages/dsh-session-recap/scripts/build-host.mjs
 node packages/dsh-session-recap/scripts/build-client.mjs
 env -u NODE_PATH node --test packages/dsh-session-recap/test/*.test.*
 node scripts/check.mjs
 ```
 
-Commit the source changes and regenerated `client.js` together. The tests reject a stale bundle. Existing dependencies are required for the test suite; follow the [repository setup procedure](../../.agents/skills/repository-setup/SKILL.md) before any approved installation.
+Commit source changes and the affected generated outputs together once committing is approved. Tests reject stale client or host artifacts. Existing dependencies are required for the test suite; follow the [repository setup procedure](../../.agents/skills/repository-setup/SKILL.md) before any approved installation.
 
 The host registers `/session-recap` RPC handlers and the `wombat9000-session-recap` settings namespace. The client registers the existing `conversation.chat.assistant-actions`, `conversation.input.dock`, and `settings.plugin.item` slots. It does not patch DSH core, replace transcript renderers, or start a web server.
 
 ### Test layers
 
-- **Types:** `test/typecheck.test.mjs` runs the pinned compiler. `test/types/contracts.ts` verifies accepted values and rejected RPC payloads, response access, component props, controller flags, and slot registrations. These cases fail if an expected type error disappears.
+- **Types:** `test/typecheck.test.mjs` runs the pinned compiler. `test/types/contracts.ts` verifies accepted values and rejected RPC payloads, response access, component props, controller flags, and slot registrations. `test/host-types/contracts.ts` checks backend results, settings, card labels, writer requests, stream events, and readonly diagnostics. These cases fail if an expected type error disappears.
 - **Logic:** Node tests import the history, schema, settings, card-selection, and controller source modules. A package-scoped test hook transpiles TypeScript with the pinned compiler because some supported Node builds disable native type stripping. It does not load the generated client bundle or replace strict checking. Runtime tests retain controlled model streams for cache, cancellation, timeout, and stale-result regressions. These tests need neither React rendering nor a DSH host.
 - **React source components:** `test/browser/components.browser.test.mjs` imports the TSX components directly and runs them in Chromium. Presentation tests supply props and callbacks; container tests supply controller/RPC and session-hook fixtures. They cover rendering, escaped text, input callbacks, diagnostics copying, subscriptions, and cleanup.
-- **Backend services:** `test/backend-integration.test.js` mounts real pinned Cordis, `HostConnectionService`, `FileSettingsProvider`, `SessionStore`, and `JsonlSessionPersistence` in process. Settings and session events persist in temporary directories and are restored in fresh contexts. Model calls are controlled fixtures. A dormant route registry and in-memory request/response streams replace the HTTP listener; a fixed authentication capability replaces login. The fixture manually performs the dormant session-load transaction rather than running the agent loop. These tests do not prove browser transport, login, or live model integration.
-- **Existing wiring and packaging:** slot-level browser tests still exercise the generated bundle with mocked slots/RPC. Bundle tests check reproducibility, the lazy factory, external dependencies, and registrations. The [real-shell suite](../../README.md#browser-interactions-and-real-dsh-screenshots) verifies mounting and screenshots in a disposable DSH application.
+- **Backend services:** Integration fixtures import emitted `dist/` modules, as installation does. `test/backend-integration.test.js` mounts real pinned Cordis, `HostConnectionService`, `FileSettingsProvider`, `SessionStore`, and `JsonlSessionPersistence` in process. Settings and session events persist in temporary directories and are restored in fresh contexts. Model calls are controlled fixtures. A dormant route registry and in-memory request/response streams replace the HTTP listener; a fixed authentication capability replaces login. The fixture manually performs the dormant session-load transaction rather than running the agent loop. These tests do not prove browser transport, login, or live model integration.
+- **Existing wiring and packaging:** slot-level browser tests still exercise the generated bundle with mocked slots/RPC. Client bundle tests check reproducibility, the lazy factory, external dependencies, and registrations. `test/host-assembly.test.mjs` checks reproducibility, committed file freshness, and the package's executable host entrypoint. The [real-shell suite](../../README.md#browser-interactions-and-real-dsh-screenshots) verifies mounting and screenshots in a disposable DSH application.
 
 Run the focused browser suite and backend suite from the repository root:
 

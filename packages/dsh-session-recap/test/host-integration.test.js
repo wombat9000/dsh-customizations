@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { apply, CHANNEL, inject, name } from '../src/index.js'
+import { apply, CHANNEL, inject, name } from '../dist/src/index.js'
 
 function host() {
   let handler,
@@ -169,7 +169,9 @@ test('RPC sanitizes provider exceptions and unknown endpoints', async () => {
   assert.equal(result.ok, false)
   assert.ok(!JSON.stringify(result).includes('SECRET'))
   assert.deepEqual(result.error.details, {})
-  const unknown = await rpc('unknown')
-  assert.equal(unknown.error.code, 'unknown-endpoint')
-  assert.deepEqual(unknown.error.details, {})
+  for (const endpoint of ['unknown', '__proto__', 'constructor', ['settings'], null]) {
+    const unknown = await rpc(endpoint)
+    assert.equal(unknown.error.code, 'unknown-endpoint')
+    assert.deepEqual(unknown.error.details, {})
+  }
 })

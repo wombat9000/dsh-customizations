@@ -2,7 +2,7 @@ import { act } from 'react'
 import { afterEach, expect, test, vi } from 'vitest'
 import { page, userEvent } from 'vitest/browser'
 import { mountSlot } from './harness.mjs'
-import { cardSelectionDiagnostics, CARD_LABELS } from '../../src/cards.js'
+import { cardSelectionDiagnostics, CARD_LABELS } from '../../src/cards.ts'
 
 const selectionDiagnostics = () =>
   cardSelectionDiagnostics({

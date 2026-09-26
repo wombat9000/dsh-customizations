@@ -1,4 +1,36 @@
 import { createHash } from 'node:crypto'
+import type { Context } from '@deepseek-ai/cordis'
+import type {} from '@deepseek-ai/dsh-settings'
+import type { ModelCatalog, Sessions } from './host-types.js'
+import type {
+  ModelsResult,
+  RpcEndpoints,
+  RpcResult,
+  ScopedSettings,
+  Settings,
+} from '../shared/contracts.js'
+
+// RPC accepts untrusted payloads. Each handler must produce its shared wire result.
+type Handlers = {
+  [E in keyof RpcEndpoints]: (
+    payload: unknown,
+  ) => RpcEndpoints[E]['result'] | Promise<RpcEndpoints[E]['result']>
+}
+type HostContext = Context & {
+  sessions: Sessions
+  llm: ModelCatalog
+  connection: {
+    rpc: {
+      handle(
+        channel: string,
+        callback: (
+          endpoint: string,
+          payload: unknown,
+        ) => Promise<RpcResult<RpcEndpoints[keyof RpcEndpoints]['result']>>,
+      ): () => void
+    }
+  }
+}
 import z from '@deepseek-ai/schemastery'
 import { DEFAULT_SETTINGS, normalizeSettings, RecapError, RecapRuntime } from './runtime.js'
 
@@ -13,7 +45,7 @@ export const Config = z.object({
   model: z.string().default(''),
 })
 
-async function listModels(llm) {
+async function listModels(llm: ModelCatalog): Promise<ModelsResult> {
   const providers = await Promise.all(
     llm.listProviders().map(async (provider) => ({
       id: provider.id,
@@ -27,7 +59,7 @@ async function listModels(llm) {
   return { providers }
 }
 
-async function validateRoute(llm, settings) {
+async function validateRoute(llm: ModelCatalog, settings: Settings) {
   if (!settings.provider) return
 
   const prepared = await llm.prepareCall(
@@ -46,7 +78,7 @@ async function validateRoute(llm, settings) {
   }
 }
 
-function updatedSettings(source, payload) {
+function updatedSettings(source: () => Settings, payload: unknown) {
   const invalidPayload = !payload || typeof payload !== 'object' || Array.isArray(payload)
   if (invalidPayload || Object.keys(payload).some((key) => !Object.hasOwn(DEFAULT_SETTINGS, key))) {
     throw new RecapError('invalid-settings', 'Provide only Session Recap settings.')
@@ -59,7 +91,7 @@ function updatedSettings(source, payload) {
   return next
 }
 
-function rpcFailure(error) {
+function rpcFailure(error: unknown): Extract<RpcResult<never>, { ok: false }> {
   // Provider exceptions can contain credentials or request bodies.
   const known = error instanceof RecapError
   return {
@@ -74,7 +106,7 @@ function rpcFailure(error) {
   }
 }
 
-export function apply(ctx, config = {}) {
+export function apply(ctx: HostContext, config: Partial<Settings> = {}) {
   let source = () => normalizeSettings({ ...DEFAULT_SETTINGS, ...config })
   ctx.settings.installSection(ctx, name, Config, source(), {
     setSource(current) {
@@ -93,27 +125,27 @@ export function apply(ctx, config = {}) {
     .update(JSON.stringify([process.env.DSH_HOME ?? '', process.cwd(), name]))
     .digest('hex')
     .slice(0, 24)
-  const settings = () => ({ ...normalizeSettings(source()), storageScope })
+  const settings = (): ScopedSettings => ({ ...normalizeSettings(source()), storageScope })
 
-  async function handle(endpoint, payload) {
-    switch (endpoint) {
-      case 'settings':
-        return settings()
-      case 'activity':
-        return runtime.activity(payload)
-      case 'recap':
-        return runtime.recap(payload)
-      case 'models':
-        return listModels(ctx.llm)
-      case 'configure': {
-        const next = updatedSettings(source, payload)
-        await validateRoute(ctx.llm, next)
-        await ctx.settings.update(name, next)
-        return settings()
-      }
-      default:
-        throw new RecapError('unknown-endpoint', 'Unknown Session Recap endpoint.')
-    }
+  const handlers: Handlers = {
+    settings,
+    activity: (payload) => runtime.activity(payload),
+    recap: (payload) => runtime.recap(payload),
+    models: () => listModels(ctx.llm),
+    configure: async (payload) => {
+      const next = updatedSettings(source, payload)
+      await validateRoute(ctx.llm, next)
+      await ctx.settings.update(name, next)
+      return settings()
+    },
+  }
+  function isEndpoint(endpoint: string): endpoint is keyof RpcEndpoints {
+    return typeof endpoint === 'string' && Object.hasOwn(handlers, endpoint)
+  }
+  async function handle(endpoint: string, payload: unknown) {
+    if (!isEndpoint(endpoint))
+      throw new RecapError('unknown-endpoint', 'Unknown Session Recap endpoint.')
+    return handlers[endpoint](payload)
   }
 
   ctx.effect(() => () => runtime.dispose())

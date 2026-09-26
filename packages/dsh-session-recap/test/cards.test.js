@@ -1,6 +1,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { CARD_LABELS, CARD_QUESTIONS, selectCardLabels } from '../src/cards.js'
+import { registerTypeScript } from './fixtures/typescript.mjs'
+registerTypeScript()
+const { CARD_LABELS, CARD_QUESTIONS, selectCardLabels } = await import('../src/cards.ts')
 
 test('twelve typed questions, exact thresholds, ranking, stable ties and maximum three', () => {
   assert.equal(Object.keys(CARD_QUESTIONS).length, 12)

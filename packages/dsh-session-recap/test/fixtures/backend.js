@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Readable, Writable } from 'node:stream'
 import { pathToFileURL } from 'node:url'
-import * as recap from '../../src/index.js'
+import * as recap from '../../dist/src/index.js'
 
 // Match the Steward fixture: resolve only through the repository's pinned CLI.
 const require = createRequire(import.meta.url)

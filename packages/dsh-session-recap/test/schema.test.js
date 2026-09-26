@@ -1,6 +1,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { parseCards, parseRecap } from '../src/recap-schema.js'
+import { registerTypeScript } from './fixtures/typescript.mjs'
+registerTypeScript()
+const { parseCards, parseRecap } = await import('../src/recap-schema.ts')
 
 const answer = {
   bullets: [
