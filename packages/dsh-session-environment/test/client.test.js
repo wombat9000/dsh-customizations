@@ -74,6 +74,23 @@ test('copy buttons write full values and report clipboard success or failure', a
   }
 })
 
+test('selects only one mainView-retained session and ignores obsolete current selection', () => {
+  const { selectedEnvironmentSession: select } = loadClient()
+  const session = (id, retainedBy) => ({ id, cwd: `/workspace/${id}`, retainedBy })
+  const a = session('a', { mainView: 1 })
+  const b = session('b', { worker: 1 })
+  assert.equal(select({ byId: {} }), undefined)
+  assert.equal(select({ current: 'b', byId: { a, b } }), 'a')
+  assert.equal(select({ byId: { a: { ...a, retainedBy: {} }, b } }), undefined)
+  assert.equal(select({ byId: { a, b: { ...b, retainedBy: { mainView: 1 } } } }), undefined)
+  assert.equal(
+    select({
+      byId: { a: { ...a, retainedBy: { mainView: 0 } }, b: { ...b, retainedBy: { mainView: 2 } } },
+    }),
+    'b',
+  )
+})
+
 test('client bundle exports home-relative middle path compaction', () => {
   const client = loadClient()
   assert.equal(client.compactPath('/Users/tester', '/Users/tester'), '~')

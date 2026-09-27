@@ -44,6 +44,7 @@ export function githubFieldSessionSeed(cwd) {
         content: [{ type: 'text', text: githubFieldPrompt }],
       },
     },
+    { time, type: 'step/start', data: { turn: 1, step: 1 } },
     {
       time,
       type: 'assistant/message',
@@ -76,19 +77,15 @@ export function githubFieldSessionSeed(cwd) {
         step: 1,
         message: {
           id: `visual-field-result-${index}`,
-          role: 'user',
+          role: 'tool',
           source: { kind: 'tool', callId: call.id },
-          content: [
-            {
-              type: 'tool-result',
-              toolCallId: call.id,
-              content: [{ type: 'text', text: JSON.stringify(results[index]) }],
-            },
-          ],
+          toolCallId: call.id,
+          content: [{ type: 'text', text: JSON.stringify(results[index]) }],
         },
       },
     })
   })
+  seed.push({ time, type: 'step/end', data: { turn: 1, step: 1 } })
   seed.push({ time, type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } })
   return {
     id: githubFieldSessionId,

@@ -13,5 +13,5 @@ test('committed host modules are reproducible, fresh, and expose the installable
   const plugin = await import(new URL(`../${manifest.main}`, import.meta.url))
   assert.equal(typeof plugin.apply, 'function')
   assert.equal(plugin.CHANNEL, '/session-recap')
-  assert.deepEqual(plugin.inject, ['sessions', 'llm', 'connection', 'settings', 'webServer'])
+  assert.deepEqual(plugin.inject, ['sessions', 'llm', 'connection', 'webServer'])
 })

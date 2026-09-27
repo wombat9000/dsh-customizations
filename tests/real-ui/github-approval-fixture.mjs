@@ -4,6 +4,7 @@
 import { createRequire } from 'node:module'
 import { pathToFileURL } from 'node:url'
 import { githubSessionId, githubCallId } from './github-grants-fixture.mjs'
+import { unattemptedToolResult } from './session-events.mjs'
 import {
   approvalValue,
   approvalReason,
@@ -41,8 +42,9 @@ export function approvalCommandSeed(cwd) {
             content: [{ type: 'text', text: 'Synthetic native command approval fixture.' }],
           },
         },
+        { seq: 2, time, type: 'step/start', data: { turn: 1, step: 1 } },
         {
-          seq: 2,
+          seq: 3,
           time,
           type: 'assistant/message',
           surfaceOp: 'append',
@@ -58,15 +60,82 @@ export function approvalCommandSeed(cwd) {
             },
           },
         },
-        { seq: 3, time, type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } },
+        { seq: 4, time, ...unattemptedToolResult(call.id, 1, 1, 4) },
+        { seq: 5, time, type: 'step/end', data: { turn: 1, step: 1 } },
+        { seq: 6, time, type: 'turn/end', data: { turn: 1, reason: { kind: 'cancelled' } } },
       ],
     },
   }
 }
+// Chat nodes correlate globally by callId, not by turn. Reusing the cancelled
+// seed's id anchors a live call to its closed step and hides native approval detail.
+export const liveCommandCallId = (turn) => `synthetic-command-call-${turn}`
+
+export function beginCommandTurn(session, turn) {
+  const callId = liveCommandCallId(turn)
+  session.append('turn/start', { turn })
+  session.append('step/start', { turn, step: 1 })
+  session.append(
+    'assistant/message',
+    {
+      turn,
+      step: 1,
+      stream: [],
+      message: {
+        id: `command-live-${turn}`,
+        role: 'assistant',
+        source: { kind: 'model', provider: 'fixture', model: 'never-dispatched' },
+        content: [
+          {
+            type: 'tool-call',
+            id: callId,
+            name: 'bash',
+            arguments: JSON.stringify({ command: commandText }),
+          },
+        ],
+      },
+    },
+    { surfaceOp: 'append' },
+  )
+  // Native approval fallback needs a phase:start projection. This display event
+  // records no real dispatch: this fixture never calls a tool service.
+  session.append('tool/call', {
+    turn,
+    step: 1,
+    callId,
+    name: 'bash',
+    arguments: JSON.stringify({ command: commandText }),
+  })
+}
+
+export function endCommandTurn(session, turn) {
+  const callId = liveCommandCallId(turn)
+  session.append(
+    'tool/result',
+    {
+      turn,
+      step: 1,
+      error: { name: 'AbortError', code: 'TOOL_CANCELLED' },
+      message: {
+        id: `command-cancelled-${turn}`,
+        role: 'tool',
+        source: { kind: 'tool', callId },
+        toolCallId: callId,
+        isError: true,
+        content: [{ type: 'text', text: 'Synthetic approval finished. No command was executed.' }],
+      },
+    },
+    { surfaceOp: 'append' },
+  )
+  session.append('step/end', { turn, step: 1 })
+  session.append('turn/end', { turn, reason: { kind: 'cancelled' } })
+}
+
 export function registerApprovalFixture(ctx) {
   let pending,
     outcome = 'idle',
-    commandTurn = 1
+    commandTurn = 1,
+    completion = Promise.resolve()
   ctx.effect(() => () => pending?.abort())
   ctx.inject(['webServer'], (scope) =>
     scope.effect(() =>
@@ -105,6 +174,7 @@ export function registerApprovalFixture(ctx) {
             const agent = ctx.get('agents')?.get(sessionId)
             if (!agent) return reply(409, { error: 'Open the seeded GitHub session first.' })
             pending?.abort()
+            await completion
             const controller = new AbortController()
             pending = controller
             const reason =
@@ -122,54 +192,23 @@ export function registerApprovalFixture(ctx) {
             outcome = 'pending'
             const turn = operation === 'command' ? ++commandTurn : undefined
             if (turn) {
-              // Only a live, unattempted call has the raw root used by RC2's fallback.
-              // Completed history normalizes calls into results, so seed this display
-              // event directly; no agent loop or tool execution is started.
-              agent.session.append('turn/start', { turn })
-              agent.session.append(
-                'assistant/message',
-                {
-                  turn,
-                  step: 1,
-                  stream: [],
-                  message: {
-                    id: `command-live-${turn}`,
-                    role: 'assistant',
-                    source: { kind: 'model', provider: 'fixture', model: 'never-dispatched' },
-                    content: [
-                      {
-                        type: 'tool-call',
-                        id: 'synthetic-command-call',
-                        name: 'bash',
-                        arguments: JSON.stringify({ command: commandText }),
-                      },
-                    ],
-                  },
-                },
-                { surfaceOp: 'append' },
-              )
-              agent.session.append('tool/call', {
-                turn,
-                step: 1,
-                callId: 'synthetic-command-call',
-                name: 'bash',
-                arguments: JSON.stringify({ command: commandText }),
-              })
+              beginCommandTurn(agent.session, turn)
             }
-            Promise.resolve(
-              ctx.waterfall(
-                scopeTarget(agent, agent),
-                'approval/request',
-                {
-                  agent,
-                  toolName,
-                  callId: operation === 'command' ? 'synthetic-command-call' : githubCallId,
-                  reason,
-                  signal: controller.signal,
-                },
-                () => Promise.resolve('unavailable'),
-              ),
-            )
+            completion = Promise.resolve()
+              .then(() =>
+                ctx.waterfall(
+                  scopeTarget(agent, agent),
+                  'approval/request',
+                  {
+                    agent,
+                    toolName,
+                    callId: turn ? liveCommandCallId(turn) : githubCallId,
+                    reason,
+                    signal: controller.signal,
+                  },
+                  () => Promise.resolve('unavailable'),
+                ),
+              )
               .then(
                 (value) => {
                   if (pending === controller) outcome = value
@@ -179,7 +218,7 @@ export function registerApprovalFixture(ctx) {
                 },
               )
               .finally(() => {
-                if (turn) agent.session.append('turn/end', { turn, reason: { kind: 'completed' } })
+                if (turn) endCommandTurn(agent.session, turn)
               })
             return reply(200, { outcome, reason })
           } catch {

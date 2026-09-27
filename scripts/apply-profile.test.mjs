@@ -17,9 +17,9 @@ import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 
 const root = fileURLToPath(new URL('../', import.meta.url))
-const version = '0.1.5-rc.2'
-// RC2 uses the unchanged RPC-owner patch under its historical RC1 filename.
-const patchName = 'dsh-client-connection-0.1.5-rc.1-rpc-owner.patch'
+const version = '0.1.7-rc.2'
+// This exact target patch is covered by the real-artifact ownership regression.
+const patchName = 'dsh-client-connection-0.1.7-rc.2-rpc-owner.patch'
 function fixture(t, { patched = true } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'dsh-apply-'))
   t.after(() => rmSync(dir, { recursive: true, force: true }))
@@ -126,7 +126,7 @@ test('dry run remains dependency-free and never invokes launcher or writes home'
   rmSync(join(f.dir, 'node_modules'), { recursive: true })
   const result = f.run(['--dry-run'], { DSH_BIN: '/unsupported/launcher' })
   assert.equal(result.status, 0, result.stderr)
-  assert.match(result.stdout, /Would configure @deepseek-ai\/dsh-client-connection@0\.1\.5-rc\.2\b/)
+  assert.match(result.stdout, /Would configure @deepseek-ai\/dsh-client-connection@0\.1\.7-rc\.2\b/)
   assert.match(result.stdout, /--offline/)
   assert.equal(existsSync(f.home), false)
   assert.equal(existsSync(join(f.dir, 'calls')), false)
@@ -148,7 +148,7 @@ test('historical RC1 launcher fails before profile writes or plugin calls', (t) 
   )
   const result = f.run()
   assert.notEqual(result.status, 0)
-  assert.match(result.stderr, /launcher must be DSH 0\.1\.5-rc\.2\b/)
+  assert.match(result.stderr, /launcher must be DSH 0\.1\.7-rc\.2\b/)
   assert.equal(existsSync(f.home), false)
   assert.equal(existsSync(join(f.dir, 'calls')), false)
 })
@@ -175,7 +175,7 @@ test('apply preserves YAML settings and pins copied patch before one complete of
   assert.match(workspace, /react: 18.3.1/)
   assert.match(
     workspace,
-    /patchedDependencies:\n\s+['"]?@deepseek-ai\/dsh-client-connection@0\.1\.5-rc\.2['"]?: patches\/dsh-client-connection-0\.1\.5-rc\.1-rpc-owner\.patch\s/,
+    /patchedDependencies:\n\s+['"]?@deepseek-ai\/dsh-client-connection@0\.1\.7-rc\.2['"]?: patches\/dsh-client-connection-0\.1\.7-rc\.2-rpc-owner\.patch\s/,
   )
   assert.match(workspace, /allowUnusedPatches: false/)
   assert.match(workspace, /ignorePatchFailures: false/)

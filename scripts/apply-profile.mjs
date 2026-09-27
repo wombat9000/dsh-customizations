@@ -216,11 +216,11 @@ const profile = options.profile ?? recipe.profile
 if (!/^[a-z0-9][a-z0-9-]*$/.test(profile))
   fail(`invalid target profile name ${JSON.stringify(profile)}`)
 
-const version = '0.1.5-rc.2'
+const version = '0.1.7-rc.2'
 const coreName = '@deepseek-ai/dsh-client-connection'
 const patchKey = `${coreName}@${version}`
-// RC2 still needs the byte-identical RPC-owner patch introduced for RC1.
-const corePatchName = 'dsh-client-connection-0.1.5-rc.1-rpc-owner.patch'
+// Published 0.1.7-rc.2 still fails the traced WebServer ownership regression.
+const corePatchName = 'dsh-client-connection-0.1.7-rc.2-rpc-owner.patch'
 const localDsh = join(repositoryRoot, 'node_modules', '.bin', 'dsh')
 const dsh = process.env.DSH_BIN || localDsh
 const dshHome = resolve(process.env.DSH_HOME || join(homedir(), '.dsh'))

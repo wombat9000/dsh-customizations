@@ -1,4 +1,4 @@
-import { test, expect, pluginSettings } from '../../../../tests/real-ui/fixtures.mjs'
+import { test, expect, setTheme, expandTurnProcesses } from '../../../../tests/real-ui/fixtures.mjs'
 import { githubItemsWorkspace } from '../../../../tests/real-ui/github-items-fixture.mjs'
 
 for (const [theme, narrow] of [
@@ -15,14 +15,14 @@ for (const [theme, narrow] of [
       requests++
       return route.abort()
     })
-    const settings = await pluginSettings(app, theme)
-    await settings.getByRole('button', { name: 'Close', exact: true }).click()
+    await setTheme(app, theme, true)
     const sessions = app.getByRole('tree', { name: 'Sessions', exact: true })
     const group = sessions.getByRole('treeitem', { name: 'Ungrouped', exact: true })
     if ((await group.getAttribute('aria-expanded')) !== 'true') await group.click()
     await sessions
       .getByRole('treeitem', { name: new RegExp(`^${githubItemsWorkspace}\\s`) })
       .click()
+    await expandTurnProcesses(app)
     for (const title of ['Issues', 'Issue search', 'Issue details']) {
       const card = app.getByRole('region', { name: `GitHub ${title}`, exact: true })
       await expect(card).toBeVisible()

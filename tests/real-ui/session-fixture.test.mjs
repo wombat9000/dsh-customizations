@@ -3,7 +3,25 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
-import { seedSession } from './session-fixture.mjs'
+import { seedSession, persistSession } from './session-fixture.mjs'
+import {
+  approvalCommandSeed,
+  beginCommandTurn,
+  endCommandTurn,
+  liveCommandCallId,
+} from './github-approval-fixture.mjs'
+import { githubSessionSeed } from './github-grants-fixture.mjs'
+import { githubItemsSeed } from './github-items-fixture.mjs'
+import { githubFieldSessionSeed } from './github-field-fixture.mjs'
+import { createRequire } from 'node:module'
+import { pathToFileURL } from 'node:url'
+
+const require = createRequire(import.meta.url)
+const cli = createRequire(require.resolve('@deepseek-ai/dsh/package.json'))
+const installed = (name) => import(pathToFileURL(cli.resolve(`@deepseek-ai/${name}`)).href)
+const { Context } = await installed('cordis')
+const { default: Sessions, SESSION_FORMAT_VERSION } = await installed('dsh-session')
+const { default: Persistence } = await installed('dsh-session-persistence-jsonl')
 import { waitForFixture } from './global-setup.mjs'
 
 function fixture(failure) {
@@ -79,6 +97,85 @@ for (const failure of ['append', 'flush', 'read', 'mismatch']) {
     else assert.ok(!calls.includes('open reader'))
   })
 }
+
+test('all synthetic histories reopen through native V4 persistence without tools or models', async (t) => {
+  assert.equal(SESSION_FORMAT_VERSION, 4)
+  const directory = await mkdtemp(join(tmpdir(), 'dsh-v4-seeds-'))
+  const ctx = new Context()
+  t.after(async () => {
+    await ctx.fiber.dispose()
+    await rm(directory, { recursive: true, force: true })
+  })
+  await ctx.plugin(Sessions).await()
+  await ctx.plugin(Persistence, { root: directory, compression: 'none' }).await()
+  await seedSession(ctx)
+  for (const factory of [
+    approvalCommandSeed,
+    githubSessionSeed,
+    githubItemsSeed,
+    githubFieldSessionSeed,
+  ]) {
+    const fixture = factory(directory)
+    const session = ctx.sessions.prepare(fixture.id, fixture.options)
+    await persistSession(ctx, session)
+    const reader = await ctx.sessionPersistence.open(session.id, 'read')
+    try {
+      assert.deepEqual((await reader.read()).events, session.snapshotEvents())
+    } finally {
+      await reader.close()
+    }
+    if (factory !== approvalCommandSeed) continue
+    const prior = session.snapshotEvents().length
+    for (const turn of [2, 3]) {
+      beginCommandTurn(session, turn)
+      endCommandTurn(session, turn)
+    }
+    const advertised = session
+      .snapshotEvents()
+      .filter((event) => event.type === 'assistant/message')
+      .flatMap((event) =>
+        event.data.message.content
+          .filter((block) => block.type === 'tool-call')
+          .map((block) => block.id),
+      )
+    assert.equal(
+      new Set(advertised).size,
+      advertised.length,
+      'each live call has a distinct chat-node identity',
+    )
+    const tail = session.snapshotEvents(prior)
+    assert.equal(tail.filter((event) => event.type === 'tool/call').length, 2)
+    assert.equal(
+      fixture.options.seed.some((event) => event.type === 'tool/call'),
+      false,
+    )
+    assert.equal(
+      fixture.options.seed.find((event) => event.type === 'tool/result').data.error.code,
+      'TOOL_NOT_STARTED',
+    )
+    for (const event of tail.filter((event) => event.type === 'tool/result')) {
+      assert.equal(event.data.error.code, 'TOOL_CANCELLED')
+      assert.equal(event.data.message.role, 'tool')
+      assert.equal(event.data.message.toolCallId, liveCommandCallId(event.data.turn))
+    }
+    const writer = await ctx.sessionPersistence.open(session.id, 'write')
+    try {
+      await writer.append(tail)
+      await writer.flush()
+    } finally {
+      await writer.close()
+    }
+    const reopened = await ctx.sessionPersistence.open(session.id, 'read')
+    try {
+      assert.deepEqual((await reopened.read()).events, session.snapshotEvents())
+    } finally {
+      await reopened.close()
+    }
+  }
+  assert.equal(ctx.get('tools'), undefined)
+  assert.equal(ctx.get('llm'), undefined)
+  assert.equal(ctx.get('agents'), undefined)
+})
 
 test('bootstrap refuses a ready Web listener without a verified seed', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'dsh-seed-test-'))

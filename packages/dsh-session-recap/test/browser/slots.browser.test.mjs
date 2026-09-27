@@ -101,8 +101,24 @@ const click = (locator) =>
     await locator.click()
   })
 
+test('plugin row summary performs no RPC or form mount', async () => {
+  fixture = await mountSlot('plugins.row.config', { view: 'summary' })
+  await expect
+    .element(page.getByText('Configure automatic session recaps and their model.'))
+    .toBeVisible()
+  expect(fixture.rpc.call).not.toHaveBeenCalled()
+  expect(
+    document.querySelector('style[data-plugin-css="wombat9000-session-recap/settings"]'),
+  ).toBeNull()
+})
+
+test('plugin row page opens the preserved settings form immediately', async () => {
+  fixture = await mountSlot('plugins.row.config', { view: 'page' })
+  await expect.element(page.getByLabelText('Model ID')).toHaveValue('fixture-model')
+})
+
 test('settings owns a scoped stylesheet and removes it on unmount', async () => {
-  fixture = await mountSlot('settings.plugin.item')
+  fixture = await mountSlot('plugins.row.config')
   const selector = 'style[data-plugin-css="wombat9000-session-recap/settings"]'
   const style = document.querySelector(selector)
   expect(style).not.toBeNull()
@@ -127,7 +143,7 @@ test('settings owns a scoped stylesheet and removes it on unmount', async () => 
 })
 
 test('expanded settings fits a narrow slot', async () => {
-  fixture = await mountSlot('settings.plugin.item', { narrow: true })
+  fixture = await mountSlot('plugins.row.config', { narrow: true })
   await click(page.getByRole('button', { name: 'Expand: Session recap' }))
   await expect.element(page.getByLabelText('Model ID')).toHaveValue('fixture-model')
   const element = page.getByTestId('fixture').element()
@@ -562,7 +578,7 @@ test('unknown card labels alone create no generated labels or status tiles', asy
 })
 
 test('Jev setting is default-off with privacy description and saves without generating', async () => {
-  fixture = await mountSlot('settings.plugin.item')
+  fixture = await mountSlot('plugins.row.config')
   await click(page.getByRole('button', { name: 'Expand: Session recap' }))
   const checkbox = page.getByRole('checkbox', {
     name: 'Use Jev to choose recap cards',
@@ -589,7 +605,7 @@ test('Jev setting is default-off with privacy description and saves without gene
 })
 
 test('settings starts collapsed and preserves the draft across expansion', async () => {
-  fixture = await mountSlot('settings.plugin.item')
+  fixture = await mountSlot('plugins.row.config')
   const expand = page.getByRole('button', { name: 'Expand: Session recap' })
   await expect.element(expand).toHaveAttribute('aria-expanded', 'false')
   await expect

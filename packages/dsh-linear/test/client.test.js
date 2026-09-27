@@ -72,7 +72,7 @@ test('package exposes a Web Settings client bundle', async () => {
 })
 
 test('client registers only a Linear plugin configuration card', async () => {
-  const { record, exports } = await loadClient()
+  const { record, exports } = await loadClient(fakeReact([]))
   assert.equal(record.id, '@local/dsh-linear')
   assert.deepEqual(Array.from(exports.inject), ['slots', 'connection', 'remote'])
   const registrations = []
@@ -86,7 +86,7 @@ test('client registers only a Linear plugin configuration card', async () => {
     on: () => () => {},
     slots: {
       inject(name, callback) {
-        assert.equal(name, 'settings.plugin.item')
+        assert.equal(name, 'plugins.row.config')
         callback()
       },
       register(options, component) {
@@ -97,12 +97,13 @@ test('client registers only a Linear plugin configuration card', async () => {
   }
   exports.apply(ctx)
   assert.equal(registrations.length, 1)
-  assert.equal(registrations[0].options.name, 'settings.plugin.item')
-  assert.equal(registrations[0].options.key, 'linear')
+  assert.equal(registrations[0].options.name, 'plugins.row.config')
+  assert.equal(registrations[0].options.key, '@local/dsh-linear#local-linear')
   assert.equal(registrations[0].options.id, undefined)
   assert.equal(registrations[0].options.order, 35)
   assert.equal(registrations[0].options.inject().rpc, rpc)
-  assert.equal(registrations[0].component, exports.LinearSettingsSection)
+  assert.equal(registrations[0].component({ view: 'page' }).type, exports.LinearSettingsSection)
+  assert.match(registrations[0].component({ view: 'summary' }), /Workspace connection/)
 })
 
 test('Linear card starts collapsed with its connection controls inside', async () => {

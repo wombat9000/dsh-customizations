@@ -53,7 +53,7 @@ function transport(handler) {
   // Only the socket/auth boundary is simulated. The installed host's channel
   // registration, HTTP bridge, request parser and response serializer all run.
   HostConnectionService.prototype.register.call(
-    { requestRejection: () => undefined },
+    { operator: { id: 'fixture-operator' }, admit: () => ({ peer: { id: 'fixture-operator' } }) },
     owner,
     CHANNEL,
     handler,
@@ -61,7 +61,11 @@ function transport(handler) {
   let mutate = (response) => response
   const send = async (url, init) => {
     const req = Readable.from([Buffer.from(init.body)])
-    Object.assign(req, { url: new URL(url).pathname, method: init.method, headers: init.headers })
+    Object.assign(req, {
+      url: new URL(url, 'http://fixture.invalid').pathname,
+      method: init.method,
+      headers: init.headers,
+    })
     const chunks = []
     let status, headers
     const res = new Writable({
@@ -162,7 +166,12 @@ async function capability(f) {
         },
       },
     },
-    sessions: { list: { getSnapshot: () => ({ current: 'a' }), subscribe: () => () => {} } },
+    sessions: {
+      list: {
+        getSnapshot: () => ({ byId: { a: { id: 'a', retainedBy: { mainView: 1 } } } }),
+        subscribe: () => () => {},
+      },
+    },
     slots: {
       inject: (name, callback) => {
         assert.equal(name, 'conversation.view')

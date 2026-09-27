@@ -1,6 +1,6 @@
 # Shared OpenRouter credentials
 
-This host plugin gives trusted integrations one shared OpenRouter credential. Its card appears in **Settings → Plugins → Plugin configuration → OpenRouter**. It does not register a chat model or an agent tool, make remote requests, or copy keys into another store.
+This host plugin gives trusted integrations one shared OpenRouter credential. In **Plugins**, open the `@local/dsh-openrouter` bundle and select **Configure** for its `local-openrouter` row. It does not register a chat model or an agent tool, make remote requests, or copy keys into another store.
 
 ## Credential ownership
 
@@ -29,8 +29,14 @@ Consumers must keep the returned key on the host, send it only to their intended
 
 ## Packaging and validation
 
-The bundle targets DSH `0.1.5-rc.2` and uses its existing credentials, settings, and connection services. It adds no OpenRouter SDK or other third-party runtime dependency beyond the repository's pinned DSH/schema packages. JavaScript ships directly, with no build step.
+The bundle targets DSH `0.1.7-rc.2` and uses its existing credentials, settings, and connection services. It adds no OpenRouter SDK or other third-party runtime dependency beyond the repository's pinned DSH/schema packages. JavaScript ships directly, with no build step.
 
 The `personal-web` recipe selects the bundle. Checking out or building this repository does not install it in a running profile. Profile application and restart require separate approval.
 
-Tests use fake credentials and mocked services. The real-shell settings test writes a fake key only inside the disposable test host, then removes it; it makes no OpenRouter request.
+Host tests use synthetic credentials and real DSH Settings, ConfigEditor, and Loader services in a temporary profile. They verify live provider configuration, credential selection, trusted RPC registration, and disposal. Browser component tests use mocked transport. The real-shell settings test writes a fake key only inside the disposable test host, then removes it; it makes no OpenRouter request.
+
+## Settings migration
+
+DSH `0.1.7-rc.2` derives settings from active Loader entries instead of separately registered sections. This plugin has an empty Config and stores no ordinary preferences. Its custom page uses the `plugins.row.config` key `@local/dsh-openrouter#local-openrouter`; credential selection reads the live `llm-pi-ai` Config projection through `settings.describe()`.
+
+An old `openrouter` section in `settings.yaml` does not match the `local-openrouter` entry and has no editable fields to import. DSH renames the legacy file to `settings.yaml.imported` before attempting section imports. That section is not a credential backup: keys remain in the existing credential store or credential reference. The record key `llm-pi-ai/openrouter` and reference names do not change.

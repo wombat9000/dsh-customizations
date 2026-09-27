@@ -124,7 +124,7 @@ export async function mountSettings({ status = {}, overrides = {} } = {}) {
     },
     slots: {
       inject(name, register) {
-        expect(name).toBe('settings.plugin.item')
+        expect(name).toBe('plugins.row.config')
         register()
       },
       register(options, Component) {
@@ -133,8 +133,8 @@ export async function mountSettings({ status = {}, overrides = {} } = {}) {
     },
   })
   expect(registration.options).toMatchObject({
-    name: 'settings.plugin.item',
-    key: 'google-auth',
+    name: 'plugins.row.config',
+    key: '@local/dsh-google-auth#local-google-auth',
     order: 25,
   })
   const container = document.createElement('main')

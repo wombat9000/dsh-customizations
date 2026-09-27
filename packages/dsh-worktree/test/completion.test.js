@@ -19,19 +19,18 @@ const installed = (name) => import(pathToFileURL(cli.resolve(name)).href)
 const ToolJobs = await installed('@deepseek-ai/dsh-tool-jobs')
 const { default: yaml } = await installed('js-yaml')
 const { entryListSchema } = await installed('@deepseek-ai/cordis-plugin-include')
-const rows = yaml.load(
-  await readFile(
-    new URL('../presets/worktree-coordinator/agent.cordis.yml', import.meta.url),
-    'utf8',
-  ),
-  { schema: entryListSchema },
-)
+const patch = yaml.load(await readFile(new URL('../cordis.patch.yml', import.meta.url), 'utf8'), {
+  schema: entryListSchema,
+})
+const rows = patch
+  .flatMap((entry) => entry.insert ?? [])
+  .find((row) => row.id === 'local-preset-worktree-coordinator').config.plugins
 const config = rows.find((row) => row.id === 'tool-jobs').config
 const deferred = () => Promise.withResolvers()
 const message = (kind, text) =>
   createUserMessage({
     content: [{ type: 'text', text }],
-    source: kind === 'user' ? { kind } : { kind, plugin: 'fixture' },
+    source: { kind: kind === 'user' ? 'user' : 'plugin:fixture' },
   })
 
 // Real upstream controller, job registry, inbox and agent loop. Only model text
@@ -90,7 +89,7 @@ async function fixture(t) {
     const done = deferred()
     const noticed = deferred()
     const id = jobs.start({
-      owner: agent,
+      owner: agent.id,
       kind: 'worktree',
       label: 'fixture worker',
       run: () => ({
@@ -100,10 +99,10 @@ async function fixture(t) {
         },
       }),
     })
-    const off = agent.ctx.get('jobs').onJobDone((snapshot) => {
-      if (snapshot.id === id) noticed.resolve()
+    const off = agent.ctx.get('jobs').events.subscribe({ owner: agent.id }, (event) => {
+      if (event.type === 'settled' && event.job.id === id) noticed.resolve()
     })
-    done.resolve({ status: 'completed', output: 'Worker report' })
+    done.resolve({ status: 'completed', result: 'Worker report' })
     await noticed.promise
     off()
     return id
@@ -140,7 +139,7 @@ test(
     assert.equal(f.requests.length, 1)
     assert.equal(f.claimed.length, 1)
     assert.match(noticeText(f.claimed[0]), new RegExp(id))
-    assert.equal(f.jobs.read(id, f.agent).text, 'Worker report')
+    assert.equal(f.jobs.read(id, f.agent.id).result, 'Worker report')
     assert.equal(f.agent.status, 'idle')
   },
 )
@@ -186,7 +185,7 @@ test(
     assert.equal(f.inject.mock.callCount(), 1)
     assert.equal(f.requests.length, 10)
     assert.equal(f.claimed.length, 10, 'exhausted notice has not been claimed')
-    assert.equal(f.jobs.get(id, f.agent).status, 'completed')
+    assert.equal(f.jobs.get(id, f.agent.id).status, 'completed')
     assert.equal(f.agent.status, 'idle')
   },
 )

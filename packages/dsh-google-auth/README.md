@@ -1,6 +1,6 @@
 # Google accounts
 
-`@local/dsh-google-auth` is the shared Google authentication provider for DSH. It owns Desktop OAuth client configuration, account identity, consent, credential storage, and token refresh. Integrations such as [Google Drive](../dsh-google-drive/README.md) declare their required permissions and consume the host's `googleAuth` service instead of implementing login themselves.
+`@local/dsh-google-auth` is the shared Google authentication provider for DSH `0.1.7-rc.2`. It owns Desktop OAuth client configuration, account identity, consent, credential storage, and token refresh. Integrations such as [Google Drive](../dsh-google-drive/README.md) declare their required permissions and consume the host's `googleAuth` service instead of implementing login themselves.
 
 ## First-version boundaries
 
@@ -17,7 +17,7 @@ Before deployment, create a Google **Desktop app** OAuth client and enable the A
 Installation and profile application require approval; follow the repository's [setup procedure](../../README.md#apply-the-starter-profile). The personal-web recipe installs Google auth before Google Drive. Applying the recipe does not change existing sessions' tools.
 
 1. After an approved installation, restart the existing DSH profile and refresh its Web page.
-2. Open **Settings → Plugins → Google accounts**.
+2. In **Plugins**, open the `@local/dsh-google-auth` bundle and select **Configure** for its `local-google-auth` row.
 3. Paste the downloaded Desktop JSON in the write-only field and choose **Save client configuration**. The provider stores only `installed.client_id` and the optional `installed.client_secret`. It ignores supplied endpoint URLs and never returns the saved JSON to the browser.
 4. If DSH runs inside Docker Sandbox, enable **Use sandbox callback forwarding**. Leave it off when DSH runs directly on your computer. See [Callback routing](#callback-routing) for prerequisites.
 5. Review **Permissions for all enabled integrations**, then choose **Connect Google account**. One login requests all currently registered integration scopes together. With the Google Drive bundle enabled, these include Drive read access and account-wide Sheets edit access. Google does not restrict this permission to DSH's selected files; DSH still requires session file grants and approval for each write.
@@ -29,7 +29,7 @@ Account identity comes from Google's authenticated userinfo endpoint, not from a
 
 ## Callback routing
 
-**Use sandbox callback forwarding** is off by default. It is the non-secret `google-auth.useSandbox` setting and persists in DSH settings, independently of client configuration and tokens. Changing it cancels a pending login without clearing the connected account. If a credential commit has already started, wait for it to finish before changing the mode. Start a fresh login after a mode change; an old authorization link is no longer valid.
+**Use sandbox callback forwarding** is off by default. It is the non-secret `useSandbox` Config field on the `local-google-auth` Loader entry and persists in the active profile's Cordis patch, independently of client configuration and tokens. Changing it cancels a pending login without clearing the connected account. If a credential commit has already started, wait for it to finish before changing the mode. Start a fresh login after a mode change; an old authorization link is no longer valid.
 
 - **Off:** Bind an ephemeral `127.0.0.1` listener and use that direct address. No bridge import or publication occurs. The browser and DSH must run on the same host.
 - **On:** Bind the internal listener, publish its port through the deployment bridge, then generate the Google authorization URL using the returned Mac loopback origin. The same public redirect URI is used for callback validation and code exchange. Publication must succeed before a login link is returned; there is no direct-mode fallback.
@@ -38,7 +38,7 @@ Sandbox mode requires the existing `@local/dsh-sbx-bridge` deployment package an
 
 The bundle contributes that optional adapter as the host service `sandboxCallbackPublisher`. Its `available()` check tests module resolution, not helper health. `publish({ port, signal })` returns an owned `{ origin, dispose }` lease. The signal cancels publication setup; after handoff, the caller releases the lease explicitly so callback responses can finish before forwarding closes. Each lease owns a separate bridge client and cannot close unrelated preview-tool publications. The bridge receives only the port and a fixed label, never OAuth state, callback paths, codes, or tokens.
 
-Completion, denial, failure, cancellation, timeout, and plugin disposal release the callback publication. The engine allows the callback response to drain before releasing an established relay. Cleanup failures produce a sanitized status error rather than an unhandled rejection. If the bridge is unavailable or its helper fails, Settings reports an error before browser authorization starts. Check the helper or turn the option off only when the browser can reach DSH's direct loopback listener.
+Completion, denial, failure, cancellation, timeout, and plugin disposal release the callback publication. The engine allows the callback response to drain before releasing an established relay. Cleanup failures produce a sanitized status error rather than an unhandled rejection. If the bridge is unavailable or its helper fails, the configuration page reports an error before browser authorization starts. Check the helper or turn the option off only when the browser can reach DSH's direct loopback listener.
 
 This change does not modify or restart the host sandbox manager, and it does not recreate a sandbox. After an approved deployment/restart and page refresh, enable the checkbox and test a new login. A previous `127.0.0.1` redirect failure does not require a new Google client or new credentials.
 
@@ -50,9 +50,15 @@ Cancellation works before credential commit. Once the credential store starts co
 
 Removing an integration unregisters its consumer and prevents it from obtaining tokens. It does not remove already granted scopes from Google's account/client grant. A reused grant may contain broader permissions than an individual integration needs. Registration and scope checks are a contract between trusted host plugins, not a sandbox against malicious plugin code. Use separate OAuth clients and isolated credential stores if you need stronger separation; this version has no per-integration client selector.
 
+## Settings migration
+
+If your old `settings.yaml` contains `useSandbox` in its `google-auth` section, verify the callback mode after migration. DSH's importer matches section names to Loader entry IDs and does not map `google-auth` to `local-google-auth`. It renames the legacy file to `settings.yaml.imported` before attempting imports; rejected sections remain there for recovery and are not retried automatically. Save the intended callback mode on the new configuration page. The default remains direct callbacks (`false`); the migration does not move or erase Google client or token records.
+
 ## Host integration contract
 
-The auth provider belongs in the host composition and injects `credentials`, `webServer`, and `settings`. It serves the `google-auth` settings namespace with the non-secret `useSandbox` preference so DSH displays the Google accounts card. Client configuration and tokens stay outside that settings document.
+The auth provider belongs in the host composition and requires `credentials` and `webServer`. Its volatile `useSandbox` Config field supplies a live `.get()` reference. The optional Settings service persists preference changes under the owning Loader entry ID, `local-google-auth` in the bundled composition. An effect-owned `settings.configure({ auto: false }, ctx.fiber)` policy follows Settings-service availability without remounting auth. Without Settings, authentication remains available, but preference writes fail with a sanitized error.
+
+The browser registers `plugins.row.config` under `@local/dsh-google-auth#local-google-auth`. The configuration page owns its draft and save controls; its summary renders no form or account request. Client configuration and tokens remain in credential records, not the profile patch.
 
 An integration also belongs on the host when it serves consumers across sessions. It declares `inject: ['googleAuth']` and registers one stable ID:
 
@@ -80,9 +86,9 @@ The Gmail declaration is an example, not a shipped integration.
 | `status()`                                                           | Returns connection/account facts, callback mode/bridge availability, and registered integration scopes, authorization status, and missing scopes. Never returns credentials.                                                                                                                                                                       |
 | `getAccessGeneration()`                                              | Returns a non-secret process-local revision for account access. Reconnect, reset, integration removal, and disposal advance it; ordinary token refresh does not. It is an invalidation marker, not proof of authentication.                                                                                                                        |
 | `onAccessChange(listener)`                                           | Subscribes a trusted Host consumer to access invalidation and returns a disposer. Drive uses this to revoke session selections. Listener failures cannot prevent account invalidation.                                                                                                                                                             |
-| `setCallbackMode(useSandbox)`                                        | Persists the boolean preference and cancels a pending login. Uses the same local Settings authorization boundary.                                                                                                                                                                                                                                  |
-| `begin()`                                                            | Starts explicit browser consent for all currently registered integrations. Accepts no arguments; rejects an empty registry. Checks the exact registration snapshot around asynchronous work and cancels pending consent if a participating integration is removed. The Settings UI is the intended caller.                                         |
-| `cancel()`, `disconnect()`, `configure(clientJson)`, `clearConfig()` | Manage the shared connection through the local Settings boundary.                                                                                                                                                                                                                                                                                  |
+| `setCallbackMode(useSandbox)`                                        | Persists the boolean preference and cancels a pending login. Uses the same local configuration HTTP authorization boundary.                                                                                                                                                                                                                        |
+| `begin()`                                                            | Starts explicit browser consent for all currently registered integrations. Accepts no arguments; rejects an empty registry. Checks the exact registration snapshot around asynchronous work and cancels pending consent if a participating integration is removed. The plugin configuration page is the intended caller.                           |
+| `cancel()`, `disconnect()`, `configure(clientJson)`, `clearConfig()` | Manage the shared connection through the local configuration HTTP boundary.                                                                                                                                                                                                                                                                        |
 
 The HTTP `connect` action accepts only an empty JSON object, never an integration ID or caller-selected scopes. Status includes aggregate `requiredScopes` and `missingScopes` alongside each integration's status. Account controls require same-origin local POST requests with the plugin's custom header. There is no HTTP token endpoint.
 

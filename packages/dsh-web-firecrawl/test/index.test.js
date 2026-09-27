@@ -24,15 +24,9 @@ function provider(fetchImpl, overrides = {}) {
   })
 }
 
-test('apply serves a credential-only plugin namespace when settings becomes available', () => {
-  let install
+test('apply registers credential-backed providers without a Settings service', () => {
   const providers = []
   const ctx = {
-    inject(dependencies, callback) {
-      assert.deepEqual(dependencies, ['settings'])
-      assert.equal(install, undefined)
-      install = callback
-    },
     web: {
       registerSearchProvider(value) {
         providers.push(value)
@@ -46,23 +40,6 @@ test('apply serves a credential-only plugin namespace when settings becomes avai
   assert.equal(providers.length, 2)
   assert.equal(providers[0], providers[1])
   assert.ok(providers[0] instanceof FirecrawlWebProvider)
-  let registrations = 0
-  install({
-    settings: {
-      installSection(owner, namespace, schema, initial, hooks) {
-        registrations++
-        assert.equal(owner, ctx)
-        assert.equal(namespace, 'web-firecrawl')
-        assert.equal(schema.type, 'object')
-        assert.deepEqual(schema.dict, {})
-        assert.deepEqual(schema({}), {})
-        assert.deepEqual(initial, {})
-        assert.equal(typeof hooks.setSource, 'function')
-        assert.equal(typeof hooks.onChange, 'function')
-      },
-    },
-  })
-  assert.equal(registrations, 1)
 })
 
 test('reports availability from local configuration only', () => {
@@ -270,7 +247,7 @@ test('reports a missing dynamic credential without making a request', async () =
     firecrawl.search({ query: 'test', maxResults: 1 }),
     (error) =>
       error.code === 'WEB_PROVIDER_CREDENTIAL_MISSING' &&
-      error.message.includes('Settings → Plugins → Plugin configuration → Firecrawl'),
+      error.message.includes('Plugins → Firecrawl → Configure'),
   )
   assert.equal(called, false)
 })

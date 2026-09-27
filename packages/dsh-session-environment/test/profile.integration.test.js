@@ -27,13 +27,15 @@ test('portable recipe selects the local environment bundle after base and Web', 
   assert.deepEqual(manifest.dsh.client.inject, [
     '@deepseek-ai/dsh-api-remotes',
     '@deepseek-ai/dsh-client-ui-renderer',
+    '@deepseek-ai/dsh-client-ui-layout',
+    '@deepseek-ai/dsh-client-ui-session',
   ])
   assert.equal(manifest.dsh.client.platform, 'web')
   for (const [name, version] of Object.entries({
     ...manifest.dependencies,
     ...manifest.peerDependencies,
   })) {
-    if (name.startsWith('@deepseek-ai/dsh-')) assert.equal(version, '0.1.5-rc.2', name)
+    if (name.startsWith('@deepseek-ai/dsh-')) assert.equal(version, '0.1.7-rc.2', name)
   }
   const patch = await readFile(new URL('../cordis.patch.yml', import.meta.url), 'utf8')
   assert.match(

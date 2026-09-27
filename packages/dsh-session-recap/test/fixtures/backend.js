@@ -6,18 +6,19 @@ import { join } from 'node:path'
 import { Readable, Writable } from 'node:stream'
 import { pathToFileURL } from 'node:url'
 import * as recap from '../../dist/src/index.js'
+import { profileFixture } from '../../../dsh-google-auth/test/profile-fixture.js'
 
 // Match the Steward fixture: resolve only through the repository's pinned CLI.
 const require = createRequire(import.meta.url)
 const cli = createRequire(require.resolve('@deepseek-ai/dsh/package.json'))
 const installed = (name) => {
   const manifest = require(cli.resolve(`@deepseek-ai/${name}/package.json`))
-  assert.equal(manifest.version, name === 'cordis' ? '4.0.2' : '0.1.5-rc.2')
+  assert.equal(manifest.version, name === 'cordis' ? '4.0.4' : '0.1.7-rc.2')
   return import(pathToFileURL(cli.resolve(`@deepseek-ai/${name}`)).href)
 }
-const { Context, Service } = await installed('cordis')
+const { Service } = await installed('cordis')
 const { HostConnectionService } = await installed('dsh-client-connection')
-const { default: FileSettingsProvider } = await installed('dsh-settings-file')
+const profiles = new Map()
 const { default: SessionStore } = await installed('dsh-session')
 const { default: JsonlSessionPersistence } = await installed('dsh-session-persistence-jsonl')
 export const version = require(cli.resolve('@deepseek-ai/dsh/package.json')).version
@@ -89,6 +90,7 @@ export async function state(t) {
       for (const ctx of owned.toReversed()) await ctx.fiber.dispose()
     } finally {
       contexts.delete(directory)
+      profiles.delete(directory)
       if (previous === undefined) delete process.env.DSH_HOME
       else process.env.DSH_HOME = previous
       await rm(directory, { recursive: true, force: true })
@@ -99,8 +101,6 @@ export async function state(t) {
 
 export async function backend(t, directory, llm = model()) {
   assert.ok(contexts.has(directory), 'backend requires fixture-owned temporary state')
-  const ctx = new Context()
-  contexts.get(directory).push(ctx)
   const routes = new Map()
   // Deliberate transport adapters: a traced route registry and memory streams
   // replace the listening HTTP server/socket, not Connection's RPC machinery.
@@ -114,36 +114,48 @@ export async function backend(t, directory, llm = model()) {
       return () => routes.delete(route.path)
     }
   }
-  await ctx.plugin(DormantWebServer).await()
-  await ctx
-    .plugin(FileSettingsProvider, { path: join(directory, 'settings.json'), watch: false })
-    .await()
-  await ctx.plugin(SessionStore).await()
-  await ctx
-    .plugin(JsonlSessionPersistence, { root: join(directory, 'sessions'), compression: 'none' })
-    .await()
-  assert.ok(ctx.settings instanceof FileSettingsProvider)
-  assert.ok(ctx.sessions instanceof SessionStore)
-  assert.ok(ctx.sessionPersistence instanceof JsonlSessionPersistence)
-  ctx.provide('llm', llm)
-  // Authentication is a fixed fixture capability. This does not test login,
-  // cookies, browser auth persistence, or the live WebServer routing stack.
-  await ctx
-    .plugin({
-      apply(owner) {
-        new HostConnectionService(owner, [], {
+  const setup = (owner) => {
+    owner.plugin(DormantWebServer)
+    owner.plugin(SessionStore)
+    owner.plugin(JsonlSessionPersistence, {
+      root: join(directory, 'sessions'),
+      compression: 'none',
+    })
+    owner.provide('llm', llm)
+    // Authentication is a fixed capability; this fixture does not test login.
+    owner.plugin({
+      apply(connectionOwner) {
+        new HostConnectionService(connectionOwner, [], {
           isAuthenticated: (req) => req.headers.authorization === 'fixture',
         })
       },
     })
-    .await()
-  let mounted
+  }
+  let shared = profiles.get(directory)
+  let ctx
+  if (!shared) {
+    shared = { setup }
+    profiles.set(directory, shared)
+    shared.fixture = await profileFixture(t, {
+      rows: [{ id: recap.name, name: 'cordis:recap' }],
+      builtins: { recap },
+      setup: (owner) => shared.setup(owner),
+    })
+    ctx = shared.fixture.ctx
+  } else {
+    shared.setup = setup
+    ctx = await shared.fixture.start()
+  }
+  contexts.get(directory).push(ctx)
+  assert.ok(ctx.sessions instanceof SessionStore)
+  assert.ok(ctx.sessionPersistence instanceof JsonlSessionPersistence)
+  const entry = () => ctx.configEditor.entries().find((row) => row.options.id === recap.name)
   async function mount() {
-    mounted = ctx.plugin(recap)
-    await mounted.await()
+    await ctx.loader.update(entry().id, { disabled: false })
+    await ctx.loader.await()
     assert.equal(routes.has(recap.CHANNEL), true)
   }
-  await mount()
+  assert.equal(routes.has(recap.CHANNEL), true)
   let rpcId = 0
   async function request(endpoint, payload = {}, headers = {}) {
     const route = routes.get(recap.CHANNEL)
@@ -211,7 +223,11 @@ export async function backend(t, directory, llm = model()) {
     mount,
     createSession,
     restoreSession,
-    unmount: () => mounted.dispose(),
+    settingsPath: shared.fixture.profile.patchPath,
+    unmount: async () => {
+      await ctx.loader.update(entry().id, { disabled: true })
+      await ctx.loader.await()
+    },
     close: () => ctx.fiber.dispose(),
   }
 }

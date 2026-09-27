@@ -6,5 +6,5 @@ export const inject = ['credentials', 'settings', 'connection', 'webServer']
 export const Config = z.object({})
 
 export function apply(ctx) {
-  mountOpenRouter(ctx, Config)
+  mountOpenRouter(ctx)
 }

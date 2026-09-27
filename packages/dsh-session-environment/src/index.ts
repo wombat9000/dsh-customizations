@@ -65,7 +65,8 @@ export async function readSessionEnvironment(
       stdoutMaxBytes: config.stdoutMaxBytes,
       signal,
     })
-    const result = await ctx.shell.run(spec)
+    const execution = await ctx.shell.execute(spec)
+    const result = await execution.result()
     return parseGitEnvironmentResult({ cwd, home, result })
   } catch {
     if (signal.aborted) return unavailableSnapshot(cwd, home, 'Git check cancelled')

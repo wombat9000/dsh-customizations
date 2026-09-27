@@ -1,13 +1,6 @@
-# Bundle roster patches replace config rather than merging roots. Keep all
-# independent preset bundles in this final, machine-independent recipe override.
-- id: agent-presets
-  name: '@deepseek-ai/dsh-agent-presets'
+# Each bundle inserts its own explicit declaration; never replace the roster.
+# Preserve the deployment default. The registry retains selectedDefault separately.
+- id: agent-preset-registry
+  name: '@deepseek-ai/dsh-agent-preset-registry'
   config:
     default: standard
-    roots:
-      - path: !!js process.getBuiltinModule('node:path').join(process.getBuiltinModule('node:path').dirname(process.getBuiltinModule('node:module').createRequire(baseUrl).resolve('@local/dsh-worktree/package.json')), 'presets')
-        trust: system
-      - path: !!js process.getBuiltinModule('node:path').join(process.getBuiltinModule('node:path').dirname(process.getBuiltinModule('node:module').createRequire(baseUrl).resolve('@local/dsh-project-steward/package.json')), 'presets')
-        trust: system
-      - path: !!js process.getBuiltinModule('node:path').join(process.getBuiltinModule('node:path').dirname(process.getBuiltinModule('node:module').createRequire(baseUrl).resolve('@local/dsh-product-mode/package.json')), 'presets')
-        trust: system

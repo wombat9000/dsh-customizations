@@ -37,7 +37,7 @@ test('personal-web selects imagegen once after base, Web and shared Gemini crede
     'optionalDependencies',
   ]) {
     for (const [name, version] of Object.entries(manifest[section] ?? {})) {
-      if (/^@deepseek-ai\/dsh(?:$|-)/.test(name)) assert.equal(version, '0.1.5-rc.2', name)
+      if (/^@deepseek-ai\/dsh(?:$|-)/.test(name)) assert.equal(version, '0.1.7-rc.2', name)
     }
   }
   const youtube = await json('../../dsh-tool-youtube/package.json')

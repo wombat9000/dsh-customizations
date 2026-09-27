@@ -20,16 +20,17 @@ test('Drive publishes host/client and compatibility tools but no agent preset', 
   assert.doesNotMatch(patch, /id: agent-presets|roots:|default:/)
 })
 
-test('personal-web removes only the Drive root and retains default and other roots', async () => {
+test('personal-web retains Standard default without a Drive preset or directory roster', async () => {
   const patch = await text('../../profiles/personal-web/cordis.patch.yml')
+  assert.match(patch, /id: agent-preset-registry/)
   assert.match(patch, /default: standard/)
-  const packages = [...patch.matchAll(/resolve\('(@local\/[^']+)\/package.json'\)/g)].map(
-    (match) => match[1],
-  )
-  assert.deepEqual(packages, [
+  assert.doesNotMatch(patch, /roots:|trust: system|google-drive/)
+  const recipe = JSON.parse(await text('../../profiles/personal-web/recipe.json'))
+  for (const name of [
     '@local/dsh-worktree',
     '@local/dsh-project-steward',
     '@local/dsh-product-mode',
-  ])
-  assert.equal((patch.match(/trust: system/g) ?? []).length, 3)
+  ]) {
+    assert.equal(recipe.bundles.filter((bundle) => bundle.name === name).length, 1)
+  }
 })

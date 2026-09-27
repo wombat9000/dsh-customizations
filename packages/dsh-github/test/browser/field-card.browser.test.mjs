@@ -89,17 +89,19 @@ async function mount(handler = () => prepared, extra = {}) {
 }
 test('verified field change retains native approval preview, stable identities, and raw details', async () => {
   const fixture = await mount(undefined, {
-    useSessionPendingInteraction: (select) =>
+    useSessionStatus: (select) =>
       select(
         new Map([
           [
             'session',
             {
-              kind: 'approval',
-              callId: 'call',
-              toolName: prepared.toolName,
-              key: 'pending-1',
-              reason: prepared.exactPreview,
+              pendingInteraction: {
+                kind: 'approval',
+                callId: 'call',
+                toolName: prepared.toolName,
+                key: 'pending-1',
+                reason: prepared.exactPreview,
+              },
             },
           ],
         ]),

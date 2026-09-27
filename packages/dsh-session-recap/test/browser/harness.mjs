@@ -26,6 +26,7 @@ export async function mountSlot(
     narrow = false,
     dark = false,
     recapError = false,
+    view,
     deferRecap = false,
     autoRecap = false,
     recapCards,
@@ -125,7 +126,7 @@ export async function mountSlot(
         expect([
           'conversation.input.dock',
           'conversation.chat.assistant-actions',
-          'settings.plugin.item',
+          'plugins.row.config',
         ]).toContain(slot)
         register()
       },
@@ -138,7 +139,7 @@ export async function mountSlot(
   expect([...registrations.keys()]).toEqual([
     'conversation.input.dock',
     'conversation.chat.assistant-actions',
-    'settings.plugin.item',
+    'plugins.row.config',
   ])
   const { options, Component } = registrations.get(name)
   const container = document.createElement('main')
@@ -228,7 +229,7 @@ export async function mountSlot(
               React.Fragment,
               null,
               h('h1', null, 'Plugin configuration'),
-              h(Component, options.inject()),
+              h(Component, { ...options.inject(), view }),
             ),
       )
     })

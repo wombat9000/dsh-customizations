@@ -179,7 +179,7 @@ export class FirecrawlWebProvider {
 
     if (typeof resolved === 'string' && resolved.length > 0) return resolved
     throw new WebError(
-      `Firecrawl has no API key for "${this.options.apiKeyEnv ?? FIRECRAWL_API_KEY_ENV}"; configure it in Settings → Plugins → Plugin configuration → Firecrawl or export it in the launching environment`,
+      `Firecrawl has no API key for "${this.options.apiKeyEnv ?? FIRECRAWL_API_KEY_ENV}"; configure it in Plugins → Firecrawl → Configure or export it in the launching environment`,
       'WEB_PROVIDER_CREDENTIAL_MISSING',
     )
   }
@@ -276,20 +276,6 @@ export class FirecrawlWebProvider {
 }
 
 export function apply(ctx, config = {}) {
-  // The configurable-plugin directory only renders cards with a served namespace.
-  // This card edits credentials, never settings-file secrets, so its document is empty.
-  ctx.inject(['settings'], (settingsCtx) => {
-    settingsCtx.settings.installSection(
-      ctx,
-      'web-firecrawl',
-      z.object({}),
-      {},
-      {
-        setSource: () => {},
-        onChange: () => {},
-      },
-    )
-  })
   const apiKeyEnv = FIRECRAWL_CREDENTIAL_REF
   const literalApiKey =
     config.apiKey !== undefined && config.apiKey.length > 0 ? config.apiKey : undefined

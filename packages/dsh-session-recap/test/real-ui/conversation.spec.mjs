@@ -1,9 +1,4 @@
-import {
-  test,
-  expect,
-  pluginSettings,
-  openSeededSession,
-} from '../../../../tests/real-ui/fixtures.mjs'
+import { test, expect, setTheme, openSeededSession } from '../../../../tests/real-ui/fixtures.mjs'
 import { cardSelectionDiagnostics, CARD_LABELS } from '../../dist/src/cards.js'
 
 test('selection diagnostics expand and copy in the real shell without another evaluation', async ({
@@ -231,8 +226,7 @@ for (const [theme, narrow] of [
         },
       })
     })
-    const settings = await pluginSettings(app, theme)
-    await settings.getByRole('button', { name: 'Close', exact: true }).click()
+    await setTheme(app, theme)
     await openSeededSession(app)
     await app.getByRole('button', { name: 'Generate recap', exact: true }).click()
     const dock = app.getByRole('complementary', { name: 'Session recap' })
@@ -286,8 +280,7 @@ for (const [theme, narrow] of [
         },
       })
     })
-    const settings = await pluginSettings(app, theme)
-    await settings.getByRole('button', { name: 'Close', exact: true }).click()
+    await setTheme(app, theme)
     await openSeededSession(app)
     await app.getByRole('button', { name: 'Generate recap', exact: true }).click()
     const dock = app.getByRole('complementary', { name: 'Session recap' })
@@ -306,9 +299,8 @@ for (const theme of ['light', 'dark']) {
   test(`real dock follows persisted and blank sessions without calling a provider (${theme})`, async ({
     app,
   }) => {
-    const settings = await pluginSettings(app, theme)
+    await setTheme(app, theme)
     const prefix = theme === 'light' ? 'recap' : 'recap-dark'
-    await settings.getByRole('button', { name: 'Close', exact: true }).click()
     await openSeededSession(app)
     await expect(
       app.getByText('Review the Session recap interface.', { exact: true }),
@@ -320,7 +312,7 @@ for (const theme of ['light', 'dark']) {
     await expect(recap).toHaveScreenshot(`${prefix}-existing-session.png`)
     await recap.click()
     await expect(dock.getByRole('alert')).toHaveText(
-      'Choose a provider and model in Settings → Plugins → Session Recap.',
+      'Choose a provider and model in Plugins → Session Recap → Configure.',
     )
     await expect(dock).toHaveScreenshot(`${prefix}-no-provider.png`)
     await expect(dock.getByRole('button')).toHaveCount(0)

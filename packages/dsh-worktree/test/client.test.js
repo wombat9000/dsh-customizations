@@ -228,7 +228,12 @@ test('copied-preset tab follows real integration definitions and same-session ca
   const stop = plugin.watchCapability({
     sessions: {
       list: {
-        getSnapshot: () => ({ current }),
+        getSnapshot: () => ({
+          byId: {
+            background: { id: 'background', retainedBy: { subagent: 1 } },
+            ...(current ? { [current]: { id: current, retainedBy: { mainView: 1 } } } : {}),
+          },
+        }),
         subscribe: (cb) => {
           notify = cb
           return () => {}
@@ -304,7 +309,12 @@ test('tab registration follows current capability; subscription, timers and pend
     document,
     sessions: {
       list: {
-        getSnapshot: () => ({ current }),
+        getSnapshot: () => ({
+          byId: {
+            background: { id: 'background', retainedBy: { subagent: 1 } },
+            ...(current ? { [current]: { id: current, retainedBy: { mainView: 1 } } } : {}),
+          },
+        }),
         subscribe: (cb) => {
           callback = cb
           return () => off++

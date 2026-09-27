@@ -48,7 +48,7 @@ export class WorktreeManager {
     // public registry rather than assuming this service instance owns all runs.
     // Only exact live owners are used; never read private registry state.
     for (const owner of this.ctx.agents.list()) {
-      for (const job of this.ctx.jobs.list(owner)) {
+      for (const job of this.ctx.jobs.list(owner.session.id)) {
         if (job.kind !== JOB_KIND) continue
         const cleanupUncertain = job.detail?.startsWith(CLEANUP_FAILED) === true
         if (job.status === 'running' || job.status === 'stopping' || cleanupUncertain) {
@@ -161,7 +161,7 @@ export class WorktreeManager {
       const jobId = this.ctx.jobs.start({
         kind: JOB_KIND,
         label: worktree.path,
-        owner: parent,
+        owner: parent.session.id,
         outputLimitBytes: 48000,
         run: () => {
           // Tool-call cancellation ends at admission. Only the job owns the
@@ -210,7 +210,7 @@ export class WorktreeManager {
                 }
               }
               record.status = outcome.status
-              record.report = bounded(outcome.output ?? outcome.detail ?? '', MAX_TEXT)
+              record.report = bounded(outcome.result ?? outcome.detail ?? '', MAX_TEXT)
               return outcome
             })().finally(() => {
               // settleRun releases the child before this lease becomes reusable.

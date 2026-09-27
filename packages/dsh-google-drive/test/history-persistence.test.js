@@ -46,11 +46,13 @@ async function fixture(t, id) {
   return { root, writer, session }
 }
 function finish(session) {
+  session.append('step/start', { turn: 1, step: 1 })
   session.append(
     'assistant/message',
-    { message: assistant, turn: 1, step: 0, stream: [] },
+    { message: assistant, turn: 1, step: 1, stream: [] },
     { surfaceOp: 'append' },
   )
+  session.append('step/end', { turn: 1, step: 1 })
   session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
 }
 async function persisted(writer, session) {
@@ -61,7 +63,7 @@ async function persisted(writer, session) {
   await handle.flush()
   await handle.close()
   const path = writer.persistence.locate(session.header).path
-  assert.match(path, /session\.v3\.jsonl\.zstd$/u)
+  assert.match(path, /session\.v4\.jsonl\.zstd$/u)
   const bytes = await readFile(path)
   assert.equal(bytes.readUInt32LE(0), 0xfd2fb528)
   // Retain the appended snapshot for comparison with a separate backend reopen.
@@ -184,18 +186,18 @@ test('real Drive request, denial, grant, management and revocation reopen withou
   const expectedEvents = artifact.records.filter((record) => typeof record.seq === 'number')
   assert.deepEqual(
     expectedEvents.map((event) => event.type),
-    ['turn/start', 'user/message', 'assistant/message', 'turn/end'],
+    ['turn/start', 'user/message', 'step/start', 'assistant/message', 'step/end', 'turn/end'],
   )
   assert.deepEqual(
     expectedEvents.map((event) => event.seq),
-    [0, 1, 2, 3],
+    [0, 1, 2, 3, 4, 5],
   )
   runtime.dispose()
   await writer.ctx.fiber.dispose()
   const reader = await store(t, root)
   const loaded = await load(reader.persistence, session.id)
   assert.deepEqual(loaded.meta, {
-    version: 3,
+    version: 4,
     id: session.id,
     createdAt: time,
     cwd: root,

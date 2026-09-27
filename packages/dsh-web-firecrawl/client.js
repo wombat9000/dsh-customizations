@@ -206,7 +206,7 @@ window.__ModuleLoader__.load({
 
       return React.createElement(
         'details',
-        { style: { ...styles.card, display: 'block' } },
+        { style: { ...styles.card, display: 'block' }, open: props.view === 'page' || undefined },
         React.createElement(
           'summary',
           { style: { cursor: 'pointer' } },
@@ -310,6 +310,13 @@ window.__ModuleLoader__.load({
       )
     }
 
+    // RC2 row summaries never mount the credential form or start status requests.
+    function FirecrawlConfigPage(props) {
+      return props.view === 'summary'
+        ? 'Configure Firecrawl access for web search and fetch.'
+        : React.createElement(FirecrawlSettingsSection, props)
+    }
+
     const inject = ['slots', 'remote', 'remote.credentials']
 
     function apply(ctx) {
@@ -325,15 +332,15 @@ window.__ModuleLoader__.load({
         }
       }
       const injected = () => ({ api: ctx.remote, subscribe })
-      ctx.slots.inject('settings.plugin.item', () =>
+      ctx.slots.inject('plugins.row.config', () =>
         ctx.slots.register(
           {
-            name: 'settings.plugin.item',
-            key: 'web-firecrawl',
+            name: 'plugins.row.config',
+            key: '@local/dsh-web-firecrawl#local-web-firecrawl',
             order: 20,
             inject: injected,
           },
-          FirecrawlSettingsSection,
+          FirecrawlConfigPage,
         ),
       )
     }

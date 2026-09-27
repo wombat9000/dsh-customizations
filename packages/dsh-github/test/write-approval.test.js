@@ -150,8 +150,8 @@ test('plugin disposal during pending approval invalidates the preparation before
   assert.equal(mutations(host.subprocess).length, 0)
 })
 
-test('downstream policy denial skips approval and downstream asks retain the exact write preview', async (t) => {
-  for (const kind of ['deny', 'ask'])
+test('downstream denial or cancellation skips approval and asks retain the exact preview', async (t) => {
+  for (const kind of ['deny', 'cancel', 'ask'])
     await t.test(kind, async (t) => {
       const host = await fixture(t, 'createIssue', { answer: 'allowed-once' })
       host.ctx.on('tools/pre-execute', async () => ({
@@ -159,7 +159,7 @@ test('downstream policy denial skips approval and downstream asks retain the exa
         reason: 'Additional synthetic policy reason',
       }))
       const result = await host.execute('github_create_issue', args.createIssue)
-      if (kind === 'deny') {
+      if (kind === 'deny' || kind === 'cancel') {
         assert.equal(result.isError, true)
         assert.equal(host.requests.length, 0)
         assert.equal(mutations(host.subprocess).length, 0)

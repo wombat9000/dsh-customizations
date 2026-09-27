@@ -14,6 +14,7 @@ const plugins = [
   { name: '@wombat9000/dsh-session-recap', directory: 'packages/dsh-session-recap' },
   { name: '@local/dsh-worktree', directory: 'packages/dsh-worktree' },
   { name: '@local/dsh-github', directory: 'packages/dsh-github' },
+  { name: '@local/dsh-session-environment', directory: 'packages/dsh-session-environment' },
 ]
 
 export async function waitForFixture(workspace, timeoutMs = 10000) {
@@ -77,6 +78,10 @@ export async function startDisposableHost({ additionalPlugins = [], profilePatch
     const fixture = join(profile, 'node_modules', 'dsh-visual-fixture')
     await mkdir(fixture, { recursive: true })
     await copyFile(join(root, 'tests/real-ui/session-fixture.mjs'), join(fixture, 'index.mjs'))
+    await copyFile(
+      join(root, 'tests/real-ui/session-events.mjs'),
+      join(fixture, 'session-events.mjs'),
+    )
     // Resolve the existing pinned scope package from the checkout, without installs.
     await symlink(
       join(root, 'tests/real-ui/github-approval-fixture.mjs'),
@@ -117,6 +122,12 @@ export async function startDisposableHost({ additionalPlugins = [], profilePatch
         name: 'dsh-visual-tests',
         private: true,
         type: 'module',
+        // The 0.1.7 Plugins inventory reads direct dependencies, not only the
+        // composed bundle list. Existing local links above satisfy these specs;
+        // fixture startup never invokes a package manager.
+        dependencies: Object.fromEntries(
+          bundles.map((plugin) => [plugin.name, `file:${join(root, plugin.directory)}`]),
+        ),
         dsh: {
           profile: {
             bundles: [
@@ -154,6 +165,11 @@ export async function startDisposableHost({ additionalPlugins = [], profilePatch
       XDG_DATA_HOME: join(home, '.local/share'),
       DSH_HOME: dshHome,
       DSH_TELEMETRY_DISABLED: '1',
+      // Explicit fixture-only policy: the pinned browser container has neither
+      // usable Landlock nor bwrap. Environment performs read-only Git checks in
+      // disposable directories; no advertised agent tools are dispatched here.
+      // These UI tests do not prove OS sandbox enforcement.
+      DSH_PERMISSION_MODE: 'danger-full-access',
     }
     const host = startHost(
       process.execPath,
@@ -162,7 +178,15 @@ export async function startDisposableHost({ additionalPlugins = [], profilePatch
     )
     child = host.child
     const authenticatedUrl = await host.ready
-    await waitForFixture(workspace)
+    try {
+      await waitForFixture(workspace)
+    } catch (error) {
+      throw new Error(`${error.message}\n${host.diagnostics()}`, { cause: error })
+    }
+    const diagnostics = host.diagnostics()
+    if (/entries did not activate|typert contributor\(s\) failed/.test(diagnostics)) {
+      throw new Error(`Disposable profile has inactive entries:\n${diagnostics}`)
+    }
     // Exchange the ephemeral launch token outside Playwright: no URL token in traces/errors.
     let response
     try {

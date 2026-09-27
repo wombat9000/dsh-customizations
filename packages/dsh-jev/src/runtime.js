@@ -212,7 +212,8 @@ function validateResponse(raw, questions, model) {
 }
 export function createJevRuntime({
   openrouter,
-  settings,
+  getModel,
+  saveModel,
   fetch: fetcher = globalThis.fetch,
   timeoutMs = 15000,
 }) {
@@ -221,7 +222,7 @@ export function createJevRuntime({
   const pending = new Set()
   function current() {
     try {
-      const model = settings.get('jev')?.model ?? DEFAULT_MODEL
+      const model = getModel()
       if (!validModel(model)) fail('model')
       return { model }
     } catch (error) {
@@ -361,9 +362,8 @@ export function createJevRuntime({
         if (endpoint === 'status') return { ok: true, value: await status() }
         if (endpoint !== 'configure' || !exact(payload, ['model']) || !validModel(payload.model))
           fail('invalid')
-        const next = { model: payload.model }
         try {
-          await settings.update('jev', next)
+          await saveModel(payload.model)
         } catch {
           fail('settings')
         }
@@ -378,19 +378,15 @@ export function createJevRuntime({
     },
   }
 }
-export function mountJev(ctx, schema, config = {}) {
-  const runtime = createJevRuntime({ openrouter: ctx.openrouter, settings: ctx.settings })
-  ctx.settings.installSection(
-    ctx,
-    'jev',
-    schema,
-    { model: DEFAULT_MODEL, ...config },
-    {
-      setSource() {},
-      onChange() {
-        runtime.changed()
-      },
-    },
+export function mountJev(ctx, config) {
+  const runtime = createJevRuntime({
+    openrouter: ctx.openrouter,
+    getModel: () => config.model.get(),
+    saveModel: (model) => ctx.get('settings').update(ctx.fiber.entry.options.id, { model }),
+  })
+  ctx.on('loader/volatile-update', () => runtime.changed())
+  ctx.inject(['settings'], (child) =>
+    child.effect(() => child.settings.configure({ auto: false }, ctx.fiber)),
   )
   ctx.provide('jev', runtime.service)
   ctx.effect(() => () => runtime.dispose())

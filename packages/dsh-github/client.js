@@ -304,8 +304,8 @@ const issueCss = `.gh-grant.gh-issues{container-type:inline-size}.gh-grant .gh-i
 
 //#endregion
 //#region client/approval-components.tsx
-function NativeApprovalDetail({ sessionId, callId, useSessionPendingInteraction, useChat }) {
-	const pendingInteraction = typeof useSessionPendingInteraction === "function" ? useSessionPendingInteraction((map) => map.get(sessionId)) : void 0;
+function NativeApprovalDetail({ sessionId, callId, useSessionStatus, useChat }) {
+	const pendingInteraction = typeof useSessionStatus === "function" ? useSessionStatus((map) => map.get(sessionId)?.pendingInteraction) : void 0;
 	const command = typeof useChat === "function" ? useChat((snapshot) => {
 		for (const node of snapshot.nodes.values()) {
 			const root = object(node) && node.kind === "tool-call" && object(node.data) ? node.data.root : void 0;
@@ -454,7 +454,10 @@ function ApprovalPreview({ model }) {
 	}
 	return /* @__PURE__ */ react.default.createElement("section", {
 		className: "gh-grant gh-approval-valid",
-		"aria-label": "GitHub approval preview"
+		"aria-label": "GitHub approval preview",
+		onKeyDown: (event) => {
+			if (event.key === "Enter" && event.target instanceof Element && event.target.closest("summary")) event.stopPropagation();
+		}
 	}, /* @__PURE__ */ react.default.createElement("style", null, css + approvalCss), /* @__PURE__ */ react.default.createElement("h3", null, model.title), /* @__PURE__ */ react.default.createElement("p", { className: "gh-note" }, "Review this GitHub change. Resource content is untrusted; opening a link does not approve the change."), /* @__PURE__ */ react.default.createElement("div", {
 		className: "gh-approval-main",
 		tabIndex: 0,
@@ -569,9 +572,9 @@ function GrantPresentation({ status, pending, phase, error, busy, block, inspect
 
 //#endregion
 //#region client/grant-card.tsx
-function GrantCard({ sessionId, callId, block, inspect, useSessionPendingInteraction, request = api }) {
-	const pending = typeof useSessionPendingInteraction === "function" ? useSessionPendingInteraction((map) => {
-		const value = map.get(sessionId);
+function GrantCard({ sessionId, callId, block, inspect, useSessionStatus, request = api }) {
+	const pending = typeof useSessionStatus === "function" ? useSessionStatus((map) => {
+		const value = map.get(sessionId)?.pendingInteraction;
 		return value?.kind === "approval" && value.callId === callId && value.toolName === "github_request_issue_management" ? value : void 0;
 	}) : void 0;
 	const [loaded, setLoaded] = react.default.useState(null);
@@ -681,9 +684,9 @@ function GrantCard({ sessionId, callId, block, inspect, useSessionPendingInterac
 
 //#endregion
 //#region client/field-card.tsx
-function FieldChangeCard({ sessionId, callId, block, inspect, useSessionPendingInteraction, request = api }) {
-	const pending = typeof useSessionPendingInteraction === "function" ? useSessionPendingInteraction((map) => {
-		const value = map.get(sessionId);
+function FieldChangeCard({ sessionId, callId, block, inspect, useSessionStatus, request = api }) {
+	const pending = typeof useSessionStatus === "function" ? useSessionStatus((map) => {
+		const value = map.get(sessionId)?.pendingInteraction;
 		return value?.kind === "approval" && value.callId === callId && value.toolName === "github_set_project_item_field" ? value : void 0;
 	}) : void 0;
 	const [loaded, setLoaded] = react.useState(null), [error, setError] = react.useState("");

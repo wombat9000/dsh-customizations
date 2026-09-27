@@ -1,11 +1,10 @@
 import { test, expect, pluginSettings } from '../../../../tests/real-ui/fixtures.mjs'
 
 test('shared OpenRouter card edits only the disposable host credential', async ({ app }) => {
-  const settings = await pluginSettings(app, 'light')
+  const settings = await pluginSettings(app, 'light', '@local/dsh-openrouter', 'local-openrouter')
   const card = settings.getByRole('group', { name: 'OpenRouter settings' })
   // Native details has group semantics; namespace dispatch must elect this new card.
   await expect(card).toBeVisible()
-  await card.locator('summary').click()
   const field = card.getByLabel('OpenRouter API key')
   await expect(field).toHaveValue('')
   await expect(field).toHaveAttribute('type', 'password')

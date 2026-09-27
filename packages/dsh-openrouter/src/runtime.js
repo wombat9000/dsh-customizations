@@ -34,7 +34,9 @@ export function createOpenRouterRuntime({ credentials, settings }) {
   }
   const route = () => {
     guard()
-    const profile = settings.get('llm-pi-ai')?.providers?.openrouter
+    // Settings projects the provider's live Config; it no longer owns a value store.
+    const profile = settings.describe().find((entry) => entry.ns === 'llm-pi-ai')?.value
+      ?.providers?.openrouter
     const baseURL = profile?.baseURL
     if (
       baseURL !== undefined &&
@@ -198,11 +200,13 @@ export function createOpenRouterRuntime({ credentials, settings }) {
   }
 }
 
-export function mountOpenRouter(ctx, schema) {
+export function mountOpenRouter(ctx) {
   const runtime = createOpenRouterRuntime({ credentials: ctx.credentials, settings: ctx.settings })
   ctx.effect(() => () => runtime.dispose())
   ctx.provide('openrouter', runtime.service)
-  ctx.settings.installSection(ctx, 'openrouter', schema, {}, { setSource() {}, onChange() {} })
+  ctx.inject(['settings'], (child) =>
+    child.effect(() => child.settings.configure({ auto: false }, ctx.fiber)),
+  )
   ctx.effect(() => ctx.connection.rpc.handle(CHANNEL, runtime.rpc, { authority: 'trusted-host' }))
   return runtime
 }

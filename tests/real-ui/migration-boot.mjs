@@ -9,7 +9,6 @@ const cleanup = await startDisposableHost({
     { name: '@local/dsh-project-steward', directory: 'packages/dsh-project-steward' },
     { name: '@local/dsh-google-auth', directory: 'packages/dsh-google-auth' },
     { name: '@local/dsh-google-drive', directory: 'packages/dsh-google-drive' },
-    { name: '@local/dsh-session-environment', directory: 'packages/dsh-session-environment' },
     { name: '@local/dsh-product-mode', directory: 'packages/dsh-product-mode' },
     { name: '@local/dsh-web-firecrawl', directory: 'packages/dsh-web-firecrawl' },
     { name: '@local/dsh-linear', directory: 'packages/dsh-linear' },
@@ -43,7 +42,7 @@ try {
     if (channel === '/local-worktrees') assert.equal(result.result.value.state, 'unavailable')
   }
   console.log(
-    'PASS: thirteen-plugin boot, seeded fixture, authentication, shell and read-only RPCs',
+    'PASS: fifteen-plugin boot, V4 persisted fixtures, authentication, shell and read-only RPCs',
   )
 } finally {
   await cleanup()

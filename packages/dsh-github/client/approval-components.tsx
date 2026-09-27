@@ -9,12 +9,12 @@ import { selectApproval, type ApprovalModel } from './approval-model.ts'
 export function NativeApprovalDetail({
   sessionId,
   callId,
-  useSessionPendingInteraction,
+  useSessionStatus,
   useChat,
 }: NativeApprovalDetailProps) {
   const pendingInteraction =
-    typeof useSessionPendingInteraction === 'function'
-      ? useSessionPendingInteraction((map) => map.get(sessionId))
+    typeof useSessionStatus === 'function'
+      ? useSessionStatus((map) => map.get(sessionId)?.pendingInteraction)
       : undefined
   // RC2's single seat has no next-renderer protocol. Retain its shipped
   // ApprovalCommand fallback for unrelated or malformed requests.
@@ -271,7 +271,22 @@ export function ApprovalPreview({ model }: { model: ApprovalModel | null | undef
     }
   }
   return (
-    <section className="gh-grant gh-approval-valid" aria-label="GitHub approval preview">
+    <section
+      className="gh-grant gh-approval-valid"
+      aria-label="GitHub approval preview"
+      onKeyDown={(event) => {
+        // DSH 0.1.7's approval panel treats bubbling Enter as Allow once,
+        // excluding buttons/links but not native details summaries. Let the
+        // summary toggle normally without answering the surrounding approval.
+        if (
+          event.key === 'Enter' &&
+          event.target instanceof Element &&
+          event.target.closest('summary')
+        ) {
+          event.stopPropagation()
+        }
+      }}
+    >
       <style>{css + approvalCss}</style>
       <h3>{model.title}</h3>
       <p className="gh-note">

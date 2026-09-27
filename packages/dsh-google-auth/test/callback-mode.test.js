@@ -117,11 +117,14 @@ test('cancel during configuration load invalidates begin before a listener can s
 })
 
 test('configuration defaults to direct callbacks with a boolean non-secret preference', () => {
-  assert.deepEqual(Config({}), { useSandbox: false })
+  const config = Config({})
+  assert.equal(config.useSandbox.get(), false)
+  assert.equal(Config({ useSandbox: true }).useSandbox.get(), true)
   assert.throws(() => Config({ useSandbox: 'true' }))
   const schema = Config.toJSON()
   const preference = Object.values(schema.refs).find((item) => item.type === 'boolean')
   assert.equal(preference.meta.default, false)
+  assert.equal(preference.meta.volatile, true)
   assert.notEqual(preference.meta.secret, true)
 })
 

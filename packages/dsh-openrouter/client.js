@@ -30,7 +30,12 @@ window.__ModuleLoader__.load({
         throw new Error(result?.error?.message || 'OpenRouter settings are unavailable.')
       return result.value
     }
-    function SettingsCard({ rpc }) {
+    function SettingsCard(props) {
+      return props.view === 'summary'
+        ? h('p', null, 'Shared OpenRouter credential for trusted integrations.')
+        : h(SettingsForm, props)
+    }
+    function SettingsForm({ rpc, view }) {
       const [status, setStatus] = React.useState(null)
       const [draft, setDraft] = React.useState('')
       const [busy, setBusy] = React.useState(false)
@@ -99,7 +104,7 @@ window.__ModuleLoader__.load({
       }
       return h(
         'details',
-        { className: 'dsh-openrouter', 'aria-label': 'OpenRouter settings' },
+        { className: 'dsh-openrouter', 'aria-label': 'OpenRouter settings', open: view === 'page' },
         h('summary', null, 'OpenRouter'),
         h(
           'div',
@@ -164,12 +169,12 @@ window.__ModuleLoader__.load({
       )
     }
     function apply(ctx) {
-      // RC2 settings.plugin.item is keyed by a served namespace, additive to other cards.
-      ctx.slots.inject('settings.plugin.item', () =>
+      // DSH 0.1.7 row pages are keyed by bundle package and patch row id.
+      ctx.slots.inject('plugins.row.config', () =>
         ctx.slots.register(
           {
-            name: 'settings.plugin.item',
-            key: 'openrouter',
+            name: 'plugins.row.config',
+            key: '@local/dsh-openrouter#local-openrouter',
             inject: () => ({ rpc: ctx.get('connection').rpc }),
           },
           SettingsCard,

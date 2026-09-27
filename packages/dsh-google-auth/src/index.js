@@ -3,12 +3,11 @@ import { GoogleOAuthClient, normalizeScopes } from './oauth.js'
 import { registerSettingsRoutes } from './routes.js'
 
 export const name = 'google-auth'
-export const inject = ['credentials', 'webServer', 'settings']
-export const Config = z.object({ useSandbox: z.boolean().default(false) })
+export const inject = ['credentials', 'webServer']
+export const Config = z.object({ useSandbox: z.boolean().default(false).volatile() })
 export const CLIENT_KEY = 'google-auth/client'
 export const CREDENTIAL_KEY = 'google-auth/default'
-const CONFIG_ERROR =
-  'Configure a Google Desktop OAuth client in Settings → Plugins → Google accounts.'
+const CONFIG_ERROR = 'Configure a Google Desktop OAuth client in Plugins → Google accounts.'
 
 function validClient(value) {
   return (
@@ -509,30 +508,20 @@ export class GoogleAuthService {
   }
 }
 
-export function apply(ctx, config = {}) {
-  let source = () => ({ useSandbox: config.useSandbox === true })
+export function apply(ctx, config) {
   const service = new GoogleAuthService({
     credentials: ctx.credentials,
-    getCallbackMode: () => source().useSandbox,
-    saveCallbackMode: (value) => ctx.settings.update(name, { useSandbox: value }),
+    getCallbackMode: () => config.useSandbox.get(),
+    saveCallbackMode: (value) =>
+      ctx.get('settings').update(ctx.fiber.entry.options.id, { useSandbox: value }),
     getPublisher: () => ctx.get('sandboxCallbackPublisher'),
   })
   ctx.effect(() => () => service.dispose())
   ctx.provide('googleAuth', service)
   registerSettingsRoutes(ctx, service)
-  // This non-secret preference belongs in settings, never in OAuth credentials.
-  ctx.settings.installSection(
-    ctx,
-    name,
-    Config,
-    { useSandbox: config.useSandbox === true },
-    {
-      setSource(current) {
-        source = current
-      },
-      onChange() {
-        service.syncCallbackMode()
-      },
-    },
+  // Loader commits volatile references before notifying their owning fiber.
+  ctx.on('loader/volatile-update', () => service.syncCallbackMode())
+  ctx.inject(['settings'], (child) =>
+    child.effect(() => child.settings.configure({ auto: false }, ctx.fiber)),
   )
 }

@@ -19,6 +19,8 @@ type Handlers = {
 type HostContext = Context & {
   sessions: Sessions
   llm: ModelCatalog
+  // Settings addresses the local entry id, not Loader's qualified Include path.
+  fiber: Context['fiber'] & { entry?: { options: { id: string } } }
   connection: {
     rpc: {
       handle(
@@ -35,14 +37,14 @@ import z from '@deepseek-ai/schemastery'
 import { DEFAULT_SETTINGS, normalizeSettings, RecapError, RecapRuntime } from './runtime.js'
 
 export const name = 'wombat9000-session-recap'
-export const inject = ['sessions', 'llm', 'connection', 'settings', 'webServer']
+export const inject = ['sessions', 'llm', 'connection', 'webServer']
 export const CHANNEL = '/session-recap'
 export const Config = z.object({
-  autoRecap: z.boolean().default(true),
-  useJev: z.boolean().default(false),
-  inactivityMinutes: z.number().step(1).min(1).max(10080).default(30),
-  provider: z.string().default(''),
-  model: z.string().default(''),
+  autoRecap: z.boolean().default(true).volatile(),
+  useJev: z.boolean().default(false).volatile(),
+  inactivityMinutes: z.number().step(1).min(1).max(10080).default(30).volatile(),
+  provider: z.string().default('').volatile(),
+  model: z.string().default('').volatile(),
 })
 
 async function listModels(llm: ModelCatalog): Promise<ModelsResult> {
@@ -106,13 +108,23 @@ function rpcFailure(error: unknown): Extract<RpcResult<never>, { ok: false }> {
   }
 }
 
-export function apply(ctx: HostContext, config: Partial<Settings> = {}) {
-  let source = () => normalizeSettings({ ...DEFAULT_SETTINGS, ...config })
-  ctx.settings.installSection(ctx, name, Config, source(), {
-    setSource(current) {
-      source = current
-    },
-    onChange() {},
+export function apply(ctx: HostContext, config: ReturnType<typeof Config>) {
+  // Loader owns live references; Settings only persists edits to this entry.
+  const source = () =>
+    normalizeSettings({
+      autoRecap: config.autoRecap.get(),
+      useJev: config.useJev.get(),
+      inactivityMinutes: config.inactivityMinutes.get(),
+      provider: config.provider.get(),
+      model: config.model.get(),
+    })
+  let settingsService: Context['settings'] | undefined
+  ctx.inject(['settings'], (settingsCtx) => {
+    settingsService = settingsCtx.settings
+    settingsCtx.effect(() => () => {
+      settingsService = undefined
+    })
+    settingsCtx.effect(() => settingsCtx.settings.configure({ auto: false }, ctx.fiber))
   })
   const runtime = new RecapRuntime({
     sessions: ctx.sessions,
@@ -135,7 +147,11 @@ export function apply(ctx: HostContext, config: Partial<Settings> = {}) {
     configure: async (payload) => {
       const next = updatedSettings(source, payload)
       await validateRoute(ctx.llm, next)
-      await ctx.settings.update(name, next)
+      const namespace = ctx.fiber.entry?.options.id
+      if (!namespace)
+        throw new RecapError('invalid-settings', 'Session Recap has no profile entry.')
+      if (!settingsService) throw new RecapError('invalid-settings', 'Settings is unavailable.')
+      await settingsService.update(namespace, next)
       return settings()
     },
   }

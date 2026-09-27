@@ -15,11 +15,8 @@ test('shared credentials -> Jev -> constrained writer works through real Cordis 
     ['wombat9000-session-recap', { provider: 'fixture', model: 'writer', useJev: true }],
   ])
   ctx.provide('settings', {
-    get: (ns) => sections.get(ns),
-    installSection(owner, ns, schema, defaults, hooks) {
-      sections.set(ns, { ...defaults, ...sections.get(ns) })
-      hooks.setSource(() => sections.get(ns))
-    },
+    describe: () => [...sections].map(([ns, value]) => ({ ns, value })),
+    configure: () => () => {},
     async update(ns, value) {
       sections.set(ns, { ...sections.get(ns), ...value })
     },
@@ -117,7 +114,7 @@ test('shared credentials -> Jev -> constrained writer works through real Cordis 
   await routerMount.await()
   const jevMount = ctx.plugin(jev)
   await jevMount.await()
-  const recapMount = ctx.plugin(recap)
+  const recapMount = ctx.plugin(recap, sections.get('wombat9000-session-recap'))
   await recapMount.await()
   const handler = routes.get('/session-recap')
   const first = await handler('recap', { sessionId: 'fixture' })

@@ -20,7 +20,7 @@ export async function approvalHost(
     await ctx.plugin(module.default ?? module, name === 'user-approval' ? { policy } : {}).await()
   }
   const callerSession = Session.create('github-write-fixture', undefined, {
-    version: 3,
+    version: 4,
     id: 'github-write-fixture',
     createdAt: 0,
     isSeeded: false,

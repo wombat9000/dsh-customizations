@@ -1,10 +1,9 @@
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
-import '@deepseek-ai/dsh-settings'
 import z from '@deepseek-ai/schemastery'
 import { publicUser, publicWorkspace } from './linear.js'
 
 export const LINEAR_CREDENTIAL_REF = credentialRef('LINEAR_API_KEY')
-export const LINEAR_SETTINGS_NAMESPACE = 'linear'
+export const LINEAR_SETTINGS_NAMESPACE = 'local-linear'
 export const LINEAR_SETTINGS_CHANNEL = '/linear-integration'
 
 export const LinearSettingsSchema = z.object({
@@ -51,23 +50,17 @@ export function apiKeyFailure(value) {
   }
 }
 
-export function installLinearSettings(ctx, entry = {}) {
-  let source = () => ({ ...EMPTY_LINEAR_SETTINGS, ...entry })
+export function installLinearSettings(ctx, config) {
+  // RC2 projects volatile Config fields under the Loader entry id. The optional
+  // child owns only presentation policy; runtime reads never depend on Settings.
   ctx.inject(['settings'], (settingsCtx) => {
-    settingsCtx.settings.installSection(
-      ctx,
-      LINEAR_SETTINGS_NAMESPACE,
-      LinearSettingsSchema,
-      { ...EMPTY_LINEAR_SETTINGS, ...entry },
-      {
-        setSource(current) {
-          source = current
-        },
-        onChange() {},
-      },
-    )
+    settingsCtx.effect(() => settingsCtx.settings.configure({ auto: false }, ctx.fiber))
   })
-  return () => source()
+  return () => ({
+    organizationId: config.organizationId.get(),
+    organizationName: config.organizationName.get(),
+    organizationUrlKey: config.organizationUrlKey.get(),
+  })
 }
 
 async function credentialStatus(ctx, literalApiKey) {
@@ -103,7 +96,7 @@ export function registerLinearSettingsRpc(ctx, options) {
   const writeSettings = async (patch) => {
     const service = ctx.get('settings')
     if (service === undefined) throw new Error('DSH settings storage is unavailable.')
-    await service.update(LINEAR_SETTINGS_NAMESPACE, patch)
+    await service.update(ctx.fiber?.entry?.options.id ?? LINEAR_SETTINGS_NAMESPACE, patch)
   }
 
   const bindWorkspace = async (workspace) =>

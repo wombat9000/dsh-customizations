@@ -1,13 +1,21 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { apply, CHANNEL, inject, name } from '../dist/src/index.js'
+import { CHANNEL, inject } from '../dist/src/index.js'
+import { Context } from '@deepseek-ai/cordis'
+import { createRequire } from 'node:module'
 
-function host() {
+// Exercise the Loader paired with the installed Cordis peer graph.
+const require = createRequire(import.meta.url)
+const cordisRequire = createRequire(require.resolve('@deepseek-ai/cordis'))
+const { default: Loader } = await import(cordisRequire.resolve('@deepseek-ai/cordis-plugin-loader'))
+
+async function host(t) {
+  const root = new Context()
+  t.after(() => root.fiber.dispose())
   let handler,
-    current,
     installed,
-    preparations = 0
-  const disposers = []
+    preparations = 0,
+    registrations = 0
   const ctx = {
     sessions: { get() {} },
     llm: {
@@ -19,60 +27,62 @@ function host() {
       },
     },
     settings: {
-      installSection(owner, ns, schema, entry, hooks) {
-        installed = { owner, ns, schema, entry }
-        current = entry
-        hooks.setSource(() => current)
+      configure(policy, owner) {
+        installed = { policy, owner }
+        return () => {
+          installed = undefined
+        }
       },
       async update(ns, value) {
-        assert.equal(ns, name)
-        current = value
+        assert.equal(ns, 'recap-test-entry')
+        await root.loader.update(ns, { config: value })
+        await root.loader.await()
       },
     },
     connection: {
       rpc: {
         handle(channel, fn) {
           assert.equal(channel, CHANNEL)
+          registrations++
           handler = fn
           return () => {}
         },
       },
     },
-    effect(fn) {
-      disposers.push(fn())
-    },
   }
-  apply(ctx)
+  for (const [key, service] of Object.entries(ctx)) {
+    root.provide(key, service)
+  }
+  root.provide('webServer', {})
+  await root.plugin(Loader, { baseUrl: import.meta.url }).await()
+  await root.loader.create({ id: 'recap-test-entry', name: '../dist/src/index.js' })
+  await root.loader.await()
   return {
     ctx,
+    root,
     rpc: (...args) => handler(...args),
     installed,
-    disposers,
+    registrations: () => registrations,
+    policy: () => installed,
     preparations: () => preparations,
   }
 }
 
-test('registers schema-backed settings defaults and opaque storage scope', async () => {
-  const { rpc, installed } = host()
-  assert.equal(installed.ns, 'wombat9000-session-recap')
-  assert.equal(installed.entry.autoRecap, true)
-  assert.equal(installed.entry.useJev, false)
-  assert.equal(installed.entry.inactivityMinutes, 30)
+test('registers schema-backed settings defaults and opaque storage scope', async (t) => {
+  const { rpc, installed } = await host(t)
+  assert.deepEqual(installed.policy, { auto: false })
+  assert.equal(installed.owner.config.autoRecap.get(), true)
+  assert.equal(installed.owner.config.useJev.get(), false)
+  assert.equal(installed.owner.config.inactivityMinutes.get(), 30)
   const result = await rpc('settings')
   assert.equal(result.ok, true)
   assert.equal(result.value.provider, '')
   assert.match(result.value.storageScope, /^[a-f0-9]{24}$/)
 })
-test('optional Jev lookup wires the service without required injection or settings-time evaluation', async () => {
+test('optional Jev lookup wires the service without required injection or settings-time evaluation', async (t) => {
   assert.ok(!inject.includes('jev'))
-  const { rpc, ctx } = host()
-  let evaluations = 0,
-    lookups = 0
-  ctx.get = (key) => {
-    assert.equal(key, 'jev')
-    lookups++
-    return service
-  }
+  const { rpc, ctx, root } = await host(t)
+  let evaluations = 0
   const service = {
     settings: () => ({ model: 'typesafe/jev-1.13' }),
     async evaluate() {
@@ -80,10 +90,10 @@ test('optional Jev lookup wires the service without required injection or settin
       throw Error('No credential')
     },
   }
+  root.provide('jev', service)
   await rpc('configure', { provider: 'configured', model: 'model', useJev: true })
   await rpc('settings')
   assert.equal(evaluations, 0)
-  assert.equal(lookups, 0)
   ctx.sessions.get = () => session
   const session = {
     seq: 1,
@@ -108,10 +118,23 @@ test('optional Jev lookup wires the service without required injection or settin
   assert.equal(result.value.selection.reason, 'unavailable')
   assert.equal(result.value.selection.diagnostics.status, 'unavailable')
   assert.equal(evaluations, 1)
-  assert.ok(lookups > 0)
 })
-test('provider catalog returns only public display metadata', async () => {
-  const { rpc } = host()
+test('Loader changes preserve live references and RPC lifetime; policy follows disposal', async (t) => {
+  const { root, rpc, installed, registrations, policy } = await host(t)
+  const reference = installed.owner.config.autoRecap
+  await root.loader.update('recap-test-entry', { config: { autoRecap: false } })
+  await root.loader.await()
+  assert.equal(reference, installed.owner.config.autoRecap)
+  assert.equal(reference.get(), false)
+  assert.equal((await rpc('settings')).value.autoRecap, false)
+  assert.equal(registrations(), 1, 'a volatile edit does not remount the RPC owner')
+  await root.loader.remove('recap-test-entry')
+  await root.loader.await()
+  assert.equal(policy(), undefined)
+})
+
+test('provider catalog returns only public display metadata', async (t) => {
+  const { rpc } = await host(t)
   assert.deepEqual(await rpc('models'), {
     ok: true,
     value: {
@@ -121,8 +144,8 @@ test('provider catalog returns only public display metadata', async () => {
     },
   })
 })
-test('configure validates exact custom route without catalog allowlist', async () => {
-  const { rpc, preparations } = host()
+test('configure validates exact custom route without catalog allowlist', async (t) => {
+  const { rpc, preparations } = await host(t)
   const result = await rpc('configure', {
     provider: 'configured',
     model: 'custom-unlisted',
@@ -135,8 +158,8 @@ test('configure validates exact custom route without catalog allowlist', async (
   assert.equal((await rpc('configure', { provider: '', model: '' })).ok, true)
   assert.equal(preparations(), 1)
 })
-test('configure rejects unknown fields and invalid values without writing', async () => {
-  const { rpc } = host()
+test('configure rejects unknown fields and invalid values without writing', async (t) => {
+  const { rpc } = await host(t)
   for (const payload of [
     null,
     [],
@@ -149,19 +172,19 @@ test('configure rejects unknown fields and invalid values without writing', asyn
     assert.equal((await rpc('configure', payload)).ok, false)
   assert.equal((await rpc('settings')).value.provider, '')
 })
-test('unconfigured recap returns a complete DSH RPC failure envelope', async () => {
-  const { rpc } = host()
+test('unconfigured recap returns a complete DSH RPC failure envelope', async (t) => {
+  const { rpc } = await host(t)
   const result = await rpc('recap', { sessionId: 'fixture-session' })
   assert.equal(result.ok, false)
   assert.equal(typeof result.error.code, 'string')
   assert.equal(
     result.error.message,
-    'Choose a provider and model in Settings → Plugins → Session Recap.',
+    'Choose a provider and model in Plugins → Session Recap → Configure.',
   )
   assert.deepEqual(result.error.details, {})
 })
-test('RPC sanitizes provider exceptions and unknown endpoints', async () => {
-  const { rpc, ctx } = host()
+test('RPC sanitizes provider exceptions and unknown endpoints', async (t) => {
+  const { rpc, ctx } = await host(t)
   ctx.llm.prepareCall = async () => {
     throw new Error('credential SECRET')
   }

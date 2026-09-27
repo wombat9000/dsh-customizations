@@ -19,9 +19,11 @@ export interface PendingInteraction {
   reason?: string | undefined
   key?: string | undefined
 }
-export type UseSessionPendingInteraction = <T>(
-  selector: (map: ReadonlyMap<string, PendingInteraction>) => T,
-) => T
+// DSH 0.1.7-rc.2 exposes pending interaction through the session-status map.
+export interface SessionStatus {
+  pendingInteraction: PendingInteraction | null
+}
+export type UseSessionStatus = <T>(selector: (map: ReadonlyMap<string, SessionStatus>) => T) => T
 export type UseChat = <T>(selector: (snapshot: { nodes: ReadonlyMap<string, unknown> }) => T) => T
 export interface CardEndpoints {
   status: { payload: { sessionId: string; callId: string }; result: unknown }
@@ -37,12 +39,12 @@ export interface CardProps {
   callId: string
   block?: ToolBlock | undefined
   inspect?: (() => void) | undefined
-  useSessionPendingInteraction?: UseSessionPendingInteraction | undefined
+  useSessionStatus?: UseSessionStatus | undefined
   request?: CardRequest | undefined
 }
 export interface NativeApprovalDetailProps {
   sessionId: string
   callId: string
-  useSessionPendingInteraction?: UseSessionPendingInteraction | undefined
+  useSessionStatus?: UseSessionStatus | undefined
   useChat?: UseChat | undefined
 }

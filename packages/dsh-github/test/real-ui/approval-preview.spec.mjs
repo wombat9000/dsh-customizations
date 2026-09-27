@@ -1,4 +1,4 @@
-import { test, expect, pluginSettings } from '../../../../tests/real-ui/fixtures.mjs'
+import { test, expect, setTheme, expandTurnProcesses } from '../../../../tests/real-ui/fixtures.mjs'
 import {
   githubWorkspaceName,
   githubPrompt,
@@ -26,13 +26,13 @@ test.afterEach(async ({ app }) => {
   await action(app, 'cancel').catch(() => {})
 })
 async function openSession(page, theme) {
-  const settings = await pluginSettings(page, theme)
-  await settings.getByRole('button', { name: 'Close', exact: true }).click()
+  await setTheme(page, theme)
   const sessions = page.getByRole('tree', { name: 'Sessions', exact: true }),
     group = sessions.getByRole('treeitem', { name: 'Ungrouped', exact: true })
   if ((await group.getAttribute('aria-expanded')) !== 'true') await group.click()
   await sessions.getByRole('treeitem', { name: new RegExp(`^${githubWorkspaceName}\\s`) }).click()
   await expect(page.getByText(githubPrompt, { exact: true })).toBeVisible()
+  await expandTurnProcesses(page)
   await expect(
     page.getByRole('region', { name: 'GitHub issue management grant', exact: true }),
   ).toBeVisible()
@@ -73,6 +73,7 @@ for (const [theme, narrow] of [
     await source.focus()
     await expect(source).toBeFocused()
     await source.press('Enter')
+    expect((await action(app, 'state')).outcome).toBe('pending')
     await expect(source.locator('..').locator('pre').first()).toContainText('END OF COMPLETE BODY')
     const details = card
       .locator('summary')

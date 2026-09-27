@@ -101,7 +101,7 @@ async function mount() {
   }
   const sessions = {
     list: {
-      getSnapshot: () => ({ current: 'a', jobsBySession: jobs }),
+      getSnapshot: () => ({ byId: { a: { id: 'a', retainedBy: { mainView: 1 } } } }),
       subscribe: (cb) => {
         listeners.add(cb)
         return () => listeners.delete(cb)
@@ -109,8 +109,21 @@ async function mount() {
     },
   }
   let registration, dispose
+  let watches = 0
   plugin.apply({
     sessions,
+    jobs: {
+      state: {
+        getSnapshot: () => ({ rows: { a: jobs } }),
+        subscribe: sessions.list.subscribe,
+      },
+      watchRows: () => {
+        watches++
+        return () => {
+          watches--
+        }
+      },
+    },
     connection: { rpc },
     slots: {
       inject: (_name, callback) => {
@@ -169,6 +182,7 @@ async function mount() {
       dispose()
       container.remove()
       expect(listeners.size).toBe(0)
+      expect(watches).toBe(0)
     },
   }
 }
@@ -222,6 +236,104 @@ test('copy checkout path reports clipboard success and rejection, and selection 
   }
 })
 
+test('main-view selection switches sessions and fails closed without one unique owner', async () => {
+  let byId = { a: { id: 'a', retainedBy: { mainView: 1 } } }
+  const listeners = new Set()
+  let registration, dispose
+  const watched = new Set()
+  const calls = []
+  const container = document.createElement('div')
+  document.body.append(container)
+  const root = createRoot(container)
+  const render = () =>
+    root.render(
+      registration
+        ? React.createElement(
+            registration.Component,
+            registration.options.inject(
+              Object.values(byId).find((row) => row.retainedBy.mainView)?.id,
+            ),
+          )
+        : null,
+    )
+  plugin.apply({
+    sessions: {
+      list: {
+        getSnapshot: () => ({ byId }),
+        subscribe: (cb) => {
+          listeners.add(cb)
+          return () => listeners.delete(cb)
+        },
+      },
+    },
+    connection: {
+      rpc: {
+        call: async (_channel, method, { sessionId }) => {
+          calls.push({ method, sessionId })
+          return {
+            ok: true,
+            value:
+              method === 'capability'
+                ? { sessionId, state: 'ready' }
+                : { ...snapshot(), sessionId, repository: `/repo/${sessionId}` },
+          }
+        },
+      },
+    },
+    jobs: {
+      state: { getSnapshot: () => ({ rows: {} }), subscribe: () => () => {} },
+      watchRows: (id) => {
+        watched.add(id)
+        return () => watched.delete(id)
+      },
+    },
+    slots: {
+      inject: (_name, callback) => {
+        dispose = callback()
+      },
+      register: (options, Component) => {
+        registration = { options, Component }
+        render()
+        return () => {
+          registration = undefined
+          render()
+        }
+      },
+    },
+  })
+  const select = async (ids) =>
+    act(async () => {
+      byId = Object.fromEntries(ids.map((id) => [id, { id, retainedBy: { mainView: 1 } }]))
+      for (const cb of listeners) cb()
+    })
+  try {
+    await act(async () => {})
+    expect(container.textContent).toContain('/repo/a')
+    expect([...watched]).toEqual(['a'])
+    await select(['b'])
+    expect(container.textContent).toContain('/repo/b')
+    expect(container.querySelector('nav .wt-path').textContent).toBe('/repo/b')
+    expect([...watched]).toEqual(['b'])
+    const before = calls.length
+    await select(['a', 'b'])
+    expect(container.textContent).toBe('')
+    expect(calls.length).toBe(before)
+    expect(watched.size).toBe(0)
+    await select([])
+    expect(calls.length).toBe(before)
+    await select(['a'])
+    expect(container.textContent).toContain('/repo/a')
+  } finally {
+    await act(async () => {
+      dispose()
+      root.unmount()
+    })
+    container.remove()
+    expect(listeners.size).toBe(0)
+    expect(watched.size).toBe(0)
+  }
+})
+
 test('initial load still presents a loading state', async () => {
   const container = document.createElement('div')
   document.body.append(container)
@@ -230,15 +342,16 @@ test('initial load still presents a loading state', async () => {
   const pending = new Promise((r) => {
     resolve = r
   })
-  const sessions = {
-    list: { getSnapshot: () => ({ jobsBySession: {} }), subscribe: () => () => {} },
+  const jobs = {
+    state: { getSnapshot: () => ({ rows: {} }), subscribe: () => () => {} },
+    watchRows: () => () => {},
   }
   try {
     await act(async () =>
       root.render(
         React.createElement(plugin.Panel, {
           sessionId: 'a',
-          sessions,
+          jobs,
           rpc: { call: () => pending },
         }),
       ),

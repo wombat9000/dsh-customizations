@@ -1,5 +1,15 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import { createRequire } from 'node:module'
+import { pathToFileURL } from 'node:url'
+import { TYPERT_REMOTE } from '../lib/types/remote.js'
+
+// Use the approved launcher's actual loader, not a permissive manifest mock.
+const require = createRequire(import.meta.url)
+const launcherRequire = createRequire(require.resolve('@deepseek-ai/dsh/package.json'))
+const { validateTypertManifest } = await import(
+  pathToFileURL(launcherRequire.resolve('@deepseek-ai/dsh-typert-loader')).href
+)
 import {
   DEFAULT_STDOUT_MAX_BYTES,
   DEFAULT_TIMEOUT_MS,
@@ -157,8 +167,9 @@ test('reads the live session cwd through the Shell service', async () => {
         resolved = request
         return request
       },
-      async run() {
-        return shellResult('__DSH_NOT_REPO__\n')
+      async execute(spec) {
+        assert.equal(spec, resolved)
+        return { result: async () => shellResult('__DSH_NOT_REPO__\n') }
       },
     },
   }
@@ -177,6 +188,96 @@ test('reads the live session cwd through the Shell service', async () => {
   assert.equal(resolved.signal, controller.signal)
 })
 
+test('execution preparation and result failures remain bounded and cancellation-aware', async () => {
+  for (const failDuring of ['execute', 'result']) {
+    for (const cancelled of [false, true]) {
+      const controller = new AbortController()
+      if (cancelled) controller.abort()
+      const ctx = {
+        sessions: { get: () => ({ header: { cwd: '/workspace/demo' } }) },
+        shell: {
+          resolve: (request) => request,
+          async execute() {
+            if (failDuring === 'execute') throw new Error('private infrastructure details')
+            return {
+              result: async () => {
+                throw new Error('private infrastructure details')
+              },
+            }
+          },
+        },
+      }
+      const snapshot = await readSessionEnvironment(
+        ctx,
+        { sessionId: 'session-test' },
+        resolveConfig(),
+        controller.signal,
+      )
+      assert.equal(snapshot.error, cancelled ? 'Git check cancelled' : 'Unable to read Git state')
+    }
+  }
+})
+
+test('real target loader accepts both faces and rejects legacy eager codecs', () => {
+  assert.equal(validateTypertManifest(TYPERT.package, TYPERT), TYPERT)
+  assert.equal(TYPERT.invocations, TYPERT_REMOTE.descriptors)
+  const descriptor = TYPERT.invocations[0]
+  const parameter = descriptor.parameters[0]
+  const legacyCodec = (codec) => ({
+    mode: codec.mode,
+    typeSymbol: codec.typeSymbol,
+    schema: codec.create(),
+  })
+  for (const invocation of [
+    { ...descriptor, parameters: [{ ...parameter, codec: legacyCodec(parameter.codec) }] },
+    { ...descriptor, result: legacyCodec(descriptor.result) },
+  ]) {
+    assert.throws(
+      () => validateTypertManifest(TYPERT.package, { ...TYPERT, invocations: [invocation] }),
+      /has no create\(\) factory/,
+    )
+  }
+})
+
+test('lazy codecs preserve strict request and snapshot validation on both faces', () => {
+  const snapshot = {
+    cwd: null,
+    home: '/home/tester',
+    repo: null,
+    hasHead: null,
+    branch: null,
+    upstream: null,
+    ahead: null,
+    behind: null,
+    dirtyFiles: null,
+    additions: null,
+    deletions: null,
+  }
+  for (const descriptor of [TYPERT.invocations[0], TYPERT_REMOTE.descriptors[0]]) {
+    const request = descriptor.parameters[0].codec.create()
+    for (const invalid of [
+      null,
+      {},
+      { sessionId: '' },
+      { sessionId: 1 },
+      { sessionId: 'abc', command: 'unsafe' },
+    ])
+      assert.throws(() => request.parse(invalid))
+    assert.deepEqual(request.parse({ sessionId: 'abc' }), { sessionId: 'abc' })
+    const result = descriptor.result.create()
+    assert.deepEqual(result.parse(snapshot), snapshot)
+    for (const invalid of [
+      null,
+      {},
+      { ...snapshot, ahead: -1 },
+      { ...snapshot, dirtyFiles: 0.5 },
+      { ...snapshot, repo: 'true' },
+      { ...snapshot, extra: 'unsafe' },
+    ])
+      assert.throws(() => result.parse(invalid))
+  }
+})
+
 test('validates config and publishes a strict cancellable Remote descriptor', () => {
   assert.deepEqual(resolveConfig(), {
     timeoutMs: DEFAULT_TIMEOUT_MS,
@@ -188,7 +289,7 @@ test('validates config and publishes a strict cancellable Remote descriptor', ()
   assert.equal(descriptor.method, 'read')
   assert.deepEqual(descriptor.cancellation, { parameter: 'signal' })
   assert.equal(descriptor.parameters[0].codec.mode, 'strict')
-  assert.deepEqual(descriptor.parameters[0].codec.schema.parse({ sessionId: 'abc' }), {
+  assert.deepEqual(descriptor.parameters[0].codec.create().parse({ sessionId: 'abc' }), {
     sessionId: 'abc',
   })
 })

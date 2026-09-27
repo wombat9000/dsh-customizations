@@ -196,7 +196,7 @@ async function setup(t, overrides = {}, confirm) {
     // Deliberately no connection or get(): the remote is the credentials API.
     slots: {
       inject(name, callback) {
-        assert.equal(name, 'settings.plugin.item')
+        assert.equal(name, 'plugins.row.config')
         return callback()
       },
       register(options, component) {
@@ -205,27 +205,29 @@ async function setup(t, overrides = {}, confirm) {
       },
     },
   })
-  h.mount(registration.component, registration.options.inject())
+  const page = registration.component({ ...registration.options.inject(), view: 'page' })
+  assert.equal(page.type, exports.FirecrawlSettingsSection)
+  h.mount(page.type, page.props)
   return { h, calls, events, disposed, registration, remote, record, exports }
 }
 
-test('client registers a collapsed Firecrawl plugin card, not an additional tab', async (t) => {
+test('client registers an open Firecrawl configuration page, not an additional tab', async (t) => {
   const { h, record, exports, registration, remote } = await setup(t)
   assert.equal(record.id, '@local/dsh-web-firecrawl')
   assert.deepEqual(Array.from(exports.inject), ['slots', 'remote', 'remote.credentials'])
-  assert.equal(registration.options.name, 'settings.plugin.item')
-  assert.equal(registration.options.key, 'web-firecrawl')
+  assert.equal(registration.options.name, 'plugins.row.config')
+  assert.equal(registration.options.key, '@local/dsh-web-firecrawl#local-web-firecrawl')
   assert.equal(registration.options.order, 20)
   assert.equal(Object.hasOwn(registration.options, 'id'), false)
   assert.equal(Object.hasOwn(registration.options, 'label'), false)
   const details = h.one((node) => node.type === 'details')
-  assert.equal(details.props.open, undefined)
+  assert.equal(details.props.open, true)
   assert.equal(details.children[0].type, 'summary')
   assert.match(text(details.children[0]), /^Firecrawl /)
   assert.equal(h.nodes((node) => node.type === 'h2' && text(node) === 'Web').length, 0)
   assert.equal(registration.options.inject().api, remote)
   assert.equal(typeof registration.options.inject().subscribe, 'function')
-  assert.equal(registration.component, exports.FirecrawlSettingsSection)
+  assert.match(registration.component({ view: 'summary' }), /Configure Firecrawl/)
 })
 
 for (const [name, response, status, writable] of [

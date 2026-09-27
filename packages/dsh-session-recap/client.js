@@ -847,8 +847,12 @@ function SettingsForm({ open, draft, providers, error, notice, busy, onToggle, o
 
 //#endregion
 //#region client/containers/SettingsCard.tsx
-function SettingsCard({ rpc, controller }) {
-	const [open, setOpen] = react.default.useState(false);
+function SettingsCard(props) {
+	if (props.view === "summary") return /* @__PURE__ */ react.default.createElement("span", null, "Configure automatic session recaps and their model.");
+	return /* @__PURE__ */ react.default.createElement(SettingsPage, props);
+}
+function SettingsPage({ rpc, controller, view }) {
+	const [open, setOpen] = react.default.useState(view === "page");
 	const [draft, setDraft] = react.default.useState(null);
 	const [providers, setProviders] = react.default.useState([]);
 	const [error, setError] = react.default.useState("");
@@ -969,9 +973,9 @@ function apply(ctx) {
 			controller
 		})
 	}, RecapAction));
-	ctx.slots.inject("settings.plugin.item", () => ctx.slots.register({
-		name: "settings.plugin.item",
-		key: ID,
+	ctx.slots.inject("plugins.row.config", () => ctx.slots.register({
+		name: "plugins.row.config",
+		key: `@wombat9000/dsh-session-recap#${ID}`,
 		inject: () => ({
 			rpc: adaptRpc(ctx.get("connection").rpc),
 			controller

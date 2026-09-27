@@ -70,7 +70,7 @@ window.__ModuleLoader__.load({
       @container(max-width:700px){.wt-layout{grid-template-columns:1fr}.wt-list{grid-template-columns:repeat(auto-fit,minmax(210px,1fr))}.wt-detail{padding:16px}.wt-title{align-items:flex-start;flex-wrap:wrap}.wt-header{align-items:flex-start}}@media(max-width:500px){.wt-panel{padding:16px}}
     `
 
-    function Panel({ rpc, sessions, sessionId }) {
+    function Panel({ rpc, jobs, sessionId }) {
       const [state, setState] = React.useState({ loading: true })
       const [copied, setCopied] = React.useState('')
       const readerRef = React.useRef()
@@ -80,11 +80,12 @@ window.__ModuleLoader__.load({
         const refresh = () => {
           if (visible()) void reader.refresh()
         }
-        let jobs = sessions.list.getSnapshot().jobsBySession
-        const off = sessions.list.subscribe(() => {
-          const next = sessions.list.getSnapshot().jobsBySession
-          if (next !== jobs) {
-            jobs = next
+        const unwatch = jobs.watchRows(sessionId)
+        let rows = jobs.state.getSnapshot().rows[sessionId]
+        const off = jobs.state.subscribe(() => {
+          const next = jobs.state.getSnapshot().rows[sessionId]
+          if (next !== rows) {
+            rows = next
             refresh()
           }
         })
@@ -95,10 +96,11 @@ window.__ModuleLoader__.load({
         return () => {
           reader.dispose()
           off()
+          unwatch()
           clearInterval(timer)
           document.removeEventListener('visibilitychange', refresh)
         }
-      }, [rpc, sessionId, sessions])
+      }, [rpc, sessionId, jobs])
       const value = state.value
       const selected = value?.selected
       const choose = (selection) => {
@@ -348,7 +350,12 @@ window.__ModuleLoader__.load({
         offTab = undefined
       }
       function check() {
-        const id = sessions.list.getSnapshot().current
+        // DSH 0.1.7-rc.2 keeps selection outside the session catalog.
+        // Match ui-layout's DocumentTitle: the retained main view owns selection.
+        const selected = Object.values(sessions.list.getSnapshot().byId).filter(
+          (session) => (session.retainedBy.mainView ?? 0) > 0,
+        )
+        const id = selected.length === 1 ? selected[0].id : undefined
         if (id !== current) {
           current = id
           generation++
@@ -388,7 +395,7 @@ window.__ModuleLoader__.load({
     }
     return {
       name: 'local-worktrees',
-      inject: ['slots', 'sessions', 'connection'],
+      inject: ['slots', 'sessions', 'connection', 'jobs'],
       apply(ctx) {
         ctx.slots.inject('conversation.view', () =>
           watchCapability({
@@ -408,7 +415,7 @@ window.__ModuleLoader__.load({
                     ? h(Panel, {
                         key: sessionId,
                         sessionId,
-                        sessions: ctx.sessions,
+                        jobs: ctx.jobs,
                         rpc: ctx.connection.rpc,
                       })
                     : null,

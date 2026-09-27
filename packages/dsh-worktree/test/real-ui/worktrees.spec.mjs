@@ -1,9 +1,4 @@
-import {
-  test,
-  expect,
-  pluginSettings,
-  openSeededSession,
-} from '../../../../tests/real-ui/fixtures.mjs'
+import { test, expect, setTheme, openSeededSession } from '../../../../tests/real-ui/fixtures.mjs'
 import { execFileSync } from 'node:child_process'
 import { realpathSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -130,8 +125,7 @@ for (const [theme, narrow] of [
       await app.reload()
       await app.getByRole('button', { name: 'Configure later', exact: true }).click()
     }
-    const settings = await pluginSettings(app, theme)
-    await settings.getByRole('button', { name: 'Close', exact: true }).click()
+    await setTheme(app, theme)
     await openSeededSession(app)
     await app.getByRole('tab', { name: 'Worktrees', exact: true }).click()
     const panel = app.getByRole('region', { name: 'Worktrees', exact: true })
@@ -150,7 +144,18 @@ for (const [theme, narrow] of [
         path: `artifacts/worktrees-before/worktrees-${theme}${narrow ? '-narrow' : ''}.png`,
       })
     } else {
-      await expect(panel).toHaveScreenshot(`worktrees-${theme}${narrow ? '-narrow' : ''}.png`)
+      // Exclude the independently tested fixed shell overlay from panel-only
+      // evidence. Assert that exclusion so an ignored screenshot option cannot
+      // silently accept an occluded panel as a new baseline.
+      const overlayStyle = await app.addStyleTag({
+        content: '[aria-label="Session environment"] { visibility: hidden !important; }',
+      })
+      try {
+        await expect(app.getByRole('region', { name: 'Session environment' })).toBeHidden()
+        await expect(panel).toHaveScreenshot(`worktrees-${theme}${narrow ? '-narrow' : ''}.png`)
+      } finally {
+        await overlayStyle.evaluate((node) => node.remove())
+      }
     }
   })
 }

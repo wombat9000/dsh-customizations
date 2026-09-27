@@ -1,5 +1,14 @@
 import { readFileSync } from 'node:fs'
 import vm from 'node:vm'
+import { createRequire } from 'node:module'
+import React from 'react'
+import { renderToStaticMarkup } from 'react-dom/server'
+
+const require = createRequire(import.meta.url)
+const managerRequire = createRequire(
+  require.resolve('@deepseek-ai/dsh-client-ui-plugin-manager/package.json'),
+)
+const { SlotCore } = await import(managerRequire.resolve('@deepseek-ai/dsh-client-ui-slots'))
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { buildClient, clientPath } from '../scripts/build-client.mjs'
@@ -7,7 +16,7 @@ import { CARD_LABELS, CARD_TITLES } from '../dist/src/cards.js'
 
 const source = readFileSync(clientPath, 'utf8')
 
-function loadBundle() {
+function loadBundle(react = {}) {
   const registrations = []
   const window = { __ModuleLoader__: { load: (registration) => registrations.push(registration) } }
   // No require, module, exports, process, or React globals exist at script load.
@@ -19,7 +28,7 @@ function loadBundle() {
   const plugin = factory((name) => {
     requested.push(name)
     assert.equal(name, 'react', 'all client externals must be supplied by DSH')
-    return {}
+    return react
   })
   return { plugin, requested }
 }
@@ -54,6 +63,56 @@ test('built client registers one lazy factory with the existing plugin surface',
   }
 })
 
+test('target keyed SlotCore elects the recap row and retires it with its owner', () => {
+  const core = new SlotCore()
+  const removeOwner = core.register(
+    {
+      name: 'root',
+      children: {
+        'conversation.input.dock': { kind: 'list', scope: 'session' },
+        'conversation.chat.assistant-actions': { kind: 'list', scope: 'session' },
+        'plugins.row.config': { kind: 'keyed', scope: 'root' },
+      },
+    },
+    () => null,
+  )
+  const { plugin } = loadBundle(React)
+  const disposers = []
+  plugin.apply({
+    get: (name) =>
+      name === 'remote'
+        ? { $on() {} }
+        : {
+            rpc: {
+              call() {
+                throw new Error('summary must not call RPC')
+              },
+            },
+          },
+    slots: {
+      inject: (_name, register) => register(),
+      register: (options, component) => {
+        const dispose = core.register(options, component)
+        disposers.push(dispose)
+        return dispose
+      },
+    },
+  })
+  const entries = core.entriesOfSlot('plugins.row.config')
+  assert.equal(entries.length, 1)
+  const [entry] = entries
+  assert.equal(entry.options.key, '@wombat9000/dsh-session-recap#wombat9000-session-recap')
+  const summary = renderToStaticMarkup(
+    React.createElement(entry.component, { ...entry.inject(), view: 'summary' }),
+  )
+  assert.match(summary, /Configure automatic session recaps/)
+  assert.doesNotMatch(summary, /<form|<button|<input/)
+  removeOwner()
+  assert.equal(core.entriesOfSlot('plugins.row.config').length, 0)
+  assert.equal(core.isLive(entry), false)
+  for (const dispose of disposers) dispose()
+})
+
 test('built plugin registers existing slots with one shared controller', () => {
   const { plugin } = loadBundle()
   const entries = []
@@ -68,9 +127,9 @@ test('built plugin registers existing slots with one shared controller', () => {
   })
   assert.deepEqual(
     entries.map(({ entry }) => entry.name),
-    ['conversation.input.dock', 'conversation.chat.assistant-actions', 'settings.plugin.item'],
+    ['conversation.input.dock', 'conversation.chat.assistant-actions', 'plugins.row.config'],
   )
-  assert.equal(entries[2].entry.key, 'wombat9000-session-recap')
+  assert.equal(entries[2].entry.key, '@wombat9000/dsh-session-recap#wombat9000-session-recap')
   const dock = entries[0].entry.inject('session-1')
   const action = entries[1].entry.inject('session-1')
   assert.equal(dock.sessionId, 'session-1')
