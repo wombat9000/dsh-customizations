@@ -26,7 +26,22 @@ const toggle = () =>
 const input = () => page.getByLabelText(/^(Replace API key|API key)$/)
 const save = () => page.getByRole('button', { name: /^(Save key|Replace key)$/ })
 
-test('registers only the web-firecrawl plugin item and starts natively collapsed', async () => {
+test('row summary is static and does not load credentials or subscribe', async () => {
+  fixture = await mountSettings({ view: 'summary' })
+  expect(fixture.container.textContent).toBe('Configure Firecrawl access for web search and fetch.')
+  expect(fixture.container.querySelector('input')).toBeNull()
+  expect(fixture.credentials.describe).not.toHaveBeenCalled()
+  expect(fixture.listeners.size).toBe(0)
+})
+
+test('row page opens the credential form and retains write controls', async () => {
+  fixture = await mountSettings({ view: 'page' })
+  expect(fixture.container.querySelector('details').open).toBe(true)
+  await expect.element(input()).toBeVisible()
+  expect(fixture.credentials.describe).toHaveBeenCalledExactlyOnceWith([REF])
+})
+
+test('standalone form retains its native collapsed disclosure', async () => {
   fixture = await mountSettings()
   const details = fixture.container.querySelector('details')
   expect(details).not.toBeNull()

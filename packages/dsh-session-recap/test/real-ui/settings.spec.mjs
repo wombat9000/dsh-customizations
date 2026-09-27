@@ -1,49 +1,19 @@
 import { test, expect, pluginSettings } from '../../../../tests/real-ui/fixtures.mjs'
 
-async function cardMetrics(header) {
-  return header.evaluate((button) => {
-    const pick = (element, keys) => {
-      const style = getComputedStyle(element)
-      return Object.fromEntries(keys.map((key) => [key, style[key]]))
-    }
-    const heading = button.firstElementChild
-    const text = ['fontSize', 'fontWeight', 'lineHeight', 'color']
-    return {
-      card: pick(button.parentElement, [
-        'backgroundColor',
-        'borderColor',
-        'borderWidth',
-        'borderRadius',
-      ]),
-      header: pick(button, ['padding', 'borderRadius', 'gap', 'alignItems']),
-      heading: pick(heading, ['display', 'flexDirection', 'gap', 'minWidth']),
-      title: pick(heading.firstElementChild, text),
-      description: pick(heading.lastElementChild, text),
-      chevron: pick(button.querySelector('svg'), ['width', 'height', 'color']),
-    }
-  })
-}
-
-async function focusMetrics(header) {
-  return header.evaluate((button) => {
-    const style = getComputedStyle(button)
-    return [style.outlineStyle, style.outlineWidth, style.outlineColor, style.outlineOffset]
-  })
-}
-
-test('Jev card selection is an explicit persisted opt-in with no key field', async ({ app }) => {
-  const dialog = await pluginSettings(app, 'light')
-  await dialog.getByRole('button', { name: 'Expand: Session recap', exact: true }).click()
-  const option = dialog.getByLabel('Use Jev to choose recap cards')
+test('Jev selection persists through the real plugin row configuration with no key field', async ({
+  app,
+}) => {
+  const configuration = await pluginSettings(app, 'light')
+  const option = configuration.getByLabel('Use Jev to choose recap cards')
   try {
     await expect(option).not.toBeChecked()
     await option.check()
-    await dialog.getByRole('button', { name: 'Save', exact: true }).click()
-    await expect(dialog.getByText('Session recap settings saved.')).toBeVisible()
-    await dialog.getByRole('button', { name: 'Close', exact: true }).click()
+    await configuration.getByRole('button', { name: 'Save', exact: true }).click()
+    await expect(configuration.getByText('Session recap settings saved.')).toBeVisible()
+    // Reenter through the real package/row route, not a mounted-component mock.
     const reopened = await pluginSettings(app, 'light')
-    await reopened.getByRole('button', { name: 'Expand: Session recap', exact: true }).click()
     await expect(reopened.getByLabel('Use Jev to choose recap cards')).toBeChecked()
+    await expect(reopened.locator('input[type=password]')).toHaveCount(0)
   } finally {
     await app.getByLabel('Use Jev to choose recap cards').uncheck()
     await app.getByRole('button', { name: 'Save', exact: true }).click()
@@ -52,46 +22,28 @@ test('Jev card selection is an explicit persisted opt-in with no key field', asy
 })
 
 for (const scheme of ['light', 'dark']) {
-  test(`real plugin settings in ${scheme} mode`, async ({ app }) => {
-    const dialog = await pluginSettings(app, scheme)
-    const recap = dialog.getByRole('button', { name: 'Expand: Session recap', exact: true })
-    const shell = dialog.getByRole('button', { name: 'Show settings: Shell', exact: true })
-    await expect(dialog.getByRole('button', { name: 'Save', exact: true })).toHaveCount(0)
-    expect(await cardMetrics(recap)).toEqual(await cardMetrics(shell))
-    // Capture resting states before exercising hover/focus and neighboring cards.
-    await expect(dialog).toHaveScreenshot(`settings-${scheme}-collapsed.png`)
-    await recap.click()
-    await expect(dialog.getByLabel('Provider ID')).toHaveValue('')
-    await expect(dialog.getByLabel('Model ID', { exact: true })).toHaveValue('')
-    await expect(dialog.getByLabel('Automatic recap on return')).toBeChecked()
-    await expect(dialog.getByLabel('Use Jev to choose recap cards')).not.toBeChecked()
-    await expect(dialog.getByLabel('Inactivity (minutes)')).toHaveValue('30')
-    await dialog.getByRole('heading', { name: 'Plugins', exact: true }).click()
-    await expect(dialog).toHaveScreenshot(`settings-${scheme}-expanded.png`)
-
-    await shell.click()
-    const openedRecap = dialog.getByRole('button', { name: 'Collapse: Session recap', exact: true })
-    const openedShell = dialog.getByRole('button', { name: 'Hide settings: Shell', exact: true })
-    await expect(async () => {
-      expect((await cardMetrics(openedRecap)).card).toEqual((await cardMetrics(openedShell)).card)
-    }).toPass({ timeout: 5000 })
-    await openedShell.click()
-    await openedRecap.click()
-    await expect(dialog.getByLabel('Provider ID')).toHaveCount(0)
-
-    await recap.hover()
-    await recap.evaluate(async (button) => {
-      await Promise.all(button.parentElement.getAnimations().map((animation) => animation.finished))
+  test(`real plugin row configuration in ${scheme} mode`, async ({ app }) => {
+    const configuration = await pluginSettings(app, scheme)
+    await expect(configuration.getByLabel('Provider ID')).toHaveValue('')
+    await expect(configuration.getByLabel('Model ID', { exact: true })).toHaveValue('')
+    await expect(configuration.getByLabel('Automatic recap on return')).toBeChecked()
+    await expect(configuration.getByLabel('Use Jev to choose recap cards')).not.toBeChecked()
+    await expect(configuration.getByLabel('Inactivity (minutes)')).toHaveValue('30')
+    await expect(configuration).toHaveScreenshot(`settings-${scheme}-expanded.png`)
+    const collapse = configuration.getByRole('button', {
+      name: 'Collapse: Session recap',
+      exact: true,
     })
-    const hoverBorder = (await cardMetrics(recap)).card.borderColor
-    await shell.hover()
-    await expect.poll(async () => (await cardMetrics(shell)).card.borderColor).toBe(hoverBorder)
-    await recap.press('Tab')
-    await app.keyboard.press('Shift+Tab')
-    await expect(recap).toBeFocused()
-    await expect(recap).toHaveCSS('outline-style', 'solid')
-    const focus = await focusMetrics(recap)
-    await shell.focus()
-    expect(await focusMetrics(shell)).toEqual(focus)
+    await collapse.click()
+    await expect(configuration.getByLabel('Provider ID')).toHaveCount(0)
+    const expand = configuration.getByRole('button', { name: 'Expand: Session recap', exact: true })
+    await expect(configuration).toHaveScreenshot(`settings-${scheme}-collapsed.png`)
+    await expand.focus()
+    await expect(expand).toBeFocused()
+    await expand.press('Enter')
+    await expect(configuration.getByLabel('Provider ID')).toBeVisible()
+    // The old Settings inventory comparison no longer applies: this is an
+    // elected plugins.row.config page, not a peer of the native Shell card.
+    await expect(configuration).not.toContainText('Shared OpenRouter key')
   })
 }

@@ -1,7 +1,8 @@
 import {
   test,
   expect,
-  pluginSettings,
+  setTheme,
+  expandTurnProcesses,
   openSeededSession,
 } from '../../../../tests/real-ui/fixtures.mjs'
 import {
@@ -103,8 +104,7 @@ async function mockProjection(page, initial) {
   }
 }
 async function openGrant(page, theme = 'light', narrow = false) {
-  const settings = await pluginSettings(page, theme)
-  await settings.getByRole('button', { name: 'Close', exact: true }).click()
+  await setTheme(page, theme, true)
   const sessions = page.getByRole('tree', { name: 'Sessions', exact: true })
   // The sibling cwd is intentionally not a saved workspace; DSH puts its
   // persisted session under Ungrouped, leaving the recap workspace unchanged.
@@ -113,6 +113,7 @@ async function openGrant(page, theme = 'light', narrow = false) {
   if ((await workspace.getAttribute('aria-expanded')) !== 'true') await workspace.click()
   await sessions.getByRole('treeitem', { name: new RegExp(`^${githubWorkspaceName}\\s`) }).click()
   await expect(page.getByText(githubPrompt, { exact: true })).toBeVisible()
+  await expandTurnProcesses(page)
   const card = page.getByRole('region', { name: 'GitHub issue management grant', exact: true })
   await expect(
     card.getByRole('heading', { name: 'Manage selected issues for this session' }),

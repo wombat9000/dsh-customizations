@@ -51,7 +51,7 @@ export function publicLinearError(error, operation = 'request') {
     return new Error(rateLimitMessage(error))
   if (error?.type === 'AuthenticationError' || error?.status === 401) {
     return new Error(
-      'Linear authentication failed. Reconnect the workspace in Settings → Plugins → Plugin configuration → Linear.',
+      'Linear authentication failed. Reconnect the workspace in Plugins → Linear → Configure.',
     )
   }
   if (error?.type === 'Forbidden' || error?.status === 403) {
@@ -113,7 +113,7 @@ export class LinearRuntime {
     const apiKey = await this.resolveApiKey()
     if (typeof apiKey !== 'string' || apiKey.length === 0) {
       throw new Error(
-        'Linear API key is not configured. Open Settings → Plugins → Plugin configuration → Linear and connect a workspace.',
+        'Linear API key is not configured. Open Plugins → Linear → Configure and connect a workspace.',
       )
     }
     const client = this.createClient(apiKey, signal)
@@ -121,7 +121,7 @@ export class LinearRuntime {
     const config = this.configuration()
     if (text(config.organizationId) !== undefined && organization.id !== config.organizationId) {
       throw new Error(
-        `Linear workspace mismatch: this key belongs to “${organization.name}”, but DSH is locked to “${config.organizationName || config.organizationId}”. Reconnect it in Settings → Plugins → Plugin configuration → Linear.`,
+        `Linear workspace mismatch: this key belongs to “${organization.name}”, but DSH is locked to “${config.organizationName || config.organizationId}”. Reconnect it in Plugins → Linear → Configure.`,
       )
     }
     return { client, organization, config }

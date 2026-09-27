@@ -179,7 +179,10 @@ test('native single-seat component correlates session and call, and retains RC2 
       h(NativeApprovalDetail, {
         sessionId: 'session',
         callId: 'call',
-        useSessionPendingInteraction: (select) => select(pending),
+        useSessionStatus: (select) =>
+          select(
+            new Map([...pending].map(([id, pendingInteraction]) => [id, { pendingInteraction }])),
+          ),
         useChat: (select) => select({ nodes }),
       }),
     ),
@@ -192,7 +195,10 @@ test('native single-seat component correlates session and call, and retains RC2 
       h(NativeApprovalDetail, {
         sessionId: 'session',
         callId: 'call',
-        useSessionPendingInteraction: (select) => select(pending),
+        useSessionStatus: (select) =>
+          select(
+            new Map([...pending].map(([id, pendingInteraction]) => [id, { pendingInteraction }])),
+          ),
         useChat: (select) => select({ nodes }),
       }),
     ),

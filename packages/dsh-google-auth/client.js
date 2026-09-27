@@ -108,7 +108,12 @@ window.__ModuleLoader__.load({
         )
       )
     }
-    function GoogleAuthSettingsSection({ api: request, subscribe }) {
+    function GoogleAuthSettingsSection(props) {
+      return props.view === 'summary'
+        ? h('p', null, 'Shared Google account and integration permissions.')
+        : h(GoogleAuthSettingsForm, props)
+    }
+    function GoogleAuthSettingsForm({ api: request, subscribe, view }) {
       const [draft, setDraft] = React.useState('')
       const [status, setStatus] = React.useState(undefined)
       const [link, setLink] = React.useState(undefined)
@@ -317,7 +322,7 @@ window.__ModuleLoader__.load({
             : 'Google account'
       return h(
         'details',
-        { style: styles.card },
+        { style: styles.card, open: view === 'page' },
         h(
           'summary',
           { style: { cursor: 'pointer' } },
@@ -514,11 +519,11 @@ window.__ModuleLoader__.load({
     function apply(ctx) {
       const subscribe = (listener) =>
         typeof ctx.on === 'function' ? ctx.on('connection/reset', listener) : () => {}
-      ctx.slots.inject('settings.plugin.item', () =>
+      ctx.slots.inject('plugins.row.config', () =>
         ctx.slots.register(
           {
-            name: 'settings.plugin.item',
-            key: 'google-auth',
+            name: 'plugins.row.config',
+            key: '@local/dsh-google-auth#local-google-auth',
             order: 25,
             inject: () => ({ api, subscribe }),
           },

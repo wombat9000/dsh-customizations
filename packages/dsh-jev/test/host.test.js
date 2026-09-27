@@ -1,6 +1,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { createJevRuntime, mountJev, DEFAULT_MODEL, ENDPOINT, CHANNEL } from '../src/runtime.js'
+import { createJevRuntime, DEFAULT_MODEL, ENDPOINT, CHANNEL } from '../src/runtime.js'
+import * as plugin from '../src/index.js'
+import { profileFixture } from '../../dsh-google-auth/test/profile-fixture.js'
 
 const input = () => ({
   state: { ready: true },
@@ -43,7 +45,8 @@ function fixture(overrides = {}) {
     }),
   }
   const runtime = createJevRuntime({
-    settings,
+    getModel: () => settings.get().model,
+    saveModel: (model) => settings.update('fixture', { model }),
     openrouter,
     fetch: async (...args) => {
       fetches.push(args)
@@ -119,39 +122,66 @@ test('RPC accepts only status/configure and always returns complete sanitized er
   })
 })
 
-test('host mount installs only trusted-host RPC and jev settings/service', () => {
-  let registered, provided, section, disposal
-  const ctx = {
-    settings: {
-      get: () => ({}),
-      installSection: (...args) => {
-        section = args
-      },
-    },
-    openrouter: {},
-    provide: (...args) => {
-      provided = args
-    },
-    effect: (cb) => {
-      const result = cb()
-      if (typeof result === 'function') disposal = result
-    },
-    connection: {
-      rpc: {
-        handle: (...args) => {
-          registered = args
+test('real Loader Config is live and RPC saves the owning row without remounting', async (t) => {
+  let registered,
+    disposed = false
+  const f = fixture()
+  const { ctx } = await profileFixture(t, {
+    rows: [{ id: 'custom-jev-row', name: 'cordis:jev' }],
+    builtins: { jev: plugin },
+    setup(ctx) {
+      ctx.provide('openrouter', f.openrouter)
+      ctx.provide('webServer', {})
+      ctx.provide('connection', {
+        rpc: {
+          handle(...args) {
+            registered = args
+            return () => {
+              disposed = true
+            }
+          },
         },
-      },
+      })
     },
-  }
-  mountJev(ctx, 'schema')
-  assert.equal(section[1], 'jev')
-  assert.deepEqual(section[3], { model: DEFAULT_MODEL })
-  assert.equal(provided[0], 'jev')
-  assert.deepEqual(Object.keys(provided[1]).sort(), ['evaluate', 'settings', 'status'])
+  })
+  const fiber = ctx.loader.resolve('include:custom-jev-row').fiber
+  const service = ctx.get('jev')
+  const descriptor = ctx.settings.describe().find((row) => row.ns === 'custom-jev-row')
+  assert.equal(descriptor.autoGenerate, false)
+  assert.deepEqual(descriptor.value, { model: DEFAULT_MODEL })
+  assert.deepEqual(Object.keys(service).sort(), ['evaluate', 'settings', 'status'])
   assert.equal(registered[0], CHANNEL)
   assert.deepEqual(registered[2], { authority: 'trusted-host' })
-  disposal()
+  assert.equal((await registered[1]('configure', { model: 'typesafe/jev-2' })).ok, true)
+  assert.equal(service.settings().model, 'typesafe/jev-2')
+  assert.equal(ctx.loader.resolve('include:custom-jev-row').fiber, fiber)
+  const credentialRead = deferred()
+  f.openrouter.resolveApiKey = () => credentialRead.promise
+  const pending = service.evaluate(input())
+  const cancelled = rejects(pending, 'changed')
+  await ctx.settings.update('custom-jev-row', { model: DEFAULT_MODEL })
+  await cancelled
+  credentialRead.resolve('private-key')
+  assert.equal(service.settings().model, DEFAULT_MODEL)
+  assert.equal(ctx.get('jev'), service)
+  await assert.rejects(ctx.settings.update('jev', { model: DEFAULT_MODEL }), /No configurable/)
+  const settingsEntry = ctx.loader.resolve('include:settings')
+  await settingsEntry.update({ disabled: true })
+  await ctx.loader.await()
+  assert.equal(ctx.get('settings'), undefined)
+  assert.equal(ctx.get('jev'), service, 'business service survives absent optional Settings')
+  assert.equal(service.settings().model, DEFAULT_MODEL)
+  assert.equal((await registered[1]('configure', { model: DEFAULT_MODEL })).error.code, 'settings')
+  await settingsEntry.update({ disabled: false })
+  await ctx.loader.await()
+  assert.equal(
+    ctx.settings.describe().find((row) => row.ns === 'custom-jev-row').autoGenerate,
+    false,
+  )
+  assert.equal(ctx.get('jev'), service, 'replacement Settings reattaches the page policy only')
+  await fiber.dispose()
+  assert.equal(disposed, true)
+  assert.equal((await registered[1]('status')).ok, false)
 })
 
 test('all documented question kinds validate and unknown response fields are dropped', async () => {

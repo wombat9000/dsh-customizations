@@ -39,6 +39,7 @@ export function deferred() {
 export async function mountSettings({
   credential = { configured: false, writable: true },
   overrides = {},
+  view,
 } = {}) {
   expect(plugin.inject).toEqual(['slots', 'remote', 'remote.credentials'])
   let description = { ...credential }
@@ -70,7 +71,7 @@ export async function mountSettings({
     // Deliberately no connection/get fallback: credentials must use ctx.remote.
     slots: {
       inject(name, register) {
-        expect(name).toBe('settings.plugin.item')
+        expect(name).toBe('plugins.row.config')
         register()
       },
       register(options, Component) {
@@ -80,10 +81,14 @@ export async function mountSettings({
   })
   expect(registrations).toHaveLength(1)
   const { options, Component } = registrations[0]
-  expect(options).toMatchObject({ name: 'settings.plugin.item', key: 'web-firecrawl', order: 20 })
+  expect(options).toMatchObject({
+    name: 'plugins.row.config',
+    key: '@local/dsh-web-firecrawl#local-web-firecrawl',
+    order: 20,
+  })
   expect(options).not.toHaveProperty('id')
   expect(options).not.toHaveProperty('label')
-  const props = options.inject()
+  const props = { ...options.inject(), view }
   expect(props.api).toBe(remote)
   expect(props.subscribe).toBeTypeOf('function')
   const container = document.createElement('main')

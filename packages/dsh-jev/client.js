@@ -27,7 +27,12 @@ window.__ModuleLoader__.load({
       if (!result?.ok) throw new Error(result?.error?.message || 'Jev settings are unavailable.')
       return result.value
     }
-    function SettingsCard({ rpc }) {
+    function SettingsCard(props) {
+      return props.view === 'summary'
+        ? h('p', null, 'Jev model and shared OpenRouter credential status.')
+        : h(SettingsForm, props)
+    }
+    function SettingsForm({ rpc, view }) {
       const [status, setStatus] = React.useState(null)
       const [model, setModel] = React.useState('')
       const [busy, setBusy] = React.useState(false)
@@ -77,7 +82,7 @@ window.__ModuleLoader__.load({
       }
       return h(
         'details',
-        { className: 'dsh-jev', 'aria-label': 'Jev settings' },
+        { className: 'dsh-jev', 'aria-label': 'Jev settings', open: view === 'page' },
         h('summary', null, 'Jev'),
         h(
           'div',
@@ -140,11 +145,11 @@ window.__ModuleLoader__.load({
       )
     }
     function apply(ctx) {
-      ctx.slots.inject('settings.plugin.item', () =>
+      ctx.slots.inject('plugins.row.config', () =>
         ctx.slots.register(
           {
-            name: 'settings.plugin.item',
-            key: 'jev',
+            name: 'plugins.row.config',
+            key: '@local/dsh-jev#local-jev',
             inject: () => ({ rpc: ctx.get('connection').rpc }),
           },
           SettingsCard,

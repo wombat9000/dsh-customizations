@@ -1,6 +1,6 @@
 # Local DSH YouTube Tools
 
-Gemini-backed tools for understanding public YouTube videos in DSH. The package registers ordinary tools and therefore also appears automatically in Programmatic Tool Calling (PTC) as `tools.youtube_watch`, `tools.youtube_transcript`, `tools.youtube_transcript_read`, and `tools.youtube_transcript_search`.
+Gemini-backed tools for understanding public YouTube videos in DSH `0.1.7-rc.2`. The package registers ordinary tools and therefore also appears automatically in Programmatic Tool Calling (PTC) as `tools.youtube_watch`, `tools.youtube_transcript`, `tools.youtube_transcript_read`, and `tools.youtube_transcript_search`.
 
 ## Tools
 
@@ -33,19 +33,21 @@ In the Web GUI, all four tools share a compact, expandable YouTube card. Cards l
 
 This bundle is maintained in `packages/dsh-tool-youtube` and selected by the `personal-web` recipe. Follow the [repository setup and profile application procedure](../../README.md#apply-the-starter-profile). Installing dependencies, applying a profile, and restarting DSH require separate approval; tests do not perform those actions.
 
-After an approved profile update, restart the existing DSH Web process and refresh its existing URL. Open Settings → Plugins → Plugin configuration → YouTube to configure Gemini. Do not start a second Web server expecting it to replace the existing GUI.
+After an approved profile update, restart the existing DSH Web process and refresh its existing URL. Open **Plugins**, select the YouTube bundle, and choose **Configure** for its YouTube tools row to configure Gemini. Do not start a second Web server expecting it to replace the existing GUI.
 
 The package includes the transcript archive as the `@local/dsh-tool-youtube/transcript-store` export. Its separate host row retains the `local-youtube-transcript-store` ID and `youtubeTranscriptStore` service. It uses Node's bundled `node:sqlite`; no SQLite package or separate companion installation is required. The archive remains shared across sessions at `$DSH_HOME/archives/youtube-transcripts.sqlite`, with the same schema and transcript IDs. Do not move this service into an agent preset.
 
 ## Credentials
 
-Open Settings → Plugins → Plugin configuration → YouTube and save the Gemini API key in the Gemini card. The browser sends a new key only on save; DSH returns only configured, source, and writable status. The key is never read back into browser state, model-facing arguments, schemas, tool values, render output, or provider errors. Saved and rotated keys are used by the next YouTube operation without another restart.
+Open the YouTube tools row's **Configure** page under **Plugins** and save the Gemini API key. The browser sends a new key only on save; DSH returns only configured, source, and writable status. The key is never read back into browser state, model-facing arguments, schemas, tool values, render output, or provider errors. Saved and rotated keys are used by the next YouTube operation without another restart.
 
 For headless use, the provider also resolves GEMINI_API_KEY from the environment that launches DSH:
 
     GEMINI_API_KEY='...' ./node_modules/.bin/dsh --profile personal-web
 
-Environment and .env credentials are read-only in Settings and take precedence over the managed credential store. An optional literal apiKey plugin setting exists for headless composition but should not be committed.
+Environment and `.env` credentials are read-only on the configuration page and take precedence over the managed credential store. An optional literal `apiKey` plugin setting exists for headless composition but should not be committed.
+
+The client registers `plugins.row.config` with key `@local/dsh-tool-youtube#local-tool-youtube`. Summary rendering is static; page rendering opens the credential form. DSH `0.1.7-rc.2` removes `settings.installSection`, so the host no longer registers an empty `youtube` settings section. Row-page discovery does not require that section. The host runs without Settings, and keys remain in the credential store. Model and operation limits remain ordinary Cordis configuration rather than volatile form fields.
 
 ## Configuration
 

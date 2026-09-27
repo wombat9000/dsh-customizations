@@ -6,11 +6,17 @@ Jev evaluates typed questions about supplied context. This host plugin calls Ope
 
 The bundle requires the [shared OpenRouter plugin](../dsh-openrouter/README.md). After an approved profile application and restart:
 
-1. Open **Settings → Plugins → Plugin configuration → OpenRouter** and configure the shared key, if needed.
-2. Open the **Jev** card. Confirm the shared credential status and choose the Jev model ID.
+1. In **Plugins**, open the `@local/dsh-openrouter` bundle and select **Configure** for its `local-openrouter` row. Configure the shared key, if needed.
+2. Return to **Plugins**, open the `@local/dsh-jev` bundle, and select **Configure** for its `local-jev` row. Confirm the shared credential status and choose the Jev model ID.
 3. Select **Save Jev model**. Saving validates the local model identifier without sending an evaluation. After changing credentials in another card, select **Refresh credential status**.
 
 The default is `typesafe/jev-1.13`. The alias `~typesafe/jev-latest` follows future releases; use it only when that change is intentional. The plugin accepts Jev model IDs only and never changes its fixed OpenRouter endpoint. Jev has no key input or independent credential copy.
+
+## Settings migration
+
+The bundle targets DSH `0.1.7-rc.2`. Its `model` Config field is volatile: the host reads the live reference with `.get()`, and profile updates take effect without remounting the service. A model change cancels pending evaluations. The custom page uses the `plugins.row.config` key `@local/dsh-jev#local-jev`. Settings writes address the owning Loader entry, `local-jev` in the bundled composition, rather than the former `jev` section.
+
+If your old `settings.yaml` contains a `jev` section, do not assume DSH imports its model selection. The upstream importer matches section names to entry IDs and does not map `jev` to `local-jev`. It renames the file to `settings.yaml.imported` before attempting imports; rejected sections remain there for recovery and are not retried automatically. After migration, verify the model on the configuration page and save the intended value. Credentials remain owned by the shared OpenRouter plugin.
 
 ## Host contract
 
@@ -46,6 +52,6 @@ Supported question types are `noul` (yes/no probability), `choice` (one defined 
 
 ## Development
 
-The package ships plain JavaScript and uses native HTTP facilities, not a new SDK. Its dependencies use the repository's existing pinned DSH/schema packages. Unit tests inject HTTP/credential fixtures; browser and real-shell tests save model settings without making paid calls. Live endpoint compatibility and model judgment quality require a separately approved live test.
+The package ships plain JavaScript and uses native HTTP facilities, not a new SDK. Its dependencies use the repository's existing pinned DSH/schema packages. Unit tests inject HTTP/credential fixtures. Host integration tests use real Settings, ConfigEditor, and Loader services to verify persistence, live references, cancellation, and optional Settings-service replacement. Browser and real-shell tests save model settings without making paid calls. Live endpoint compatibility and model judgment quality require a separately approved live test.
 
 The `personal-web` recipe orders OpenRouter before Jev. Source changes and commits do not apply the recipe or restart a live profile.

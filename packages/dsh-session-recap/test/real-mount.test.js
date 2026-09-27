@@ -4,7 +4,7 @@ import { Context, Service } from '@deepseek-ai/cordis'
 import { HostConnectionService } from '@deepseek-ai/dsh-client-connection'
 import * as recap from '../dist/src/index.js'
 
-test('real Cordis and host RPC mount recap without starting a GUI', async (t) => {
+test('real Cordis and host RPC mount recap without Settings or a GUI', async (t) => {
   const ctx = new Context()
   t.after(() => ctx.fiber.dispose())
   const routes = new Set()
@@ -16,7 +16,6 @@ test('real Cordis and host RPC mount recap without starting a GUI', async (t) =>
   })
   ctx.provide('sessions', { get() {} })
   ctx.provide('llm', {})
-  ctx.provide('settings', { installSection() {} })
   // Construct only the installed connection service; no auth plugin, listener,
   // providers, or GUI startup. Its real caller-scoped rpc getter/register run.
   await ctx
@@ -53,7 +52,7 @@ test('target RPC core compatibility fix mounts and disposes a traced WebServer s
   await ctx.plugin(WebServer).await()
   ctx.provide('sessions', { get() {} })
   ctx.provide('llm', {})
-  ctx.provide('settings', { installSection() {} })
+  ctx.provide('settings', { configure: () => () => {} })
   await ctx
     .plugin({
       apply(owner) {

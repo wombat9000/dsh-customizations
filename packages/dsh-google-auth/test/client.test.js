@@ -25,7 +25,7 @@ function load(fetch) {
   plugin.apply({
     slots: {
       inject(name, fn) {
-        assert.equal(name, 'settings.plugin.item')
+        assert.equal(name, 'plugins.row.config')
         fn()
       },
       register(options, component) {
@@ -39,7 +39,7 @@ test('ModuleLoader registers the shared slots-only settings card', () => {
   const { record, plugin, registration } = load()
   assert.equal(record.id, '@local/dsh-google-auth')
   assert.deepEqual(Array.from(plugin.inject), ['slots'])
-  assert.equal(registration.options.key, 'google-auth')
+  assert.equal(registration.options.key, '@local/dsh-google-auth#local-google-auth')
   assert.equal(registration.component, plugin.GoogleAuthSettingsSection)
 })
 test('all requests use the shared same-origin POST contract', async () => {

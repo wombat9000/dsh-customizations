@@ -16,73 +16,74 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import * as GitHub from '../../dsh-github/src/index.js'
 
-// Resolve through the root's exact-pinned official CLI graph. These fixtures use
-// dormant services, not a model, live profile, persistence store or network.
+// Shared Product/Steward fixture; deliberately independent of Worktree tests.
+// Real dormant registries and Loader; subprocess/PTC execution is forbidden.
 const require = createRequire(import.meta.url)
 export const cli = createRequire(require.resolve('@deepseek-ai/dsh/package.json'))
 export const installed = (name) => import(pathToFileURL(cli.resolve(name)).href)
 export const { Context } = await installed('@deepseek-ai/cordis')
-export const { default: Loader, interpolate } = await installed('@deepseek-ai/cordis-plugin-loader')
+export const { default: Loader, EntryTree } = await installed('@deepseek-ai/cordis-plugin-loader')
 const { entryListSchema } = await installed('@deepseek-ai/cordis-plugin-include')
 export const { default: yaml } = await installed('js-yaml')
-export const {
-  default: AgentPresets,
-  discoverPresets,
-  SHIPPED_PRESET_ROOT,
-} = await installed('@deepseek-ai/dsh-agent-presets')
+export const { auditRows, livePresetMounts } = await installed(
+  '@deepseek-ai/dsh-agent-preset-registry',
+)
 const { loadOverlayPatches, composeEntries } = await installed('@deepseek-ai/dsh-app-boot')
 export const packageRoot = fileURLToPath(new URL('../', import.meta.url))
 export const repo = fileURLToPath(new URL('../../../', import.meta.url))
 export const presetId = 'product-mode'
 export const skillName = 'product-planning'
 export const presetRoot = join(packageRoot, 'presets')
-export const composition = join(presetRoot, presetId, 'agent.cordis.yml')
-const webPatch = join(
-  dirname(cli.resolve('@deepseek-ai/dsh-web-app/package.json')),
-  'cordis.patch.yml',
-)
+export const webRoot = dirname(cli.resolve('@deepseek-ai/dsh-web-app/package.json'))
+export const standardPatch = join(webRoot, 'presets/standard.patch.yml')
 export const parse = (text) => yaml.load(text, { schema: entryListSchema })
 export const flatten = (rows) =>
   rows.flatMap((row) => [row, ...(row.group ? flatten(row.config) : [])])
 export const json = async (path) => JSON.parse(await readFile(path, 'utf8'))
+export const declarations = (patches) =>
+  composeEntries(
+    patches.map((path) => loadOverlayPatches('preset-test', path)),
+    (warning) => assert.fail(warning),
+  )
 
-export async function fixture(t) {
-  const directory = await mkdtemp(join(tmpdir(), 'product-mode-'))
+export async function fixture(t, id = presetId) {
+  const directory = await mkdtemp(join(tmpdir(), `${id}-`))
   t.after(() => rm(directory, { recursive: true, force: true }))
   const local = join(directory, 'node_modules', '@local')
   await mkdir(local, { recursive: true })
-  const packaged = join(local, 'dsh-product-mode')
+  const source = join(repo, 'packages', `dsh-${id}`)
+  const packaged = join(local, `dsh-${id}`)
   await mkdir(packaged)
-  const manifest = await json(join(packageRoot, 'package.json'))
-  // Only published files travel. The copied preset cannot use test-only assets.
+  const manifest = await json(join(source, 'package.json'))
+  // Only publication files travel; resource resolution cannot use source/test assets.
   for (const file of ['package.json', ...manifest.files])
-    await cp(join(packageRoot, file), join(packaged, file), { recursive: true })
-  for (const name of ['dsh-worktree', 'dsh-project-steward', 'dsh-google-drive', 'dsh-github']) {
-    await symlink(join(repo, 'packages', name), join(local, name), 'dir')
-  }
-  await symlink(
-    dirname(dirname(cli.resolve('@deepseek-ai/dsh/package.json'))),
-    join(directory, 'node_modules', '@deepseek-ai'),
-    'dir',
+    await cp(join(source, file), join(packaged, file), { recursive: true })
+  const namespace = join(directory, 'node_modules', '@deepseek-ai')
+  await mkdir(namespace)
+  const names = new Set(
+    [
+      '@deepseek-ai/dsh-agent-preset-registry',
+      '@deepseek-ai/dsh-agent-preset',
+      '@deepseek-ai/dsh-session-projection',
+      ...declarations([standardPatch, join(packaged, 'cordis.patch.yml')]).flatMap((row) =>
+        flatten(row.config.plugins).map((plugin) => plugin.name),
+      ),
+    ]
+      .filter((name) => name.startsWith('@deepseek-ai/'))
+      .map((name) => name.split('/').slice(0, 2).join('/')),
   )
-  return { directory, packaged, baseUrl: pathToFileURL(`${directory}/`).href }
+  for (const name of names)
+    await symlink(
+      dirname(cli.resolve(`${name}/package.json`)),
+      join(namespace, name.split('/')[1]),
+      'dir',
+    )
+  return { directory, packaged, source, baseUrl: pathToFileURL(`${directory}/`).href }
 }
 
-export async function recipePatches() {
+export async function recipeRows() {
   const directory = join(repo, 'profiles/personal-web')
   const recipe = await json(join(directory, 'recipe.json'))
-  const names = recipe.bundles.map((bundle) => bundle.name)
-  const ordered = [
-    '@deepseek-ai/dsh-base',
-    '@deepseek-ai/dsh-web-app',
-    '@local/dsh-worktree',
-    '@local/dsh-project-steward',
-    '@local/dsh-product-mode',
-  ]
-  for (const name of [...ordered, '@local/dsh-github'])
-    assert.equal(names.filter((value) => value === name).length, 1)
-  for (let i = 1; i < ordered.length; i++)
-    assert.ok(names.indexOf(ordered[i - 1]) < names.indexOf(ordered[i]))
   const patches = []
   for (const bundle of recipe.bundles) {
     const manifestPath = bundle.source.startsWith('.')
@@ -90,20 +91,10 @@ export async function recipePatches() {
       : cli.resolve(`${bundle.source}/package.json`)
     const manifest = await json(manifestPath)
     assert.equal(manifest.name, bundle.name)
-    patches.push(resolve(dirname(manifestPath), manifest.dsh.bundle.patch))
+    for (const patch of [manifest.dsh.bundle.patch].flat())
+      patches.push(resolve(dirname(manifestPath), patch))
   }
-  assert.equal(typeof recipe.patch, 'string')
-  return [...patches, resolve(directory, recipe.patch)]
-}
-
-export function rosterConfig(baseUrl, patches = [webPatch, join(packageRoot, 'cordis.patch.yml')]) {
-  const warnings = []
-  const rows = composeEntries(
-    patches.map((path) => loadOverlayPatches('product-mode-test', path)),
-    (warning) => warnings.push(warning),
-  )
-  assert.ok(!warnings.some((warning) => warning.includes('agent-presets')), warnings.join('\n'))
-  return interpolate({ baseUrl }, flatten(rows).find((row) => row.id === 'agent-presets').config)
+  return declarations([...patches, resolve(directory, recipe.patch)])
 }
 
 export async function snapshot(directory) {
@@ -120,52 +111,81 @@ export async function snapshot(directory) {
   return result
 }
 
-export async function host(t, fixture, config) {
+class MemoryTree extends EntryTree {
+  write() {}
+}
+
+export async function host(t, fixture, rows, { full = true, selectedDefault } = {}) {
   const ctx = new Context()
   t.after(() => ctx.fiber.dispose())
   ctx.baseUrl = fixture.baseUrl
   await ctx.plugin(Loader, {}).await()
   const { default: Group } = await installed('@deepseek-ai/cordis-plugin-group')
   ctx.get('loader').builtins.group = Group
-  const subprocessCalls = []
-  ctx.provide('subprocess', {
-    async resolveExecutable(...args) {
-      subprocessCalls.push(args)
-      assert.fail('preset discovery must not resolve any CLI')
-    },
-    spawn(...args) {
-      subprocessCalls.push(args)
-      assert.fail('preset discovery must not launch any process')
-    },
-  })
-  for (const suffix of [
-    'session',
-    'agent',
-    'session-projection',
-    'system-prompt',
-    'tools',
-    'commands',
-    'goal',
-    'skill',
-    'token-meter',
-    'bash-local',
-    'shell-env',
-    'fs-local',
-    'jobs-local',
-    'subagent',
-    'user-questions',
-    'web',
-    'llm',
-    'subagent-spawn-in-process',
-    'subagent-fork-in-process',
-    'tool-subagent/model-selection-settings',
-  ]) {
-    const module = await installed(`@deepseek-ai/dsh-${suffix}`)
-    await ctx.plugin(module.default ?? module, {}).await()
+  const calls = []
+  const forbidden = (...args) => {
+    calls.push(args)
+    assert.fail('mounting must not execute a subprocess or PTC workflow')
   }
-  const { default: SandboxPolicy } = await installed('@deepseek-ai/dsh-sandbox-policy')
-  await ctx.plugin(SandboxPolicy, { mode: 'read-only', workspaceRoot: fixture.directory }).await()
-  await ctx.plugin(GitHub, {}).await()
-  await ctx.plugin(AgentPresets, { ...config, includeUserRoot: false }).await()
-  return { ctx, subprocessCalls }
+  if (full) {
+    ctx.provide('subprocess', { resolveExecutable: forbidden, spawn: forbidden })
+    for (const suffix of [
+      'session',
+      'agent',
+      'system-prompt',
+      'tools',
+      'commands',
+      'goal',
+      'skill',
+      'token-meter',
+      'bash-local',
+      'shell-env',
+      'fs-local',
+      'jobs-local',
+      'subagent',
+      'user-questions',
+      'web',
+      'llm',
+      'subagent-spawn-in-process',
+      'subagent-fork-in-process',
+      'tool-subagent/model-selection-settings',
+    ]) {
+      const module = await installed(`@deepseek-ai/dsh-${suffix}`)
+      await ctx.plugin(module.default ?? module, {}).await()
+    }
+    const { default: SandboxPolicy } = await installed('@deepseek-ai/dsh-sandbox-policy')
+    await ctx.plugin(SandboxPolicy, { mode: 'read-only', workspaceRoot: fixture.directory }).await()
+    for (const suffix of ['sandbox-local', 'ptc-runtime-node']) {
+      const module = await installed(`@deepseek-ai/dsh-${suffix}`)
+      await ctx.plugin(module.default ?? module, {}).await()
+    }
+    await ctx.plugin(GitHub, {}).await()
+  }
+  const tree = new MemoryTree(ctx)
+  t.after(async () => {
+    tree.root.stop()
+    await tree.await()
+  })
+  const registry = {
+    id: 'agent-preset-registry',
+    name: '@deepseek-ai/dsh-agent-preset-registry',
+    config: { default: 'standard', ...(selectedDefault ? { selectedDefault } : {}) },
+  }
+  // Loader applies volatile selectedDefault and preserves nested !!js expressions.
+  await tree.root.update([
+    { id: 'session-projections', name: '@deepseek-ai/dsh-session-projection' },
+    registry,
+    ...rows,
+  ])
+  await tree.await()
+  const audit = await auditRows(tree)
+  assert.deepEqual(audit.failed, [])
+  assert.deepEqual(audit.pending, [])
+  return { ctx, tree, registry, calls }
+}
+
+export async function lease(t, roster, id) {
+  const scope = await roster.acquireScope(id)
+  t.after(() => scope[Symbol.asyncDispose]())
+  return scope
 }

@@ -1,10 +1,10 @@
 # Local DSH Firecrawl Web Provider
 
-Local DSH `0.1.5-rc.2` bundle that uses Firecrawl API v2 behind DSH's existing
+Local DSH `0.1.7-rc.2` bundle that uses Firecrawl API v2 behind DSH's existing
 `web_search` and `web_fetch` tools.
 
 The package registers one provider (`firecrawl`) for both operations and adds a
-**Plugins → Plugin configuration → Firecrawl** card to DSH Settings. It does not create competing
+credential configuration page under **Plugins → Firecrawl → Configure**. It does not create competing
 model-facing tool names. Search results and scraped pages therefore keep DSH's
 standard schemas, prompt guidance, result cards, cancellation, and
 provider-selection behavior.
@@ -37,10 +37,10 @@ Review the resolved config after applying: both providers should be `firecrawl`
 and `tool-web` should enable search/fetch. A later profile patch replaces an
 entire row's config, not individual fields.
 
-Restart DSH Web after installation, open **Settings → Plugins → Plugin configuration**, and save the API
-key in the collapsible Firecrawl card. No further restart is needed when the key changes.
-When updating an existing installation to this card layout, restart DSH Web once
-so its host-side plugin configuration registration is loaded, then refresh the page.
+After an approved installation or profile update, restart the existing DSH Web process
+and refresh its URL. Open **Plugins**, select the Firecrawl bundle, and choose
+**Configure** for its Firecrawl row to save the API key. No further restart is
+needed when the key changes.
 
 For a headless deployment, `FIRECRAWL_API_KEY` remains supported:
 
@@ -73,14 +73,14 @@ Example self-hosted override in a later profile patch:
 ```
 
 Prefer the credential reference or launch environment, not `apiKey`. A literal
-`apiKey` overrides even a key saved through the card; remove that override and
-restart DSH Web before managing the key through Settings. Never put a key in a
+`apiKey` overrides even a key saved through the configuration page; remove that override and
+restart DSH Web before managing the key through **Plugins**. Never put a key in a
 committed patch. Only use a trusted `baseURL`: it receives the bearer credential.
 `maxBodyChars` limits returned markdown, not the HTTP response download size.
 
 ## Credential security
 
-The Settings card uses DSH's existing loopback-only credential API. The browser
+The configuration page uses DSH's existing loopback-only credential API. The browser
 sends a new key only on save; the Host returns only `configured`, `source`, and
 `writable` status. Managed keys are not read back into browser state or placed in
 settings documents, plugin inventory, sessions, or tool arguments. Treat provider
@@ -110,7 +110,7 @@ contract.
 pnpm --filter @local/dsh-web-firecrawl test
 ```
 
-The 34 imported unit tests use mocked HTTP responses and do not consume Firecrawl
+The unit tests use mocked HTTP responses and do not consume Firecrawl
 credits. Run `pnpm --filter @local/dsh-web-firecrawl test:integration` for repository
 manifest/recipe/dry-run checks; the original standalone Web-server smoke test is
 adapted to this repository so it does not create another home, profile, or server.
@@ -120,13 +120,14 @@ package's real React interactions with mocked credential RPCs.
 The client explicitly injects `slots`, `remote`, and **`remote.credentials`** and
 uses `ctx.remote.credentials.describe([ref])`, `set(ref, value)`, and `unset(ref)`.
 Responses use `{ ok, value/error }`, never `response.result`. The
-`settings.plugin.item` slot key and the host's empty settings namespace are both
-`web-firecrawl`: both registrations are required for configuration-list discovery.
-Secrets are edited only through the credential API, never the empty settings section.
+`plugins.row.config` slot key is `@local/dsh-web-firecrawl#local-web-firecrawl`,
+matching the bundle package and host row ID. Summary rendering is static; page
+rendering opens the existing credential form. DSH `0.1.7-rc.2` removes
+`settings.installSection`, and row-page discovery needs no empty settings namespace.
+The host runs without Settings; secrets are edited only through the credential API.
+Provider options remain ordinary Cordis configuration, not volatile form fields.
 
-Real-host visual coverage is deferred: the existing shared DSH fixture and Recap
-baselines are unchanged. Adding this card to that fixture requires reviewing and
-regenerating affected Linux ARM64 settings screenshots together. No sandbox or
-running DSH installation needs to be recreated for this import's unit, dry-run,
-and mocked-browser checks. The source installation was user-verified for credential
-configuration and a subsequent live search; those live checks are not repeated here.
+The scoped browser tests use real React and Chromium with mocked credential RPCs
+and slot registration. They cover static summaries, the open row page, and credential
+form interactions. These checks do not prove real-shell slot election or live
+Firecrawl access; use the repository's shared real-UI validation separately.

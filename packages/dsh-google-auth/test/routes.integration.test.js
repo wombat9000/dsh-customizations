@@ -1,19 +1,17 @@
 import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { readFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import test from 'node:test'
 import * as plugin from '../src/index.js'
 import * as drive from '../../dsh-google-drive/src/index.js'
 import { allowedRequest, settingsHandler } from '../src/routes.js'
+import { profileFixture } from './profile-fixture.js'
 
 const require = createRequire(import.meta.url)
 const cli = createRequire(require.resolve('@deepseek-ai/dsh/package.json'))
 const installed = (name) => import(pathToFileURL(cli.resolve(name)).href)
-const { Context } = await installed('@deepseek-ai/cordis')
 const { default: WebServer } = await installed('@deepseek-ai/dsh-host-webserver')
 const scope = 'https://www.googleapis.com/auth/drive.readonly'
 const actions = [
@@ -266,67 +264,54 @@ test('HTTP bodies are strict, account consent accepts only an empty object and p
   assert.equal(calls.length, count)
 })
 
-test('real Cordis SettingsFile/WebServer lifecycle serves Google namespace; Drive consumes shared auth only', async (t) => {
-  const directory = await mkdtemp(join(tmpdir(), 'google-auth-host-test-'))
-  const ctx = new Context()
-  t.after(async () => {
-    await ctx.fiber.dispose()
-    await rm(directory, { recursive: true, force: true })
-  })
-  for (const name of ['@deepseek-ai/cordis-plugin-loader', '@deepseek-ai/dsh-session-projection']) {
-    const module = await installed(name)
-    await ctx.plugin(module.default, {}).await()
-  }
-  const { default: Settings } = await installed('@deepseek-ai/dsh-settings-file')
-  const settingsFiber = ctx.plugin(Settings, {
-    path: join(directory, 'settings.yaml'),
-    watch: false,
-  })
-  await settingsFiber.await()
+test('real profile Settings/WebServer lifecycle persists Google Config; Drive consumes shared auth only', async (t) => {
   const records = new Map(),
     reads = []
-  await ctx
-    .plugin({
-      name: 'test-google-credentials',
-      apply(ctx) {
-        ctx.provide('agents', {
-          get() {},
-          roots() {
-            return []
-          },
-        })
-        ctx.provide('approval', {
-          overrideOf() {
-            return 'ask'
-          },
-        })
-        ctx.provide('credentials', {
-          async readRecord(key) {
-            reads.push(key)
-            return records.get(key)
-          },
-          async modifyRecord(key, fn) {
-            const next = await fn(records.get(key))
-            if (next) records.set(key, next)
-            return records.get(key)
-          },
-          async deleteRecord(key) {
-            records.delete(key)
-          },
-        })
-      },
-    })
-    .await()
-  await ctx.plugin(WebServer, { host: '127.0.0.1', port: 0 }).await()
+  const { default: Projection } = await installed('@deepseek-ai/dsh-session-projection')
+  const { ctx, profile } = await profileFixture(t, {
+    rows: [
+      { id: 'projection', name: 'cordis:projection' },
+      { id: 'web-server', name: 'cordis:web', config: { host: '127.0.0.1', port: 0 } },
+      { id: 'custom-google-auth', name: 'cordis:google' },
+    ],
+    builtins: { projection: Projection, web: WebServer, google: plugin },
+    setup(ctx) {
+      ctx.provide('agents', {
+        get() {},
+        roots() {
+          return []
+        },
+      })
+      ctx.provide('approval', {
+        overrideOf() {
+          return 'ask'
+        },
+      })
+      ctx.provide('credentials', {
+        async readRecord(key) {
+          reads.push(key)
+          return records.get(key)
+        },
+        async modifyRecord(key, fn) {
+          const next = await fn(records.get(key))
+          if (next) records.set(key, next)
+          return records.get(key)
+        },
+        async deleteRecord(key) {
+          records.delete(key)
+        },
+      })
+    },
+  })
   const base = `http://127.0.0.1:${ctx.get('webServer').port}`,
     post = requester(base)
-  const first = ctx.plugin(plugin)
-  await first.await()
+  const entry = ctx.loader.resolve('include:custom-google-auth')
+  const first = entry.fiber
   assert.ok(
     ctx
       .get('settings')
       .describe()
-      .some((item) => item.ns === 'google-auth'),
+      .some((item) => item.ns === 'custom-google-auth' && item.autoGenerate === false),
   )
   assert.equal(reads.length, 0, 'Auth mount must not read credentials')
   const driveFiber = ctx.plugin(drive)
@@ -367,7 +352,7 @@ test('real Cordis SettingsFile/WebServer lifecycle serves Google namespace; Driv
   assert.equal(configured.value.connected, false)
   assert.equal(JSON.stringify(configured).includes('FIXTURE-ONLY'), false)
   assert.equal(records.get(plugin.CLIENT_KEY).payload.clientSecret, 'FIXTURE-ONLY')
-  const persisted = await readFile(join(directory, 'settings.yaml'), 'utf8')
+  const persisted = await readFile(profile.patchPath, 'utf8')
   assert.match(persisted, /useSandbox: true/)
   assert.equal(persisted.includes('FIXTURE-ONLY'), false)
   assert.equal(persisted.includes('clientSecret'), false)
@@ -379,24 +364,25 @@ test('real Cordis SettingsFile/WebServer lifecycle serves Google namespace; Driv
   assert.equal((await fetch(`${base}/api/plugins/google-drive/token`)).status, 404)
   await driveFiber.dispose()
   assert.equal(auth.integrations.size, 0)
-  await first.dispose()
+  assert.equal(entry.fiber, first, 'volatile writes retain the service lifetime')
+  await entry.update({ disabled: true })
+  await ctx.loader.await()
   assert.equal(ctx.get('googleAuth'), undefined)
   for (const action of actions) assert.equal((await post(action)).status, 404, action)
-  await settingsFiber.dispose()
-  await ctx.plugin(Settings, { path: join(directory, 'settings.yaml'), watch: false }).await()
-  const second = ctx.plugin(plugin)
-  await second.await()
+  await entry.update({ disabled: false })
+  await ctx.loader.await()
+  const second = entry.fiber
   assert.equal((await (await post('status')).json()).value.configured, true)
   assert.equal(
     (await (await post('status')).json()).value.useSandbox,
     true,
-    'mode survives a fresh SettingsFile service',
+    'mode survives Loader row reactivation from persisted profile Config',
   )
-  await ctx.get('settings').update('google-auth', { useSandbox: false })
+  await ctx.get('settings').update('custom-google-auth', { useSandbox: false })
   assert.equal(
     ctx.get('googleAuth').useSandbox,
     false,
-    'external settings update invokes the source hook',
+    'external settings update invokes the volatile-update hook',
   )
   const secondDrive = ctx.plugin(drive)
   await secondDrive.await()

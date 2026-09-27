@@ -6,7 +6,7 @@ While generation runs, a highlight shimmers across the fixed icon; it does not r
 
 ## Install and configure
 
-This bundle targets DSH `0.1.5-rc.2` and requires the standard base and Web bundles. It ships plain JavaScript with a committed client bundle; installation needs no build step. After editing client source files, regenerate that bundle as described under [Development](#development). This RC also requires the repository's pinned RPC-owner patch; use the patched launcher/profile setup in the [migration guide](../../MIGRATION-0.1.5-rc.1.md), not an unpatched global launcher.
+This bundle targets only DSH `0.1.7-rc.2` and requires the standard base and Web bundles. It ships compiled JavaScript with a committed client bundle; installation needs no build step. After editing source files, regenerate the affected outputs as described under [Development](#development). This RC also requires the repository's pinned RPC-owner patch; use the [repository launcher and profile setup](../../README.md#apply-the-starter-profile), not an unpatched global launcher.
 
 1. From this repository, validate and preview the profile:
 
@@ -22,12 +22,14 @@ This bundle targets DSH `0.1.5-rc.2` and requires the standard base and Web bund
    ```
 
 3. Start DSH with `dsh --profile personal-web`. If that profile is already running, restart it and refresh the page.
-4. Open **Settings → Plugins → Plugin configuration → Session recap**.
+4. Open **Plugins**, select the `@wombat9000/dsh-session-recap` bundle, then select **Configure** for its `wombat9000-session-recap` row.
 5. Select a model from the instance's provider catalog, then select **Save**. You can enter exact provider and model IDs when the catalog does not list a supported route.
 
 The plugin uses existing provider credentials. It has no default model, API keys, or fallback provider. Saving validates the selected route without generating a summary. Adapter validation does not guarantee that a later remote request succeeds.
 
-Settings include automatic recaps, the inactivity interval (default: 30 minutes), the provider/model route, and **Use Jev to choose recap cards** (off by default). Settings use DSH's settings service. With the standard file backend, they live under `DSH_HOME` and can be shared by profiles using that same Harness home; they are not stored in this repository.
+Settings include automatic recaps, the inactivity interval (default: 30 minutes), the provider/model route, and **Use Jev to choose recap cards** (off by default). These are volatile Config fields: Loader updates their live references without remounting the plugin. DSH Settings validates and persists edits in the active profile's `cordis.patch.yml`, addressed by the row's entry ID. They are not a separate home-wide settings document.
+
+When upgrading retained state, DSH imports a legacy `settings.yaml` once and renames it to `settings.yaml.imported`. Session Recap's former `wombat9000-session-recap` namespace matches the shipped entry ID. Review import warnings and the retained file if the row was renamed or unavailable; this repository migration does not modify your live settings.
 
 To install independently, select `@wombat9000/dsh-session-recap` from `packages/dsh-session-recap` in a recipe after the base and Web bundles. Do not install another copy of this bundle into the same profile.
 
@@ -47,7 +49,7 @@ The category vocabulary is **Direction**, **Decision**, **Key insight**, **Open 
 
 The writer can return `null` for a selected category it cannot support, but must produce at least one nonempty card. Each card is limited to 180 characters, with 480 characters combined and a headline of at most 120 characters. The prompt targets 12–20 words per card. No generated label, icon, color, HTML, or component code controls the UI.
 
-DSH `0.1.5-rc.2` does not expose a response-schema control on its LLM interface. The writing request therefore uses JSON instructions and strict local validation, not provider-enforced structured output. A valid but oversized response receives at most one shortening attempt under the same request deadline; malformed responses fail.
+The writing request uses JSON instructions and strict local validation, not provider-enforced structured output. A valid but oversized response receives at most one shortening attempt under the same request deadline; malformed responses fail.
 
 If Jev is missing, unconfigured, fails, or finds no suitable categories, the existing writer produces standard bullets and the panel explains the fallback. Fallback results are not cached while Jev selection is enabled, so a later request can recover after configuration or service repair. Disabling Jev uses the standard recap without an additional provider call. Jev selection and writing share the recap's overall deadline and stale-session checks.
 
@@ -80,7 +82,7 @@ This version regenerates from bounded conversation excerpts after a revision cha
 
 Both the backend and frontend use TypeScript. Edit source files, not the generated `dist/` modules or `client.js`:
 
-- `src/index.ts` registers settings and RPC handlers, with each handler checked against its shared endpoint result type.
+- `src/index.ts` declares volatile Config fields and RPC handlers, with each handler checked against its shared endpoint result type. An optional Settings injection binds the custom-page policy and write service to its lifetime.
 - `src/runtime.ts` owns session checks, caching, concurrent requests, and disposal. It re-exports the existing helper API for compatibility.
 - `src/history.ts` selects and bounds conversation text.
 - `src/recap-schema.ts` defines the standard writer prompt and validates bullet and card responses.
@@ -99,7 +101,7 @@ GitHub and Session Recap share repository-level client build and type-check help
 
 The pinned DSH loader serves one client file. After type checking, `scripts/build-client.mjs` uses pinned tsdown `0.22.2` to compile TS/TSX into one lazy CommonJS factory. React stays external and is supplied by DSH. The build rejects extra output files, unsupported external imports, dynamic imports, and unresolved `process.env` references. It does not bundle another copy of React or register additional loader modules. The committed `client.js` retains the existing installation and hot-reload contract. DSH needs no TypeScript loader at runtime.
 
-Types do not validate received JSON. The RPC adapter records the existing host-validated protocol without changing transport identity. Rendering keeps its defensive filters. Where RC2's published slot declarations reference absent type packages, registration uses a narrow interface for the three existing slots, backed by the real-shell tests; it does not claim complete DSH type coverage.
+Types do not validate received JSON. The RPC adapter records the host-validated protocol without changing transport identity. Rendering keeps its defensive filters. Registration uses a narrow interface for the three consumed slots, including the keyed root-scoped plugin-row slot and its `view` prop. Target SlotCore and React tests verify keyed election, summary rendering, and disposal; they do not replace native-shell validation.
 
 From the repository root, regenerate the affected outputs after editing source, then run the focused tests. `build-host.mjs --check` checks committed backend output without rewriting it. The root test command does not silently regenerate Recap artifacts before checking freshness.
 
@@ -112,14 +114,14 @@ node scripts/check.mjs
 
 Commit source changes and the affected generated outputs together once committing is approved. Tests reject stale client or host artifacts. Existing dependencies are required for the test suite; follow the [repository setup procedure](../../.agents/skills/repository-setup/SKILL.md) before any approved installation.
 
-The host registers `/session-recap` RPC handlers and the `wombat9000-session-recap` settings namespace. The client registers the existing `conversation.chat.assistant-actions`, `conversation.input.dock`, and `settings.plugin.item` slots. It does not patch DSH core, replace transcript renderers, or start a web server.
+The host registers `/session-recap` RPC handlers. Settings derives the namespace from the actual Loader entry ID, normally `wombat9000-session-recap`; writes use the local entry ID, not an Include-qualified path. The client registers `conversation.chat.assistant-actions`, `conversation.input.dock`, and `plugins.row.config`, keyed by `@wombat9000/dsh-session-recap#wombat9000-session-recap`. Summary view renders no form or RPC calls; page view opens the custom form with its existing save controls. The plugin does not patch DSH core, replace transcript renderers, or start a web server.
 
 ### Test layers
 
 - **Types:** `test/typecheck.test.mjs` runs the pinned compiler. `test/types/contracts.ts` verifies accepted values and rejected RPC payloads, response access, component props, controller flags, and slot registrations. `test/host-types/contracts.ts` checks backend results, settings, card labels, writer requests, stream events, and readonly diagnostics. These cases fail if an expected type error disappears.
 - **Logic:** Node tests import the history, schema, settings, card-selection, and controller source modules. A package-scoped test hook transpiles TypeScript with the pinned compiler because some supported Node builds disable native type stripping. It does not load the generated client bundle or replace strict checking. Runtime tests retain controlled model streams for cache, cancellation, timeout, and stale-result regressions. These tests need neither React rendering nor a DSH host.
 - **React source components:** `test/browser/components.browser.test.mjs` imports the TSX components directly and runs them in Chromium. Presentation tests supply props and callbacks; container tests supply controller/RPC and session-hook fixtures. They cover rendering, escaped text, input callbacks, diagnostics copying, subscriptions, and cleanup.
-- **Backend services:** Integration fixtures import emitted `dist/` modules, as installation does. `test/backend-integration.test.js` mounts real pinned Cordis, `HostConnectionService`, `FileSettingsProvider`, `SessionStore`, and `JsonlSessionPersistence` in process. Settings and session events persist in temporary directories and are restored in fresh contexts. Model calls are controlled fixtures. A dormant route registry and in-memory request/response streams replace the HTTP listener; a fixed authentication capability replaces login. The fixture manually performs the dormant session-load transaction rather than running the agent loop. These tests do not prove browser transport, login, or live model integration.
+- **Backend services:** Integration fixtures import emitted `dist/` modules, as installation does. `test/backend-integration.test.js` mounts real pinned Cordis, Include/Loader, ConfigEditor, Settings, `HostConnectionService`, `SessionStore`, and `JsonlSessionPersistence` in process. Settings and session events persist in temporary directories and are restored in fresh contexts. Model calls are controlled fixtures. A dormant route registry and in-memory request/response streams replace the HTTP listener; a fixed authentication capability replaces login. The fixture manually performs the dormant session-load transaction rather than running the agent loop. These tests do not prove browser transport, login, or live model integration.
 - **Existing wiring and packaging:** slot-level browser tests still exercise the generated bundle with mocked slots/RPC. Client bundle tests check reproducibility, the lazy factory, external dependencies, and registrations. `test/host-assembly.test.mjs` checks reproducibility, committed file freshness, and the package's executable host entrypoint. The [real-shell suite](../../README.md#browser-interactions-and-real-dsh-screenshots) verifies mounting and screenshots in a disposable DSH application.
 
 Run the focused browser suite and backend suite from the repository root:

@@ -3,6 +3,9 @@ import type { SessionId } from '@deepseek-ai/dsh-api-remotes/client'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
+// The target layout owns the additive, root-scoped shell.overlay slot.
+import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
+import type { UseSessions } from '@deepseek-ai/dsh-client-ui-session/client'
 import React from 'react'
 import sessionEnvironmentRemote from '@local/dsh-session-environment/remote'
 import type { SessionEnvironmentSnapshot } from '@local/dsh-session-environment/types'
@@ -42,13 +45,19 @@ interface EnvironmentInfo {
   readonly showLoading: boolean
 }
 
-interface SessionListState {
-  readonly current?: SessionId
-  readonly byId: Readonly<Record<string, { readonly cwd?: string }>>
-}
+type SessionListState = Parameters<Parameters<UseSessions>[0]>[0]
 
 interface EnvironmentCardProps {
-  useSessions<T>(selector: (state: SessionListState) => T): T
+  useSessions: UseSessions
+}
+
+// Target DSH selects the main conversation through its mainView retain owner.
+// Refuse ambiguous selections rather than polling an unrelated Session.
+export function selectedEnvironmentSession(state: SessionListState): SessionId | undefined {
+  const selected = Object.values(state.byId).filter(
+    (session) => (session.retainedBy.mainView ?? 0) > 0,
+  )
+  return selected.length === 1 ? selected[0]?.id : undefined
 }
 
 interface SessionEnvironmentRemote {
@@ -338,13 +347,14 @@ function BranchIcon(): React.ReactElement {
 export function createEnvironmentCard(
   ctx: Context,
   sessionEnvironment: SessionEnvironmentRemote,
-): React.ComponentType<EnvironmentCardProps> {
+): (props: EnvironmentCardProps) => React.ReactElement | null {
   const environmentCache = new Map<string, CachedEnvironment>()
 
   return function EnvironmentCard(props: EnvironmentCardProps): React.ReactElement | null {
-    const sessionId = props.useSessions((state) => state.current)
+    const sessionId = props.useSessions(selectedEnvironmentSession)
     const cwd = props.useSessions((state) => {
-      const item = state.current === undefined ? undefined : state.byId[state.current]
+      const selected = selectedEnvironmentSession(state)
+      const item = selected === undefined ? undefined : state.byId[selected]
       return typeof item?.cwd === 'string' ? item.cwd : null
     })
     const [info, setInfo] = React.useState<EnvironmentInfo>(blankInfo('idle', null, false))

@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { spawnSync } from 'node:child_process'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
+import { createRequire } from 'node:module'
 import test from 'node:test'
 import { apply, inject, registerWorktreeTools } from '../src/tools.js'
 import { hasWorktreeCapability } from '../src/capability.js'
@@ -47,9 +48,9 @@ test('host contributes exactly three tools that call its service', async () => {
   await assert.rejects(tools.get('worktree_list').execute({}, {}), /calling agent/)
 })
 
-test('actual integration definitions grant copied presets visibility and removal revokes it', () => {
+test('actual integration definitions grant custom presets visibility and removal revokes it', () => {
   const { tools } = fixture()
-  const agent = { session: { id: 'copy', header: { agentPreset: 'my-copy' } } }
+  const agent = { session: { id: 'custom', header: { agentPreset: 'my-custom' } } }
   const ctx = { agents: { get: () => agent }, tools: { get: (name) => tools.get(name) } }
   assert.equal(hasWorktreeCapability(ctx, agent), true)
   tools.delete('worktree_list')
@@ -81,9 +82,27 @@ test('bundle owns tools through its service and remains in the portable recipe',
   assert.equal(recipe.bundles[bundleIndex].source, '../../packages/dsh-worktree')
   const webIndex = recipe.bundles.findIndex((bundle) => bundle.name === '@deepseek-ai/dsh-web-app')
   assert.ok(webIndex >= 0 && bundleIndex > webIndex, 'worktree roster patch requires Web first')
-  const patch = await readFile(new URL('../cordis.patch.yml', import.meta.url), 'utf8')
-  assert.match(patch, /name: '@local\/dsh-worktree'/)
-  assert.doesNotMatch(patch, /name: '@local\/dsh-worktree\/tools'/)
+  const cli = createRequire(createRequire(import.meta.url).resolve('@deepseek-ai/dsh/package.json'))
+  const { composeEntries, loadOverlayPatches } = await import(
+    pathToFileURL(cli.resolve('@deepseek-ai/dsh-app-boot'))
+  )
+  const rows = composeEntries([
+    loadOverlayPatches(
+      'tools-test',
+      fileURLToPath(new URL('../cordis.patch.yml', import.meta.url)),
+    ),
+  ])
+  assert.equal(rows.filter((row) => row.name === '@local/dsh-worktree').length, 1)
+  assert.ok(
+    !rows.some((row) => row.name === '@local/dsh-worktree/tools'),
+    'tool consumer belongs only inside the declaration',
+  )
+  const presetRow = rows.find((row) => row.name === '@deepseek-ai/dsh-agent-preset')
+  assert.equal(presetRow.config.id, 'worktree-coordinator')
+  assert.equal(
+    presetRow.config.plugins.filter((row) => row.name === '@local/dsh-worktree/tools').length,
+    1,
+  )
   const preset = await readFile(new URL('../agent.cordis.example.yml', import.meta.url), 'utf8')
   assert.match(preset, /name: '@local\/dsh-worktree\/tools'/)
   const result = spawnSync(

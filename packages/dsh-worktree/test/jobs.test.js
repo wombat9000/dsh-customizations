@@ -90,24 +90,25 @@ test('a preset without job controls cannot dispatch or retain a checkout fence',
   const f = await fixture(t, { controller: false })
   await assert.rejects(f.service.dispatch(f.parent, args(f.rows[0].path)), /controller/i)
   assert.equal(f.workers.length, 0)
-  assert.deepEqual(f.jobs.list(f.parent), [])
+  assert.deepEqual(f.jobs.list(f.parent.id), [])
   assert.equal((await f.service.list(f.parent)).worktrees[0].busy, false)
   f.jobs.attachController('late-controller')
   const run = await f.service.dispatch(f.parent, args(f.rows[0].path))
-  f.jobs.kill(run.jobId, f.parent)
-  await f.jobs.wait(run.jobId, 2000, f.parent)
+  f.jobs.kill(run.jobId, f.parent.id)
+  await f.jobs.wait(run.jobId, 2000, f.parent.id)
 })
 
 test('real job registry stores final report after disposal and emits owner completion once', async (t) => {
   const f = await fixture(t)
   const notice = deferred()
   const notices = []
-  f.jobs.onJobDone((snapshot, owner) => {
-    notices.push({ snapshot, owner })
+  f.jobs.events.subscribe({ owner: f.parent.id }, (event) => {
+    if (event.type !== 'settled') return
+    notices.push({ snapshot: event.job, owner: event.job.owner })
     notice.resolve()
   })
   const result = await f.service.dispatch(f.parent, args(f.rows[0].path))
-  assert.equal(f.jobs.read(result.jobId, f.parent).text, '')
+  assert.deepEqual(f.jobs.read(result.jobId, f.parent.id).chunks, [])
   f.workers[0].completion.resolve({
     output: [{ type: 'text', text: 'Implemented; tests pass' }],
     stopReason: 'completed',
@@ -115,10 +116,14 @@ test('real job registry stores final report after disposal and emits owner compl
   await notice.promise
   assert.equal(f.workers[0].disposed, true)
   assert.equal(notices.length, 1)
-  assert.equal(notices[0].owner, f.parent)
+  assert.equal(notices[0].owner, f.parent.id)
   assert.equal(notices[0].snapshot.status, 'completed')
-  assert.equal(f.jobs.read(result.jobId, f.parent).text, 'Implemented; tests pass')
-  assert.equal(f.jobs.read(result.jobId, f.parent).text, 'Implemented; tests pass')
+  assert.equal(f.jobs.read(result.jobId, f.parent.id).result, 'Implemented; tests pass')
+  assert.equal(f.jobs.read(result.jobId, f.parent.id).result, undefined)
+  assert.equal(
+    f.service.manager.history.get(f.parent).get(result.jobId).report,
+    'Implemented; tests pass',
+  )
   assert.equal((await f.service.list(f.parent)).worktrees[0].busy, false)
 })
 
@@ -132,21 +137,21 @@ test('service unload/reload recovers surviving job fences through public snapsho
   replacement.manager = new WorktreeManager(replacement.ctx, f.dependencies)
   await assert.rejects(replacement.dispatch(f.parent, args(f.rows[0].path)), /active assignment/)
   assert.equal((await replacement.list(f.parent)).worktrees[0].activeJobId, first.jobId)
-  assert.equal(f.jobs.kill(first.jobId, f.parent, 'cancel for test'), 'requested')
-  const outcome = await f.jobs.wait(first.jobId, 2000, f.parent)
+  assert.equal(f.jobs.kill(first.jobId, f.parent.id, 'cancel for test'), 'requested')
+  const outcome = await f.jobs.wait(first.jobId, 2000, f.parent.id)
   assert.equal(outcome.status, 'killed')
   assert.equal(f.workers[0].disposed, true)
   const second = await replacement.dispatch(f.parent, args(f.rows[0].path))
-  f.jobs.kill(second.jobId, f.parent)
-  await f.jobs.wait(second.jobId, 2000, f.parent)
+  f.jobs.kill(second.jobId, f.parent.id)
+  await f.jobs.wait(second.jobId, 2000, f.parent.id)
 })
 
 test('disposing the exact parent cancels workers and removes their job records', async (t) => {
   const f = await fixture(t)
   await f.service.dispatch(f.parent, args(f.rows[0].path))
   await f.service.dispatch(f.parent, args(f.rows[1].path))
-  assert.equal(f.jobs.list(f.parent).length, 2)
+  assert.equal(f.jobs.list(f.parent.id).length, 2)
   await f.ownerFiber.dispose()
   assert.ok(f.workers.every((worker) => worker.request.signal.aborted && worker.disposed))
-  assert.equal(f.jobs.list(f.parent).length, 0)
+  assert.equal(f.jobs.list(f.parent.id).length, 0)
 })

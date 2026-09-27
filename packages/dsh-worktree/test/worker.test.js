@@ -146,6 +146,9 @@ test('real agent-loop runs a fresh child in its worktree and settleRun disposes 
   assert.equal(result.stopReason, 'completed')
   assert.deepEqual(result.output, [{ type: 'text', text: 'Finished the assignment.' }])
   assert.equal(f.requests.length, 1)
+  const assignment = child.session.snapshotEvents().find((event) => event.type === 'user/message')
+  assert.equal(assignment.data.source.kind, 'plugin:dsh-worktree')
+  assert.equal(Object.hasOwn(assignment.data.source, 'plugin'), false)
   const prompt = f.requests[0].messages
     .flatMap((message) => message.content)
     .filter((block) => block.type === 'text')
@@ -173,7 +176,7 @@ test('real agent-loop runs a fresh child in its worktree and settleRun disposes 
   assert.equal(f.parent.session.header.cwd, f.directory)
   const jobOutcome = await settleRun(run)
   assert.equal(jobOutcome.status, 'completed')
-  assert.match(jobOutcome.output, /Finished the assignment/)
+  assert.match(jobOutcome.result, /Finished the assignment/)
   assert.equal(f.ctx.get('agents').get(run.id), undefined)
   await run.dispose()
 })

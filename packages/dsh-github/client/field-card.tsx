@@ -23,13 +23,13 @@ export function FieldChangeCard({
   callId,
   block,
   inspect,
-  useSessionPendingInteraction,
+  useSessionStatus,
   request = api,
 }: CardProps) {
   const pending =
-    typeof useSessionPendingInteraction === 'function'
-      ? useSessionPendingInteraction((map) => {
-          const value = map.get(sessionId)
+    typeof useSessionStatus === 'function'
+      ? useSessionStatus((map) => {
+          const value = map.get(sessionId)?.pendingInteraction
           return value?.kind === 'approval' &&
             value.callId === callId &&
             value.toolName === FIELD_TOOL

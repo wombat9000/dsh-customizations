@@ -9,11 +9,18 @@ import type { Controller } from '../controller-types.ts'
 export interface SettingsCardProps {
   rpc: Rpc
   controller: Controller
+  view?: 'summary' | 'page'
 }
 
 // Keep original raw RPC envelopes/messages, separate from cached controller settings.
-export function SettingsCard({ rpc, controller }: SettingsCardProps) {
-  const [open, setOpen] = React.useState(false)
+export function SettingsCard(props: SettingsCardProps) {
+  if (props.view === 'summary')
+    return <span>Configure automatic session recaps and their model.</span>
+  return <SettingsPage {...props} />
+}
+
+function SettingsPage({ rpc, controller, view }: SettingsCardProps) {
+  const [open, setOpen] = React.useState(view === 'page')
   const [draft, setDraft] = React.useState<SettingsDraft | null>(null)
   const [providers, setProviders] = React.useState<ModelsResult['providers']>([])
   const [error, setError] = React.useState('')

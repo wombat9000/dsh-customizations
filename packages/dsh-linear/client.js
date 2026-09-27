@@ -6,7 +6,7 @@ window.__ModuleLoader__.load({
     const React = require('react')
 
     const CREDENTIAL_REF = 'LINEAR_API_KEY'
-    const SETTINGS_NAMESPACE = 'linear'
+    const SETTINGS_NAMESPACE = 'local-linear'
     const CHANNEL = '/linear-integration'
 
     const styles = {
@@ -199,7 +199,7 @@ window.__ModuleLoader__.load({
               : 'Not configured'
       return React.createElement(
         'details',
-        { style: { ...styles.card, display: 'block' } },
+        { style: { ...styles.card, display: 'block' }, open: props.view === 'page' || undefined },
         React.createElement(
           'summary',
           { style: { cursor: 'pointer' } },
@@ -338,6 +338,13 @@ window.__ModuleLoader__.load({
       )
     }
 
+    // RC2 row slots render summaries without mounting the credential/RPC form.
+    function LinearConfigPage(props) {
+      return props.view === 'summary'
+        ? 'Workspace connection for issue discovery and approval-gated project management.'
+        : React.createElement(LinearSettingsSection, props)
+    }
+
     const inject = ['slots', 'connection', 'remote']
 
     function apply(ctx) {
@@ -356,15 +363,15 @@ window.__ModuleLoader__.load({
           for (const dispose of disposers) dispose()
         }
       }
-      ctx.slots.inject('settings.plugin.item', () =>
+      ctx.slots.inject('plugins.row.config', () =>
         ctx.slots.register(
           {
-            name: 'settings.plugin.item',
-            key: SETTINGS_NAMESPACE,
+            name: 'plugins.row.config',
+            key: '@local/dsh-linear#local-linear',
             order: 35,
             inject: () => ({ rpc: connection.rpc, subscribe }),
           },
-          LinearSettingsSection,
+          LinearConfigPage,
         ),
       )
     }

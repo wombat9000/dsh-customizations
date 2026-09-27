@@ -121,7 +121,7 @@ export class RecapRuntime {
         if (payload.automatic && !settings.autoRecap)
             throw new RecapError('auto-disabled', 'Automatic recaps are disabled.');
         if (!settings.provider || !settings.model) {
-            throw new RecapError('not-configured', 'Choose a provider and model in Settings → Plugins → Session Recap.');
+            throw new RecapError('not-configured', 'Choose a provider and model in Plugins → Session Recap → Configure.');
         }
         const session = this.sessions.get(sessionId);
         if (!session)

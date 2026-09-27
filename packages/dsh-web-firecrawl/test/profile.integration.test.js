@@ -22,14 +22,14 @@ test('portable recipe installs the matching Firecrawl bundle after base and Web'
   }
   assert.equal(recipe.bundles[index].source, '../../packages/dsh-web-firecrawl')
   assert.equal(manifest.dsh.bundle.patch, './cordis.patch.yml')
-  assert.ok(manifest.dsh.client.inject.includes('@deepseek-ai/dsh-client-ui-settings-plugins'))
+  assert.ok(manifest.dsh.client.inject.includes('@deepseek-ai/dsh-client-ui-plugin-manager'))
   assert.ok(manifest.dsh.client.inject.includes('@deepseek-ai/dsh-api-remotes'))
   assert.equal(manifest.dsh.client.platform, 'web')
   for (const [name, version] of Object.entries({
     ...manifest.dependencies,
     ...manifest.peerDependencies,
   })) {
-    if (name.startsWith('@deepseek-ai/dsh-')) assert.equal(version, '0.1.5-rc.2', name)
+    if (name.startsWith('@deepseek-ai/dsh-')) assert.equal(version, '0.1.7-rc.2', name)
   }
   const patch = await readFile(new URL('../cordis.patch.yml', import.meta.url), 'utf8')
   assert.match(patch, /- id: web\s+config:\s+searchProvider: firecrawl\s+fetchProvider: firecrawl/)
@@ -61,19 +61,8 @@ test('portable recipe installs the matching Firecrawl bundle after base and Web'
 function host(config = {}) {
   let key = 'fc-test-first'
   let provider
-  let settings
   const refs = []
   const ctx = {
-    inject(dependencies, install) {
-      assert.deepEqual(dependencies, ['settings'])
-      install({
-        settings: {
-          installSection(owner, namespace, schema, initial) {
-            settings = { owner, namespace, schema, initial }
-          },
-        },
-      })
-    },
     get(name) {
       assert.equal(name, 'credentials')
       return {
@@ -97,19 +86,14 @@ function host(config = {}) {
     ctx,
     provider,
     refs,
-    settings,
     rotate(value) {
       key = value
     },
   }
 }
 
-test('host settings stay empty while the provider resolves rotated credential references', async () => {
+test('provider resolves rotated credentials without registering settings', async () => {
   const instance = host()
-  assert.equal(instance.settings.owner, instance.ctx)
-  assert.equal(instance.settings.namespace, 'web-firecrawl')
-  assert.deepEqual(instance.settings.initial, {})
-  assert.deepEqual(instance.settings.schema.dict, {})
   assert.equal(await instance.provider.apiKey(undefined, 'search'), 'fc-test-first')
   instance.rotate('fc-test-rotated')
   assert.equal(await instance.provider.apiKey(undefined, 'scrape'), 'fc-test-rotated')
@@ -118,13 +102,10 @@ test('host settings stay empty while the provider resolves rotated credential re
     code: 'WEB_PROVIDER_CREDENTIAL_MISSING',
   })
   assert.deepEqual(instance.refs, Array(3).fill(FIRECRAWL_CREDENTIAL_REF))
-  assert.deepEqual(instance.settings.initial, {})
 })
 
 test('legacy literal config overrides references without exposing it in settings', async () => {
   const instance = host({ apiKey: 'fc-test-literal' })
   assert.equal(await instance.provider.apiKey(undefined, 'search'), 'fc-test-literal')
   assert.deepEqual(instance.refs, [])
-  assert.deepEqual(instance.settings.initial, {})
-  assert.deepEqual(instance.settings.schema.dict, {})
 })

@@ -114,7 +114,7 @@ const task = (name = 'a') => ({
   mode: 'write',
 })
 async function finish(f, id, index, output = 'Tests passed') {
-  f.starts[index].done.resolve({ status: 'completed', output })
+  f.starts[index].done.resolve({ status: 'completed', result: output })
   f.starts[index].cleaned.resolve()
   return f.jobs.get(id).done
 }
@@ -135,9 +135,9 @@ test('background dispatch permits different worktrees, locks same worktree acros
   const a = await f.manager.dispatch(f.parent, task())
   const b = await f.manager.dispatch(f.parent, task('b'))
   assert.notEqual(a.jobId, b.jobId)
-  assert.equal(f.jobs.get(a.jobId).owner, f.parent)
+  assert.equal(f.jobs.get(a.jobId).owner, f.parent.session.id)
   await assert.rejects(f.manager.dispatch(f.sibling, task()), /active assignment/)
-  f.starts[0].done.resolve({ status: 'completed', output: 'done' })
+  f.starts[0].done.resolve({ status: 'completed', result: 'done' })
   await Promise.resolve()
   await assert.rejects(f.manager.dispatch(f.parent, task()), /active assignment/)
   f.starts[0].cleaned.resolve()
@@ -244,7 +244,7 @@ test('startup errors settle as failed and release the checkout lease', async () 
 test('failed resource cleanup keeps the worktree fenced instead of permitting overlapping work', async () => {
   const f = fixture()
   f.manager.startWorker = async () => ({
-    result: Promise.resolve({ status: 'completed', output: 'done' }),
+    result: Promise.resolve({ status: 'completed', result: 'done' }),
     async dispose() {
       throw new Error('cleanup failed')
     },

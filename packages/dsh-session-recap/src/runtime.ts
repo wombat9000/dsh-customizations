@@ -152,7 +152,7 @@ export class RecapRuntime {
     if (!settings.provider || !settings.model) {
       throw new RecapError(
         'not-configured',
-        'Choose a provider and model in Settings → Plugins → Session Recap.',
+        'Choose a provider and model in Plugins → Session Recap → Configure.',
       )
     }
     const session = this.sessions.get(sessionId)

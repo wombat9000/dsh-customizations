@@ -7,14 +7,13 @@ import type { RecapActionProps, RecapCardProps } from './containers/recap.tsx'
 import { SettingsCard } from './containers/SettingsCard.tsx'
 import type { SettingsCardProps } from './containers/SettingsCard.tsx'
 
-// RC2's published conversation/chat slot declarations refer to ui-slots, which
-// is absent from its published dependency graph. Describe only our three seats
-// at this integration boundary instead of casting Cordis Context or importing
-// unresolved composed props. Owner/standard props remain separate from inject.
+// Keep the adapter limited to our three consumed seats. DSH 0.1.7-rc.2
+// declares plugins.row.config as keyed/root with owner-supplied view; the
+// conversation seats remain session lists. Owner props stay separate from inject.
 interface RecapSlots {
   'conversation.input.dock': RecapCardProps
   'conversation.chat.assistant-actions': RecapActionProps
-  'settings.plugin.item': SettingsCardProps
+  'plugins.row.config': SettingsCardProps
 }
 type SessionSeat = 'conversation.input.dock' | 'conversation.chat.assistant-actions'
 type Registration<K extends keyof RecapSlots> = K extends SessionSeat
@@ -27,7 +26,7 @@ type Registration<K extends keyof RecapSlots> = K extends SessionSeat
   : {
       name: K
       key: string
-      inject: () => SettingsCardProps
+      inject: () => Pick<SettingsCardProps, 'rpc' | 'controller'>
     }
 export interface RecapRegistrationContext {
   get(name: 'connection'): Pick<ConnectionHandle, 'rpc'>
@@ -75,11 +74,11 @@ export function apply(ctx: RecapRegistrationContext) {
       RecapAction,
     ),
   )
-  ctx.slots.inject('settings.plugin.item', () =>
-    ctx.slots.register<'settings.plugin.item'>(
+  ctx.slots.inject('plugins.row.config', () =>
+    ctx.slots.register<'plugins.row.config'>(
       {
-        name: 'settings.plugin.item',
-        key: ID,
+        name: 'plugins.row.config',
+        key: `@wombat9000/dsh-session-recap#${ID}`,
         inject: () => ({ rpc: adaptRpc(ctx.get('connection').rpc), controller }),
       },
       SettingsCard,

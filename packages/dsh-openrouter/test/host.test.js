@@ -1,12 +1,9 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import {
-  createOpenRouterRuntime,
-  mountOpenRouter,
-  RECORD_KEY,
-  DEFAULT_REFERENCE,
-  CHANNEL,
-} from '../src/runtime.js'
+import { createOpenRouterRuntime, RECORD_KEY, DEFAULT_REFERENCE, CHANNEL } from '../src/runtime.js'
+import * as plugin from '../src/index.js'
+import z from '@deepseek-ai/schemastery'
+import { profileFixture } from '../../dsh-google-auth/test/profile-fixture.js'
 
 function fixture() {
   const state = { profile: {}, record: undefined, refs: new Map(), writable: true, writes: [] }
@@ -41,9 +38,8 @@ function fixture() {
     },
   }
   const settings = {
-    get(name) {
-      assert.equal(name, 'llm-pi-ai')
-      return { providers: { openrouter: state.profile } }
+    describe() {
+      return [{ ns: 'llm-pi-ai', value: { providers: { openrouter: state.profile } } }]
     },
   }
   const runtime = createOpenRouterRuntime({ credentials, settings })
@@ -186,47 +182,64 @@ test('provider exceptions and unexpected metadata never cross RPC', async () => 
   }
   assert.equal(JSON.stringify(await f.runtime.rpc('status')).includes('secret-value'), false)
 })
-test('mocked host mount uses trusted RPC, empty settings section, host service, and disposal', async () => {
+test('real Settings projection tracks provider Config and host disposal keeps RPC trusted', async (t) => {
   const f = fixture()
-  const disposers = []
-  const schema = { empty: true }
   let registration
-  let provided
-  const ctx = {
-    credentials: f.credentials,
-    settings: {
-      ...f.settings,
-      installSection(owner, namespace, received, defaults) {
-        assert.equal(owner, ctx)
-        assert.equal(namespace, 'openrouter')
-        assert.equal(received, schema)
-        assert.deepEqual(defaults, {})
+  const { ctx } = await profileFixture(t, {
+    rows: [
+      { id: 'llm-pi-ai', name: 'cordis:provider' },
+      { id: 'local-openrouter', name: 'cordis:openrouter' },
+    ],
+    builtins: {
+      openrouter: plugin,
+      provider: {
+        Config: z.object({
+          providers: z
+            .dict(
+              z.object({
+                apiKeyEnv: z.string(),
+                baseURL: z.string(),
+              }),
+            )
+            .default({})
+            .volatile(),
+        }),
+        apply() {},
       },
     },
-    provide(name, service) {
-      assert.equal(name, 'openrouter')
-      provided = service
-    },
-    effect(effect) {
-      disposers.push(effect())
-    },
-    connection: {
-      rpc: {
-        handle(channel, handler, options) {
-          registration = { channel, handler, options, disposed: false }
-          return () => {
-            registration.disposed = true
-          }
+    setup(ctx) {
+      ctx.provide('credentials', f.credentials)
+      ctx.provide('webServer', {})
+      ctx.provide('connection', {
+        rpc: {
+          handle(channel, handler, options) {
+            registration = { channel, handler, options, disposed: false }
+            return () => {
+              registration.disposed = true
+            }
+          },
         },
-      },
+      })
     },
-  }
-  mountOpenRouter(ctx, schema)
+  })
+  const provided = ctx.get('openrouter')
   assert.equal(registration.channel, CHANNEL)
   assert.deepEqual(registration.options, { authority: 'trusted-host' })
   assert.deepEqual(Object.keys(provided).sort(), ['resolveApiKey', 'status'])
   assert.equal((await registration.handler('status')).ok, true)
-  for (const dispose of disposers.reverse()) dispose()
+  assert.equal(
+    ctx.settings.describe().some((row) => row.ns === 'local-openrouter'),
+    false,
+    'an empty Config must not synthesize a settings section',
+  )
+  f.state.refs.set('CUSTOM_REF', { value: 'private-key' })
+  await ctx.settings.update('llm-pi-ai', { providers: { openrouter: { apiKeyEnv: 'CUSTOM_REF' } } })
+  assert.equal(await provided.resolveApiKey(), 'private-key')
+  await ctx.settings.update('llm-pi-ai', {
+    providers: { openrouter: { baseURL: 'https://other.invalid' } },
+  })
+  await assert.rejects(provided.resolveApiKey(), /unsupported/)
+  await ctx.loader.resolve('include:local-openrouter').fiber.dispose()
   assert.equal(registration.disposed, true)
   assert.equal((await registration.handler('status')).ok, false)
   await assert.rejects(provided.resolveApiKey(), /stopped/)

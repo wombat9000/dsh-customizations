@@ -50,8 +50,9 @@ export async function seedSession(ctx) {
           content: [{ type: 'text', text: 'Review the Session recap interface.' }],
         },
       },
+      { seq: 2, time, type: 'step/start', data: { turn: 1, step: 1 } },
       {
-        seq: 2,
+        seq: 3,
         time,
         type: 'assistant/message',
         surfaceOp: 'append',
@@ -67,7 +68,8 @@ export async function seedSession(ctx) {
           },
         },
       },
-      { seq: 3, time, type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } },
+      { seq: 4, time, type: 'step/end', data: { turn: 1, step: 1 } },
+      { seq: 5, time, type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } },
     ],
   })
   return persistSession(ctx, session)
@@ -81,9 +83,9 @@ export async function seedGitHubSession(ctx) {
   return persistSession(ctx, ctx.sessions.prepare(fixture.id, fixture.options))
 }
 
-async function persistSession(ctx, session) {
-  // A detached Session validates the seed without starting an agent. In 0.1.5,
-  // sessions.flush alone does not install a writer or persist constructor seeds.
+export async function persistSession(ctx, session) {
+  // A detached Session never starts an agent. Persist constructor seeds explicitly;
+  // native V4 admission validates step and tool relationships when reopening.
   const handle = await ctx.sessionPersistence.create(session.header)
   try {
     await handle.append(session.snapshotEvents())

@@ -6,13 +6,15 @@ export function githubItemsSeed(cwd) {
   const fixture = githubSessionSeed(cwd)
   fixture.id = 'visual-test-github-items'
   const events = fixture.options.seed
-  events[1].data.content[0].text = githubItemsPrompt
-  const call = events[2].data.message.content[0]
+  events.find((event) => event.type === 'user/message').data.content[0].text = githubItemsPrompt
+  const call = events.find((event) => event.type === 'assistant/message').data.message.content[0]
   call.name = 'github_list_project_items'
   call.arguments = JSON.stringify({ owner: 'fixture-org', projectNumber: 7 })
-  events[3].data.name = call.name
-  events[3].data.arguments = call.arguments
-  events[4].data.message.content[0].content = projectItemsBlock().content
+  const attempt = events.find((event) => event.type === 'tool/call')
+  attempt.data.name = call.name
+  attempt.data.arguments = call.arguments
+  events.find((event) => event.type === 'tool/result').data.message.content =
+    projectItemsBlock().content
   // Additional historical snapshots reuse this disposable session. No tools run.
   const connection = (nodes) => ({
     nodes,
@@ -83,6 +85,12 @@ export function githubItemsSeed(cwd) {
     events.push({
       seq: events.length,
       time,
+      type: 'step/start',
+      data: { turn: 1, step },
+    })
+    events.push({
+      seq: events.length,
+      time,
       type: 'assistant/message',
       surfaceOp: 'append',
       data: {
@@ -113,28 +121,29 @@ export function githubItemsSeed(cwd) {
         step,
         message: {
           id: `${callId}-result`,
-          role: 'user',
+          role: 'tool',
           source: { kind: 'tool', callId },
+          toolCallId: callId,
           content: [
             {
-              type: 'tool-result',
-              toolCallId: callId,
-              content: [
-                {
-                  type: 'text',
-                  text: JSON.stringify({
-                    host: 'github.com',
-                    untrusted: true,
-                    data,
-                    truncated: false,
-                    truncations: [],
-                  }),
-                },
-              ],
+              type: 'text',
+              text: JSON.stringify({
+                host: 'github.com',
+                untrusted: true,
+                data,
+                truncated: false,
+                truncations: [],
+              }),
             },
           ],
         },
       },
+    })
+    events.push({
+      seq: events.length,
+      time,
+      type: 'step/end',
+      data: { turn: 1, step },
     })
   }
   events.push({ ...end, seq: events.length })

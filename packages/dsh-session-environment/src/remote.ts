@@ -37,7 +37,7 @@ export const TYPERT_REMOTE: TypertRemoteContribution = {
           codec: {
             mode: 'strict',
             typeSymbol: '@local/dsh-session-environment/types#SessionEnvironmentRequest',
-            schema: sessionEnvironmentRequestSchema,
+            create: () => sessionEnvironmentRequestSchema,
           },
         },
       ],
@@ -45,7 +45,7 @@ export const TYPERT_REMOTE: TypertRemoteContribution = {
       result: {
         mode: 'strict',
         typeSymbol: '@local/dsh-session-environment/types#SessionEnvironmentSnapshot',
-        schema: sessionEnvironmentSnapshotSchema,
+        create: () => sessionEnvironmentSnapshotSchema,
       },
     },
   ],

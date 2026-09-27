@@ -1,4 +1,4 @@
-import { test, expect, pluginSettings } from '../../../../tests/real-ui/fixtures.mjs'
+import { test, expect, setTheme, expandTurnProcesses } from '../../../../tests/real-ui/fixtures.mjs'
 import {
   githubFieldWorkspaceName,
   githubFieldPrompt,
@@ -6,8 +6,7 @@ import {
 
 for (const theme of ['light', 'dark'])
   test(`field no-change and failure in narrow real shell (${theme})`, async ({ app }, testInfo) => {
-    const settings = await pluginSettings(app, theme)
-    await settings.getByRole('button', { name: 'Close', exact: true }).click()
+    await setTheme(app, theme, true)
     const sessions = app.getByRole('tree', { name: 'Sessions', exact: true })
     const workspace = sessions.getByRole('treeitem', { name: 'Ungrouped', exact: true })
     if ((await workspace.getAttribute('aria-expanded')) !== 'true') await workspace.click()
@@ -15,6 +14,7 @@ for (const theme of ['light', 'dark'])
       .getByRole('treeitem', { name: new RegExp(`^${githubFieldWorkspaceName}\\s`) })
       .click()
     await expect(app.getByText(githubFieldPrompt, { exact: true })).toBeVisible()
+    await expandTurnProcesses(app)
     const cards = app.getByRole('region', { name: 'GitHub project field change', exact: true })
     await expect(cards).toHaveCount(2)
     const neutral = cards.filter({

@@ -20,20 +20,67 @@ export const test = base.extend({
 })
 export { expect }
 
-export async function pluginSettings(page, scheme) {
+export async function expandTurnProcesses(page) {
+  // Target DSH folds completed tool steps by default. Exercise the native
+  // disclosure instead of forcing DOM/CSS or changing user preferences.
+  await expect(page.locator('[data-turn-process]').first()).toBeVisible()
+  const collapsed = page.locator('[data-turn-process][aria-expanded="false"]:enabled')
+  while (await collapsed.count()) await collapsed.first().click()
+  const steps = page.locator('[data-process-activity][aria-expanded="false"]:visible')
+  while (await steps.count()) await steps.first().click()
+}
+
+export async function setTheme(page, scheme, unfoldedWork = false) {
   await page.getByRole('button', { name: 'Settings', exact: true }).click()
   await page.getByRole('button', { name: 'General', exact: true }).click()
   await page
     .getByRole('button', { name: scheme === 'dark' ? 'Dark' : 'Light', exact: true })
     .click()
   await expect(page.locator('html')).toHaveCSS('color-scheme', scheme)
+  if (unfoldedWork) {
+    // Full-card evidence uses the native Verbose presentation. Standard mode
+    // intentionally limits completed step groups to a 400px scroll viewport.
+    await page
+      .getByText('Work details', { exact: true })
+      .locator('../..')
+      .getByRole('button')
+      .click()
+    await page.getByRole('menuitem', { name: 'Verbose', exact: true }).click()
+  }
+  await page
+    .getByRole('dialog', { name: 'Settings', exact: true })
+    .getByRole('button', { name: 'Close', exact: true })
+    .click()
+}
+
+export async function pluginSettings(
+  page,
+  scheme,
+  packageName = '@wombat9000/dsh-session-recap',
+  rowId = 'wombat9000-session-recap',
+) {
+  await setTheme(page, scheme)
   await page.getByRole('button', { name: 'Plugins', exact: true }).click()
-  const dialog = page.getByRole('dialog', { name: 'Settings', exact: true })
-  await expect(dialog.getByRole('button', { name: 'Expand: Session recap' })).toBeVisible()
-  await expect(dialog.getByRole('button', { name: 'Show settings: Shell' })).toBeVisible()
-  await expect(dialog.getByRole('button', { name: 'Show settings: Agent loop' })).toBeVisible()
+  const panel = page.locator('[data-plugin-panel]')
+  await expect(panel).toBeVisible()
+  for (let depth = 0; depth < 2; depth++) {
+    const back = panel.getByRole('button', { name: /^Back to/ }).first()
+    if (!(await back.isVisible())) break
+    await back.click()
+  }
+  // Package names and row IDs, not translated titles, bind configuration identity.
+  await page
+    .locator(`[data-plugin-package="${packageName}"]`)
+    .getByRole('button', { name: /^View/ })
+    .click()
+  await page
+    .locator(`[data-plugin-detail="${packageName}"] [data-plugin-row$="${rowId}"]`)
+    .getByRole('button', { name: /^Configure/ })
+    .click()
+  const configuration = page.locator(`[data-plugin-row-detail="${packageName}#${rowId}"]`)
+  await expect(configuration).toBeVisible()
   await documentReady(page)
-  return dialog
+  return configuration
 }
 
 async function documentReady(page) {

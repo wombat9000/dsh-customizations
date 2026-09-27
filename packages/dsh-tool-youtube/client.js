@@ -963,7 +963,7 @@ window.__ModuleLoader__.load({
 
       return React.createElement(
         'details',
-        { style: { ...styles.card, display: 'block' } },
+        { style: { ...styles.card, display: 'block' }, open: props.view === 'page' || undefined },
         React.createElement(
           'summary',
           { style: { cursor: 'pointer' } },
@@ -1059,6 +1059,13 @@ window.__ModuleLoader__.load({
       )
     }
 
+    // RC2 row summaries never mount the credential form or start status requests.
+    function YoutubeConfigPage(props) {
+      return props.view === 'summary'
+        ? 'Configure Gemini access for YouTube analysis and transcripts.'
+        : React.createElement(GeminiSettingsSection, props)
+    }
+
     const inject = ['slots', 'connection', 'remote', 'remote.credentials']
 
     function apply(ctx) {
@@ -1075,15 +1082,15 @@ window.__ModuleLoader__.load({
         }
       }
       const injected = () => ({ api: ctx.remote, subscribe })
-      ctx.slots.inject('settings.plugin.item', () =>
+      ctx.slots.inject('plugins.row.config', () =>
         ctx.slots.register(
           {
-            name: 'settings.plugin.item',
-            key: 'youtube',
+            name: 'plugins.row.config',
+            key: '@local/dsh-tool-youtube#local-tool-youtube',
             order: 30,
             inject: injected,
           },
-          GeminiSettingsSection,
+          YoutubeConfigPage,
         ),
       )
       ctx.slots.inject('tool.call.toolview', () => {

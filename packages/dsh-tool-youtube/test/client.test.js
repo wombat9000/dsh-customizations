@@ -79,7 +79,7 @@ test('package exposes the Web Settings client bundle', async () => {
   assert.ok(pkg.files.includes('client.js'))
   assert.equal(pkg.dsh.client.platform, 'web')
   assert.deepEqual(pkg.dsh.client.inject, [
-    '@deepseek-ai/dsh-client-ui-settings-plugins',
+    '@deepseek-ai/dsh-client-ui-plugin-manager',
     '@deepseek-ai/dsh-api-remotes',
   ])
 })
@@ -106,7 +106,7 @@ test('client bundle registers the expected module and Settings section', async (
     on: () => () => {},
     slots: {
       inject(name, callback) {
-        assert.ok(['settings.plugin.item', 'tool.call.toolview'].includes(name))
+        assert.ok(['plugins.row.config', 'tool.call.toolview'].includes(name))
         callback()
       },
       register(options, component) {
@@ -117,8 +117,8 @@ test('client bundle registers the expected module and Settings section', async (
   }
 
   exports.apply(context)
-  const settings = registrations.find((entry) => entry.options.name === 'settings.plugin.item')
-  assert.equal(settings.options.key, 'youtube')
+  const settings = registrations.find((entry) => entry.options.name === 'plugins.row.config')
+  assert.equal(settings.options.key, '@local/dsh-tool-youtube#local-tool-youtube')
   assert.equal(settings.options.order, 30)
   assert.equal(
     registrations.some((entry) => entry.options.name === 'settings.section'),
@@ -163,7 +163,7 @@ test('Settings subscription filters credential events and disposes listeners', a
     },
   }
   exports.apply(context)
-  const props = registrations.find((entry) => entry.name === 'settings.plugin.item').inject()
+  const props = registrations.find((entry) => entry.name === 'plugins.row.config').inject()
   let refreshes = 0
   const dispose = props.subscribe(() => {
     refreshes += 1
@@ -307,11 +307,15 @@ test('registered Settings section loads credentials without the removed connecti
       },
     },
   })
-  const section = registrations.find(({ options }) => options.name === 'settings.plugin.item')
-  const tree = section.component(section.options.inject())
+  const section = registrations.find(({ options }) => options.name === 'plugins.row.config')
+  assert.match(section.component({ view: 'summary' }), /Configure Gemini/)
+  assert.deepEqual(react.updates, [])
+  const page = section.component({ ...section.options.inject(), view: 'page' })
+  assert.equal(page.type, exports.GeminiSettingsSection)
+  const tree = page.type(page.props)
   assert.match(textOf(tree), /Configure Gemini access/)
   assert.equal(tree.type, 'details')
-  assert.equal(tree.props.open, undefined)
+  assert.equal(tree.props.open, true)
   assert.equal(tree.children[0].type, 'summary')
   assert.match(textOf(tree.children[0]), /YouTube/)
   assert.equal(findElements(tree, (element) => element.type === 'input')[0].props.type, 'password')

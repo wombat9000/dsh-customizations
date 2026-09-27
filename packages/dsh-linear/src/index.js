@@ -27,9 +27,9 @@ export const DEFAULT_TIMEOUT_MS = 30_000
 
 export const Config = z.object({
   apiKey: z.string().role('secret'),
-  organizationId: z.string().default(''),
-  organizationName: z.string().default(''),
-  organizationUrlKey: z.string().default(''),
+  organizationId: z.string().default('').volatile(),
+  organizationName: z.string().default('').volatile(),
+  organizationUrlKey: z.string().default('').volatile(),
   maxDescriptionChars: z.number().step(1).min(1).default(DEFAULT_MAX_DESCRIPTION_CHARS),
   maxCommentChars: z.number().step(1).min(1).default(DEFAULT_MAX_COMMENT_CHARS),
   timeoutMs: z.number().step(1).min(1).default(DEFAULT_TIMEOUT_MS),
@@ -39,9 +39,6 @@ function resolvedConfig(config = {}) {
   return {
     apiKey:
       typeof config.apiKey === 'string' && config.apiKey.length > 0 ? config.apiKey : undefined,
-    organizationId: config.organizationId ?? '',
-    organizationName: config.organizationName ?? '',
-    organizationUrlKey: config.organizationUrlKey ?? '',
     maxDescriptionChars: config.maxDescriptionChars ?? DEFAULT_MAX_DESCRIPTION_CHARS,
     maxCommentChars: config.maxCommentChars ?? DEFAULT_MAX_COMMENT_CHARS,
     timeoutMs: config.timeoutMs ?? DEFAULT_TIMEOUT_MS,
@@ -50,12 +47,7 @@ function resolvedConfig(config = {}) {
 
 export function apply(ctx, config = {}) {
   const resolved = resolvedConfig(config)
-  const settingsEntry = {
-    organizationId: resolved.organizationId,
-    organizationName: resolved.organizationName,
-    organizationUrlKey: resolved.organizationUrlKey,
-  }
-  const settings = installLinearSettings(ctx, settingsEntry)
+  const settings = installLinearSettings(ctx, config)
   const runtime = new LinearRuntime({
     settings,
     maxDescriptionChars: resolved.maxDescriptionChars,

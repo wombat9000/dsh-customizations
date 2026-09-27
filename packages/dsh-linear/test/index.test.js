@@ -588,6 +588,7 @@ test('testing an environment credential binds only its workspace identity', asyn
   let handler
   let config = { organizationId: '', organizationName: '', organizationUrlKey: '' }
   const ctx = {
+    fiber: { entry: { options: { id: 'renamed-linear' } } },
     get(name) {
       if (name === 'connection')
         return {
@@ -606,7 +607,8 @@ test('testing an environment credential binds only its workspace identity', asyn
         }
       if (name === 'settings')
         return {
-          async update(_namespace, patch) {
+          async update(namespace, patch) {
+            assert.equal(namespace, 'renamed-linear')
             config = { ...config, ...patch }
           },
         }

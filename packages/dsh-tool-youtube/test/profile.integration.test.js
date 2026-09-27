@@ -30,20 +30,9 @@ test('YouTube bundle ships its archive provider without a workspace dependency',
   assert.doesNotMatch(patch, /agentPresets|isolate:/)
 })
 
-test('host serves an empty YouTube namespace for the plugin card without storing secrets', () => {
-  let registration
+test('host runs without Settings while API keys stay outside form configuration', () => {
   const cleanups = []
   const ctx = {
-    inject(dependencies, install) {
-      assert.deepEqual(dependencies, ['settings'])
-      install({
-        settings: {
-          installSection(owner, namespace, schema, initial, options) {
-            registration = { owner, namespace, schema, initial, options }
-          },
-        },
-      })
-    },
     get(name) {
       assert.equal(name, 'connection')
       return { rpc: { handle: () => () => {} } }
@@ -56,12 +45,6 @@ test('host serves an empty YouTube namespace for the plugin card without storing
     youtubeTranscriptStore: {},
   }
   apply(ctx, { apiKey: 'test-only-not-a-real-key' })
-  assert.equal(registration.owner, ctx)
-  assert.equal(registration.namespace, 'youtube')
-  assert.deepEqual(registration.schema.dict, {})
-  assert.deepEqual(registration.initial, {})
-  registration.options.setSource({})
-  registration.options.onChange({})
   for (const cleanup of cleanups.reverse()) cleanup()
 })
 

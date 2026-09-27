@@ -92,8 +92,8 @@ export function registerGitHubWriteTools(ctx, runtime, { grants, grantCaller, pr
     preparations.set(exec.token, entry)
     try {
       const downstream = await next()
-      if (downstream.kind === 'deny') {
-        presentation?.phase(exec, 'denied')
+      if (downstream.kind === 'deny' || downstream.kind === 'cancel') {
+        presentation?.phase(exec, downstream.kind === 'deny' ? 'denied' : 'unattempted')
         preparations.delete(exec.token)
         return downstream
       }

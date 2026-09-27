@@ -48,8 +48,9 @@ export function startHost(command, args, options, timeoutMs = 60000) {
     stdio: ['ignore', 'pipe', 'pipe'],
   })
   child.once('close', () => closed.add(child))
+  let output = ''
+  const diagnostics = () => output.replace(/https?:\/\/\S+/g, '[redacted URL]').slice(-6000)
   const ready = new Promise((accept, reject) => {
-    let output = ''
     let settled = false
     const finish = (error, url) => {
       if (settled) return
@@ -57,9 +58,8 @@ export function startHost(command, args, options, timeoutMs = 60000) {
       clearTimeout(timer)
       child.removeListener('error', failed)
       child.removeListener('exit', exited)
-      child.stdout.removeListener('data', capture)
-      child.stderr.removeListener('data', capture)
-      // Drain runtime diagnostics without printing launch tokens or test state.
+      // Continue bounded capture after HTTP readiness: asynchronous fixture
+      // plugins may fail later. Callers receive URL-redacted diagnostics only.
       child.stdout.resume()
       child.stderr.resume()
       if (error) reject(error)
@@ -83,5 +83,5 @@ export function startHost(command, args, options, timeoutMs = 60000) {
     child.stdout.on('data', capture)
     child.stderr.on('data', capture)
   })
-  return { child, ready }
+  return { child, ready, diagnostics }
 }

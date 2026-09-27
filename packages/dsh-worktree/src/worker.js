@@ -238,8 +238,7 @@ export async function startWorker(
         child.followup(
           createUserMessage({
             source: {
-              kind: 'plugin',
-              plugin: 'dsh-worktree',
+              kind: 'plugin:dsh-worktree',
               form: 'notice',
               summary: 'Delegated worktree assignment',
             },

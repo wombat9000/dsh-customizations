@@ -79,17 +79,19 @@ async function mount(handler, extra = {}) {
 }
 test('readable complete scope supplements native approval without custom allow controls', async () => {
   const fixture = await mount(() => pending, {
-    useSessionPendingInteraction: (select) =>
+    useSessionStatus: (select) =>
       select(
         new Map([
           [
             'session',
             {
-              kind: 'approval',
-              callId: 'call',
-              toolName: pending.toolName,
-              key: 'request-1',
-              reason: pending.exactPreview,
+              pendingInteraction: {
+                kind: 'approval',
+                callId: 'call',
+                toolName: pending.toolName,
+                key: 'request-1',
+                reason: pending.exactPreview,
+              },
             },
           ],
         ]),
@@ -189,12 +191,19 @@ test('session switches discard late prior-session status and abort old requests'
 })
 test('malformed status and mismatched pending call fail closed', async () => {
   await mount(() => ({ ...active, callId: 'wrong' }), {
-    useSessionPendingInteraction: (select) =>
+    useSessionStatus: (select) =>
       select(
         new Map([
           [
             'session',
-            { kind: 'approval', callId: 'other', toolName: pending.toolName, key: 'wrong' },
+            {
+              pendingInteraction: {
+                kind: 'approval',
+                callId: 'other',
+                toolName: pending.toolName,
+                key: 'wrong',
+              },
+            },
           ],
         ]),
       ),
