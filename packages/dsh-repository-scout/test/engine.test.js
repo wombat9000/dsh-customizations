@@ -6,7 +6,7 @@ import { LIMITS } from '../dist/src/contracts.js'
 
 const model = 'typesafe/jev-1.13'
 const bool = (questions = [{ id: 'q', question: 'Does this file validate input?' }]) =>
-  parseRequest('scout_file_bool', { path: 'src/a.ts', questions })
+  parseRequest('ask_file', { path: 'src/a.ts', questions })
 const batch = (maxFiles = 12) =>
   parseRequest('scout_files', { pattern: 'src/*.ts', question: 'Relevant?', maxFiles })
 const file = (path = 'src/a.ts', content = 'export const x = 1') => ({
@@ -71,16 +71,16 @@ test('strict tool shapes, explicit unique IDs, bounded question/options/levels a
     { path: 'a', questions: [{ id: 'q', question: 'Q' }], unknown: true },
   ]
   for (const input of invalid)
-    assert.throws(() => parseRequest('scout_file_bool', input), { code: 'invalid_request' })
+    assert.throws(() => parseRequest('ask_file', input), { code: 'invalid_request' })
   assert.throws(() => parseRequest('scout_files', { pattern: '*', question: 'Q', maxFiles: 25 }))
   assert.throws(() =>
-    parseRequest('scout_file_choice', {
+    parseRequest('classify_file', {
       path: 'a',
       questions: [{ id: 'q', question: 'Q', choices: [{ id: 'a', description: 'A' }] }],
     }),
   )
   assert.throws(() =>
-    parseRequest('scout_file_score', {
+    parseRequest('score_file', {
       path: 'a',
       questions: [{ id: 'q', question: 'Q', levels: ['one'] }],
     }),
@@ -165,7 +165,7 @@ test('boolean probability has no invented confidence; all same-file questions sh
 })
 
 test('choice preserves actual confidence and complete distribution', async () => {
-  const request = parseRequest('scout_file_choice', {
+  const request = parseRequest('classify_file', {
     path: 'a',
     questions: [
       {
@@ -198,7 +198,7 @@ test('choice preserves actual confidence and complete distribution', async () =>
 
 test('score is fractional scale value, not boolean probability; levels use prepared descriptions', async () => {
   const levels = ['No validation', 'Some validation', 'Complete validation']
-  const request = parseRequest('scout_file_score', {
+  const request = parseRequest('score_file', {
     path: 'a',
     questions: [{ id: 'q', question: 'Validation coverage?', levels }],
   })
@@ -424,7 +424,7 @@ test('full serialized UTF8 request cap includes escaping, model, state, question
     question: '界'.repeat(1024),
     choices: Array.from({ length: 16 }, (_, j) => ({ id: `c${j}`, description: '界'.repeat(512) })),
   }))
-  const request = parseRequest('scout_file_choice', { path: 'a', questions })
+  const request = parseRequest('classify_file', { path: 'a', questions })
   assert.throws(() => prepareScan(request, model, discovery()), { code: 'request_too_large' })
   assert.throws(() =>
     prepareScan(batch(24), model, discovery(Array.from({ length: 25 }, (_, i) => file(String(i))))),

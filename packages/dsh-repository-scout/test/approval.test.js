@@ -131,9 +131,9 @@ async function fixture(t, options = {}) {
 
 test('native approval and real output validation cover all four tools without leaking source', async (t) => {
   const variants = [
-    ['scout_file_bool', ARGS],
+    ['ask_file', ARGS],
     [
-      'scout_file_choice',
+      'classify_file',
       {
         path: 'src/a.ts',
         questions: [
@@ -149,7 +149,7 @@ test('native approval and real output validation cover all four tools without le
       },
     ],
     [
-      'scout_file_score',
+      'score_file',
       {
         path: 'src/a.ts',
         questions: [
@@ -203,7 +203,7 @@ test('denied, unavailable, missing and disabled approval make zero Jev calls', a
   ])
     await t.test(JSON.stringify(options), async (t) => {
       const host = await fixture(t, options)
-      const result = await host.execute('scout_file_bool', ARGS)
+      const result = await host.execute('ask_file', ARGS)
       assert.equal(result.isError, true)
       assert.equal(host.calls.length, 0)
     })
@@ -211,10 +211,10 @@ test('denied, unavailable, missing and disabled approval make zero Jev calls', a
 
 test('direct execution and consumed-token replay cannot dispatch', async (t) => {
   const host = await fixture(t, { answer: 'allowed-once' })
-  const tool = host.tools.get('scout_file_bool')
+  const tool = host.tools.get('ask_file')
   await assert.rejects(
     tool.execute(ARGS, {
-      name: 'scout_file_bool',
+      name: 'ask_file',
       token: {},
       agent: host.agent,
       arguments: ARGS,
@@ -227,7 +227,7 @@ test('direct execution and consumed-token replay cannot dispatch', async (t) => 
     captured = exec
     return next()
   })
-  assert.equal((await host.execute('scout_file_bool', ARGS)).isError, false)
+  assert.equal((await host.execute('ask_file', ARGS)).isError, false)
   await assert.rejects(tool.execute(ARGS, captured), /one-shot/)
   assert.equal(host.calls.length, 1)
 })
@@ -241,7 +241,7 @@ test('approval binds immutable content snapshots, not subsequently modified file
     },
   })
   const original = host.files.get('src/a.ts')
-  const result = await host.execute('scout_file_bool', ARGS)
+  const result = await host.execute('ask_file', ARGS)
   assert.equal(result.isError, false)
   assert.equal(host.calls[0].state.file.content, original)
 })
@@ -254,7 +254,7 @@ test('model changes after approval prevent all dispatch', async (t) => {
       return 'allowed-once'
     },
   })
-  const result = await host.execute('scout_file_bool', ARGS)
+  const result = await host.execute('ask_file', ARGS)
   assert.equal(host.calls.length, 0)
   assert.equal(result.value.files[0].reason, 'model_changed')
 })
@@ -267,7 +267,7 @@ test('cwd and calling-agent identity cannot be changed after preparation', async
       return 'allowed-once'
     },
   })
-  const result = await host.execute('scout_file_bool', ARGS)
+  const result = await host.execute('ask_file', ARGS)
   assert.equal(result.isError, true)
   assert.equal(host.calls.length, 0)
 })
@@ -280,7 +280,7 @@ test('cancellation during native approval makes zero provider calls', async (t) 
       return new Promise(() => {})
     },
   })
-  const result = await host.execute('scout_file_bool', ARGS, { signal: controller.signal })
+  const result = await host.execute('ask_file', ARGS, { signal: controller.signal })
   assert.equal(result.isError, true)
   assert.equal(host.calls.length, 0)
 })
@@ -288,9 +288,9 @@ test('cancellation during native approval makes zero provider calls', async (t) 
 test('downstream policy denial cannot be overridden by Scout consent', async (t) => {
   const host = await fixture(t, { answer: 'allowed-once' })
   host.ctx.on('tools/pre-execute', async (exec, next) =>
-    exec.name === 'scout_file_bool' ? { kind: 'deny', reason: 'test-policy' } : next(),
+    exec.name === 'ask_file' ? { kind: 'deny', reason: 'test-policy' } : next(),
   )
-  assert.equal((await host.execute('scout_file_bool', ARGS)).isError, true)
+  assert.equal((await host.execute('ask_file', ARGS)).isError, true)
   assert.equal(host.calls.length, 0)
   assert.equal(host.requests.length, 0)
 })
@@ -301,7 +301,7 @@ test('localized downstream asks retain both policy text and Scout disclosure', a
     kind: 'ask',
     displayReason: { en: 'MANDATORY policy information', de: 'Wichtige Richtlinie' },
   }))
-  const result = await host.execute('scout_file_bool', ARGS)
+  const result = await host.execute('ask_file', ARGS)
   assert.equal(result.isError, false, JSON.stringify(result))
   assert.match(host.requests[0].reason, /MANDATORY/)
   for (const value of Object.values(host.requests[0].displayReason))
@@ -323,7 +323,7 @@ for (const action of ['expiry', 'unload'])
       },
     })
     if (action === 'expiry') t.mock.timers.enable({ apis: ['setTimeout'] })
-    const pending = host.execute('scout_file_bool', ARGS)
+    const pending = host.execute('ask_file', ARGS)
     await asked
     if (action === 'expiry') t.mock.timers.tick(120_000)
     else host.registration.dispose()

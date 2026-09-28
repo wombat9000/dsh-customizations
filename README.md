@@ -88,7 +88,7 @@ Session Recap can opt in through **Use Jev to choose recap cards** (off by defau
 
 ### Repository Scout
 
-[Repository Scout](packages/dsh-repository-scout/README.md) adds an opt-in Standard-derived preset with `scout_file_bool`, `scout_file_choice`, `scout_file_score`, `scout_files`, and a companion skill. It uses the shared Jev service to classify bounded workspace files without returning their bodies to the main agent. Every nonempty scan requires native one-shot approval to disclose the exact prepared snapshots and questions to OpenRouter/TypeSafe. It reports uncertainty and partial coverage; read shortlisted code before findings or edits. Standard remains the default, and applying this recipe remains a separate approved operation.
+[Repository Scout](packages/dsh-repository-scout/README.md) adds an opt-in Standard-derived preset with `ask_file`, `classify_file`, `score_file`, `scout_files`, and the `file-intuition` reference skill. It uses the shared Jev service to classify bounded workspace files without returning their bodies to the main agent. Every nonempty scan requires native one-shot approval to disclose the exact prepared snapshots and questions to OpenRouter/TypeSafe. It reports uncertainty and partial coverage; read shortlisted code before findings or edits. Standard remains the default, and applying this recipe remains a separate approved operation.
 
 ### Linear, YouTube, and Trivy
 

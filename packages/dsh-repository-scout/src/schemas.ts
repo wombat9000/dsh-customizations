@@ -32,7 +32,7 @@ const commonQuestions = {
     'One to eight independent questions about this file. Batch them together rather than sending the same file repeatedly.',
 } as const
 export const PARAMETERS = {
-  scout_file_bool: {
+  ask_file: {
     path,
     questions: {
       ...commonQuestions,
@@ -43,7 +43,7 @@ export const PARAMETERS = {
       },
     },
   },
-  scout_file_choice: {
+  classify_file: {
     path,
     questions: {
       ...commonQuestions,
@@ -75,7 +75,7 @@ export const PARAMETERS = {
       },
     },
   },
-  scout_file_score: {
+  score_file: {
     path,
     questions: {
       ...commonQuestions,
@@ -113,11 +113,11 @@ export const PARAMETERS = {
 } as const satisfies Record<string, ParameterSchemaSpec>
 export type ScoutToolName = keyof typeof PARAMETERS
 export const DESCRIPTIONS: Record<ScoutToolName, string> = {
-  scout_file_bool:
+  ask_file:
     'Evaluate independent yes/no questions about one workspace file through Jev, without returning its contents to the main agent. Use for semantic triage, e.g. whether a module implements permission checks; use grep for literal matching and read for code details. Returns the probability of yes, not a severity score or separate confidence. Sends bounded file contents and questions to OpenRouter/TypeSafe after one-shot approval and may incur charges. Read relevant code before making findings or edits.',
-  scout_file_choice:
+  classify_file:
     'Classify one workspace file into explicit categories through Jev. Use when exactly one category should win, e.g. request handler versus data access versus other. Batch independent questions about the same file. Returns selected labels, probability distributions and confidence—not explanations or verified facts. Sends bounded contents and questions to OpenRouter/TypeSafe after one-shot approval; charges may apply. Use boolean questions for overlapping labels and read the file before editing.',
-  scout_file_score:
+  score_file:
     'Score one workspace file against explicit ordered rubrics through Jev. Use for narrow ranking judgments with concrete level descriptions, not broad security reviews or proof of correctness. Returns a fractional weighted level, its distribution and confidence; high confidence is not a guarantee. Sends bounded contents and questions to OpenRouter/TypeSafe after one-shot approval; charges may apply. Read the code to verify any conclusion.',
   scout_files:
     'Scout a bounded set of workspace files matching a restricted glob using one semantic yes/no relevance question. Use glob/grep first to narrow candidates. Returns files ranked by probability, hashes, coverage limits and failures, not file bodies, bug proofs or explanations. Sends only the exact prepared file snapshots and question to OpenRouter/TypeSafe after one-shot approval; charges may apply. Check partial coverage and read shortlisted files before editing. No automatic retries.',

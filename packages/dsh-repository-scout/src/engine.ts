@@ -120,7 +120,7 @@ export function parseRequest(toolName: string, args: unknown): ScoutRequest {
     return { q, id: identifier(q.id), question: text(q.question, LIMITS.questionChars) }
   }
   let request: ScoutRequest
-  if (toolName === 'scout_file_bool') {
+  if (toolName === 'ask_file') {
     request = {
       kind: 'boolean',
       path,
@@ -133,7 +133,7 @@ export function parseRequest(toolName: string, args: unknown): ScoutRequest {
         }
       }),
     }
-  } else if (toolName === 'scout_file_choice') {
+  } else if (toolName === 'classify_file') {
     request = {
       kind: 'choice',
       path,
@@ -151,7 +151,7 @@ export function parseRequest(toolName: string, args: unknown): ScoutRequest {
         return { id, question, choices }
       }),
     }
-  } else if (toolName === 'scout_file_score') {
+  } else if (toolName === 'score_file') {
     request = {
       kind: 'score',
       path,
@@ -201,7 +201,9 @@ export function prepareScan(
   // Re-parse to capture caller-owned arrays and enforce bounds even for direct typed callers.
   const { kind, ...args } = request
   const parsed = parseRequest(
-    kind === 'files' ? 'scout_files' : `scout_file_${kind === 'boolean' ? 'bool' : kind}`,
+    { boolean: 'ask_file', choice: 'classify_file', score: 'score_file', files: 'scout_files' }[
+      kind
+    ],
     args,
   )
   const questions: Record<string, JevQuestion> = Object.create(null)

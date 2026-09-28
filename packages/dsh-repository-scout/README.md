@@ -1,6 +1,6 @@
 # Repository Scout
 
-Repository Scout adds four Jev-backed tools and a companion `repository-scout` skill for semantic repository triage. It reads bounded source files, asks narrow questions, and returns typed judgments without adding file bodies to the main agent context.
+Repository Scout adds four Jev-backed tools and a shared `file-intuition` reference skill for fast, first-pass file judgments. It reads bounded source files, asks narrow questions, and returns typed judgments without adding file bodies to the main agent context.
 
 **Source contents leave the machine.** Every nonempty scan requires native one-shot approval before sending the prepared snapshots and questions to OpenRouter/TypeSafe. Calls can incur charges. Secret exclusions are incomplete; do not select confidential material that you cannot disclose.
 
@@ -14,18 +14,18 @@ For an explicitly maintained custom preset, add `@local/dsh-repository-scout` to
 
 ## Tools
 
-| Tool                | Input                                                               | Result                                                                     |
-| ------------------- | ------------------------------------------------------------------- | -------------------------------------------------------------------------- |
-| `scout_file_bool`   | `path`, `questions: [{id, question, criteria?: {true, false}}]`     | Probability of yes for each independent question; no separate confidence   |
-| `scout_file_choice` | `path`, `questions: [{id, question, choices: [{id, description}]}]` | One category, distribution, confidence                                     |
-| `scout_file_score`  | `path`, `questions: [{id, question, levels: [description, ...]}]`   | Fractional weighted level, distribution, confidence and level descriptions |
-| `scout_files`       | `pattern`, `question`, optional `criteria`, optional `maxFiles`     | Independent boolean relevance judgments, ranked by probability             |
+| Tool            | Input                                                               | Result                                                                     |
+| --------------- | ------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| `ask_file`      | `path`, `questions: [{id, question, criteria?: {true, false}}]`     | Probability of yes for each independent question; no separate confidence   |
+| `classify_file` | `path`, `questions: [{id, question, choices: [{id, description}]}]` | One category, distribution, confidence                                     |
+| `score_file`    | `path`, `questions: [{id, question, levels: [description, ...]}]`   | Fractional weighted level, distribution, confidence and level descriptions |
+| `scout_files`   | `pattern`, `question`, optional `criteria`, optional `maxFiles`     | Independent boolean relevance judgments, ranked by probability             |
 
 All paths and patterns are workspace-relative. `scout_files` supports `*`, `**`, and `?`; `**` is a complete path segment. Patterns are anchored to the workspace root: use `**/*.ts` for nested files. Braces, character classes, negation, absolute paths and `..` are rejected. The tool does not implement full ripgrep glob syntax or `.gitignore` rules.
 
 Each single-file call accepts 1–8 independent questions. Choices need 2–16 options; score rubrics need 2–10 ordered levels. Questions are at most 1,024 characters and each criterion or level at most 512. Question IDs label answers but are not shown to Jev. Use concrete, self-contained criteria. Use separate boolean questions when categories overlap.
 
-The bundled skill provides examples and a workflow: narrow with glob/grep, choose the appropriate primitive, batch independent questions, inspect incomplete coverage, then read shortlisted code before findings or edits. Model confidence is not correctness. These tools do not produce explanations or code citations and do not authorize actions.
+The bundled `file-intuition` skill is a tool manual, not an investigation workflow. It covers parameters, input/output examples, question design, independent batching, result semantics, failure handling and disclosure limits. “System 1” describes fast, first-pass judgments, not a latency guarantee or verification method. Model confidence is not correctness. These tools do not produce explanations or code citations and do not authorize actions.
 
 ## Safety and privacy contract
 

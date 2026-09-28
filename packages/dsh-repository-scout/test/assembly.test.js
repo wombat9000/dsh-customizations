@@ -8,6 +8,7 @@ import { typecheck } from '../scripts/typecheck.mjs'
 import { checkHost } from '../../../scripts/build-host.mjs'
 import { createScoutSkillProvider } from '../dist/src/skill.js'
 import { collectFiles } from '../dist/src/files.js'
+import { parseRequest } from '../dist/src/engine.js'
 import * as Scout from '../dist/src/index.js'
 import {
   Context,
@@ -61,9 +62,14 @@ test('bundled skill asset loads from emitted entrypoint and honors cancellation'
   const candidates = await provider.list({})
   assert.equal(candidates.length, 1)
   const skill = await provider.get(candidates[0], {})
-  assert.equal(skill.name, 'repository-scout')
+  assert.equal(skill.name, 'file-intuition')
+  assert.match(skill.content, /^# File intuition/m)
+  assert.match(skill.description, /Reference/)
+  assert.match(skill.content, /## Result envelope and failure semantics/)
+  assert.doesNotMatch(skill.content, /^## .*workflow/im)
+  assert.equal(await provider.get({ ...candidates[0], name: 'repository-scout' }, {}), undefined)
   assert.deepEqual(skill.invocation, { modelInvocable: true, userInvocable: true })
-  for (const name of ['scout_file_bool', 'scout_file_choice', 'scout_file_score', 'scout_files'])
+  for (const name of ['ask_file', 'classify_file', 'score_file', 'scout_files'])
     assert.ok(skill.content.includes(name))
   assert.match(skill.content, /Question IDs identify responses; Jev does not see the IDs/)
   assert.match(skill.content, /Secret|secret/)
@@ -71,6 +77,23 @@ test('bundled skill asset loads from emitted entrypoint and honors cancellation'
   await assert.rejects(provider.get(candidates[0], { signal: AbortSignal.abort() }), {
     name: 'AbortError',
   })
+})
+
+test('reference input examples match the renamed tool contracts', async () => {
+  const provider = createScoutSkillProvider()
+  const [candidate] = await provider.list({})
+  const { content } = await provider.get(candidate, {})
+  const examples = [...content.matchAll(/```json\n([\s\S]*?)\n```/g)].map((match) =>
+    JSON.parse(match[1]),
+  )
+  assert.equal(examples.length, 6)
+  for (const [name, index, kind] of [
+    ['ask_file', 0, 'boolean'],
+    ['classify_file', 2, 'choice'],
+    ['score_file', 4, 'score'],
+    ['scout_files', 5, 'files'],
+  ])
+    assert.equal(parseRequest(name, examples[index]).kind, kind)
 })
 
 test('actual plugin mounts with native registries and publishes four typed tools', async (t) => {
@@ -82,7 +105,7 @@ test('actual plugin mounts with native registries and publishes four typed tools
   }
   ctx.provide('fs', {}) // Mounting must not read files or contact Jev.
   await ctx.plugin(Scout).await()
-  for (const name of ['scout_file_bool', 'scout_file_choice', 'scout_file_score', 'scout_files']) {
+  for (const name of ['ask_file', 'classify_file', 'score_file', 'scout_files']) {
     const tool = ctx.get('tools').get(name)
     assert.ok(tool)
     assert.equal(tool.output.schema.type, 'object')

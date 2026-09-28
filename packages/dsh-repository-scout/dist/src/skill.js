@@ -2,11 +2,11 @@
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { BUNDLED_SKILL_RANK } from '@deepseek-ai/dsh-skill';
-const body = new URL('../../assets/repository-scout.md', import.meta.url);
+const body = new URL('../../assets/file-intuition.md', import.meta.url);
 const candidate = {
-    name: 'repository-scout',
-    description: 'Use Jev-backed file tools for bounded semantic repository triage. Choose boolean, category or rubric questions; batch independent judgments; interpret probabilities and incomplete coverage; then read shortlisted code before findings or edits. Use grep for literal searches instead.',
-    whenToUse: 'Use when locating responsibilities or ranking candidate files in an unfamiliar repository, not for authoritative security audits, bug proofs or literal text searches.',
+    name: 'file-intuition',
+    description: 'Reference for fast, System 1-style file judgments with Jev: ask_file, classify_file, score_file and scout_files. Covers tool selection, parameters, examples, question design, probability and score semantics, coverage, failures and disclosure limits. Not an investigation workflow or verification method.',
+    whenToUse: 'Consult when choosing among these file tools, formulating questions or rubrics, or interpreting their outputs and limitations.',
     invocation: { modelInvocable: true, userInvocable: true },
     provider: 'repository-scout-bundled',
     source: 'bundled',

@@ -15,7 +15,7 @@
               suffix: |
                 Your working directory is {{cwd}}.
 
-                Load the repository-scout skill for semantic repository triage. Use glob and grep to narrow candidates first, inspect coverage and uncertainty, then read shortlisted code before findings or edits. Scout sends prepared source snapshots to OpenRouter/TypeSafe only after native one-shot approval. Never bypass denied or unavailable approval.
+                The file-intuition skill is a usage reference for ask_file, classify_file, score_file and scout_files: fast, first-pass judgments with Jev, not verified findings. Consult it for question design, examples, result semantics and limits. These tools send prepared source snapshots to OpenRouter/TypeSafe only after native one-shot approval. Never bypass denied or unavailable approval.
               prefix: You are a coding agent powered by the {{model}} model.
           - id: agent-instructions
             name: '@deepseek-ai/dsh-agent-instructions'
