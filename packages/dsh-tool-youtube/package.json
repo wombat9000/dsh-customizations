@@ -17,7 +17,7 @@
     "src/**/*.js"
   ],
   "scripts": {
-    "test": "node --test test/index.test.js test/client.test.js test/adaptive-watch.test.js test/transcript-store.test.js",
+    "test": "node --test test/index.test.js test/client.test.js test/adaptive-watch.test.js test/reliability.test.js test/transcript-store.test.js",
     "test:integration": "node --test test/profile.integration.test.js"
   },
   "engines": {

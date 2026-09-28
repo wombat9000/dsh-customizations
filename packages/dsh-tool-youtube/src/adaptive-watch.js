@@ -125,6 +125,12 @@ export function normalizeYoutubeVideoMetadata(response, video, options = {}) {
     )
   }
   const details = response.videoDetails
+  if (details.videoId !== video.videoId) {
+    throw new AdaptiveWatchError(
+      ADAPTIVE_WATCH_ERROR_CODES.VIDEO_METADATA_INVALID,
+      'YouTube player metadata identity does not match the requested video',
+    )
+  }
   const rawDuration = Number(details.lengthSeconds)
   const durationSeconds =
     Number.isSafeInteger(rawDuration) && rawDuration > 0 ? rawDuration : undefined
@@ -410,7 +416,7 @@ export function normalizeWatchEvidence(item, durationSeconds, options = {}) {
       'Adaptive watch evidence description or modality is invalid',
     )
   }
-  const basis = item.basis === 'inference' ? 'inference' : 'observation'
+  const basis = ['inference', 'observation'].includes(item.basis) ? item.basis : undefined
   return {
     startSeconds,
     timestamp: secondsToTimestamp(startSeconds),
@@ -419,7 +425,7 @@ export function normalizeWatchEvidence(item, durationSeconds, options = {}) {
       : { endSeconds, endTimestamp: secondsToTimestamp(endSeconds) }),
     description,
     modality: item.modality,
-    basis,
+    ...(basis === undefined ? {} : { basis }),
   }
 }
 
@@ -435,9 +441,7 @@ export function offsetWatchChunkEvidence(items, chunk, durationSeconds) {
       (finalCore ? globalStart <= chunk.coreEndSeconds : globalStart < chunk.coreEndSeconds)
     if (!owned) return []
     const globalEnd =
-      local.endSeconds === undefined
-        ? undefined
-        : Math.min(durationSeconds, chunk.clipStartSeconds + local.endSeconds)
+      local.endSeconds === undefined ? undefined : chunk.clipStartSeconds + local.endSeconds
     return [
       {
         ...local,

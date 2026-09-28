@@ -1,0 +1,84 @@
+import { isRecord } from './response-values.js'
+
+const SAFE_INTERACTION_STATUSES = new Set([
+  'in_progress',
+  'requires_action',
+  'completed',
+  'failed',
+  'cancelled',
+  'incomplete',
+  'budget_exceeded',
+  'queued',
+])
+const SAFE_INTERACTION_ERROR_CODES = new Set([
+  'BLOCKLIST',
+  'DEADLINE_EXCEEDED',
+  'INTERNAL',
+  'INVALID_ARGUMENT',
+  'MAX_TOKENS',
+  'PROHIBITED_CONTENT',
+  'RECITATION',
+  'RESOURCE_EXHAUSTED',
+  'SAFETY',
+  'SAFETY_BLOCKED',
+  'UNAVAILABLE',
+])
+const INTERACTION_FILTER_CODES = new Set([
+  'BLOCKLIST',
+  'PROHIBITED_CONTENT',
+  'RECITATION',
+  'SAFETY',
+  'SAFETY_BLOCKED',
+])
+
+function interactionDiagnosticCodes(interaction) {
+  if (!Array.isArray(interaction.errors)) return []
+  return [
+    ...new Set(
+      interaction.errors.flatMap((error) => {
+        const code =
+          typeof error?.code === 'string' ? error.code.toLocaleUpperCase('en-US') : undefined
+        return code !== undefined && SAFE_INTERACTION_ERROR_CODES.has(code) ? [code] : []
+      }),
+    ),
+  ]
+}
+
+function interactionDiagnostic(interaction) {
+  const status = SAFE_INTERACTION_STATUSES.has(interaction.status) ? interaction.status : 'unknown'
+  const codes = interactionDiagnosticCodes(interaction)
+  return `status: ${status}${codes.length === 0 ? '' : `; diagnostic codes: ${codes.join(', ')}`}`
+}
+
+export function interactionHasContentFilter(interaction) {
+  return interactionDiagnosticCodes(interaction).some((code) => INTERACTION_FILTER_CODES.has(code))
+}
+
+export function markInteractionFilter(error, interaction) {
+  if (interactionHasContentFilter(interaction) && error?.reason !== 'content_filter') {
+    Object.defineProperty(error, 'reason', { value: 'content_filter' })
+  }
+  return error
+}
+
+export function interactionText(interaction, operation) {
+  if (!isRecord(interaction)) {
+    throw new Error(`Gemini returned an invalid ${operation} response`)
+  }
+  const diagnostic = interactionDiagnostic(interaction)
+  const outputError = (message) => markInteractionFilter(new Error(message), interaction)
+  if (interactionHasContentFilter(interaction)) {
+    throw outputError(`Gemini blocked ${operation} through content filters (${diagnostic})`)
+  }
+  if (interaction.status !== undefined && interaction.status !== 'completed') {
+    throw outputError(`Gemini could not complete ${operation} (${diagnostic})`)
+  }
+  if (typeof interaction.output_text !== 'string' || interaction.output_text.trim().length === 0) {
+    throw outputError(`Gemini returned no ${operation} output (${diagnostic})`)
+  }
+  try {
+    return JSON.parse(interaction.output_text)
+  } catch {
+    throw outputError(`Gemini returned malformed JSON for ${operation}`)
+  }
+}

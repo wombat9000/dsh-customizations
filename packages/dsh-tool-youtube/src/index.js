@@ -1,3 +1,27 @@
+import {
+  watchPresentationMeta,
+  transcriptPresentationMeta,
+  readPresentationMeta,
+  searchPresentationMeta,
+} from './tool-presentation.js'
+import {
+  WATCH_OUTPUT_SCHEMA,
+  TRANSCRIPT_OUTPUT_SCHEMA,
+  TRANSCRIPT_READ_OUTPUT_SCHEMA,
+  TRANSCRIPT_SEARCH_OUTPUT_SCHEMA,
+} from './tool-schemas.js'
+import {
+  formatWatchOutput,
+  formatTranscriptOutput,
+  formatTranscriptReadOutput,
+  formatTranscriptSearchOutput,
+} from './tool-presentation.js'
+export {
+  formatWatchOutput,
+  formatTranscriptOutput,
+  formatTranscriptReadOutput,
+  formatTranscriptSearchOutput,
+} from './tool-presentation.js'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import { launchEnvironmentOf } from '@deepseek-ai/dsh-launch-environment'
 import { defineTool } from '@deepseek-ai/dsh-tools'
@@ -28,7 +52,7 @@ import {
 } from './budget.js'
 import { ArchivedYoutubeClient, MAX_TRANSCRIPT_SEARCH_RESULTS } from './archive.js'
 import { createTranscriptProgressStore, registerTranscriptProgressRpc } from './progress.js'
-import { parseYoutubeUrl, secondsToTimestamp } from './url.js'
+import { parseYoutubeUrl } from './url.js'
 
 export {
   DEFAULT_DIRECT_TRANSCRIPT_MAX_SECONDS,
@@ -170,212 +194,6 @@ export const Config = z.object({
   transcript: z.boolean().default(true),
 })
 
-const PROVIDER_ATTEMPT_OUTPUT_SCHEMA = {
-  type: 'object',
-  additionalProperties: false,
-  properties: {
-    index: { type: 'integer', required: true },
-    operation: { type: 'string', required: true },
-    kind: { type: 'string', required: true },
-    estimatedInputTokens: { type: 'integer', required: true },
-  },
-}
-
-const BUDGET_OUTPUT_PROPERTIES = {
-  providerCalls: { type: 'integer' },
-  providerCallLimit: { type: 'integer' },
-  estimatedInputTokens: { type: 'integer' },
-  estimatedInputTokenLimit: { type: 'integer' },
-  estimatedInputCostUsd: { type: 'number' },
-  estimatedInputCostPerMillionTokensUsd: { type: 'number' },
-  estimatedInputCostLimitUsd: { type: 'number' },
-  attempts: {
-    type: 'array',
-    items: PROVIDER_ATTEMPT_OUTPUT_SCHEMA,
-  },
-}
-
-const WATCH_OUTPUT_SCHEMA = {
-  type: 'object',
-  additionalProperties: false,
-  properties: {
-    videoId: { type: 'string', required: true },
-    durationSeconds: { type: 'integer', required: true },
-    timestampVerified: { type: 'boolean', required: true },
-    answer: { type: 'string', required: true },
-    evidence: {
-      type: 'array',
-      required: true,
-      items: {
-        type: 'object',
-        additionalProperties: false,
-        properties: {
-          startSeconds: { type: 'integer' },
-          timestamp: { type: 'string', required: true },
-          endSeconds: { type: 'integer' },
-          endTimestamp: { type: 'string' },
-          description: { type: 'string', required: true },
-          modality: {
-            type: 'string',
-            required: true,
-            enum: ['visual', 'spoken', 'mixed'],
-          },
-          basis: { type: 'string', enum: ['observation', 'inference'] },
-        },
-      },
-    },
-    caveats: {
-      type: 'array',
-      required: true,
-      items: { type: 'string' },
-    },
-    processing: {
-      type: 'object',
-      required: true,
-      additionalProperties: true,
-      properties: {
-        strategy: {
-          type: 'string',
-          required: true,
-          enum: ['direct', 'direct-default', 'direct-low', 'direct-agentic', 'chunked'],
-        },
-        intent: { type: 'string', enum: ['targeted', 'global', 'exhaustive'] },
-        chunksCompleted: { type: 'integer' },
-        chunksTotal: { type: 'integer' },
-        ...BUDGET_OUTPUT_PROPERTIES,
-      },
-    },
-  },
-}
-
-const TRANSCRIPT_SEGMENT_OUTPUT_SCHEMA = {
-  type: 'object',
-  additionalProperties: false,
-  properties: {
-    startSeconds: { type: 'integer', required: true },
-    timestamp: { type: 'string', required: true },
-    text: { type: 'string', required: true },
-    speaker: { type: 'string' },
-  },
-}
-
-const TRANSCRIPT_OUTPUT_SCHEMA = {
-  type: 'object',
-  additionalProperties: false,
-  properties: {
-    videoId: { type: 'string', required: true },
-    transcriptId: { type: 'string', required: true },
-    complete: { type: 'boolean', required: true },
-    totalSegments: { type: 'integer', required: true },
-    inlineComplete: { type: 'boolean', required: true },
-    nextCursor: { type: 'integer' },
-    durationSeconds: { type: 'integer' },
-    timestampVerified: { type: 'boolean', required: true },
-    caveats: {
-      type: 'array',
-      required: true,
-      items: { type: 'string' },
-    },
-    language: { type: 'string', required: true },
-    speakers: {
-      type: 'array',
-      required: true,
-      items: { type: 'string' },
-    },
-    segments: {
-      type: 'array',
-      required: true,
-      items: TRANSCRIPT_SEGMENT_OUTPUT_SCHEMA,
-    },
-    processing: {
-      type: 'object',
-      required: true,
-      additionalProperties: false,
-      properties: {
-        strategy: { type: 'string', required: true, enum: ['direct', 'chunked'] },
-        source: {
-          type: 'string',
-          required: true,
-          enum: ['generated', 'archive', 'shared-in-flight'],
-        },
-        chunksCompleted: { type: 'integer', required: true },
-        chunksTotal: { type: 'integer', required: true },
-        collectedSegments: { type: 'integer', required: true },
-        ...BUDGET_OUTPUT_PROPERTIES,
-        intervals: {
-          type: 'array',
-          required: true,
-          items: {
-            type: 'object',
-            additionalProperties: false,
-            properties: {
-              id: { type: 'string', required: true },
-              index: { type: 'integer', required: true },
-              startSeconds: { type: 'integer', required: true },
-              endSeconds: { type: 'integer', required: true },
-              status: {
-                type: 'string',
-                required: true,
-                enum: [
-                  'pending',
-                  'transcribing',
-                  'fallback',
-                  'neutral',
-                  'splitting',
-                  'complete',
-                  'failed',
-                ],
-              },
-              attempt: { type: 'integer', required: true },
-              segmentCount: { type: 'integer', required: true },
-            },
-          },
-        },
-      },
-    },
-    truncated: { type: 'boolean', required: true },
-  },
-}
-
-const TRANSCRIPT_READ_OUTPUT_SCHEMA = {
-  type: 'object',
-  additionalProperties: false,
-  properties: {
-    transcriptId: { type: 'string', required: true },
-    videoId: { type: 'string', required: true },
-    durationSeconds: { type: 'integer', required: true },
-    complete: { type: 'boolean', required: true },
-    inlineComplete: { type: 'boolean', required: true },
-    nextCursor: { type: 'integer' },
-    pageOversize: { type: 'boolean' },
-    segments: {
-      type: 'array',
-      required: true,
-      items: TRANSCRIPT_SEGMENT_OUTPUT_SCHEMA,
-    },
-  },
-}
-
-const TRANSCRIPT_SEARCH_OUTPUT_SCHEMA = {
-  type: 'object',
-  additionalProperties: false,
-  properties: {
-    transcriptId: { type: 'string', required: true },
-    videoId: { type: 'string', required: true },
-    matches: {
-      type: 'array',
-      required: true,
-      items: {
-        ...TRANSCRIPT_SEGMENT_OUTPUT_SCHEMA,
-        properties: {
-          ...TRANSCRIPT_SEGMENT_OUTPUT_SCHEMA.properties,
-          score: { type: 'number', required: true },
-        },
-      },
-    },
-  },
-}
-
 function assertPositiveInteger(name, value) {
   if (!Number.isInteger(value) || value < 1) {
     throw new Error(`tool-youtube: ${name} must be a positive integer`)
@@ -502,80 +320,6 @@ export function resolveConfig(config = {}) {
   return resolved
 }
 
-export function formatWatchOutput(value) {
-  const sections = [value.answer]
-  if (value.evidence.length > 0) {
-    sections.push(
-      [
-        'Evidence:',
-        ...value.evidence.map(
-          (item) => `- [${item.timestamp}] (${item.modality}) ${item.description}`,
-        ),
-      ].join('\n'),
-    )
-  }
-  if (value.caveats.length > 0) {
-    sections.push(['Caveats:', ...value.caveats.map((item) => `- ${item}`)].join('\n'))
-  }
-  return sections.join('\n\n')
-}
-
-export function formatTranscriptOutput(value) {
-  const metadata = [`Language: ${value.language}`]
-  if (value.transcriptId !== undefined)
-    metadata.push(`Transcript archive ID: ${value.transcriptId}`)
-  if (value.processing?.source !== undefined) metadata.push(`Source: ${value.processing.source}`)
-  if (value.durationSeconds !== undefined) {
-    metadata.push(`Duration: ${secondsToTimestamp(value.durationSeconds)}`)
-  }
-  if (value.timestampVerified !== undefined) {
-    metadata.push(
-      `Timestamps: ${value.timestampVerified ? 'independently verified' : 'unverified'}`,
-    )
-  }
-  if (value.speakers.length > 0) metadata.push(`Speakers: ${value.speakers.join(', ')}`)
-  const lines = value.segments.map((segment) => {
-    const speaker = segment.speaker === undefined ? '' : ` ${segment.speaker}:`
-    return `[${segment.timestamp}]${speaker} ${segment.text}`
-  })
-  if (lines.length === 0)
-    lines.push('(No transcript segments fit within the configured output limit.)')
-  if (value.truncated) {
-    const continuation =
-      value.nextCursor === undefined
-        ? ''
-        : ` Continue with youtube_transcript_read using cursor ${value.nextCursor}.`
-    lines.push('', `(Inline transcript truncated at a segment boundary.${continuation})`)
-  }
-  const output = `${metadata.join('\n')}\n\n${lines.join('\n')}`
-  if (Array.isArray(value.caveats) && value.caveats.length > 0) {
-    return `${output}\n\nCaveats:\n${value.caveats.map((item) => `- ${item}`).join('\n')}`
-  }
-  return output
-}
-
-export function formatTranscriptReadOutput(value) {
-  const lines = value.segments.map((segment) => {
-    const speaker = segment.speaker === undefined ? '' : ` ${segment.speaker}:`
-    return `[${segment.timestamp}]${speaker} ${segment.text}`
-  })
-  if (lines.length === 0) lines.push('(No transcript segments matched this page or range.)')
-  if (value.nextCursor !== undefined) {
-    lines.push('', `(More archived segments are available at cursor ${value.nextCursor}.)`)
-  }
-  return lines.join('\n')
-}
-
-export function formatTranscriptSearchOutput(value) {
-  if (value.matches.length === 0) return 'No matching archived transcript segments.'
-  return value.matches
-    .map((match) => {
-      const speaker = match.speaker === undefined ? '' : ` ${match.speaker}:`
-      return `[${match.timestamp}]${speaker} ${match.text}`
-    })
-    .join('\n')
-}
-
 function safeTitle(url, suffix) {
   try {
     const { videoId } = parseYoutubeUrl(url)
@@ -616,19 +360,7 @@ export function registerYoutubeTools(ctx, config, client, transcriptProgress) {
         output: {
           schema: WATCH_OUTPUT_SCHEMA,
           render: (_args, value) => [{ type: 'text', text: formatWatchOutput(value) }],
-          presentationMeta: (_args, value) => ({
-            kind: 'youtube-card',
-            version: 1,
-            operation: 'watch',
-            video: { videoId: value.videoId, durationSeconds: value.durationSeconds },
-            result: {
-              durationSeconds: value.durationSeconds,
-              evidenceCount: value.evidence.length,
-              timestampVerified: value.timestampVerified,
-            },
-            processing: value.processing,
-            notices: value.caveats.slice(0, 5),
-          }),
+          presentationMeta: watchPresentationMeta,
         },
         timeoutMs: config.adaptiveWatch ? config.longOperationTimeoutMs : config.timeoutMs,
         isConcurrencySafe: () => true,
@@ -659,64 +391,7 @@ export function registerYoutubeTools(ctx, config, client, transcriptProgress) {
         output: {
           schema: TRANSCRIPT_OUTPUT_SCHEMA,
           render: (_args, value) => [{ type: 'text', text: formatTranscriptOutput(value) }],
-          presentationMeta: (_args, value) => {
-            if (value.processing !== undefined) {
-              return {
-                phase: 'complete',
-                strategy: value.processing.strategy,
-                durationSeconds: value.durationSeconds,
-                totalChunks: value.processing.chunksTotal,
-                completedChunks: value.processing.chunksCompleted,
-                activeChunks: 0,
-                collectedSegments: value.processing.collectedSegments,
-                chunks: value.processing.intervals,
-                truncated: value.truncated,
-                result: {
-                  transcriptId: value.transcriptId,
-                  durationSeconds: value.durationSeconds,
-                  totalSegments: value.totalSegments,
-                  language: value.language,
-                  timestampVerified: value.timestampVerified,
-                  nextCursor: value.nextCursor,
-                  inlineComplete: value.inlineComplete,
-                },
-                completeness: {
-                  sourceComplete: value.complete,
-                  inlineComplete: value.inlineComplete,
-                  nextCursor: value.nextCursor,
-                },
-                processing: value.processing,
-              }
-            }
-            const chunked = value.durationSeconds > config.directTranscriptMaxSeconds
-            const totalChunks = chunked
-              ? Math.ceil(value.durationSeconds / config.maximumTranscriptCoreSeconds)
-              : 1
-            return {
-              phase: 'complete',
-              strategy: chunked ? 'chunked' : 'direct',
-              durationSeconds: value.durationSeconds,
-              totalChunks,
-              completedChunks: totalChunks,
-              activeChunks: 0,
-              collectedSegments: value.segments.length,
-              truncated: value.truncated,
-              result: {
-                transcriptId: value.transcriptId,
-                durationSeconds: value.durationSeconds,
-                totalSegments: value.totalSegments,
-                language: value.language,
-                timestampVerified: value.timestampVerified,
-                nextCursor: value.nextCursor,
-                inlineComplete: value.inlineComplete,
-              },
-              completeness: {
-                sourceComplete: value.complete,
-                inlineComplete: value.inlineComplete,
-                nextCursor: value.nextCursor,
-              },
-            }
-          },
+          presentationMeta: (args, value) => transcriptPresentationMeta(config, args, value),
         },
         timeoutMs: config.longOperationTimeoutMs,
         isConcurrencySafe: () => true,
@@ -768,26 +443,7 @@ export function registerYoutubeTools(ctx, config, client, transcriptProgress) {
         output: {
           schema: TRANSCRIPT_READ_OUTPUT_SCHEMA,
           render: (_args, value) => [{ type: 'text', text: formatTranscriptReadOutput(value) }],
-          presentationMeta: (args, value) => ({
-            kind: 'youtube-card',
-            version: 1,
-            operation: 'transcript-read',
-            video: { videoId: value.videoId, durationSeconds: value.durationSeconds },
-            request: {
-              transcriptId: args.transcriptId,
-              cursor: args.cursor,
-              startSeconds: args.startSeconds,
-              endSeconds: args.endSeconds,
-            },
-            result: {
-              transcriptId: value.transcriptId,
-              durationSeconds: value.durationSeconds,
-              returnedSegments: value.segments.length,
-              nextCursor: value.nextCursor,
-              inlineComplete: value.inlineComplete,
-            },
-            completeness: { inlineComplete: value.inlineComplete, nextCursor: value.nextCursor },
-          }),
+          presentationMeta: readPresentationMeta,
         },
         timeoutMs: config.timeoutMs,
         isConcurrencySafe: () => true,
@@ -825,17 +481,7 @@ export function registerYoutubeTools(ctx, config, client, transcriptProgress) {
         output: {
           schema: TRANSCRIPT_SEARCH_OUTPUT_SCHEMA,
           render: (_args, value) => [{ type: 'text', text: formatTranscriptSearchOutput(value) }],
-          presentationMeta: (args, value) => ({
-            kind: 'youtube-card',
-            version: 1,
-            operation: 'transcript-search',
-            video: { videoId: value.videoId },
-            request: { transcriptId: args.transcriptId, query: args.query },
-            result: {
-              transcriptId: value.transcriptId,
-              matchCount: value.matches.length,
-            },
-          }),
+          presentationMeta: searchPresentationMeta,
         },
         timeoutMs: config.timeoutMs,
         isConcurrencySafe: () => true,

@@ -1,0 +1,34 @@
+export function isRecord(value) {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+export function nonEmptyString(value, name) {
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    throw new Error(`Gemini returned an invalid ${name}`)
+  }
+  return value.trim()
+}
+
+export function stringList(value, name, maxItems = 100, maxItemChars = 2_000) {
+  if (!Array.isArray(value) || value.some((item) => typeof item !== 'string')) {
+    throw new Error(`Gemini returned an invalid ${name}`)
+  }
+  const normalized = [...new Set(value.map((item) => item.trim()).filter(Boolean))]
+  if (normalized.length > maxItems || normalized.some((item) => item.length > maxItemChars)) {
+    throw new Error(`Gemini returned an oversized ${name}`)
+  }
+  return normalized
+}
+
+export function boundedText(value, maxChars) {
+  if (value.length <= maxChars) return { text: value, truncated: false }
+  const prefix = value.slice(0, maxChars).trimEnd()
+  const lastSpace = prefix.lastIndexOf(' ')
+  return {
+    text: (lastSpace >= Math.floor(maxChars * 0.75)
+      ? prefix.slice(0, lastSpace)
+      : prefix
+    ).trimEnd(),
+    truncated: true,
+  }
+}

@@ -1,0 +1,205 @@
+const PROVIDER_ATTEMPT_OUTPUT_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    index: { type: 'integer', required: true },
+    operation: { type: 'string', required: true },
+    kind: { type: 'string', required: true },
+    estimatedInputTokens: { type: 'integer', required: true },
+  },
+}
+
+const BUDGET_OUTPUT_PROPERTIES = {
+  providerCalls: { type: 'integer' },
+  providerCallLimit: { type: 'integer' },
+  estimatedInputTokens: { type: 'integer' },
+  estimatedInputTokenLimit: { type: 'integer' },
+  estimatedInputCostUsd: { type: 'number' },
+  estimatedInputCostPerMillionTokensUsd: { type: 'number' },
+  estimatedInputCostLimitUsd: { type: 'number' },
+  attempts: {
+    type: 'array',
+    items: PROVIDER_ATTEMPT_OUTPUT_SCHEMA,
+  },
+}
+
+export const WATCH_OUTPUT_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    videoId: { type: 'string', required: true },
+    durationSeconds: { type: 'integer', required: true },
+    timestampVerified: { type: 'boolean', required: true },
+    answer: { type: 'string', required: true },
+    evidence: {
+      type: 'array',
+      required: true,
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          startSeconds: { type: 'integer' },
+          timestamp: { type: 'string', required: true },
+          endSeconds: { type: 'integer' },
+          endTimestamp: { type: 'string' },
+          description: { type: 'string', required: true },
+          modality: {
+            type: 'string',
+            required: true,
+            enum: ['visual', 'spoken', 'mixed'],
+          },
+          basis: { type: 'string', enum: ['observation', 'inference'] },
+        },
+      },
+    },
+    caveats: {
+      type: 'array',
+      required: true,
+      items: { type: 'string' },
+    },
+    processing: {
+      type: 'object',
+      required: true,
+      additionalProperties: true,
+      properties: {
+        strategy: {
+          type: 'string',
+          required: true,
+          enum: ['direct', 'direct-default', 'direct-low', 'direct-agentic', 'chunked'],
+        },
+        intent: { type: 'string', enum: ['targeted', 'global', 'exhaustive'] },
+        chunksCompleted: { type: 'integer' },
+        chunksTotal: { type: 'integer' },
+        ...BUDGET_OUTPUT_PROPERTIES,
+      },
+    },
+  },
+}
+
+const TRANSCRIPT_SEGMENT_OUTPUT_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    startSeconds: { type: 'integer', required: true },
+    timestamp: { type: 'string', required: true },
+    text: { type: 'string', required: true },
+    speaker: { type: 'string' },
+  },
+}
+
+export const TRANSCRIPT_OUTPUT_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    videoId: { type: 'string', required: true },
+    transcriptId: { type: 'string', required: true },
+    complete: { type: 'boolean', required: true },
+    totalSegments: { type: 'integer', required: true },
+    inlineComplete: { type: 'boolean', required: true },
+    nextCursor: { type: 'integer' },
+    durationSeconds: { type: 'integer' },
+    timestampVerified: { type: 'boolean', required: true },
+    caveats: {
+      type: 'array',
+      required: true,
+      items: { type: 'string' },
+    },
+    language: { type: 'string', required: true },
+    speakers: {
+      type: 'array',
+      required: true,
+      items: { type: 'string' },
+    },
+    segments: {
+      type: 'array',
+      required: true,
+      items: TRANSCRIPT_SEGMENT_OUTPUT_SCHEMA,
+    },
+    processing: {
+      type: 'object',
+      required: true,
+      additionalProperties: false,
+      properties: {
+        strategy: { type: 'string', required: true, enum: ['direct', 'chunked'] },
+        source: {
+          type: 'string',
+          required: true,
+          enum: ['generated', 'archive', 'shared-in-flight'],
+        },
+        chunksCompleted: { type: 'integer', required: true },
+        chunksTotal: { type: 'integer', required: true },
+        collectedSegments: { type: 'integer', required: true },
+        ...BUDGET_OUTPUT_PROPERTIES,
+        intervals: {
+          type: 'array',
+          required: true,
+          items: {
+            type: 'object',
+            additionalProperties: false,
+            properties: {
+              id: { type: 'string', required: true },
+              index: { type: 'integer', required: true },
+              startSeconds: { type: 'integer', required: true },
+              endSeconds: { type: 'integer', required: true },
+              status: {
+                type: 'string',
+                required: true,
+                enum: [
+                  'pending',
+                  'transcribing',
+                  'fallback',
+                  'neutral',
+                  'splitting',
+                  'complete',
+                  'failed',
+                ],
+              },
+              attempt: { type: 'integer', required: true },
+              segmentCount: { type: 'integer', required: true },
+            },
+          },
+        },
+      },
+    },
+    truncated: { type: 'boolean', required: true },
+  },
+}
+
+export const TRANSCRIPT_READ_OUTPUT_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    transcriptId: { type: 'string', required: true },
+    videoId: { type: 'string', required: true },
+    durationSeconds: { type: 'integer', required: true },
+    complete: { type: 'boolean', required: true },
+    inlineComplete: { type: 'boolean', required: true },
+    nextCursor: { type: 'integer' },
+    pageOversize: { type: 'boolean' },
+    segments: {
+      type: 'array',
+      required: true,
+      items: TRANSCRIPT_SEGMENT_OUTPUT_SCHEMA,
+    },
+  },
+}
+
+export const TRANSCRIPT_SEARCH_OUTPUT_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    transcriptId: { type: 'string', required: true },
+    videoId: { type: 'string', required: true },
+    matches: {
+      type: 'array',
+      required: true,
+      items: {
+        ...TRANSCRIPT_SEGMENT_OUTPUT_SCHEMA,
+        properties: {
+          ...TRANSCRIPT_SEGMENT_OUTPUT_SCHEMA.properties,
+          score: { type: 'number', required: true },
+        },
+      },
+    },
+  },
+}
