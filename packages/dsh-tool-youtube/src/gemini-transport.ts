@@ -1,12 +1,70 @@
+import type { GenerateContentParameters, Interactions } from '@google/genai'
+import type { ConcurrencyGate } from './concurrency.js'
+
+type SdkInteractionRequest = Interactions.CreateModelInteractionParamsNonStreaming
+type SdkContent = Extract<SdkInteractionRequest['input'], unknown[]>[number]
+type SdkVideo = Extract<SdkContent, { type: 'video' }>
+
+// Preserve the existing operator-gated agentic mode. SDK 2.21.0 only declares
+// static video processing; this narrow extension does not establish API support.
+type YoutubeVideoContent = Omit<SdkVideo, 'processing'> & {
+  processing?: SdkVideo['processing'] | { type: 'agentic' }
+}
+export type InteractionRequest = Omit<SdkInteractionRequest, 'input'> & {
+  input: string | (Exclude<SdkContent, { type: 'video' }> | YoutubeVideoContent)[]
+  stream?: false
+}
+export interface ProviderRequestOptions {
+  signal?: AbortSignal
+  timeout: number
+  maxRetries: number
+}
+// The SDK overloads include streaming; this adapter exposes only the non-streaming surface used here.
+export interface GeminiClient {
+  interactions: {
+    create(request: InteractionRequest, options: ProviderRequestOptions): Promise<unknown>
+    delete(
+      id: string,
+      params: {},
+      options: Omit<ProviderRequestOptions, 'signal'>,
+    ): Promise<unknown>
+  }
+  models: { generateContent(request: GenerateContentParameters): Promise<unknown> }
+}
+export interface ProviderUsage {
+  operation: string
+  inputTokens: number | undefined
+  cachedTokens: number | undefined
+  outputTokens: number | undefined
+}
+export interface GeminiTransportOptions {
+  resolveApiKey: () => unknown | Promise<unknown>
+  clientFactory: (apiKey: string) => GeminiClient | Promise<GeminiClient>
+  timeoutMs: number
+  providerRequestRetries: number
+  reportUsage?: ((usage: ProviderUsage) => void) | undefined
+  reportCleanupFailure?: ((operation: string, status: number | undefined) => void) | undefined
+}
+export interface RequestEstimate {
+  mediaSeconds?: number
+  kind?: string
+}
+export interface RequestBudget {
+  consume(
+    input: { mediaSeconds: number; textChars: number },
+    context: { operation: string; kind: string },
+  ): unknown
+}
+
 import { isRecord } from './response-values.js'
 import { isRetryableProviderFailure } from './budget.js'
 
-function optionalNonNegativeInteger(value) {
-  return Number.isSafeInteger(value) && value >= 0 ? value : undefined
+function optionalNonNegativeInteger(value: unknown) {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : undefined
 }
 
-function interactionUsage(operation, interaction) {
-  const usage = interaction?.usage
+function interactionUsage(operation: string, interaction: unknown) {
+  const usage = isRecord(interaction) ? interaction.usage : undefined
   if (!isRecord(usage)) return undefined
   return {
     operation,
@@ -16,8 +74,8 @@ function interactionUsage(operation, interaction) {
   }
 }
 
-function generateContentUsage(operation, response) {
-  const usage = response?.usageMetadata
+function generateContentUsage(operation: string, response: unknown) {
+  const usage = isRecord(response) ? response.usageMetadata : undefined
   if (!isRecord(usage)) return undefined
   return {
     operation,
@@ -27,13 +85,14 @@ function generateContentUsage(operation, response) {
   }
 }
 
-export function statusOf(error) {
-  const status = error?.status ?? error?.statusCode
-  return Number.isInteger(status) ? status : undefined
+export function statusOf(error: unknown) {
+  const status = isRecord(error) ? (error.status ?? error.statusCode) : undefined
+  return typeof status === 'number' && Number.isInteger(status) ? status : undefined
 }
 
-function providerMessages(error) {
-  const payloads = [error?.error]
+function providerMessages(error: unknown) {
+  if (!isRecord(error)) return []
+  const payloads: unknown[] = [error.error]
   if (typeof error?.body === 'string' && error.body.length <= 20_000) {
     try {
       payloads.push(JSON.parse(error.body))
@@ -59,7 +118,7 @@ function providerMessages(error) {
   ]
 }
 
-function providerErrorReason(error) {
+function providerErrorReason(error: unknown) {
   const text = providerMessages(error).join(' ').toLocaleLowerCase('en-US')
   if (
     /(?:\b(?:blocked|blocklist|copyright|filter|recitation|safety|policy|disallowed)\b|blocked_reason|prohibited_content|safety_blocked)/u.test(
@@ -86,8 +145,11 @@ function providerErrorReason(error) {
   return undefined
 }
 
-export function providerError(error, operation, signal) {
-  if (signal?.aborted || error?.name === 'AbortError' || error?.name === 'APIUserAbortError') {
+export function providerError(error: unknown, operation: string, signal?: AbortSignal) {
+  if (
+    signal?.aborted ||
+    (isRecord(error) && (error.name === 'AbortError' || error.name === 'APIUserAbortError'))
+  ) {
     return new Error(`YouTube ${operation} was aborted`)
   }
   const status = statusOf(error)
@@ -129,10 +191,14 @@ export function providerError(error, operation, signal) {
   return sanitized
 }
 
-function awaitWithSignal(promise, signal, operation) {
+function awaitWithSignal<T>(
+  promise: Promise<T>,
+  signal: AbortSignal | undefined,
+  operation: string,
+): Promise<T> {
   if (signal === undefined) return promise
   if (signal.aborted) return Promise.reject(providerError(undefined, operation, signal))
-  return new Promise((resolve, reject) => {
+  return new Promise<T>((resolve, reject) => {
     const onAbort = () => reject(providerError(undefined, operation, signal))
     signal.addEventListener('abort', onAbort, { once: true })
     promise.then(
@@ -148,36 +214,46 @@ function awaitWithSignal(promise, signal, operation) {
   })
 }
 
-function requestTextChars(request) {
+function requestTextChars(request: unknown) {
+  if (!isRecord(request)) return 0
   let total = typeof request.system_instruction === 'string' ? request.system_instruction.length : 0
-  if (typeof request.config?.systemInstruction === 'string') {
+  if (isRecord(request.config) && typeof request.config.systemInstruction === 'string') {
     total += request.config.systemInstruction.length
   }
   if (Array.isArray(request.input)) {
     for (const item of request.input) {
-      if (item?.type === 'text' && typeof item.text === 'string') total += item.text.length
+      if (isRecord(item) && item.type === 'text' && typeof item.text === 'string')
+        total += item.text.length
     }
   }
   if (Array.isArray(request.contents)) {
     for (const content of request.contents) {
-      for (const part of content?.parts ?? []) {
-        if (typeof part?.text === 'string') total += part.text.length
+      if (!isRecord(content) || !Array.isArray(content.parts)) continue
+      for (const part of content.parts) {
+        if (isRecord(part) && typeof part.text === 'string') total += part.text.length
       }
     }
   }
   return total
 }
 
-function retryDelayMs(error, retry) {
-  const raw = error?.headers?.get?.('retry-after') ?? error?.headers?.['retry-after']
+export function retryDelayMs(error: unknown, retry: number) {
+  const headers = isRecord(error) ? error.headers : undefined
+  const raw =
+    headers instanceof Headers
+      ? (headers.get('retry-after') ?? undefined)
+      : isRecord(headers)
+        ? ((typeof headers.get === 'function' ? headers.get('retry-after') : undefined) ??
+          headers['retry-after'])
+        : undefined
   const seconds = Number(raw)
   if (Number.isFinite(seconds) && seconds >= 0) return Math.min(5_000, Math.ceil(seconds * 1_000))
   return Math.min(5_000, 250 * 2 ** retry)
 }
 
-function waitForProviderRetry(error, retry, signal) {
+function waitForProviderRetry(error: unknown, retry: number, signal?: AbortSignal) {
   const delay = retryDelayMs(error, retry)
-  return new Promise((resolve, reject) => {
+  return new Promise<void>((resolve, reject) => {
     if (signal?.aborted) {
       const aborted = new Error('YouTube provider retry was aborted')
       aborted.name = 'AbortError'
@@ -199,13 +275,24 @@ function waitForProviderRetry(error, retry, signal) {
   })
 }
 
-export async function createGeminiClient(apiKey) {
+export async function createGeminiClient(apiKey: string): Promise<GeminiClient> {
   const { GoogleGenAI } = await import('@google/genai')
-  return new GoogleGenAI({ apiKey })
+  const sdk = new GoogleGenAI({ apiKey })
+  return {
+    interactions: {
+      // The only assertion bridges the documented agentic-mode SDK typing gap.
+      // All other request fields retain the SDK's non-streaming request types.
+      create: (request, options) =>
+        sdk.interactions.create(request as SdkInteractionRequest, options),
+      delete: (id, params, options) => sdk.interactions.delete(id, params, options),
+    },
+    models: { generateContent: (request) => sdk.models.generateContent(request) },
+  }
 }
 
-export class GeminiTransport {
-  async apiClient(signal, operation) {
+export abstract class GeminiTransport {
+  abstract options: GeminiTransportOptions
+  async apiClient(signal: AbortSignal | undefined, operation: string): Promise<GeminiClient> {
     if (signal?.aborted) throw providerError(undefined, operation, signal)
     let apiKey
     try {
@@ -227,7 +314,14 @@ export class GeminiTransport {
     return this.options.clientFactory(apiKey)
   }
 
-  async interactionWithClient(client, request, signal, operation, budget, estimate = {}) {
+  async interactionWithClient(
+    client: GeminiClient,
+    request: InteractionRequest,
+    signal: AbortSignal | undefined,
+    operation: string,
+    budget: RequestBudget,
+    estimate: RequestEstimate = {},
+  ) {
     if (signal?.aborted) throw providerError(undefined, operation, signal)
     for (let retry = 0; ; retry += 1) {
       budget.consume(
@@ -242,7 +336,7 @@ export class GeminiTransport {
       )
       try {
         const interaction = await client.interactions.create(request, {
-          signal,
+          ...(signal === undefined ? {} : { signal }),
           timeout: this.options.timeoutMs,
           maxRetries: 0,
         })
@@ -271,7 +365,7 @@ export class GeminiTransport {
     }
   }
 
-  async deleteInteraction(client, interactionId, operation) {
+  async deleteInteraction(client: GeminiClient, interactionId: unknown, operation: string) {
     if (typeof interactionId !== 'string' || interactionId.length === 0) return
     try {
       await client.interactions.delete(
@@ -291,20 +385,38 @@ export class GeminiTransport {
     }
   }
 
-  async cleanupInteractions(client, interactionIds, operation, runProvider) {
-    for (const interactionId of interactionIds.toReversed()) {
+  async cleanupInteractions(
+    client: GeminiClient,
+    interactionIds: readonly string[],
+    operation: string,
+    runProvider?: ConcurrencyGate,
+  ) {
+    for (const interactionId of [...interactionIds].reverse()) {
       const cleanup = () => this.deleteInteraction(client, interactionId, operation)
       if (runProvider === undefined) await cleanup()
       else await runProvider(cleanup)
     }
   }
 
-  async interaction(request, signal, operation, budget, estimate) {
+  async interaction(
+    request: InteractionRequest,
+    signal: AbortSignal | undefined,
+    operation: string,
+    budget: RequestBudget,
+    estimate?: RequestEstimate,
+  ) {
     const client = await this.apiClient(signal, operation)
     return this.interactionWithClient(client, request, signal, operation, budget, estimate)
   }
 
-  async generateContentWithClient(client, request, signal, operation, budget, estimate = {}) {
+  async generateContentWithClient(
+    client: GeminiClient,
+    request: GenerateContentParameters,
+    signal: AbortSignal | undefined,
+    operation: string,
+    budget: RequestBudget,
+    estimate: RequestEstimate = {},
+  ) {
     if (signal?.aborted) throw providerError(undefined, operation, signal)
     for (let retry = 0; ; retry += 1) {
       budget.consume(
@@ -322,7 +434,7 @@ export class GeminiTransport {
           ...request,
           config: {
             ...request.config,
-            abortSignal: signal,
+            ...(signal === undefined ? {} : { abortSignal: signal }),
             httpOptions: {
               timeout: this.options.timeoutMs,
               retryOptions: { attempts: 1 },

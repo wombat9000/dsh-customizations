@@ -1,0 +1,9 @@
+{
+  "extends": "../../tsconfig.client.json",
+  "include": [
+    "client/**/*.ts",
+    "client/**/*.tsx",
+    "test/client-types/**/*.ts",
+    "test/client.browser.test.tsx"
+  ]
+}

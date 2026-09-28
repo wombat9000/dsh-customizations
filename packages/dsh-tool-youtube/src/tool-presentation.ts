@@ -1,13 +1,22 @@
+import type {
+  WatchOutput,
+  TranscriptOutput,
+  TranscriptReadOutput,
+  TranscriptSearchOutput,
+} from './tool-schemas.js'
 import { secondsToTimestamp } from './url.js'
 
-export function formatWatchOutput(value) {
+export function formatWatchOutput(value: WatchOutput) {
   const sections = [value.answer]
   if (value.evidence.length > 0) {
     sections.push(
       [
         'Evidence:',
         ...value.evidence.map((item) => {
-          const basis = ['observation', 'inference'].includes(item.basis) ? item.basis : 'unknown'
+          const basis =
+            item.basis !== undefined && ['observation', 'inference'].includes(item.basis)
+              ? item.basis
+              : 'unknown'
           return `- [${item.timestamp}] (${item.modality}; basis: ${basis}) ${item.description}`
         }),
       ].join('\n'),
@@ -19,7 +28,7 @@ export function formatWatchOutput(value) {
   return sections.join('\n\n')
 }
 
-export function formatTranscriptOutput(value) {
+export function formatTranscriptOutput(value: TranscriptOutput) {
   const metadata = [`Language: ${value.language}`]
   if (value.transcriptId !== undefined)
     metadata.push(`Transcript archive ID: ${value.transcriptId}`)
@@ -53,7 +62,7 @@ export function formatTranscriptOutput(value) {
   return output
 }
 
-export function formatTranscriptReadOutput(value) {
+export function formatTranscriptReadOutput(value: TranscriptReadOutput) {
   const lines = value.segments.map((segment) => {
     const speaker = segment.speaker === undefined ? '' : ` ${segment.speaker}:`
     return `[${segment.timestamp}]${speaker} ${segment.text}`
@@ -65,7 +74,7 @@ export function formatTranscriptReadOutput(value) {
   return lines.join('\n')
 }
 
-export function formatTranscriptSearchOutput(value) {
+export function formatTranscriptSearchOutput(value: TranscriptSearchOutput) {
   if (value.matches.length === 0) return 'No matching archived transcript segments.'
   return value.matches
     .map((match) => {
@@ -76,13 +85,17 @@ export function formatTranscriptSearchOutput(value) {
 }
 
 // Pick optional fields explicitly; never serialize an absent value as undefined.
-function optionalFields(value, names) {
+function optionalFields<T extends object, K extends keyof T>(
+  value: T,
+  names: K[],
+): Partial<Pick<T, K>> {
+  // Every emitted key comes from names and retains its corresponding T value.
   return Object.fromEntries(
     names.filter((name) => value[name] !== undefined).map((name) => [name, value[name]]),
-  )
+  ) as Partial<Pick<T, K>>
 }
 
-export function watchPresentationMeta(_args, value) {
+export function watchPresentationMeta(_args: unknown, value: WatchOutput) {
   return {
     kind: 'youtube-card',
     version: 1,
@@ -98,11 +111,15 @@ export function watchPresentationMeta(_args, value) {
   }
 }
 
-export function transcriptPresentationMeta(config, _args, value) {
-  const chunked = value.durationSeconds > config.directTranscriptMaxSeconds
+export function transcriptPresentationMeta(
+  config: { directTranscriptMaxSeconds: number; maximumTranscriptCoreSeconds: number },
+  _args: unknown,
+  value: TranscriptOutput,
+) {
+  const chunked = (value.durationSeconds ?? NaN) > config.directTranscriptMaxSeconds
   const totalChunks =
     value.processing?.chunksTotal ??
-    (chunked ? Math.ceil(value.durationSeconds / config.maximumTranscriptCoreSeconds) : 1)
+    (chunked ? Math.ceil((value.durationSeconds ?? NaN) / config.maximumTranscriptCoreSeconds) : 1)
   return {
     phase: 'complete',
     strategy: value.processing?.strategy ?? (chunked ? 'chunked' : 'direct'),
@@ -127,7 +144,10 @@ export function transcriptPresentationMeta(config, _args, value) {
   }
 }
 
-export function readPresentationMeta(args, value) {
+export function readPresentationMeta(
+  args: { transcriptId: string; cursor?: number; startSeconds?: number; endSeconds?: number },
+  value: TranscriptReadOutput,
+) {
   return {
     kind: 'youtube-card',
     version: 1,
@@ -151,7 +171,10 @@ export function readPresentationMeta(args, value) {
   }
 }
 
-export function searchPresentationMeta(args, value) {
+export function searchPresentationMeta(
+  args: { transcriptId: string; query: string },
+  value: TranscriptSearchOutput,
+) {
   return {
     kind: 'youtube-card',
     version: 1,

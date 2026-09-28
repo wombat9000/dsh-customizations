@@ -16,6 +16,8 @@ artifacts/
 /packages/dsh-github/client.js
 /packages/dsh-projects/client.js
 /packages/dsh-projects/dist/
+/packages/dsh-tool-youtube/client.js
+/packages/dsh-tool-youtube/dist/
 /packages/dsh-google-drive/test/fixtures/sheets-preview.json
 
 # Preserve exact patch payloads, upstream legal text, and visual baselines.

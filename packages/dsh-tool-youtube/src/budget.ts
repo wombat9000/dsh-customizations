@@ -1,3 +1,61 @@
+export interface RequestEstimate {
+  mediaSeconds?: number
+  textChars?: number
+}
+export interface TokenEstimateOptions {
+  videoTokensPerSecond?: number
+  requestOverheadTokens?: number
+}
+export interface BudgetOptions extends TokenEstimateOptions {
+  estimatedInputCostPerMillionTokensUsd: number
+  maxEstimatedCostUsd: number
+  maxProviderCalls: number
+  maxEstimatedInputTokens: number
+}
+export interface BudgetContext {
+  operation?: string
+  kind?: string
+}
+export type BudgetAttempt = {
+  index: number
+  operation: string
+  kind: string
+  estimatedInputTokens: number
+}
+export type BudgetSnapshot = {
+  providerCalls: number
+  providerCallLimit: number
+  estimatedInputTokens: number
+  estimatedInputTokenLimit: number
+  estimatedInputCostUsd?: number
+  estimatedInputCostPerMillionTokensUsd?: number
+  estimatedInputCostLimitUsd?: number
+  attempts: BudgetAttempt[]
+}
+export interface BudgetProjection {
+  additionalCalls: number
+  additionalTokens: number
+  projectedCalls: number
+  projectedTokens: number
+  projectedCostUsd: number
+}
+export interface YoutubeOperationBudget {
+  snapshot(): BudgetSnapshot
+  estimate(request: RequestEstimate): number
+  assertCanFit(requests: RequestEstimate[], context?: BudgetContext): BudgetProjection
+  consume(request: RequestEstimate, context?: BudgetContext): BudgetAttempt
+}
+function errorRecord(
+  value: unknown,
+): { status?: unknown; statusCode?: unknown; name?: unknown } | undefined {
+  if ((typeof value !== 'object' || value === null) && typeof value !== 'function') return undefined
+  return {
+    ...('status' in value ? { status: value.status } : {}),
+    ...('statusCode' in value ? { statusCode: value.statusCode } : {}),
+    ...('name' in value ? { name: value.name } : {}),
+  }
+}
+
 export const DEFAULT_MAX_VIDEO_DURATION_SECONDS = 14_400
 export const DEFAULT_MAX_TRANSCRIPT_CHUNKS = 16
 export const DEFAULT_MAX_PROVIDER_CALLS = 64
@@ -11,7 +69,9 @@ export const DEFAULT_REQUEST_OVERHEAD_TOKENS = 2_000
 const RETRYABLE_PROVIDER_STATUSES = new Set([408, 409, 425, 429])
 
 export class YoutubeOperationLimitError extends Error {
-  constructor(code, message, details = {}) {
+  readonly code: string
+  readonly details: Record<string, unknown>
+  constructor(code: string, message: string, details: Record<string, unknown> = {}) {
     super(message)
     this.name = 'YoutubeOperationLimitError'
     this.code = code
@@ -19,23 +79,31 @@ export class YoutubeOperationLimitError extends Error {
   }
 }
 
-export function providerStatus(error) {
-  const status = error?.status ?? error?.statusCode
-  return Number.isInteger(status) ? status : undefined
+export function providerStatus(error: unknown): number | undefined {
+  const record = errorRecord(error)
+  const status = record?.status ?? record?.statusCode
+  return typeof status === 'number' && Number.isInteger(status) ? status : undefined
 }
 
-export function isRetryableProviderFailure(error, signal) {
-  if (signal?.aborted || error?.name === 'AbortError' || error?.name === 'APIUserAbortError') {
+export function isRetryableProviderFailure(error: unknown, signal?: AbortSignal): boolean {
+  if (
+    signal?.aborted ||
+    errorRecord(error)?.name === 'AbortError' ||
+    errorRecord(error)?.name === 'APIUserAbortError'
+  ) {
     return false
   }
   const status = providerStatus(error)
   return (
-    RETRYABLE_PROVIDER_STATUSES.has(status) ||
+    (status !== undefined && RETRYABLE_PROVIDER_STATUSES.has(status)) ||
     (status !== undefined && status >= 500 && status <= 599)
   )
 }
 
-export function estimateRequestInputTokens(input, options = {}) {
+export function estimateRequestInputTokens(
+  input: RequestEstimate,
+  options: TokenEstimateOptions = {},
+): number {
   const mediaSeconds = input.mediaSeconds ?? 0
   const textChars = input.textChars ?? 0
   if (!Number.isSafeInteger(mediaSeconds) || mediaSeconds < 0) {
@@ -49,19 +117,23 @@ export function estimateRequestInputTokens(input, options = {}) {
   return Math.ceil(mediaSeconds * videoTokensPerSecond + textChars / 3 + requestOverheadTokens)
 }
 
-function roundedUsd(value) {
+function roundedUsd(value: number): number {
   return Math.round(value * 1_000_000) / 1_000_000
 }
 
-function safeDetails(options, extra = {}) {
+function safeDetails(options: BudgetContext, extra: Record<string, unknown> = {}) {
   return {
     operation: options.operation,
     ...extra,
   }
 }
 
-export function assertVideoDuration(durationSeconds, options, operation) {
-  if (!Number.isSafeInteger(durationSeconds)) {
+export function assertVideoDuration(
+  durationSeconds: unknown,
+  options: { maxVideoDurationSeconds: number },
+  operation: string,
+): asserts durationSeconds is number {
+  if (typeof durationSeconds !== 'number' || !Number.isSafeInteger(durationSeconds)) {
     throw new YoutubeOperationLimitError(
       'VIDEO_DURATION_UNKNOWN',
       'YouTube video duration could not be determined safely',
@@ -84,7 +156,11 @@ export function assertVideoDuration(durationSeconds, options, operation) {
   }
 }
 
-export function assertTranscriptChunkCount(chunkCount, options, durationSeconds) {
+export function assertTranscriptChunkCount(
+  chunkCount: number,
+  options: { maxTranscriptChunks: number },
+  durationSeconds: number,
+): void {
   if (!Number.isSafeInteger(chunkCount) || chunkCount < 1) {
     throw new TypeError('YouTube transcript chunkCount must be a positive integer')
   }
@@ -97,17 +173,20 @@ export function assertTranscriptChunkCount(chunkCount, options, durationSeconds)
   }
 }
 
-export function createYoutubeOperationBudget(options, onUpdate) {
+export function createYoutubeOperationBudget(
+  options: BudgetOptions,
+  onUpdate?: (snapshot: BudgetSnapshot) => void,
+): YoutubeOperationBudget {
   let providerCalls = 0
   let estimatedInputTokens = 0
-  const attempts = []
+  const attempts: BudgetAttempt[] = []
   const estimatedInputCostPerMillionTokensUsd = options.estimatedInputCostPerMillionTokensUsd
   const maxEstimatedCostUsd = options.maxEstimatedCostUsd
 
-  const estimateCost = (tokens) =>
+  const estimateCost = (tokens: number) =>
     roundedUsd((tokens * estimatedInputCostPerMillionTokensUsd) / 1_000_000)
 
-  const snapshot = () => ({
+  const snapshot = (): BudgetSnapshot => ({
     providerCalls,
     providerCallLimit: options.maxProviderCalls,
     estimatedInputTokens,
@@ -130,8 +209,11 @@ export function createYoutubeOperationBudget(options, onUpdate) {
     }
   }
 
-  const estimate = (request) => estimateRequestInputTokens(request, options)
-  const assertProjection = (requests, context = {}) => {
+  const estimate = (request: RequestEstimate) => estimateRequestInputTokens(request, options)
+  const assertProjection = (
+    requests: RequestEstimate[],
+    context: BudgetContext = {},
+  ): BudgetProjection => {
     const additionalCalls = requests.length
     const additionalTokens = requests.reduce((total, request) => total + estimate(request), 0)
     const projectedCalls = providerCalls + additionalCalls
@@ -184,14 +266,15 @@ export function createYoutubeOperationBudget(options, onUpdate) {
       const projection = assertProjection([request], context)
       providerCalls = projection.projectedCalls
       estimatedInputTokens = projection.projectedTokens
-      attempts.push({
+      const attempt = {
         index: providerCalls,
         operation: context.operation ?? 'youtube',
         kind: context.kind ?? 'provider-request',
         estimatedInputTokens: projection.additionalTokens,
-      })
+      }
+      attempts.push(attempt)
       notify()
-      return attempts.at(-1)
+      return attempt
     },
   }
 }

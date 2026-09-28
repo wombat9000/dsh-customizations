@@ -2,11 +2,16 @@ const YOUTUBE_HOSTS = new Set(['youtube.com', 'www.youtube.com', 'm.youtube.com'
 
 const VIDEO_ID = /^[A-Za-z0-9_-]{11}$/u
 
-function validVideoId(value) {
+function validVideoId(value: unknown): value is string {
   return typeof value === 'string' && VIDEO_ID.test(value)
 }
 
-export function parseYoutubeUrl(value) {
+export interface YoutubeVideo {
+  videoId: string
+  url: string
+}
+
+export function parseYoutubeUrl(value: unknown): YoutubeVideo {
   if (typeof value !== 'string' || value.trim().length === 0) {
     throw new Error('url must be a non-empty YouTube URL')
   }
@@ -33,7 +38,7 @@ export function parseYoutubeUrl(value) {
       videoId = url.searchParams.get('v') ?? undefined
     } else {
       const parts = url.pathname.split('/').filter(Boolean)
-      if (parts.length === 2 && ['shorts', 'live'].includes(parts[0])) {
+      if (parts.length === 2 && (parts[0] === 'shorts' || parts[0] === 'live')) {
         videoId = parts[1]
       }
     }
@@ -51,7 +56,7 @@ export function parseYoutubeUrl(value) {
   }
 }
 
-export function timestampToSeconds(value) {
+export function timestampToSeconds(value: unknown): number | undefined {
   if (typeof value !== 'string') return undefined
   const parts = value.trim().split(':')
   if (parts.length < 2 || parts.length > 3 || parts.some((part) => !/^\d+$/u.test(part))) {
@@ -63,12 +68,13 @@ export function timestampToSeconds(value) {
   const seconds = numbers.at(-1)
   const minutes = numbers.at(-2)
   const hours = numbers.length === 3 ? numbers[0] : 0
+  if (seconds === undefined || minutes === undefined || hours === undefined) return undefined
   if (seconds > 59 || (numbers.length === 3 && minutes > 59)) return undefined
   const total = hours * 3600 + minutes * 60 + seconds
   return Number.isSafeInteger(total) ? total : undefined
 }
 
-export function secondsToTimestamp(value) {
+export function secondsToTimestamp(value: number): string {
   if (!Number.isSafeInteger(value) || value < 0) {
     throw new Error('timestamp seconds must be a non-negative integer')
   }

@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { watchVideo, normalizeWatchResponse } from '../src/watch.js'
-import { GeminiTransport } from '../src/gemini-transport.js'
-import { GeminiYoutubeClient, fetchYoutubeDuration } from '../src/gemini.js'
-import { watchResponseSchema, validateWatchTimestamps } from '../src/watch-timestamps.js'
-import { normalizeWatchEvidence, parseYoutubeVideoMetadata } from '../src/adaptive-watch.js'
+import { watchVideo, normalizeWatchResponse } from '../dist/src/watch.js'
+import { GeminiTransport, retryDelayMs } from '../dist/src/gemini-transport.js'
+import { GeminiYoutubeClient, fetchYoutubeDuration } from '../dist/src/gemini.js'
+import { watchResponseSchema, validateWatchTimestamps } from '../dist/src/watch-timestamps.js'
+import { normalizeWatchEvidence, parseYoutubeVideoMetadata } from '../dist/src/adaptive-watch.js'
 import {
   watchPresentationMeta,
   transcriptPresentationMeta,
@@ -12,7 +12,19 @@ import {
   searchPresentationMeta,
   formatTranscriptOutput,
   formatWatchOutput,
-} from '../src/tool-presentation.js'
+} from '../dist/src/tool-presentation.js'
+
+test('absent Retry-After preserves exponential backoff for native and plain headers', () => {
+  for (const headers of [undefined, {}, new Headers(), { get: () => null }]) {
+    assert.equal(retryDelayMs({ headers }, 0), 250)
+    assert.equal(retryDelayMs({ headers }, 1), 500)
+  }
+  for (const headers of [{ 'retry-after': '2' }, new Headers({ 'retry-after': '2' })]) {
+    assert.equal(retryDelayMs({ headers }, 0), 2000)
+  }
+  assert.equal(retryDelayMs({ headers: new Headers({ 'retry-after': '0' }) }, 0), 0)
+  assert.equal(retryDelayMs({ headers: new Headers({ 'retry-after': '20' }) }, 0), 5000)
+})
 
 const url = 'https://www.youtube.com/watch?v=dQw4w9WgXcQ'
 const options = {

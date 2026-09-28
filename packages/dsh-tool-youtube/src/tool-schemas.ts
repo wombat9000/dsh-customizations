@@ -1,3 +1,5 @@
+import type { ValueSchemaSpec, ParameterSchemaSpec, InferValue } from '@deepseek-ai/dsh-tools'
+
 const PROVIDER_ATTEMPT_OUTPUT_SCHEMA = {
   type: 'object',
   additionalProperties: false,
@@ -7,7 +9,7 @@ const PROVIDER_ATTEMPT_OUTPUT_SCHEMA = {
     kind: { type: 'string', required: true },
     estimatedInputTokens: { type: 'integer', required: true },
   },
-}
+} as const satisfies ValueSchemaSpec
 
 const BUDGET_OUTPUT_PROPERTIES = {
   providerCalls: { type: 'integer' },
@@ -21,7 +23,7 @@ const BUDGET_OUTPUT_PROPERTIES = {
     type: 'array',
     items: PROVIDER_ATTEMPT_OUTPUT_SCHEMA,
   },
-}
+} as const satisfies ParameterSchemaSpec
 
 export const WATCH_OUTPUT_SCHEMA = {
   type: 'object',
@@ -74,7 +76,7 @@ export const WATCH_OUTPUT_SCHEMA = {
       },
     },
   },
-}
+} as const satisfies ValueSchemaSpec
 
 const TRANSCRIPT_SEGMENT_OUTPUT_SCHEMA = {
   type: 'object',
@@ -85,7 +87,7 @@ const TRANSCRIPT_SEGMENT_OUTPUT_SCHEMA = {
     text: { type: 'string', required: true },
     speaker: { type: 'string' },
   },
-}
+} as const satisfies ValueSchemaSpec
 
 export const TRANSCRIPT_OUTPUT_SCHEMA = {
   type: 'object',
@@ -163,7 +165,7 @@ export const TRANSCRIPT_OUTPUT_SCHEMA = {
     },
     truncated: { type: 'boolean', required: true },
   },
-}
+} as const satisfies ValueSchemaSpec
 
 export const TRANSCRIPT_READ_OUTPUT_SCHEMA = {
   type: 'object',
@@ -182,7 +184,7 @@ export const TRANSCRIPT_READ_OUTPUT_SCHEMA = {
       items: TRANSCRIPT_SEGMENT_OUTPUT_SCHEMA,
     },
   },
-}
+} as const satisfies ValueSchemaSpec
 
 export const TRANSCRIPT_SEARCH_OUTPUT_SCHEMA = {
   type: 'object',
@@ -202,4 +204,9 @@ export const TRANSCRIPT_SEARCH_OUTPUT_SCHEMA = {
       },
     },
   },
-}
+} as const satisfies ValueSchemaSpec
+
+export type WatchOutput = InferValue<typeof WATCH_OUTPUT_SCHEMA>
+export type TranscriptOutput = InferValue<typeof TRANSCRIPT_OUTPUT_SCHEMA>
+export type TranscriptReadOutput = InferValue<typeof TRANSCRIPT_READ_OUTPUT_SCHEMA>
+export type TranscriptSearchOutput = InferValue<typeof TRANSCRIPT_SEARCH_OUTPUT_SCHEMA>

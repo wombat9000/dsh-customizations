@@ -1,0 +1,5 @@
+export { CREDENTIAL_REF } from './constants.ts'
+export { apply, inject } from './registration.ts'
+export { apiKeyFailure, argsOf, outputFacts, youtubeCardModel } from './model.ts'
+export { GeminiSettingsSection } from './settings.tsx'
+export { YoutubeToolCard, YoutubeTranscriptToolView } from './tool-card.tsx'

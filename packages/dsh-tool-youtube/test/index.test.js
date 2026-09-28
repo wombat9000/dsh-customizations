@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { renderToolsSdk } from '@deepseek-ai/dsh-tools'
-import { YoutubeTranscriptArchive } from '../src/transcript-store.js'
+import { YoutubeTranscriptArchive } from '../dist/src/transcript-store.js'
 import {
   ArchivedYoutubeClient,
   DEFAULT_DIRECT_TRANSCRIPT_MAX_SECONDS,
@@ -32,7 +32,7 @@ import {
   secondsToTimestamp,
   timestampToSeconds,
   fetchYoutubeDuration,
-} from '../src/index.js'
+} from '../dist/src/index.js'
 
 const VIDEO_ID = 'dQw4w9WgXcQ'
 const WATCH_URL = `https://www.youtube.com/watch?v=${VIDEO_ID}`

@@ -1,9 +1,25 @@
 import { secondsToTimestamp } from './url.js'
+import { isRecord } from './response-values.js'
+
+export interface WatchTimestampContext {
+  strategy: string
+  chunkId?: string
+  startSeconds: number
+  endSeconds: number
+  attempts?: number
+}
+export interface TimestampEvidence extends Record<string, unknown> {
+  start_seconds: number
+  timestamp: string
+}
+export interface TimestampValidatedResponse extends Record<string, unknown> {
+  evidence: TimestampEvidence[]
+}
 
 // Provider timestamps always use the full video origin, including clipped requests.
 // The explicit origin prevents accepting an unlabeled 900 in clip [885, 1800]
 // and silently moving it to 1785. Bounds checks do not verify event timing.
-export function watchResponseSchema(startSeconds, endSeconds) {
+export function watchResponseSchema(startSeconds: number, endSeconds: number) {
   assertBounds(startSeconds, endSeconds)
   return {
     type: 'object',
@@ -31,14 +47,14 @@ export function watchResponseSchema(startSeconds, endSeconds) {
   }
 }
 
-function assertBounds(start, end) {
+function assertBounds(start: number, end: number) {
   if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 0 || end < start) {
     throw new TypeError('Watch timestamp contract requires ordered non-negative integer bounds')
   }
 }
 
 export function watchTimestampPrompt(
-  durationSeconds,
+  durationSeconds: number,
   startSeconds = 0,
   endSeconds = durationSeconds,
 ) {
@@ -47,7 +63,8 @@ export function watchTimestampPrompt(
 }
 
 export class WatchTimestampError extends Error {
-  constructor(context, seconds, reason) {
+  readonly code: string
+  constructor(context: WatchTimestampContext, seconds: unknown, reason: string) {
     const safeSeconds = Number.isSafeInteger(seconds) ? seconds : 'missing/invalid'
     super(
       `Watch timestamp contract failed: strategy=${context.strategy}; chunk=${context.chunkId ?? 'direct'}; clip=[${context.startSeconds},${context.endSeconds}]; seconds=${safeSeconds}; expected=full-video integer [${context.startSeconds},${context.endSeconds}]; attempts=${context.attempts ?? 1}; reason=${reason}. Event timing could not be grounded; rerunning unchanged output will not fix it.`,
@@ -57,34 +74,49 @@ export class WatchTimestampError extends Error {
   }
 }
 
-export function validateWatchTimestamps(value, context) {
+export function validateWatchTimestamps(
+  value: unknown,
+  context: WatchTimestampContext,
+): TimestampValidatedResponse {
   assertBounds(context.startSeconds, context.endSeconds)
-  if (value?.timebase !== 'full-video') {
+  if (!isRecord(value) || value.timebase !== 'full-video') {
     throw new WatchTimestampError(
       context,
-      value?.evidence?.[0]?.start_seconds,
+      isRecord(value) && Array.isArray(value.evidence) && isRecord(value.evidence[0])
+        ? value.evidence[0].start_seconds
+        : undefined,
       'missing or incompatible timebase',
     )
   }
   if (!Array.isArray(value.evidence))
     throw new WatchTimestampError(context, undefined, 'missing evidence array')
   const evidence = value.evidence.map((item) => {
-    const seconds = item?.start_seconds
+    const seconds = isRecord(item) ? item.start_seconds : undefined
     if (
+      typeof seconds !== 'number' ||
       !Number.isSafeInteger(seconds) ||
       seconds < context.startSeconds ||
       seconds > context.endSeconds
     ) {
       throw new WatchTimestampError(context, seconds, 'out of bounds')
     }
-    return { ...item, timestamp: secondsToTimestamp(seconds) }
+    return {
+      ...(isRecord(item) ? item : {}),
+      start_seconds: seconds,
+      timestamp: secondsToTimestamp(seconds),
+    }
   })
   return { ...value, evidence }
 }
 
 // The caller resubmits the media, never a text-only request that invents timing.
 // Transport, budget accounting, cancellation and provider error handling remain shared.
-export async function watchWithTimestampCorrection(request, decode, context, signal) {
+export async function watchWithTimestampCorrection<T>(
+  request: (attempt: number) => Promise<T>,
+  decode: (response: T) => unknown,
+  context: WatchTimestampContext,
+  signal?: AbortSignal,
+): Promise<TimestampValidatedResponse> {
   for (let attempt = 1; attempt <= 2; attempt += 1) {
     if (signal?.aborted) throw new Error('YouTube video analysis was aborted')
     const response = await request(attempt)
@@ -96,4 +128,5 @@ export async function watchWithTimestampCorrection(request, decode, context, sig
       if (!(error instanceof WatchTimestampError) || attempt === 2) throw error
     }
   }
+  throw new Error('Watch timestamp correction exhausted')
 }

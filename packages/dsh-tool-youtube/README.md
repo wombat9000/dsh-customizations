@@ -119,19 +119,26 @@ References: [Video understanding](https://ai.google.dev/gemini-api/docs/video-un
 
 ## Module boundaries
 
-- [Tool schemas](src/tool-schemas.js) and [presentation](src/tool-presentation.js) define DSH output and card contracts independently of host registration.
-- [Watch orchestration](src/watch.js) owns direct and chunked analysis. [Timestamp contracts](src/watch-timestamps.js) define bounded schemas, explicit origins, validation, and one media-grounded correction.
-- [Gemini transport](src/gemini-transport.js) shares provider retries, budget accounting, cancellation, error sanitization, usage reporting, and cleanup with the existing [transcript orchestration](src/gemini.js). Shared [concurrency helpers](src/concurrency.js) retain the original scheduling behavior.
+- [Tool schemas](src/tool-schemas.ts) and [presentation](src/tool-presentation.ts) define DSH output and card contracts independently of host registration.
+- [Watch orchestration](src/watch.ts) owns direct and chunked analysis. [Timestamp contracts](src/watch-timestamps.ts) define bounded schemas, explicit origins, validation, and one media-grounded correction.
+- [Gemini transport](src/gemini-transport.ts) shares provider retries, budget accounting, cancellation, error sanitization, usage reporting, and cleanup with [transcript orchestration](src/gemini.ts). Shared [concurrency helpers](src/concurrency.ts) retain the scheduling behavior.
+- The [client entrypoint](client/index.ts) registers the existing settings and tool cards. Client components use TypeScript and TSX.
 
-These bounded extractions retain the package's JavaScript conventions and existing public exports. They do not migrate the package to TypeScript or redesign transcript recovery.
+Host and client sources use strict TypeScript, including checked indexed access and exact optional properties. Runtime validation remains necessary for model responses, persisted records, and RPC data. TypeScript does not establish the accuracy of model-generated timestamps.
 
-## Test
+## Build and test
 
-Without installed dependencies, run the focused contract and mocked-transport regressions with `env -u NODE_PATH node --test packages/dsh-tool-youtube/test/reliability.test.js packages/dsh-tool-youtube/test/adaptive-watch.test.js`. These tests check metadata JSON round trips, not DSH's real output validator. The full suite still requires the pinned dependencies.
+After the repository's approved dependency setup, run these commands from the repository root. Builds use the existing pinned TypeScript and client bundler; no package-local compiler installation is needed.
 
-After the repository's approved dependency setup, run these commands from the repository root. The tests use mocked providers and temporary SQLite archives; they do not call Gemini or consume credits. `test:integration` checks package/recipe wiring and a dormant RPC handler, not a live DSH Loader or browser:
-
+    pnpm --filter @local/dsh-tool-youtube typecheck
+    pnpm --filter @local/dsh-tool-youtube build
     pnpm --filter @local/dsh-tool-youtube test
     pnpm --filter @local/dsh-tool-youtube test:integration
+
+The host build emits checked ESM modules into `dist/`. The client build emits the single lazy-loader [client bundle](client.js). Both generated outputs are tracked for DSH package loading. Edit TypeScript sources, rebuild, and include the generated changes; do not edit emitted JavaScript directly. Package tests check strict types and reproducible artifact freshness, so stale generated code fails instead of hiding a source regression.
+
+Behavior tests remain JavaScript and import the generated host modules. They use mocked providers and temporary SQLite archives; they do not call Gemini or consume credits. Metadata JSON round-trip tests are not a substitute for DSH's real output validator. `test:integration` checks package/recipe wiring and a dormant RPC handler, not a live DSH Loader or browser. The client source-component tests run through the repository browser harness:
+
+    pnpm run test:browser -- packages/dsh-tool-youtube/test/client.browser.test.tsx
 
 A live smoke test requires GEMINI_API_KEY and a short public video. Avoid asserting exact wording from live model responses.

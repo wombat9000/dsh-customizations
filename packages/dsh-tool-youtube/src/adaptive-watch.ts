@@ -1,3 +1,101 @@
+import type { YoutubeVideo } from './url.js'
+export type WatchIntent = 'global' | 'targeted' | 'exhaustive'
+export type WatchStrategy = 'direct-default' | 'direct-low' | 'direct-agentic' | 'chunked'
+export type LiveState = 'upcoming' | 'live' | 'ended-live' | 'unknown' | 'vod'
+export type WatchCoverageMode = 'full-timeline' | 'live-snapshot' | 'selective' | 'unknown'
+export interface WatchClassification {
+  intent: WatchIntent
+  source: 'deterministic' | 'fallback'
+  confidence: 'high' | 'medium' | 'low'
+  reasonCode: string
+}
+export interface WatchChunk {
+  id: string
+  index: number
+  coreStartSeconds: number
+  coreEndSeconds: number
+  clipStartSeconds: number
+  clipEndSeconds: number
+}
+export interface WatchInspection {
+  durationSeconds?: number
+  durationVerified?: boolean
+  liveState?: LiveState
+}
+export interface YoutubeVideoMetadata extends WatchInspection {
+  videoId: string
+  canonicalUrl: string
+  title?: string
+  channel?: string
+  thumbnailUrl?: string
+  durationVerified: boolean
+  durationSource: 'youtube-player'
+  liveState: LiveState
+  inspectedAt: number
+}
+export interface MetadataOptions {
+  maxHtmlChars?: number
+  maxObjectChars?: number
+  inspectedAt?: number
+  fetchImpl?: typeof fetch
+  signal?: AbortSignal
+}
+export interface WatchChunkOptions {
+  maximumCoreSeconds?: number | undefined
+  overlapSeconds?: number | undefined
+  maxChunks?: number | undefined
+}
+export interface AdaptiveWatchOptions extends WatchChunkOptions {
+  capabilities?: { agentic?: boolean; lowResolution?: boolean; clipping?: boolean }
+  allowUnknownDuration?: boolean
+  enableAgentic?: boolean
+  enableLowResolution?: boolean
+  enableChunking?: boolean
+  enableLiveSnapshots?: boolean
+  maxVideoDurationSeconds?: number
+  directMaxSeconds?: number
+  lowResolutionMaxSeconds?: number
+}
+export interface WatchPlan {
+  strategy: WatchStrategy
+  intent: WatchIntent
+  durationSeconds?: number
+  durationVerified: boolean
+  liveState: LiveState
+  coverageMode: WatchCoverageMode
+  chunks: WatchChunk[]
+}
+export interface WatchEvidence {
+  startSeconds: number
+  timestamp: string
+  endSeconds?: number
+  endTimestamp?: string
+  description: string
+  modality: 'visual' | 'spoken' | 'mixed'
+  basis?: 'observation' | 'inference'
+}
+export interface ChunkWatchEvidence extends WatchEvidence {
+  chunkId: string
+  evidenceIndex: number
+}
+export interface EvidenceDeduplicationOptions {
+  driftSeconds?: number
+  similarityThreshold?: number
+}
+export type WatchRange = {
+  startSeconds: number
+  endSeconds: number
+}
+export type WatchCoverage = {
+  mode: WatchCoverageMode
+  complete: boolean
+  totalSeconds: number
+  coveredSeconds?: number
+  ratio?: number
+  ranges: WatchRange[]
+  gaps: (WatchRange & { reason: string })[]
+}
+
 import { parseYoutubeUrl, secondsToTimestamp, timestampToSeconds } from './url.js'
 
 export const DEFAULT_MAX_YOUTUBE_HTML_CHARS = 5_000_000
@@ -19,7 +117,9 @@ export const ADAPTIVE_WATCH_ERROR_CODES = Object.freeze({
 })
 
 export class AdaptiveWatchError extends Error {
-  constructor(code, message, details = {}) {
+  readonly code: string
+  readonly details: Record<string, unknown>
+  constructor(code: string, message: string, details: Record<string, unknown> = {}) {
     super(message)
     this.name = 'AdaptiveWatchError'
     this.code = code
@@ -27,18 +127,18 @@ export class AdaptiveWatchError extends Error {
   }
 }
 
-function isRecord(value) {
+function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-function boundedString(value, maxChars) {
+function boundedString(value: unknown, maxChars: number): string | undefined {
   if (typeof value !== 'string') return undefined
   const normalized = value.trim()
   if (normalized.length === 0) return undefined
   return normalized.slice(0, maxChars)
 }
 
-function jsonObjectAfterMarker(html, marker, maximumChars) {
+function jsonObjectAfterMarker(html: string, marker: string, maximumChars: number): unknown {
   const markerIndex = html.indexOf(marker)
   if (markerIndex < 0) return undefined
   const start = html.indexOf('{', markerIndex + marker.length)
@@ -70,7 +170,10 @@ function jsonObjectAfterMarker(html, marker, maximumChars) {
   return undefined
 }
 
-export function extractYoutubePlayerResponse(html, options = {}) {
+export function extractYoutubePlayerResponse(
+  html: unknown,
+  options: MetadataOptions = {},
+): Record<string, unknown> {
   const maxHtmlChars = options.maxHtmlChars ?? DEFAULT_MAX_YOUTUBE_HTML_CHARS
   if (typeof html !== 'string' || html.length === 0 || html.length > maxHtmlChars) {
     throw new AdaptiveWatchError(
@@ -95,17 +198,25 @@ export function extractYoutubePlayerResponse(html, options = {}) {
   )
 }
 
-function thumbnailOf(videoDetails) {
-  const values = videoDetails?.thumbnail?.thumbnails
+function thumbnailOf(videoDetails: Record<string, unknown>): string | undefined {
+  const values = isRecord(videoDetails.thumbnail) ? videoDetails.thumbnail.thumbnails : undefined
   if (!Array.isArray(values)) return undefined
-  const urls = values.flatMap((item) => boundedString(item?.url, 2_000) ?? [])
+  const urls = values.flatMap(
+    (item) => boundedString(isRecord(item) ? item.url : undefined, 2_000) ?? [],
+  )
   return urls.at(-1)
 }
 
-function liveStateOf(response, durationSeconds) {
-  const details = response.videoDetails
-  const micro = response.microformat?.playerMicroformatRenderer
-  const live = micro?.liveBroadcastDetails
+function liveStateOf(
+  response: Record<string, unknown>,
+  durationSeconds: number | undefined,
+): LiveState {
+  const details = isRecord(response.videoDetails) ? response.videoDetails : undefined
+  const micro = isRecord(response.microformat)
+    ? response.microformat.playerMicroformatRenderer
+    : undefined
+  const live =
+    isRecord(micro) && isRecord(micro.liveBroadcastDetails) ? micro.liveBroadcastDetails : undefined
   if (details?.isUpcoming === true || live?.isUpcoming === true) return 'upcoming'
   if (live?.isLiveNow === true) return 'live'
   if (details?.isLiveContent === true) {
@@ -117,7 +228,11 @@ function liveStateOf(response, durationSeconds) {
   return durationSeconds === undefined ? 'unknown' : 'vod'
 }
 
-export function normalizeYoutubeVideoMetadata(response, video, options = {}) {
+export function normalizeYoutubeVideoMetadata(
+  response: unknown,
+  video: YoutubeVideo,
+  options: MetadataOptions = {},
+): YoutubeVideoMetadata {
   if (!isRecord(response) || !isRecord(response.videoDetails)) {
     throw new AdaptiveWatchError(
       ADAPTIVE_WATCH_ERROR_CODES.VIDEO_METADATA_INVALID,
@@ -135,16 +250,15 @@ export function normalizeYoutubeVideoMetadata(response, video, options = {}) {
   const durationSeconds =
     Number.isSafeInteger(rawDuration) && rawDuration > 0 ? rawDuration : undefined
   const liveState = liveStateOf(response, durationSeconds)
+  const title = boundedString(details.title, 200)
+  const channel = boundedString(details.author, 200)
+  const thumbnailUrl = thumbnailOf(details)
   return {
     videoId: video.videoId,
     canonicalUrl: video.url,
-    ...(boundedString(details.title, 200) === undefined
-      ? {}
-      : { title: boundedString(details.title, 200) }),
-    ...(boundedString(details.author, 200) === undefined
-      ? {}
-      : { channel: boundedString(details.author, 200) }),
-    ...(thumbnailOf(details) === undefined ? {} : { thumbnailUrl: thumbnailOf(details) }),
+    ...(title === undefined ? {} : { title }),
+    ...(channel === undefined ? {} : { channel }),
+    ...(thumbnailUrl === undefined ? {} : { thumbnailUrl }),
     ...(durationSeconds === undefined ? {} : { durationSeconds }),
     durationVerified: durationSeconds !== undefined,
     durationSource: 'youtube-player',
@@ -153,12 +267,19 @@ export function normalizeYoutubeVideoMetadata(response, video, options = {}) {
   }
 }
 
-export function parseYoutubeVideoMetadata(html, url, options = {}) {
+export function parseYoutubeVideoMetadata(
+  html: unknown,
+  url: unknown,
+  options: MetadataOptions = {},
+): YoutubeVideoMetadata {
   const video = parseYoutubeUrl(url)
   return normalizeYoutubeVideoMetadata(extractYoutubePlayerResponse(html, options), video, options)
 }
 
-export async function inspectYoutubeVideo(url, options = {}) {
+export async function inspectYoutubeVideo(
+  url: unknown,
+  options: MetadataOptions = {},
+): Promise<YoutubeVideoMetadata> {
   const video = parseYoutubeUrl(url)
   const fetchImpl = options.fetchImpl ?? globalThis.fetch
   if (typeof fetchImpl !== 'function') {
@@ -173,7 +294,7 @@ export async function inspectYoutubeVideo(url, options = {}) {
       'User-Agent': 'Mozilla/5.0 (compatible; DSH YouTube tool)',
       'Accept-Language': 'en-US,en;q=0.9',
     },
-    signal: options.signal,
+    ...(options.signal === undefined ? {} : { signal: options.signal }),
   })
   if (!response?.ok) {
     throw new AdaptiveWatchError(
@@ -213,7 +334,7 @@ const GLOBAL_PATTERNS = [
   /\b(?:summari[sz]e|summary|overview|main (?:idea|ideas|theme|themes)|what is (?:this|the) video about)\b/iu,
 ]
 
-export function classifyWatchQuestion(question) {
+export function classifyWatchQuestion(question: unknown): WatchClassification {
   if (typeof question !== 'string' || question.trim().length === 0) {
     throw new TypeError('YouTube watch question must be a non-empty string')
   }
@@ -240,7 +361,10 @@ export function classifyWatchQuestion(question) {
   return { intent: 'global', source: 'fallback', confidence: 'low', reasonCode: 'default-global' }
 }
 
-export function planBalancedWatchChunks(durationSeconds, options = {}) {
+export function planBalancedWatchChunks(
+  durationSeconds: number,
+  options: WatchChunkOptions = {},
+): WatchChunk[] {
   const maximumCoreSeconds = options.maximumCoreSeconds ?? DEFAULT_MAXIMUM_WATCH_CORE_SECONDS
   const overlapSeconds = options.overlapSeconds ?? DEFAULT_WATCH_CHUNK_OVERLAP_SECONDS
   const maxChunks = options.maxChunks ?? DEFAULT_MAX_WATCH_CHUNKS
@@ -278,7 +402,11 @@ export function planBalancedWatchChunks(durationSeconds, options = {}) {
   })
 }
 
-export function planAdaptiveWatch(inspection, classification, options = {}) {
+export function planAdaptiveWatch(
+  inspection: WatchInspection,
+  classification?: Pick<WatchClassification, 'intent'>,
+  options: AdaptiveWatchOptions = {},
+): WatchPlan {
   const capabilities = options.capabilities ?? {}
   const intent = classification?.intent ?? 'global'
   const durationSeconds = inspection?.durationSeconds
@@ -305,7 +433,11 @@ export function planAdaptiveWatch(inspection, classification, options = {}) {
       { liveState },
     )
   }
-  if (!Number.isSafeInteger(durationSeconds) || durationSeconds < 1) {
+  if (
+    durationSeconds === undefined ||
+    !Number.isSafeInteger(durationSeconds) ||
+    durationSeconds < 1
+  ) {
     if (allowUnknown && intent === 'targeted' && agentic) {
       return {
         strategy: 'direct-agentic',
@@ -332,6 +464,7 @@ export function planAdaptiveWatch(inspection, classification, options = {}) {
     )
   }
   if (
+    options.maxVideoDurationSeconds !== undefined &&
     Number.isSafeInteger(options.maxVideoDurationSeconds) &&
     durationSeconds > options.maxVideoDurationSeconds
   ) {
@@ -379,13 +512,22 @@ export function planAdaptiveWatch(inspection, classification, options = {}) {
   )
 }
 
-function evidenceSeconds(item, snakeName, camelName, timestampName) {
+function evidenceSeconds(
+  item: Record<string, unknown>,
+  snakeName: string,
+  camelName: string,
+  timestampName: string,
+): number | undefined {
   const direct = item[snakeName] ?? item[camelName]
-  if (Number.isSafeInteger(direct)) return direct
+  if (typeof direct === 'number' && Number.isSafeInteger(direct)) return direct
   return timestampToSeconds(item[timestampName])
 }
 
-export function normalizeWatchEvidence(item, durationSeconds, options = {}) {
+export function normalizeWatchEvidence(
+  item: unknown,
+  durationSeconds: number,
+  options: { maxDescriptionChars?: number } = {},
+): WatchEvidence {
   if (!isRecord(item) || !Number.isSafeInteger(durationSeconds) || durationSeconds < 1) {
     throw new AdaptiveWatchError(
       ADAPTIVE_WATCH_ERROR_CODES.WATCH_EVIDENCE_INVALID,
@@ -395,6 +537,7 @@ export function normalizeWatchEvidence(item, durationSeconds, options = {}) {
   const startSeconds = evidenceSeconds(item, 'start_seconds', 'startSeconds', 'timestamp')
   const endSeconds = evidenceSeconds(item, 'end_seconds', 'endSeconds', 'endTimestamp')
   if (
+    startSeconds === undefined ||
     !Number.isSafeInteger(startSeconds) ||
     startSeconds < 0 ||
     startSeconds > durationSeconds ||
@@ -410,13 +553,16 @@ export function normalizeWatchEvidence(item, durationSeconds, options = {}) {
     )
   }
   const description = boundedString(item.description, options.maxDescriptionChars ?? 4_000)
-  if (description === undefined || !['visual', 'spoken', 'mixed'].includes(item.modality)) {
+  if (
+    description === undefined ||
+    (item.modality !== 'visual' && item.modality !== 'spoken' && item.modality !== 'mixed')
+  ) {
     throw new AdaptiveWatchError(
       ADAPTIVE_WATCH_ERROR_CODES.WATCH_EVIDENCE_INVALID,
       'Adaptive watch evidence description or modality is invalid',
     )
   }
-  const basis = ['inference', 'observation'].includes(item.basis) ? item.basis : undefined
+  const basis = item.basis === 'inference' || item.basis === 'observation' ? item.basis : undefined
   return {
     startSeconds,
     timestamp: secondsToTimestamp(startSeconds),
@@ -429,7 +575,11 @@ export function normalizeWatchEvidence(item, durationSeconds, options = {}) {
   }
 }
 
-export function offsetWatchChunkEvidence(items, chunk, durationSeconds) {
+export function offsetWatchChunkEvidence(
+  items: unknown,
+  chunk: WatchChunk,
+  durationSeconds: number,
+): ChunkWatchEvidence[] {
   const clipDuration = chunk.clipEndSeconds - chunk.clipStartSeconds
   const finalCore = chunk.coreEndSeconds === durationSeconds
   if (!Array.isArray(items) || !Number.isSafeInteger(clipDuration) || clipDuration < 1) return []
@@ -457,14 +607,14 @@ export function offsetWatchChunkEvidence(items, chunk, durationSeconds) {
   })
 }
 
-function canonicalEvidence(value) {
+function canonicalEvidence(value: string): string {
   return value
     .toLocaleLowerCase('en-US')
     .replace(/[^\p{L}\p{N}]+/gu, ' ')
     .trim()
 }
 
-function similarity(left, right) {
+function similarity(left: string, right: string): number {
   if (left === right) return 1
   const a = new Set(left.split(' ').filter(Boolean))
   const b = new Set(right.split(' ').filter(Boolean))
@@ -474,7 +624,10 @@ function similarity(left, right) {
   return intersection / new Set([...a, ...b]).size
 }
 
-export function deduplicateWatchEvidence(items, options = {}) {
+export function deduplicateWatchEvidence(
+  items: ChunkWatchEvidence[],
+  options: EvidenceDeduplicationOptions = {},
+): ChunkWatchEvidence[] {
   const driftSeconds = options.driftSeconds ?? 2
   const threshold = options.similarityThreshold ?? 0.8
   const sorted = items
@@ -484,7 +637,7 @@ export function deduplicateWatchEvidence(items, options = {}) {
       _canonical: canonicalEvidence(item.description),
     }))
     .sort((left, right) => left.startSeconds - right.startSeconds || left._order - right._order)
-  const kept = []
+  const kept: typeof sorted = []
   for (const candidate of sorted) {
     const duplicateIndex = kept.findLastIndex(
       (prior) =>
@@ -496,6 +649,7 @@ export function deduplicateWatchEvidence(items, options = {}) {
     if (duplicateIndex < 0) kept.push(candidate)
     else {
       const prior = kept[duplicateIndex]
+      if (prior === undefined) continue
       if (
         (prior.basis === 'inference' && candidate.basis === 'observation') ||
         (prior.basis === candidate.basis && candidate.description.length > prior.description.length)
@@ -507,15 +661,19 @@ export function deduplicateWatchEvidence(items, options = {}) {
   return kept.map(({ _order, _canonical, ...item }) => item)
 }
 
-export function mergeWatchChunkEvidence(chunkResults, durationSeconds, options = {}) {
+export function mergeWatchChunkEvidence(
+  chunkResults: { chunk: WatchChunk; evidence?: unknown }[],
+  durationSeconds: number,
+  options: EvidenceDeduplicationOptions = {},
+): ChunkWatchEvidence[] {
   const values = chunkResults.flatMap((result) =>
     offsetWatchChunkEvidence(result.evidence ?? [], result.chunk, durationSeconds),
   )
   return deduplicateWatchEvidence(values, options)
 }
 
-function mergeRanges(ranges) {
-  const merged = []
+function mergeRanges(ranges: WatchRange[]): WatchRange[] {
+  const merged: WatchRange[] = []
   for (const range of ranges.sort((left, right) => left.startSeconds - right.startSeconds)) {
     const previous = merged.at(-1)
     if (previous !== undefined && range.startSeconds <= previous.endSeconds) {
@@ -525,7 +683,11 @@ function mergeRanges(ranges) {
   return merged
 }
 
-export function calculateWatchCoverage(durationSeconds, chunks, successfulChunkIds) {
+export function calculateWatchCoverage(
+  durationSeconds: number,
+  chunks: WatchChunk[],
+  successfulChunkIds: Iterable<string>,
+): WatchCoverage {
   if (!Number.isSafeInteger(durationSeconds) || durationSeconds < 1)
     throw new TypeError('Coverage duration must be positive')
   const successful =

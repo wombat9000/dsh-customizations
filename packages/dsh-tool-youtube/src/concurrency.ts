@@ -1,4 +1,6 @@
-export function linkedAbortController(signal) {
+export type ConcurrencyGate = <T>(task: () => Promise<T>) => Promise<T>
+
+export function linkedAbortController(signal?: AbortSignal) {
   const controller = new AbortController()
   const forwardAbort = () => controller.abort(signal?.reason)
   if (signal?.aborted) forwardAbort()
@@ -9,17 +11,23 @@ export function linkedAbortController(signal) {
   }
 }
 
-export async function mapWithConcurrency(items, concurrency, worker, onError) {
-  const results = new Array(items.length)
+export async function mapWithConcurrency<T, R>(
+  items: readonly T[],
+  concurrency: number,
+  worker: (item: T, index: number) => Promise<R>,
+  onError?: (error: unknown) => void,
+) {
+  const results = new Array<R>(items.length)
   let nextIndex = 0
-  let firstError
+  let firstError: unknown
   const runWorker = async () => {
     while (firstError === undefined) {
       const index = nextIndex
       nextIndex += 1
       if (index >= items.length) return
       try {
-        results[index] = await worker(items[index], index)
+        // The bounds check above establishes that this indexed item exists.
+        results[index] = await worker(items[index]!, index)
       } catch (error) {
         if (firstError === undefined) {
           firstError = error
@@ -33,11 +41,11 @@ export async function mapWithConcurrency(items, concurrency, worker, onError) {
   return results
 }
 
-export function createConcurrencyGate(limit) {
+export function createConcurrencyGate(limit: number): ConcurrencyGate {
   let active = 0
-  const waiting = []
+  const waiting: (() => void)[] = []
   const acquire = () =>
-    new Promise((resolve) => {
+    new Promise<void>((resolve) => {
       if (active < limit) {
         active += 1
         resolve()
@@ -50,7 +58,7 @@ export function createConcurrencyGate(limit) {
     if (next === undefined) active -= 1
     else next()
   }
-  return async (task) => {
+  return async <T>(task: () => Promise<T>) => {
     await acquire()
     try {
       return await task()

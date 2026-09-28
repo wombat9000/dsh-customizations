@@ -31,42 +31,50 @@ const INTERACTION_FILTER_CODES = new Set([
   'SAFETY_BLOCKED',
 ])
 
-function interactionDiagnosticCodes(interaction) {
-  if (!Array.isArray(interaction.errors)) return []
+function interactionDiagnosticCodes(interaction: unknown) {
+  if (!isRecord(interaction) || !Array.isArray(interaction.errors)) return []
   return [
     ...new Set(
       interaction.errors.flatMap((error) => {
         const code =
-          typeof error?.code === 'string' ? error.code.toLocaleUpperCase('en-US') : undefined
+          isRecord(error) && typeof error.code === 'string'
+            ? error.code.toLocaleUpperCase('en-US')
+            : undefined
         return code !== undefined && SAFE_INTERACTION_ERROR_CODES.has(code) ? [code] : []
       }),
     ),
   ]
 }
 
-function interactionDiagnostic(interaction) {
-  const status = SAFE_INTERACTION_STATUSES.has(interaction.status) ? interaction.status : 'unknown'
+function interactionDiagnostic(interaction: Record<string, unknown>) {
+  const status =
+    typeof interaction.status === 'string' && SAFE_INTERACTION_STATUSES.has(interaction.status)
+      ? interaction.status
+      : 'unknown'
   const codes = interactionDiagnosticCodes(interaction)
   return `status: ${status}${codes.length === 0 ? '' : `; diagnostic codes: ${codes.join(', ')}`}`
 }
 
-export function interactionHasContentFilter(interaction) {
+export function interactionHasContentFilter(interaction: unknown) {
   return interactionDiagnosticCodes(interaction).some((code) => INTERACTION_FILTER_CODES.has(code))
 }
 
-export function markInteractionFilter(error, interaction) {
-  if (interactionHasContentFilter(interaction) && error?.reason !== 'content_filter') {
+export function markInteractionFilter<T extends Error>(error: T, interaction: unknown): T {
+  if (
+    interactionHasContentFilter(interaction) &&
+    (!('reason' in error) || error.reason !== 'content_filter')
+  ) {
     Object.defineProperty(error, 'reason', { value: 'content_filter' })
   }
   return error
 }
 
-export function interactionText(interaction, operation) {
+export function interactionText(interaction: unknown, operation: string): unknown {
   if (!isRecord(interaction)) {
     throw new Error(`Gemini returned an invalid ${operation} response`)
   }
   const diagnostic = interactionDiagnostic(interaction)
-  const outputError = (message) => markInteractionFilter(new Error(message), interaction)
+  const outputError = (message: string) => markInteractionFilter(new Error(message), interaction)
   if (interactionHasContentFilter(interaction)) {
     throw outputError(`Gemini blocked ${operation} through content filters (${diagnostic})`)
   }

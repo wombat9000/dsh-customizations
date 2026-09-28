@@ -12,7 +12,7 @@ import {
   parseYoutubeVideoMetadata,
   planAdaptiveWatch,
   planBalancedWatchChunks,
-} from '../src/adaptive-watch.js'
+} from '../dist/src/adaptive-watch.js'
 
 const VIDEO_ID = 'dQw4w9WgXcQ'
 const URL = `https://www.youtube.com/watch?v=${VIDEO_ID}`

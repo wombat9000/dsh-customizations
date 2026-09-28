@@ -1,3 +1,7 @@
+import type { Context } from '@deepseek-ai/cordis'
+import type {} from '@deepseek-ai/dsh-system-prompt'
+import type { YoutubeTranscriptArchive } from './transcript-store.js'
+import type { TranscriptProcessing } from './archive.js'
 import {
   watchPresentationMeta,
   transcriptPresentationMeta,
@@ -116,6 +120,10 @@ export {
 } from './archive.js'
 export { parseYoutubeUrl, secondsToTimestamp, timestampToSeconds } from './url.js'
 
+export type YoutubeContext = Context & {
+  youtubeTranscriptStore: YoutubeTranscriptArchive<TranscriptProcessing>
+}
+
 export const name = 'tool-youtube'
 export const inject = ['tools', 'systemPrompt', 'connection', 'webServer', 'youtubeTranscriptStore']
 export const GEMINI_CREDENTIAL_REF = credentialRef('GEMINI_API_KEY')
@@ -194,13 +202,13 @@ export const Config = z.object({
   transcript: z.boolean().default(true),
 })
 
-function assertPositiveInteger(name, value) {
+function assertPositiveInteger(name: string, value: number) {
   if (!Number.isInteger(value) || value < 1) {
     throw new Error(`tool-youtube: ${name} must be a positive integer`)
   }
 }
 
-export function resolveConfig(config = {}) {
+export function resolveConfig(config: Partial<ReturnType<typeof Config>> = {}) {
   const resolved = {
     model: config.model ?? DEFAULT_MODEL,
     timeoutMs: config.timeoutMs ?? DEFAULT_TIMEOUT_MS,
@@ -266,7 +274,7 @@ export function resolveConfig(config = {}) {
     'maxProviderCalls',
     'maxEstimatedInputTokens',
     'videoTokensPerSecond',
-  ])
+  ] as const)
     assertPositiveInteger(key, resolved[key])
   if (
     !Number.isInteger(resolved.providerRequestRetries) ||
@@ -275,7 +283,7 @@ export function resolveConfig(config = {}) {
   ) {
     throw new Error('tool-youtube: providerRequestRetries must be an integer between 0 and 3')
   }
-  for (const key of ['estimatedInputCostPerMillionTokensUsd', 'maxEstimatedCostUsd']) {
+  for (const key of ['estimatedInputCostPerMillionTokensUsd', 'maxEstimatedCostUsd'] as const) {
     if (typeof resolved[key] !== 'number' || !Number.isFinite(resolved[key]) || resolved[key] < 0) {
       throw new Error(`tool-youtube: ${key} must be a non-negative finite number`)
     }
@@ -302,7 +310,7 @@ export function resolveConfig(config = {}) {
     'enableWatchLowResolution',
     'enableWatchAgentic',
     'enableWatchChunking',
-  ]) {
+  ] as const) {
     if (typeof resolved[key] !== 'boolean')
       throw new Error(`tool-youtube: ${key} must be a boolean`)
   }
@@ -311,7 +319,7 @@ export function resolveConfig(config = {}) {
     ['maximumTranscriptCoreSeconds', DEFAULT_MAXIMUM_TRANSCRIPT_CORE_SECONDS],
     ['chunkOverlapSeconds', DEFAULT_TRANSCRIPT_CHUNK_OVERLAP_SECONDS],
     ['maxChunkConcurrency', DEFAULT_MAX_TRANSCRIPT_CHUNK_CONCURRENCY],
-  ]) {
+  ] as const) {
     if (resolved[key] > maximum) {
       throw new Error(`tool-youtube: ${key} must not exceed the fixed policy maximum (${maximum})`)
     }
@@ -320,7 +328,7 @@ export function resolveConfig(config = {}) {
   return resolved
 }
 
-function safeTitle(url, suffix) {
+function safeTitle(url: string, suffix?: string) {
   try {
     const { videoId } = parseYoutubeUrl(url)
     if (suffix === undefined) return videoId
@@ -332,7 +340,12 @@ function safeTitle(url, suffix) {
   }
 }
 
-export function registerYoutubeTools(ctx, config, client, transcriptProgress) {
+export function registerYoutubeTools(
+  ctx: YoutubeContext,
+  config: ReturnType<typeof resolveConfig>,
+  client: ArchivedYoutubeClient,
+  transcriptProgress?: ReturnType<typeof createTranscriptProgressStore>,
+) {
   ctx.systemPrompt.section({
     name: 'tool:youtube',
     order: 112,
@@ -447,7 +460,7 @@ export function registerYoutubeTools(ctx, config, client, transcriptProgress) {
         },
         timeoutMs: config.timeoutMs,
         isConcurrencySafe: () => true,
-        execute: (args, exec) => client.read(args, exec.signal),
+        execute: async (args, exec) => client.read(args, exec.signal),
         presentCall: (args) => ({
           card: 'generic',
           title: args.transcriptId,
@@ -485,7 +498,7 @@ export function registerYoutubeTools(ctx, config, client, transcriptProgress) {
         },
         timeoutMs: config.timeoutMs,
         isConcurrencySafe: () => true,
-        execute: (args, exec) => client.search(args, exec.signal),
+        execute: async (args, exec) => client.search(args, exec.signal),
         presentCall: (args) => ({
           card: 'generic',
           title: `${args.transcriptId} — ${args.query.slice(0, 80)}`,
@@ -497,7 +510,7 @@ export function registerYoutubeTools(ctx, config, client, transcriptProgress) {
   }
 }
 
-export function apply(ctx, config = {}) {
+export function apply(ctx: YoutubeContext, config: Partial<ReturnType<typeof Config>> = {}) {
   const resolved = resolveConfig(config)
   const literalApiKey = resolved.apiKey
   const geminiClient = new GeminiYoutubeClient({
