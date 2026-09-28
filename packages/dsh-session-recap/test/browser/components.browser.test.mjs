@@ -415,7 +415,10 @@ test('source settings container saves original payload and disposes its styleshe
   await render(SettingsCard, { rpc, controller })
   await click(page.getByRole('button', { name: 'Expand: Session recap' }))
   await click(page.getByRole('button', { name: 'Save', exact: true }))
-  expect(rpc.call).toHaveBeenCalledWith('/session-recap', 'configure', draft)
+  expect(rpc.call).toHaveBeenCalledWith('/session-recap', 'configure', {
+    ...draft,
+    bookmarkJev: false,
+  })
   expect(controller.invalidateSettings).toHaveBeenCalledOnce()
   expect(container.textContent).toContain('Session recap settings saved.')
   expect(

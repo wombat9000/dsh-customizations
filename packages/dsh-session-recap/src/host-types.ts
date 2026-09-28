@@ -4,6 +4,7 @@ import type { SelectionQuestion, Settings } from '../shared/contracts.js'
 // RC2 supplies these services; Recap does not own their construction. Keeping this
 // boundary structural also permits the existing deterministic host fixtures.
 export interface HistoryMessage {
+  id?: string
   role: string
   source?: { kind: string } | undefined
   content: readonly { type: string; text?: unknown }[]

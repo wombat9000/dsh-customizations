@@ -8,11 +8,14 @@ test('settings defaults and strict validation', () => {
   assert.deepEqual(normalizeSettings(), {
     autoRecap: true,
     useJev: false,
+    bookmarkJev: false,
     inactivityMinutes: 30,
     provider: '',
     model: '',
   })
   assert.throws(() => normalizeSettings({ useJev: 'true' }))
+  assert.throws(() => normalizeSettings({ bookmarkJev: 'true' }))
+  assert.equal(normalizeSettings({ useJev: true, bookmarkJev: true }).bookmarkJev, true)
   for (const value of [0, -1, 1.1, Infinity, 10081, '30'])
     assert.throws(() => normalizeSettings({ inactivityMinutes: value }))
   assert.throws(() => normalizeSettings({ autoRecap: 'true' }))

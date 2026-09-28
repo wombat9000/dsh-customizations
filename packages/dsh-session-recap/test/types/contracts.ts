@@ -63,6 +63,9 @@ export function dataContracts(controller: Controller, onChange: SettingsFormProp
   controller.getSnapshot('s').busy = 'yes'
   onChange('inactivityMinutes', '45')
   onChange('useJev', true)
+  onChange('bookmarkJev', true)
+  // @ts-expect-error Background evaluation consent is boolean, not a truthy string.
+  onChange('bookmarkJev', 'true')
   // @ts-expect-error A boolean draft field cannot receive a text value.
   onChange('useJev', 'true')
   void mixed

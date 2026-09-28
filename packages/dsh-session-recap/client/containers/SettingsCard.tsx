@@ -83,6 +83,7 @@ function SettingsPage({ rpc, controller, view }: SettingsCardProps) {
       const result = await rpc.call(CHANNEL, 'configure', {
         autoRecap,
         useJev: draft!.useJev === true,
+        bookmarkJev: draft!.bookmarkJev === true,
         inactivityMinutes: Number(inactivityMinutes),
         provider,
         model,

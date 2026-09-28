@@ -4,7 +4,8 @@ import { LIMITS } from './settings.js';
 // reasoning, attachments, system instructions, or provider-private metadata.
 export function boundedHistory(messages) {
     const eligible = messages.filter((message) => ((message.role === 'user' && message.source?.kind === 'user') ||
-        (message.role === 'assistant' && message.source?.kind === 'model')) &&
+        ((message.role === 'assistant' || message.role === 'model') &&
+            message.source?.kind === 'model')) &&
         message.content
             .slice(0, LIMITS.blocks)
             .some((block) => block.type === 'text' && typeof block.text === 'string' && block.text.trim()));
@@ -33,7 +34,10 @@ export function boundedHistory(messages) {
     const rows = selected.map((index) => {
         // Selection indices above are drawn exclusively from eligible message bounds.
         const message = eligible[index];
-        const row = { role: message.role, text: historyText(message) };
+        const row = {
+            role: message.role === 'model' ? 'assistant' : message.role,
+            text: historyText(message),
+        };
         if (index > previous + 1)
             row.omittedBefore = index - previous - 1;
         previous = index;

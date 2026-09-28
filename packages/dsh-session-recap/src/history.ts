@@ -7,7 +7,8 @@ export function boundedHistory(messages: readonly HistoryMessage[]): HistoryRow[
   const eligible = messages.filter(
     (message) =>
       ((message.role === 'user' && message.source?.kind === 'user') ||
-        (message.role === 'assistant' && message.source?.kind === 'model')) &&
+        ((message.role === 'assistant' || message.role === 'model') &&
+          message.source?.kind === 'model')) &&
       message.content
         .slice(0, LIMITS.blocks)
         .some(
@@ -37,7 +38,10 @@ export function boundedHistory(messages: readonly HistoryMessage[]): HistoryRow[
   const rows = selected.map((index) => {
     // Selection indices above are drawn exclusively from eligible message bounds.
     const message = eligible[index]!
-    const row: HistoryRow = { role: message.role, text: historyText(message) }
+    const row: HistoryRow = {
+      role: message.role === 'model' ? 'assistant' : message.role,
+      text: historyText(message),
+    }
     if (index > previous + 1) row.omittedBefore = index - previous - 1
     previous = index
     if (message.content.length > LIMITS.blocks) row.truncated = true

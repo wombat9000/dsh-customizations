@@ -625,6 +625,45 @@ function SelectionDetails({ diagnostics }) {
 }
 
 //#endregion
+//#region client/components/BookmarkDetails.tsx
+const statuses = {
+	proposed: "Proposed (not approved)",
+	accepted: "Accepted by user",
+	open: "Open",
+	answered: "Answer present",
+	completed: "Completion reported",
+	superseded: "Superseded or abandoned"
+};
+function BookmarkDetails({ diagnostics }) {
+	const [notice, setNotice] = react.default.useState("");
+	react.default.useEffect(() => {
+		setNotice("");
+	}, [diagnostics]);
+	const json = JSON.stringify(diagnostics, null, 2);
+	async function copy() {
+		try {
+			await navigator.clipboard.writeText(json);
+			setNotice("Bookmark diagnostics copied.");
+		} catch {
+			setNotice("Clipboard unavailable. Expand the JSON and copy it manually.");
+		}
+	}
+	return /* @__PURE__ */ react.default.createElement("details", { className: "dsh-session-recap-card__diagnostics" }, /* @__PURE__ */ react.default.createElement("summary", null, "Bookmark details"), /* @__PURE__ */ react.default.createElement("p", null, "Evidence markers for Next steps and Open questions. Statuses are model judgments, not verified task outcomes."), /* @__PURE__ */ react.default.createElement("p", null, "Model: ", diagnostics.model ?? "Unavailable", " · Questions: ", diagnostics.questionSetVersion), /* @__PURE__ */ react.default.createElement("p", null, "State: ", diagnostics.status, " · Messages processed: ", diagnostics.processedMessages), /* @__PURE__ */ react.default.createElement("p", null, "Source IDs identify the supporting messages. Excerpts stay host-side; this export contains no conversation text or credentials. Opening or copying makes no model call."), diagnostics.items.length ? /* @__PURE__ */ react.default.createElement("div", {
+		className: "dsh-session-recap-card__table-wrap",
+		tabIndex: 0,
+		"aria-label": "Session bookmarks"
+	}, /* @__PURE__ */ react.default.createElement("table", null, /* @__PURE__ */ react.default.createElement("thead", null, /* @__PURE__ */ react.default.createElement("tr", null, /* @__PURE__ */ react.default.createElement("th", { scope: "col" }, "Category"), /* @__PURE__ */ react.default.createElement("th", { scope: "col" }, "Source message"), /* @__PURE__ */ react.default.createElement("th", { scope: "col" }, "Speaker"), /* @__PURE__ */ react.default.createElement("th", { scope: "col" }, "Status"), /* @__PURE__ */ react.default.createElement("th", { scope: "col" }, "Support"), /* @__PURE__ */ react.default.createElement("th", { scope: "col" }, "Latest update"))), /* @__PURE__ */ react.default.createElement("tbody", null, diagnostics.items.map((item) => /* @__PURE__ */ react.default.createElement("tr", { key: item.id }, /* @__PURE__ */ react.default.createElement("th", { scope: "row" }, item.kind === "next_step" ? "Next step" : "Open question"), /* @__PURE__ */ react.default.createElement("td", null, item.messageId), /* @__PURE__ */ react.default.createElement("td", null, item.role), /* @__PURE__ */ react.default.createElement("td", null, statuses[item.status]), /* @__PURE__ */ react.default.createElement("td", null, item.support), /* @__PURE__ */ react.default.createElement("td", null, item.updatedByMessageId ?? "—", item.transitionScore === void 0 ? "" : ` (${item.transitionScore})`)))))) : /* @__PURE__ */ react.default.createElement("p", null, "No retained bookmarks. The standard recap remains available."), /* @__PURE__ */ react.default.createElement("button", {
+		type: "button",
+		onClick: () => {
+			copy();
+		}
+	}, "Copy bookmark diagnostics JSON"), notice ? /* @__PURE__ */ react.default.createElement("p", { role: "status" }, notice) : null, /* @__PURE__ */ react.default.createElement("details", null, /* @__PURE__ */ react.default.createElement("summary", null, "Bookmark diagnostics JSON"), /* @__PURE__ */ react.default.createElement("pre", {
+		tabIndex: 0,
+		"aria-label": "Bookmark diagnostics JSON"
+	}, json)));
+}
+
+//#endregion
 //#region client/components/RecapPanel.tsx
 function RecapTile({ card }) {
 	const label = CARD_LABELS[card.label];
@@ -656,6 +695,7 @@ function RecapBulletList({ bullets }) {
 }
 function selectionCaption(selection) {
 	if (selection?.mode !== "standard") return null;
+	if (selection.bookmarks) return selection.reason === "unavailable" ? "Bookmarks unavailable; using standard recap" : "No active bookmarks; using standard recap";
 	if (selection.reason === "unavailable") return "Jev unavailable";
 	if (selection.reason === "no-labels") return "No suitable categories";
 	return null;
@@ -686,7 +726,10 @@ function RecapPanel({ busy, error, recap, selection, diagnosticsKey }) {
 	}, cards.map((card) => /* @__PURE__ */ react.default.createElement(RecapTile, {
 		key: card.label,
 		card
-	}))) : /* @__PURE__ */ react.default.createElement(RecapBulletList, { bullets: recap.bullets }), caption ? /* @__PURE__ */ react.default.createElement("p", { className: "dsh-session-recap-card__caption" }, caption) : null), selection?.diagnostics ? /* @__PURE__ */ react.default.createElement(SelectionDetails, {
+	}))) : /* @__PURE__ */ react.default.createElement(RecapBulletList, { bullets: recap.bullets }), caption ? /* @__PURE__ */ react.default.createElement("p", { className: "dsh-session-recap-card__caption" }, caption) : null), selection && "bookmarks" in selection && selection.bookmarks ? /* @__PURE__ */ react.default.createElement(BookmarkDetails, {
+		key: diagnosticsKey,
+		diagnostics: selection.bookmarks
+	}) : null, selection?.diagnostics ? /* @__PURE__ */ react.default.createElement(SelectionDetails, {
 		key: diagnosticsKey,
 		diagnostics: selection.diagnostics
 	}) : null) : null);
@@ -813,7 +856,16 @@ function SettingsForm({ open, draft, providers, error, notice, busy, onToggle, o
 	})), /* @__PURE__ */ react.default.createElement("small", {
 		id: `${ID}-jev-privacy`,
 		className: "dsh-session-recap-settings__hint"
-	}, "Optional; requires the Jev plugin. Sends the same bounded history through OpenRouter to TypeSafe to choose recap categories. Manage the shared key and model in the OpenRouter and Jev settings cards; no new key is needed."), /* @__PURE__ */ react.default.createElement(SettingsRow, { label: "Inactivity (minutes)" }, /* @__PURE__ */ react.default.createElement("input", {
+	}, "Optional; requires the Jev plugin. Sends the same bounded history through OpenRouter to TypeSafe to choose recap categories. Manage the shared key and model in the OpenRouter and Jev settings cards; no new key is needed."), /* @__PURE__ */ react.default.createElement(SettingsRow, { label: "Keep Jev bookmarks as the conversation continues" }, /* @__PURE__ */ react.default.createElement("input", {
+		type: "checkbox",
+		checked: draft.bookmarkJev === true,
+		disabled: busy || !draft.useJev,
+		"aria-describedby": `${ID}-bookmark-privacy`,
+		onChange: (event) => onChange("bookmarkJev", event.target.checked)
+	})), /* @__PURE__ */ react.default.createElement("small", {
+		id: `${ID}-bookmark-privacy`,
+		className: "dsh-session-recap-settings__hint"
+	}, "Experimental; off by default. Requires Jev above. After completed turns, sends new conversation excerpts and relevant earlier passages through OpenRouter to TypeSafe, even if you never open a recap. This incurs API charges. Tracks proposed actions and open questions in memory; no transcript changes. Disabling Jev stops both modes."), /* @__PURE__ */ react.default.createElement(SettingsRow, { label: "Inactivity (minutes)" }, /* @__PURE__ */ react.default.createElement("input", {
 		type: "number",
 		min: 1,
 		value: draft.inactivityMinutes,
@@ -913,6 +965,7 @@ function SettingsPage({ rpc, controller, view }) {
 			const result = await rpc.call(CHANNEL, "configure", {
 				autoRecap,
 				useJev: draft.useJev === true,
+				bookmarkJev: draft.bookmarkJev === true,
 				inactivityMinutes: Number(inactivityMinutes),
 				provider,
 				model

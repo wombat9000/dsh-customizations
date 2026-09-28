@@ -79,6 +79,29 @@ test('registers schema-backed settings defaults and opaque storage scope', async
   assert.equal(result.value.provider, '')
   assert.match(result.value.storageScope, /^[a-f0-9]{24}$/)
 })
+test('background opt-out succeeds when the unchanged writing provider is unavailable', async (t) => {
+  const { rpc, ctx } = await host(t)
+  assert.equal(
+    (
+      await rpc('configure', {
+        provider: 'configured',
+        model: 'model',
+        useJev: true,
+        bookmarkJev: true,
+      })
+    ).ok,
+    true,
+  )
+  ctx.llm.prepareCall = async () => {
+    throw Error('provider offline')
+  }
+  const result = await rpc('configure', { bookmarkJev: false })
+  assert.equal(result.ok, true)
+  assert.equal(result.value.bookmarkJev, false)
+  const disabled = await rpc('configure', { useJev: false })
+  assert.equal(disabled.ok, true)
+})
+
 test('optional Jev lookup wires the service without required injection or settings-time evaluation', async (t) => {
   assert.ok(!inject.includes('jev'))
   const { rpc, ctx, root } = await host(t)
