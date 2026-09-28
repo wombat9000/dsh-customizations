@@ -4,7 +4,7 @@ A reference for fast, first-pass file judgments with Jev: `ask_file`, `classify_
 
 These tools provide **System 1-style intelligence**: narrow judgments resembling a first impression, rather than deliberate investigation. “Intuition” describes their role, not human cognition or a guarantee of speed or correctness. Actual latency depends on the provider. The outputs are useful signals, not verified findings.
 
-Each evaluation sees one bounded file snapshot and the supplied questions. It does not see the main conversation, other files, imported implementations, or answers to sibling questions. Source contents and questions go to OpenRouter/TypeSafe after native one-shot approval; calls can incur charges. Tool results contain judgments and snapshot metadata, not file bodies or explanations.
+Each evaluation sees one bounded file snapshot and the supplied questions. It does not see the main conversation, other files, imported implementations, or answers to sibling questions. Source contents and questions go directly to OpenRouter/TypeSafe without a Scout-specific human approval prompt; calls can incur charges. Tool results contain judgments and snapshot metadata, not file bodies or explanations.
 
 ## Tool selection
 
@@ -172,13 +172,13 @@ Usage totals appear only when the corresponding metric is reported for every dis
 | Concurrent provider requests per call                          | At most 2, subject to shared service capacity      |
 | Encoded request size                                           | 60,000 bytes, including model, state and questions |
 | Visited entries / directories / candidates / directory nesting | 2,000 / 128 / 256 / 12                             |
-| End-to-end deadline, including approval                        | 120 seconds                                        |
+| Snapshot and evaluation deadline                               | 120 seconds                                        |
 
 Files are included in full or skipped, never silently truncated. Eligible inputs are workspace-relative regular source/text files. Hidden paths, symlinks, dependency/generated directories, common secret files, binary content and recognized secret material are excluded by code. These exclusions are not comprehensive secret detection. Git-ignored files can remain eligible.
 
-A nonempty evaluation requires native one-shot approval for the exact prepared snapshots, questions, model setting and maximum calls. The preview shows paths, hashes and byte counts, not source bodies. Missing or denied approval prevents dispatch; a skill or conversational agreement does not grant that permission. Empty discovery makes no provider call.
+Nonempty evaluations send the prepared snapshots and questions automatically through the configured Jev service. Scout adds no human approval gate. Other DSH policies remain effective and can independently restrict execution or request approval. Empty discovery makes no provider call.
 
-Prepared content remains in memory only; no persistent source cache or automatic edits are part of these tools. Approval metadata and judgments enter normal DSH history. Remote retention follows provider policy. Cancellation stops queued work but cannot retract content already sent or guarantee zero charges.
+Prepared content remains in memory only; no persistent source cache or automatic edits are part of these tools. Tool results enter normal DSH history. Remote retention follows provider policy. Cancellation stops queued work but cannot retract content already sent or guarantee zero charges.
 
 The filesystem backend supplies unpaginated directory listings and no atomic containment-and-read transaction. Traversal limits do not cap the backend allocation for one enormous directory, and pre/post checks do not provide isolation against hostile filesystem races.
 

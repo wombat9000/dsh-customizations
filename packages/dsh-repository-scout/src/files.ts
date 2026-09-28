@@ -406,7 +406,7 @@ export async function collectFiles(
     }
   }
   check(signal)
-  // Freeze in memory so approval and execution use exactly these snapshots.
+  // Freeze in memory so evaluation uses exactly the prepared snapshots.
   Object.freeze(files)
   const skipped = [...skips]
     .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))

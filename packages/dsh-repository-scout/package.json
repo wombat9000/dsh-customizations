@@ -2,7 +2,7 @@
   "name": "@local/dsh-repository-scout",
   "version": "0.1.0",
   "private": true,
-  "description": "Approved, bounded repository scouting through the shared Jev decision service",
+  "description": "Bounded repository scouting through the shared Jev decision service",
   "type": "module",
   "main": "dist/src/index.js",
   "exports": {
@@ -34,8 +34,7 @@
   "dependencies": {
     "@deepseek-ai/dsh-fs": "0.1.7-rc.2",
     "@deepseek-ai/dsh-skill": "0.1.7-rc.2",
-    "@deepseek-ai/dsh-tools": "0.1.7-rc.2",
-    "@deepseek-ai/dsh-user-approval": "0.1.7-rc.2"
+    "@deepseek-ai/dsh-tools": "0.1.7-rc.2"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "4.0.4"

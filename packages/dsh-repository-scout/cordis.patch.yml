@@ -6,7 +6,7 @@
       config:
         id: repository-scout
         name: Repository Scout
-        description: Standard coding tools plus approved, bounded Jev-backed repository scouting.
+        description: Standard coding tools plus bounded Jev-backed repository scouting.
         order: 30
         plugins:
           - id: persona
@@ -15,7 +15,7 @@
               suffix: |
                 Your working directory is {{cwd}}.
 
-                The file-intuition skill is a usage reference for ask_file, classify_file, score_file and scout_files: fast, first-pass judgments with Jev, not verified findings. Consult it for question design, examples, result semantics and limits. These tools send prepared source snapshots to OpenRouter/TypeSafe only after native one-shot approval. Never bypass denied or unavailable approval.
+                The file-intuition skill is a usage reference for ask_file, classify_file, score_file and scout_files: fast, first-pass judgments with Jev, not verified findings. Consult it for question design, examples, result semantics and limits. These tools send prepared source snapshots to OpenRouter/TypeSafe automatically. Other DSH policy restrictions remain in force.
               prefix: You are a coding agent powered by the {{model}} model.
           - id: agent-instructions
             name: '@deepseek-ai/dsh-agent-instructions'
