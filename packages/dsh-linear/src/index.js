@@ -1,6 +1,8 @@
 import { launchEnvironmentOf } from '@deepseek-ai/dsh-launch-environment'
 import z from '@deepseek-ai/schemastery'
 import { LinearRuntime } from './runtime.js'
+import { mountLinearReads } from './reads.js'
+export * from './reads.js'
 import {
   installLinearSettings,
   LINEAR_CREDENTIAL_REF,
@@ -60,6 +62,7 @@ export function apply(ctx, config = {}) {
       return launchEnvironmentOf(ctx).get(LINEAR_CREDENTIAL_REF)?.value
     },
   })
+  mountLinearReads(ctx, runtime, resolved)
   registerLinearSettingsRpc(ctx, { runtime, settings, literalApiKey: resolved.apiKey })
   registerLinearTools(ctx, runtime, resolved)
 }

@@ -79,8 +79,13 @@ test('host registers the matching settings namespace and reversible RPC without 
       },
     },
   }
+  const services = new Map()
   const ctx = {
     fiber: {},
+    provide(name, value) {
+      services.set(name, value)
+      disposers.push(() => services.delete(name))
+    },
     inject(dependencies, install) {
       assert.deepEqual(dependencies, ['settings'])
       install({
@@ -121,6 +126,11 @@ test('host registers the matching settings namespace and reversible RPC without 
   }
   const config = Config({})
   apply(ctx, config)
+  assert.deepEqual(Object.keys(services.get('localLinearReads')), [
+    'listIssues',
+    'getIssue',
+    'getProject',
+  ])
   assert.equal(settings.owner, ctx.fiber)
   assert.deepEqual(settings.presentation, { auto: false })
   assert.deepEqual((await handler('status')).value.workspace, null)

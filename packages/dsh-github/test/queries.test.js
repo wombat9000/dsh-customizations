@@ -10,6 +10,13 @@ test('all fixed GraphQL documents are reads with explicit bounded collections', 
     for (const match of query.matchAll(
       /\b(repositories|projectsV2|items|fieldValues|labels|assignees|subIssues|blockedBy|blocking|comments|users|pullRequests|reviewers)\(/g,
     )) {
+      if (name === 'listIssues' && match[1] === 'assignees') {
+        assert.match(
+          query.slice(match.index),
+          /^assignees\(first:20\) \{ nodes \{ login \} totalCount pageInfo \{ hasNextPage endCursor \}/,
+        )
+        continue
+      }
       assert.match(
         query.slice(match.index),
         /^[^(]+\(first:\$\w+,after:\$\w+/,

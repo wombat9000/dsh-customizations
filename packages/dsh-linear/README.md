@@ -34,6 +34,14 @@ Issue relations and comment authors are joined from batched ID catalogs rather t
 
 All Linear content is treated as untrusted external data in the agent prompt.
 
+## Host read service
+
+Host plugins can look up `ctx.get('localLinearReads')` at call time. If the bundle is absent or disposed, the lookup returns `undefined`. The service exposes only `listIssues`, `getIssue`, and `getProject`. The [typed contract](src/reads.d.ts) is also available through `@local/dsh-linear/reads`.
+
+Each method takes the matching read tool's arguments and optional `{ signal }`. Calls reuse the same runtime, host credentials, and workspace binding as the tools; they need no session and expose no credential or write method. The service validates bounded arguments and enforces the configured timeout, clamped to 1–120,000 milliseconds (default 30,000). Disposal aborts service calls. Errors have static sanitized messages and codes `INVALID_ARGUMENT`, `CANCELLED`, `TIMEOUT`, or `READ_FAILED`.
+
+`listIssues` returns `{ issues, pageInfo: { hasNextPage, nextCursor? } }`. Detail methods return the existing projected issue or project object. Keep provider-native status and pagination information when adapting results, and treat all provider text as untrusted.
+
 ## Project write behavior
 
 Every project mutation returns `ask` from DSH's `tools/pre-execute` policy. DSH's approval seam grants only `allowed-once`; rejection, cancellation, an unavailable answerer, or an approval policy of `never` fails closed before the mutation body runs.

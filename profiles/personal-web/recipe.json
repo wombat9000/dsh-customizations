@@ -59,6 +59,10 @@
       "source": "../../packages/dsh-linear"
     },
     {
+      "name": "@local/dsh-projects",
+      "source": "../../packages/dsh-projects"
+    },
+    {
       "name": "@local/dsh-tool-youtube",
       "source": "../../packages/dsh-tool-youtube"
     },

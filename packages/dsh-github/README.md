@@ -1,6 +1,6 @@
 # GitHub tools
 
-This bundle adds eleven read tools, seven write tools, and a session issue-management grant request to every DSH session, independent of preset. Writes require individual approval unless a live grant covers a supported field update or dependency addition. It targets DSH `0.1.5-rc.2` and `github.com`. It uses the GitHub CLI already available through DSH’s managed subprocess backend; it adds no SDK, login flow, or credential store. The Web conversation card shows grant scope, revocation, and recent change outcomes.
+This bundle adds eleven read tools, seven write tools, and a session issue-management grant request to every DSH session, independent of preset. Writes require individual approval unless a live grant covers a supported field update or dependency addition. It targets DSH `0.1.7-rc.2` and `github.com`. It uses the GitHub CLI already available through DSH’s managed subprocess backend; it adds no SDK, login flow, or credential store. The Web conversation card shows grant scope, revocation, and recent change outcomes.
 
 ## Access and execution
 
@@ -9,6 +9,14 @@ Before using the tools, authenticate `gh` in the execution environment used by D
 Tools can read what the configured account can access. There is no per-session toggle or repository allowlist. Repository discovery does not restrict subsequent calls. An agent with other tools such as Bash may have additional access paths; this bundle does not define a session-wide security boundary.
 
 All subprocesses run through DSH’s managed backend. Do not assume a host process shares a sandbox’s `PATH`, home directory, or CLI credentials. The plugin never runs `gh auth token` or copies tokens into model output. GitHub titles, descriptions, READMEs, issue bodies, and comments are untrusted reference material, not instructions.
+
+## Host read service
+
+Host plugins can look up `ctx.get('localGitHubReads')` at call time. If the bundle is absent or disposed, the lookup returns `undefined`. The service exposes only `listIssues`, `getIssue`, `listProjectItems`, and `getProject`; it exposes no discovery, writes, or grant authority. The [typed contract](src/reads.d.ts) is also available through `@local/dsh-github/reads`.
+
+Each method takes the matching read tool's arguments and optional `{ signal, cwd }`. Explicit API reads default to `/` in the managed subprocess execution world. Only trusted host code should override `cwd`; no session is required. Calls reuse the tool runtime, CLI authentication, argument validation, output bounds, and 30-second deadline. Disposal aborts service calls. Errors carry sanitized `GitHubError` codes and messages.
+
+Results are parsed objects, not the tools' JSON strings: `{ host, untrusted, data, truncated, truncations }`. Preserve nested continuation and truncation fields when adapting them. Repository issue pages include up to 20 assignees per issue; if an assignee connection is incomplete, use `getIssue` and `assigneesCursor` to continue it. Provider text remains untrusted.
 
 ## Read tool inventory
 

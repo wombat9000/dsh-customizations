@@ -92,6 +92,12 @@ test('real pinned DSH registry exposes host tools across preset/session scopes a
   ctx.provide('subprocess', subprocess)
   const plugin = ctx.plugin(GitHub, {})
   await plugin.await()
+  assert.deepEqual(Object.keys(ctx.get('localGitHubReads')), [
+    'listIssues',
+    'getIssue',
+    'listProjectItems',
+    'getProject',
+  ])
   const registry = ctx.get('tools')
   const standard = { preset: 'standard' }
   const minimal = { preset: 'minimal' }
@@ -119,6 +125,7 @@ test('real pinned DSH registry exposes host tools across preset/session scopes a
     ['/session/a', '/session/b'],
   )
   await plugin.dispose()
+  assert.equal(ctx.get('localGitHubReads'), undefined)
   for (const scope of [undefined, standard, minimal, a, b])
     assert.equal(registry.view(scope).visible.size, 0)
 })

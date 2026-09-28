@@ -8,11 +8,16 @@
   "exports": {
     ".": "./src/index.js",
     "./runtime": "./src/runtime.js",
+    "./reads": {
+      "types": "./src/reads.d.ts",
+      "default": "./src/reads.js"
+    },
     "./client": "./client.js",
     "./package.json": "./package.json"
   },
   "files": [
     "src/**/*.js",
+    "src/**/*.d.ts",
     "client.js",
     "client/**/*.ts",
     "client/**/*.tsx",

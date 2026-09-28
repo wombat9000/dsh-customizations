@@ -110,7 +110,9 @@ export class LinearRuntime {
   }
 
   async client(signal) {
+    signal?.throwIfAborted()
     const apiKey = await this.resolveApiKey()
+    signal?.throwIfAborted()
     if (typeof apiKey !== 'string' || apiKey.length === 0) {
       throw new Error(
         'Linear API key is not configured. Open Plugins → Linear → Configure and connect a workspace.',
@@ -118,6 +120,7 @@ export class LinearRuntime {
     }
     const client = this.createClient(apiKey, signal)
     const organization = await this.request('authentication', () => client.organization)
+    signal?.throwIfAborted()
     const config = this.configuration()
     if (text(config.organizationId) !== undefined && organization.id !== config.organizationId) {
       throw new Error(
