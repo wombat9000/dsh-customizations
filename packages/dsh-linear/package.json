@@ -8,12 +8,17 @@
   "exports": {
     ".": "./src/index.js",
     "./client": "./client.js",
+    "./reads": {
+      "types": "./src/reads.d.ts",
+      "default": "./src/reads.js"
+    },
     "./package.json": "./package.json"
   },
   "files": [
     "client.js",
     "cordis.patch.yml",
-    "src/**/*.js"
+    "src/**/*.js",
+    "src/**/*.d.ts"
   ],
   "scripts": {
     "test": "node --test test/index.test.js test/client.test.js test/project-writes.test.js",

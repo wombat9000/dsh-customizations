@@ -1,0 +1,61 @@
+{
+  "name": "@local/dsh-projects",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Read-only GitHub and Linear project views with shared team conventions",
+  "type": "module",
+  "main": "dist/src/index.js",
+  "exports": {
+    ".": "./dist/src/index.js",
+    "./client": "./client.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist/**/*.js",
+    "client.js",
+    "cordis.patch.yml",
+    "README.md",
+    "src/**/*.ts",
+    "shared/**/*.ts",
+    "client/**/*.ts",
+    "client/**/*.tsx",
+    "scripts/*.mjs",
+    "tsconfig*.json"
+  ],
+  "scripts": {
+    "build": "node scripts/build-host.mjs && node scripts/build-client.mjs",
+    "build:host": "node scripts/build-host.mjs",
+    "build:client": "node scripts/build-client.mjs",
+    "typecheck": "node scripts/typecheck.mjs",
+    "test": "node --test test/*.test.js"
+  },
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-layout",
+        "@deepseek-ai/dsh-client-ui-sidebar",
+        "@deepseek-ai/dsh-client-connection",
+        "@deepseek-ai/dsh-client-locale"
+      ]
+    }
+  },
+  "dependencies": {
+    "@deepseek-ai/schemastery": "3.18.4"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "4.0.4",
+    "@deepseek-ai/dsh-settings": "0.1.7-rc.2",
+    "@deepseek-ai/dsh-client-connection": "0.1.7-rc.2",
+    "@deepseek-ai/dsh-client-ui-layout": "0.1.7-rc.2",
+    "@deepseek-ai/dsh-client-ui-sidebar": "0.1.7-rc.2",
+    "react": "18.3.1"
+  },
+  "license": "UNLICENSED"
+}

@@ -1,4 +1,6 @@
 import { createGitHubRuntime } from './runtime.js'
+import { mountGitHubReads } from './reads.js'
+export * from './reads.js'
 import { createGitHubTools } from './tools.js'
 import { createGitHubWriteRuntime } from './write-runtime.js'
 import { registerGitHubWriteTools } from './write-tools.js'
@@ -21,6 +23,7 @@ export function apply(ctx) {
   const runtime = createGitHubRuntime(ctx.subprocess, {
     onAccount: (actor) => grants.observeAccount(actor),
   })
+  mountGitHubReads(ctx, runtime)
   for (const tool of createGitHubTools(runtime)) ctx.tools.register(tool)
   const grantCaller = createGrantCaller(ctx)
   const agents = {

@@ -14,6 +14,8 @@ artifacts/
 /packages/dsh-session-recap/client.js
 /packages/dsh-session-recap/dist/
 /packages/dsh-github/client.js
+/packages/dsh-projects/client.js
+/packages/dsh-projects/dist/
 /packages/dsh-google-drive/test/fixtures/sheets-preview.json
 
 # Preserve exact patch payloads, upstream legal text, and visual baselines.

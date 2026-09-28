@@ -14,6 +14,7 @@ const plugins = [
   { name: '@wombat9000/dsh-session-recap', directory: 'packages/dsh-session-recap' },
   { name: '@local/dsh-worktree', directory: 'packages/dsh-worktree' },
   { name: '@local/dsh-github', directory: 'packages/dsh-github' },
+  { name: '@local/dsh-projects', directory: 'packages/dsh-projects' },
   { name: '@local/dsh-session-environment', directory: 'packages/dsh-session-environment' },
 ]
 
