@@ -12,13 +12,14 @@ import {
   parseYoutubeVideoMetadata,
   planAdaptiveWatch,
   planBalancedWatchChunks,
-} from '../src/adaptive-watch.js'
+} from '../dist/src/adaptive-watch.js'
 
 const VIDEO_ID = 'dQw4w9WgXcQ'
 const URL = `https://www.youtube.com/watch?v=${VIDEO_ID}`
 
 function htmlFor(overrides = {}) {
   const response = {
+    ...overrides,
     videoDetails: {
       videoId: VIDEO_ID,
       title: 'Example video',
@@ -27,7 +28,6 @@ function htmlFor(overrides = {}) {
       thumbnail: { thumbnails: [{ url: 'https://i.ytimg.com/example.jpg' }] },
       ...overrides.videoDetails,
     },
-    ...overrides,
   }
   return `<script>const decoy={"lengthSeconds":"999999"}; ytInitialPlayerResponse = ${JSON.stringify(response)};</script>`
 }

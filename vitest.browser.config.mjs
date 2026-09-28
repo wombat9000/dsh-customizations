@@ -3,7 +3,10 @@ import { playwright } from '@vitest/browser-playwright'
 
 export default defineConfig({
   test: {
-    include: ['packages/*/test/browser/*.browser.test.mjs'],
+    include: [
+      'packages/*/test/browser/*.browser.test.mjs',
+      'packages/dsh-tool-youtube/test/client.browser.test.tsx',
+    ],
     // Component interactions only. Real-host visual comparisons use playwright.config.mjs.
     browser: {
       enabled: true,

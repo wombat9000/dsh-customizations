@@ -1,19 +1,76 @@
 import { createHash } from 'node:crypto'
 import { secondsToTimestamp } from './url.js'
+import type { GeminiYoutubeClient } from './gemini.js'
+import type { TranscriptProgressReport, TranscriptProgressSnapshot } from './progress.js'
+import type {
+  StoredSegment,
+  StoredTranscript,
+  TranscriptMetadata,
+  YoutubeTranscriptArchive,
+} from './transcript-store.js'
+import type {
+  TranscriptOutput,
+  TranscriptReadOutput,
+  TranscriptSearchOutput,
+} from './tool-schemas.js'
+
+export type TranscriptProcessing = TranscriptOutput['processing']
+export interface TranscriptReadInput {
+  transcriptId: string
+  cursor?: number
+  startSeconds?: number
+  endSeconds?: number
+  maxChars?: number
+}
+export interface TranscriptSearchInput {
+  transcriptId: string
+  query: string
+  maxResults?: number
+}
+interface CompatibilityOptions {
+  model: string
+  directTranscriptMaxSeconds: number
+  maximumTranscriptCoreSeconds: number
+  chunkOverlapSeconds: number
+}
+interface ArchiveOptions extends CompatibilityOptions {
+  client: Pick<GeminiYoutubeClient, 'watch' | 'inspectTranscript' | 'generateTranscript'>
+  store: Pick<
+    YoutubeTranscriptArchive<TranscriptProcessing>,
+    'findCompatible' | 'readSegments' | 'deleteTranscript' | 'saveComplete' | 'search'
+  >
+  maxTranscriptOutputChars: number
+}
+type ArchiveSource = TranscriptProcessing['source']
+type ArchiveRecord = StoredTranscript<TranscriptProcessing> & { nextCursor?: number | undefined }
+type InspectedTranscript = Awaited<ReturnType<GeminiYoutubeClient['inspectTranscript']>>
+interface Flight {
+  compatibilityKey: string
+  controller: AbortController
+  subscribers: Set<TranscriptProgressReport>
+  waiters: number
+  settled: boolean
+  lastProgress: TranscriptProgressSnapshot | undefined
+  promise: Promise<StoredTranscript<TranscriptProcessing>> | undefined
+}
 
 export const TRANSCRIBER_VERSION = 'youtube-transcript-v2'
 export const DEFAULT_TRANSCRIPT_PAGE_SEGMENTS = 500
 export const DEFAULT_TRANSCRIPT_SEARCH_RESULTS = 20
 export const MAX_TRANSCRIPT_SEARCH_RESULTS = 50
 
-function throwIfAborted(signal) {
+function throwIfAborted(signal?: AbortSignal) {
   if (!signal?.aborted) return
   const error = new Error('YouTube transcript request was aborted')
   error.name = 'AbortError'
   throw error
 }
 
-export function transcriptCompatibilityKey(video, durationSeconds, options) {
+export function transcriptCompatibilityKey(
+  video: { videoId: string },
+  durationSeconds: number,
+  options: CompatibilityOptions,
+) {
   const value = {
     videoId: video.videoId,
     durationSeconds,
@@ -27,12 +84,12 @@ export function transcriptCompatibilityKey(video, durationSeconds, options) {
   return createHash('sha256').update(JSON.stringify(value)).digest('hex')
 }
 
-function renderedSegmentLength(segment) {
+function renderedSegmentLength(segment: TranscriptOutput['segments'][number]) {
   const speaker = segment.speaker === undefined ? '' : ` ${segment.speaker}:`
   return segment.timestamp.length + speaker.length + segment.text.length + 4
 }
 
-function ownedPublicSegment(segment) {
+function ownedPublicSegment(segment: StoredSegment) {
   return {
     startSeconds: segment.startSeconds,
     timestamp: secondsToTimestamp(segment.startSeconds),
@@ -41,7 +98,11 @@ function ownedPublicSegment(segment) {
   }
 }
 
-function boundedSegments(segments, maxChars, options = {}) {
+function boundedSegments(
+  segments: StoredSegment[],
+  maxChars: number,
+  options: { allowOversize?: boolean } = {},
+) {
   const selected = []
   let renderedChars = 0
   let nextCursor
@@ -62,7 +123,11 @@ function boundedSegments(segments, maxChars, options = {}) {
   return { segments: selected, nextCursor, pageOversize }
 }
 
-export function archiveRecordToTranscript(record, maxOutputChars, source) {
+export function archiveRecordToTranscript(
+  record: ArchiveRecord,
+  maxOutputChars: number,
+  source: ArchiveSource,
+): TranscriptOutput {
   const bounded = boundedSegments(record.segments, maxOutputChars)
   const nextCursor = bounded.nextCursor ?? record.nextCursor
   const truncated = nextCursor !== undefined
@@ -87,7 +152,9 @@ export function archiveRecordToTranscript(record, maxOutputChars, source) {
   }
 }
 
-function completeProgress(record) {
+function completeProgress(
+  record: TranscriptMetadata<TranscriptProcessing>,
+): TranscriptProgressSnapshot {
   const processing = record.processing
   return {
     phase: 'complete',
@@ -103,7 +170,12 @@ function completeProgress(record) {
 }
 
 export class ArchivedYoutubeClient {
-  constructor(options) {
+  client: ArchiveOptions['client']
+  store: ArchiveOptions['store']
+  options: ArchiveOptions
+  flights: Map<string, Flight>
+  disposed: boolean
+  constructor(options: ArchiveOptions) {
     this.client = options.client
     this.store = options.store
     this.options = options
@@ -111,11 +183,15 @@ export class ArchivedYoutubeClient {
     this.disposed = false
   }
 
-  watch(input, signal) {
+  watch(input: { url: string; question: string }, signal?: AbortSignal) {
     return this.client.watch(input, signal)
   }
 
-  async transcript(input, signal, report) {
+  async transcript(
+    input: { url: string },
+    signal?: AbortSignal,
+    report?: TranscriptProgressReport,
+  ): Promise<TranscriptOutput> {
     if (this.disposed) throw new Error('YouTube transcript archive is unavailable')
     throwIfAborted(signal)
     const inspected = await this.client.inspectTranscript(input, signal)
@@ -164,9 +240,9 @@ export class ArchivedYoutubeClient {
     return this.waitForFlight(flight, signal, report, source)
   }
 
-  createFlight(compatibilityKey, inspected) {
+  createFlight(compatibilityKey: string, inspected: InspectedTranscript): Flight {
     const controller = new AbortController()
-    const flight = {
+    const flight: Flight = {
       compatibilityKey,
       controller,
       subscribers: new Set(),
@@ -175,7 +251,7 @@ export class ArchivedYoutubeClient {
       lastProgress: undefined,
       promise: undefined,
     }
-    const publish = (progress) => {
+    const publish = (progress: TranscriptProgressSnapshot) => {
       flight.lastProgress = progress
       for (const subscriber of flight.subscribers) {
         try {
@@ -195,7 +271,7 @@ export class ArchivedYoutubeClient {
       throwIfAborted(controller.signal)
       const generated = {
         ...transcript,
-        processing: { ...transcript.processing, source: 'generated' },
+        processing: { ...transcript.processing, source: 'generated' as const },
       }
       const saved = this.store.saveComplete({
         videoId: inspected.video.videoId,
@@ -211,6 +287,7 @@ export class ArchivedYoutubeClient {
         processing: generated.processing,
         segments: generated.segments,
       })
+      if (saved.transcript === undefined) throw new Error('Saved YouTube transcript was not found')
       return saved.transcript
     })().finally(() => {
       flight.settled = true
@@ -220,7 +297,12 @@ export class ArchivedYoutubeClient {
     return flight
   }
 
-  waitForFlight(flight, signal, report, source) {
+  waitForFlight(
+    flight: Flight,
+    signal: AbortSignal | undefined,
+    report: TranscriptProgressReport | undefined,
+    source: ArchiveSource,
+  ): Promise<TranscriptOutput> {
     throwIfAborted(signal)
     flight.waiters += 1
     if (report !== undefined) {
@@ -246,6 +328,7 @@ export class ArchivedYoutubeClient {
         reject(error)
       }
       signal?.addEventListener('abort', onAbort, { once: true })
+      if (flight.promise === undefined) throw new Error('Transcript flight has not started')
       flight.promise.then(
         (record) => {
           if (!active) return
@@ -261,7 +344,7 @@ export class ArchivedYoutubeClient {
     })
   }
 
-  read(input, signal) {
+  read(input: TranscriptReadInput, signal?: AbortSignal): TranscriptReadOutput {
     throwIfAborted(signal)
     const maxChars = input.maxChars ?? this.options.maxTranscriptOutputChars
     if (!Number.isSafeInteger(maxChars) || maxChars < 1 || maxChars > 200_000) {
@@ -289,7 +372,7 @@ export class ArchivedYoutubeClient {
     }
   }
 
-  search(input, signal) {
+  search(input: TranscriptSearchInput, signal?: AbortSignal): TranscriptSearchOutput {
     throwIfAborted(signal)
     const maxResults = input.maxResults ?? DEFAULT_TRANSCRIPT_SEARCH_RESULTS
     if (

@@ -6,7 +6,11 @@ Gemini-backed tools for understanding public YouTube videos in DSH `0.1.7-rc.2`.
 
 ### youtube_watch
 
-Accepts a public YouTube URL and a specific question. The host verifies video metadata, classifies the question as targeted, global, or exhaustive, and selects a capability-gated strategy. Short videos use a direct request; long videos use low-resolution or agentic processing only when explicitly enabled, otherwise balanced clipped intervals are analyzed and reduced through a text-only call. Returned evidence is normalized against the verified duration, cross-boundary duplicates are removed, and processing metadata reports strategy, coverage, provider-call count, and conservative token estimates.
+Accepts a public YouTube URL and a specific question. The host verifies video metadata, classifies the question as targeted, global, or exhaustive, and selects a capability-gated strategy. Short videos use a direct request; long videos use low-resolution or agentic processing only when explicitly enabled, otherwise balanced clipped intervals are analyzed and reduced through a text-only call. Returned evidence is checked against duration bounds, cross-boundary duplicates are removed, and processing metadata reports strategy, coverage, provider-call count, and conservative token estimates.
+
+Provider responses use bounded integer `start_seconds` and an explicit `timebase: "full-video"`, including clipped requests. The prompt supplies the authoritative duration and interval. The host formats display timestamps locally and never guesses whether a timestamp is global or clip-relative. Each worker validates its response before completing. If the timestamp contract fails, that worker can make one correction request with the same media, budget, and cancellation signal. Successful chunks are retained. This correction can incur another media-processing charge; it is not a text-only timing repair. Missing or malformed JSON, safety failures, and transport failures do not enter this correction path. Exhausted timestamp corrections report strategy, clip bounds, offending seconds, and attempt count without including raw provider output.
+
+The compatibility field `timestampVerified` means only that timestamps passed duration-bounds checks. It does not independently verify when an event occurred. Watch processing also reports `timestampValidation: "duration-bounds-only"`. Observation and inference labels are preserved; absent provenance remains absent. A provider can still report a plausible but incorrect in-range time.
 
     {
       "url": "https://www.youtube.com/watch?v=...",
@@ -104,19 +108,37 @@ Example profile override:
 - Client-side cancellation forwards an AbortSignal, but Gemini may continue provider-side processing and charge usage.
 - Transcript Interactions are temporarily created with `store: true` so a single timestamp correction can use `previous_interaction_id`; the plugin deletes every returned Interaction ID in a `finally` block. Deletion is best-effort, so a failed deletion remains subject to the Gemini project's configured retention. Set `statefulTranscriptCorrections: false` to keep these requests stateless; correction remains text-only but cannot use server-side implicit caching.
 - Sanitized provider usage totals are logged for each request (`input`, `cached`, and `output` tokens) so operators can verify cache behavior without exposing video content or interaction IDs.
-- Structured responses are validated locally. Malformed output and timestamps beyond independently fetched duration fail after at most one bounded correction turn instead of being silently accepted.
-- Duration planning uses public YouTube watch-page metadata through Node's built-in `fetch`. If YouTube changes that page format or blocks the lookup, transcription fails safely rather than sending a video of unknown length through the direct path.
+- Structured responses are validated locally. Timestamp correction is bounded and operation-specific as described above; malformed JSON is not automatically repaired by watch.
+- Duration planning uses public YouTube watch-page metadata through Node's built-in `fetch`. The returned `videoDetails.videoId` must match the requested video before its duration is trusted. Missing or mismatched identity fails closed. If YouTube changes that page format or blocks the lookup, provider-backed operations fail safely rather than sending a video of unknown length through the direct path.
+- Transcript archive saving precedes tool presentation. A presentation serialization failure does not establish that transcription failed or that the archive was not saved. Optional metadata properties are omitted when absent, including final-page cursors.
 - Long transcripts prefer Gemini Interactions static-media processing to clip the public YouTube URL. Filtered chunks use a per-chunk diagnostic fallback without weakening safety settings or reflecting arbitrary provider text. Safety and prohibited-content diagnostics stop; only recitation/output-size diagnostics can recursively split a chunk, with fixed depth and minimum-size limits. An explicit clipping-unsupported error may retry videos up to one hour as one full-video interaction, but generic HTTP 400 never triggers that costly fallback.
 - The persistent archive is local to the DSH Host at `$DSH_HOME/archives/youtube-transcripts.sqlite`. It retains successful transcript versions until explicitly deleted; it never stores API keys, watch questions, failed output, or partial transcripts.
 - This package still has no YouTube Data API, caption scraper, downloader, or Whisper backend.
 
 References: [Video understanding](https://ai.google.dev/gemini-api/docs/video-understanding) and [Interactions API](https://ai.google.dev/api/interactions-api).
 
-## Test
+## Module boundaries
 
-After the repository's approved dependency setup, run these commands from the repository root. The tests use mocked providers and temporary SQLite archives; they do not call Gemini or consume credits. `test:integration` checks package/recipe wiring and a dormant RPC handler, not a live DSH Loader or browser:
+- [Tool schemas](src/tool-schemas.ts) and [presentation](src/tool-presentation.ts) define DSH output and card contracts independently of host registration.
+- [Watch orchestration](src/watch.ts) owns direct and chunked analysis. [Timestamp contracts](src/watch-timestamps.ts) define bounded schemas, explicit origins, validation, and one media-grounded correction.
+- [Gemini transport](src/gemini-transport.ts) shares provider retries, budget accounting, cancellation, error sanitization, usage reporting, and cleanup with [transcript orchestration](src/gemini.ts). Shared [concurrency helpers](src/concurrency.ts) retain the scheduling behavior.
+- The [client entrypoint](client/index.ts) registers the existing settings and tool cards. Client components use TypeScript and TSX.
 
+Host and client sources use strict TypeScript, including checked indexed access and exact optional properties. Runtime validation remains necessary for model responses, persisted records, and RPC data. TypeScript does not establish the accuracy of model-generated timestamps.
+
+## Build and test
+
+After the repository's approved dependency setup, run these commands from the repository root. Builds use the existing pinned TypeScript and client bundler; no package-local compiler installation is needed.
+
+    pnpm --filter @local/dsh-tool-youtube typecheck
+    pnpm --filter @local/dsh-tool-youtube build
     pnpm --filter @local/dsh-tool-youtube test
     pnpm --filter @local/dsh-tool-youtube test:integration
+
+The host build emits checked ESM modules into `dist/`. The client build emits the single lazy-loader [client bundle](client.js). Both generated outputs are tracked for DSH package loading. Edit TypeScript sources, rebuild, and include the generated changes; do not edit emitted JavaScript directly. Package tests check strict types and reproducible artifact freshness, so stale generated code fails instead of hiding a source regression.
+
+Behavior tests remain JavaScript and import the generated host modules. They use mocked providers and temporary SQLite archives; they do not call Gemini or consume credits. Metadata JSON round-trip tests are not a substitute for DSH's real output validator. `test:integration` checks package/recipe wiring and a dormant RPC handler, not a live DSH Loader or browser. The client source-component tests run through the repository browser harness:
+
+    pnpm run test:browser -- packages/dsh-tool-youtube/test/client.browser.test.tsx
 
 A live smoke test requires GEMINI_API_KEY and a short public video. Avoid asserting exact wording from live model responses.

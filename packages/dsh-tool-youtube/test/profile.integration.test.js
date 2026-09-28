@@ -1,8 +1,11 @@
 import assert from 'node:assert/strict'
 import { readFile, stat } from 'node:fs/promises'
 import test from 'node:test'
-import { createTranscriptProgressStore, registerTranscriptProgressRpc } from '../src/progress.js'
-import { apply } from '../src/index.js'
+import {
+  createTranscriptProgressStore,
+  registerTranscriptProgressRpc,
+} from '../dist/src/progress.js'
+import { apply } from '../dist/src/index.js'
 
 const PACKAGE_ROOT = new URL('../', import.meta.url)
 const RECIPE = new URL('../../profiles/personal-web/recipe.json', PACKAGE_ROOT)
@@ -12,10 +15,11 @@ const RECIPE = new URL('../../profiles/personal-web/recipe.json', PACKAGE_ROOT)
 test('YouTube bundle ships its archive provider without a workspace dependency', async () => {
   const manifest = JSON.parse(await readFile(new URL('package.json', PACKAGE_ROOT), 'utf8'))
   assert.equal(manifest.name, '@local/dsh-tool-youtube')
-  assert.equal(manifest.exports['./transcript-store'], './src/transcript-store.js')
+  assert.equal(manifest.exports['./transcript-store'], './dist/src/transcript-store.js')
   assert.equal(manifest.dependencies['@google/genai'], '2.21.0')
   assert.equal(manifest.dependencies['@local/dsh-youtube-transcript-store'], undefined)
-  assert.ok(manifest.files.includes('src/**/*.js'))
+  assert.ok(manifest.files.includes('dist/**/*.js'))
+  assert.ok(manifest.files.includes('src/**/*.ts'))
   assert.equal(manifest.dsh.client.platform, 'web')
   for (const path of Object.values(manifest.exports)) {
     assert.ok((await stat(new URL(path, PACKAGE_ROOT))).isFile())

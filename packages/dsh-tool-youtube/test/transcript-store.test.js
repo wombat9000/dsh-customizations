@@ -9,7 +9,7 @@ import {
   apply,
   YoutubeTranscriptArchive,
   resolveConfig,
-} from '../src/transcript-store.js'
+} from '../dist/src/transcript-store.js'
 
 const VIDEO_ID = 'dQw4w9WgXcQ'
 const VIDEO_URL = `https://www.youtube.com/watch?v=${VIDEO_ID}`

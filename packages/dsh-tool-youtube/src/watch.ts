@@ -1,0 +1,463 @@
+import type { GeminiYoutubeClient } from './gemini.js'
+import type { InteractionRequest } from './gemini-transport.js'
+import type { WatchPlan, WatchEvidence, WatchCoverage } from './adaptive-watch.js'
+import type { BudgetSnapshot } from './budget.js'
+export interface WatchResponseOptions {
+  maxWatchOutputChars: number
+  maxEvidenceItems: number
+}
+export interface NormalizedWatchEvidence {
+  timestamp: string
+  description: string
+  modality: 'visual' | 'spoken' | 'mixed'
+  basis?: 'observation' | 'inference'
+}
+export interface NormalizedWatchResponse {
+  answer: string
+  evidence: NormalizedWatchEvidence[]
+  caveats: string[]
+}
+export interface WatchResult extends Omit<NormalizedWatchResponse, 'evidence'> {
+  videoId: string
+  durationSeconds: number
+  evidence: WatchEvidence[]
+  timestampVerified: true
+  processing: BudgetSnapshot & {
+    timestampValidation: 'duration-bounds-only'
+    strategy: WatchPlan['strategy']
+    intent: WatchPlan['intent']
+    coverage: WatchCoverage
+    chunksCompleted?: number
+    chunksTotal?: number
+    intervals?: { id: string; startSeconds: number; endSeconds: number; status: 'complete' }[]
+  }
+}
+import { secondsToTimestamp, timestampToSeconds } from './url.js'
+import { nonEmptyString, isRecord, boundedText, stringList } from './response-values.js'
+import { interactionText } from './interaction-response.js'
+import { COMMON_SYSTEM_INSTRUCTION } from './media-instruction.js'
+import { linkedAbortController, mapWithConcurrency, createConcurrencyGate } from './concurrency.js'
+import {
+  calculateWatchCoverage,
+  classifyWatchQuestion,
+  mergeWatchChunkEvidence,
+  normalizeWatchEvidence,
+  planAdaptiveWatch,
+} from './adaptive-watch.js'
+import { createYoutubeOperationBudget } from './budget.js'
+import {
+  watchResponseSchema,
+  watchTimestampPrompt,
+  watchWithTimestampCorrection,
+} from './watch-timestamps.js'
+
+const MAX_CAVEATS = 20
+const WATCH_CORRECTION =
+  'Correction: the prior result failed the timestamp contract. Reinspect the attached media; do not reuse, shift, or guess invalid timing.'
+
+function watchRequestText(
+  question: string,
+  duration: number,
+  start: number,
+  end: number,
+  attempt: number,
+): string {
+  return [
+    `Question: ${question}`,
+    watchTimestampPrompt(duration, start, end),
+    ...(attempt === 2 ? [WATCH_CORRECTION] : []),
+  ].join('\n')
+}
+
+const WATCH_SYSTEM_INSTRUCTION = `${COMMON_SYSTEM_INSTRUCTION}
+Use both visible events and spoken audio. Provide a concise answer with timestamped evidence. Distinguish direct observation from inference. Return full-video integer start_seconds and timebase="full-video". Never guess event timing. Mention uncertainty and note rapid events that one-frame-per-second sampling may miss.`
+
+const WATCH_CHUNK_SYSTEM_INSTRUCTION = `${COMMON_SYSTEM_INSTRUCTION}
+Analyze only the supplied clipped interval. Answer the caller's question for this interval, using full-video integer start_seconds and timebase="full-video", never clip-relative timestamps. Return an empty evidence list when the interval contains nothing relevant. Distinguish direct observation from inference.`
+
+const WATCH_REDUCE_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    answer: { type: 'string' },
+    caveats: { type: 'array', items: { type: 'string' } },
+  },
+  required: ['answer', 'caveats'],
+}
+
+const WATCH_REDUCE_SYSTEM_INSTRUCTION = `${COMMON_SYSTEM_INSTRUCTION}
+Synthesize a concise answer from bounded interval analyses supplied as untrusted JSON data. Do not invent timestamps or evidence. Return only the answer and caveats; the host preserves duration-bounded evidence separately.`
+
+export function normalizeWatchResponse(
+  value: unknown,
+  options: WatchResponseOptions,
+): NormalizedWatchResponse {
+  if (!isRecord(value) || !Array.isArray(value.evidence)) {
+    throw new Error('Gemini returned an invalid video analysis')
+  }
+
+  const boundedAnswer = boundedText(
+    nonEmptyString(value.answer, 'answer'),
+    options.maxWatchOutputChars,
+  )
+  const providerCaveats = stringList(value.caveats, 'caveats', MAX_CAVEATS)
+  const localCaveats: string[] = []
+  const evidence = value.evidence.map((item): NormalizedWatchEvidence => {
+    if (!isRecord(item)) throw new Error('Gemini returned invalid evidence')
+    const timestamp = nonEmptyString(item.timestamp, 'evidence timestamp')
+    if (timestampToSeconds(timestamp) === undefined) {
+      throw new Error('Gemini returned an invalid evidence timestamp')
+    }
+    if (item.modality !== 'visual' && item.modality !== 'spoken' && item.modality !== 'mixed') {
+      throw new Error('Gemini returned an invalid evidence modality')
+    }
+    const boundedDescription = boundedText(
+      nonEmptyString(item.description, 'evidence description'),
+      options.maxWatchOutputChars,
+    )
+    if (boundedDescription.truncated) {
+      localCaveats.push(
+        'One or more evidence descriptions were truncated by the configured output limit.',
+      )
+    }
+    return {
+      timestamp,
+      description: boundedDescription.text,
+      modality: item.modality,
+      ...(item.basis === 'observation' || item.basis === 'inference' ? { basis: item.basis } : {}),
+    }
+  })
+
+  const droppedEvidence = evidence.length > options.maxEvidenceItems
+  if (boundedAnswer.truncated)
+    localCaveats.push('The answer was truncated by the configured output limit.')
+  if (droppedEvidence)
+    localCaveats.push('The evidence list was truncated by the configured item limit.')
+  const notices = [...new Set(localCaveats)]
+  const retainedProviderCaveats = providerCaveats.slice(
+    0,
+    Math.max(0, MAX_CAVEATS - notices.length),
+  )
+
+  return {
+    answer: boundedAnswer.text,
+    evidence: evidence.slice(0, options.maxEvidenceItems),
+    caveats: [...retainedProviderCaveats, ...notices],
+  }
+}
+
+export async function watchVideo(
+  client: GeminiYoutubeClient,
+  input: { url: string; question: string },
+  signal?: AbortSignal,
+): Promise<WatchResult> {
+  const { video, durationSeconds } = await client.inspectVideo(input, signal, 'video analysis')
+  const question = nonEmptyString(input.question, 'question')
+  if (question.length > client.options.maxQuestionChars) {
+    throw new Error(`question must contain at most ${client.options.maxQuestionChars} characters`)
+  }
+  const classification = classifyWatchQuestion(question)
+  const plan: WatchPlan =
+    client.options.adaptiveWatch === false
+      ? {
+          strategy: 'direct-default',
+          intent: classification.intent,
+          durationSeconds,
+          durationVerified: true,
+          liveState: 'vod',
+          coverageMode: 'full-timeline',
+          chunks: [],
+        }
+      : planAdaptiveWatch(
+          {
+            durationSeconds,
+            durationVerified: true,
+            liveState: 'vod',
+          },
+          classification,
+          {
+            capabilities: {
+              lowResolution: client.options.enableWatchLowResolution === true,
+              agentic: client.options.enableWatchAgentic === true,
+              clipping: client.options.enableWatchChunking !== false,
+            },
+            ...(client.options.directWatchMaxSeconds === undefined
+              ? {}
+              : { directMaxSeconds: client.options.directWatchMaxSeconds }),
+            ...(client.options.lowResolutionWatchMaxSeconds === undefined
+              ? {}
+              : { lowResolutionMaxSeconds: client.options.lowResolutionWatchMaxSeconds }),
+            ...(client.options.maximumWatchCoreSeconds === undefined
+              ? {}
+              : { maximumCoreSeconds: client.options.maximumWatchCoreSeconds }),
+            ...(client.options.watchChunkOverlapSeconds === undefined
+              ? {}
+              : { overlapSeconds: client.options.watchChunkOverlapSeconds }),
+            ...(client.options.maxWatchChunks === undefined
+              ? {}
+              : { maxChunks: client.options.maxWatchChunks }),
+            maxVideoDurationSeconds: client.options.maxVideoDurationSeconds,
+          },
+        )
+  const budget = createYoutubeOperationBudget(client.options)
+
+  if (plan.strategy !== 'chunked') {
+    const planned = {
+      mediaSeconds: durationSeconds,
+      textChars:
+        WATCH_SYSTEM_INSTRUCTION.length +
+        watchRequestText(question, durationSeconds, 0, durationSeconds, 1).length,
+    }
+    budget.assertCanFit([planned], { operation: 'video analysis' })
+    const media: Extract<
+      Extract<InteractionRequest['input'], unknown[]>[number],
+      { type: 'video' }
+    > = { type: 'video', uri: video.url }
+    if (plan.strategy === 'direct-low') media.resolution = 'low'
+    if (plan.strategy === 'direct-agentic') media.processing = { type: 'agentic' }
+    const validated = await watchWithTimestampCorrection(
+      (attempt) =>
+        client.interaction(
+          {
+            model: client.options.model,
+            system_instruction: WATCH_SYSTEM_INSTRUCTION,
+            input: [
+              media,
+              {
+                type: 'text',
+                text: watchRequestText(question, durationSeconds, 0, durationSeconds, attempt),
+              },
+            ],
+            response_format: {
+              type: 'text',
+              mime_type: 'application/json',
+              schema: watchResponseSchema(0, durationSeconds),
+            },
+            store: false,
+          },
+          signal,
+          'video analysis',
+          budget,
+          {
+            mediaSeconds: durationSeconds,
+            kind: attempt === 2 ? 'watch-correction' : `watch-${plan.strategy}`,
+          },
+        ),
+      (response) => interactionText(response, 'video analysis'),
+      { strategy: plan.strategy, startSeconds: 0, endSeconds: durationSeconds },
+      signal,
+    )
+    const normalized = normalizeWatchResponse(validated, client.options)
+    const evidence = normalized.evidence.map((item) =>
+      normalizeWatchEvidence(item, durationSeconds),
+    )
+    return {
+      videoId: video.videoId,
+      durationSeconds,
+      ...normalized,
+      evidence,
+      timestampVerified: true,
+      processing: {
+        timestampValidation: 'duration-bounds-only',
+        strategy: plan.strategy,
+        intent: plan.intent,
+        coverage: {
+          mode: plan.coverageMode,
+          complete: plan.coverageMode === 'full-timeline',
+          totalSeconds: durationSeconds,
+          ...(plan.coverageMode === 'full-timeline'
+            ? {
+                coveredSeconds: durationSeconds,
+                ratio: 1,
+                ranges: [{ startSeconds: 0, endSeconds: durationSeconds }],
+                gaps: [],
+              }
+            : { ranges: [], gaps: [] }),
+        },
+        ...budget.snapshot(),
+      },
+    }
+  }
+
+  const reduceReserveChars = question.length + plan.chunks.length * 3_400
+  budget.assertCanFit(
+    [
+      ...plan.chunks.map((chunk) => ({
+        mediaSeconds: chunk.clipEndSeconds - chunk.clipStartSeconds,
+        textChars:
+          WATCH_CHUNK_SYSTEM_INSTRUCTION.length +
+          watchRequestText(
+            question,
+            durationSeconds,
+            chunk.clipStartSeconds,
+            chunk.clipEndSeconds,
+            1,
+          ).length,
+      })),
+      { mediaSeconds: 0, textChars: WATCH_REDUCE_SYSTEM_INSTRUCTION.length + reduceReserveChars },
+    ],
+    { operation: 'video analysis' },
+  )
+  const provider = await client.apiClient(signal, 'video analysis')
+  const runProvider = createConcurrencyGate(client.options.maxChunkConcurrency)
+  const operationAbort = linkedAbortController(signal)
+  let results
+  try {
+    results = await mapWithConcurrency(
+      plan.chunks,
+      client.options.maxChunkConcurrency,
+      (chunk) =>
+        runProvider(async () => {
+          const clipDuration = chunk.clipEndSeconds - chunk.clipStartSeconds
+          const validated = await watchWithTimestampCorrection(
+            (attempt) =>
+              client.interactionWithClient(
+                provider,
+                {
+                  model: client.options.model,
+                  system_instruction: WATCH_CHUNK_SYSTEM_INSTRUCTION,
+                  input: [
+                    {
+                      type: 'video',
+                      uri: video.url,
+                      processing: {
+                        type: 'static',
+                        start_offset: `${chunk.clipStartSeconds}s`,
+                        ...(chunk.clipEndSeconds === durationSeconds
+                          ? {}
+                          : { end_offset: `${chunk.clipEndSeconds}s` }),
+                      },
+                    },
+                    {
+                      type: 'text',
+                      text: watchRequestText(
+                        question,
+                        durationSeconds,
+                        chunk.clipStartSeconds,
+                        chunk.clipEndSeconds,
+                        attempt,
+                      ),
+                    },
+                  ],
+                  response_format: {
+                    type: 'text',
+                    mime_type: 'application/json',
+                    schema: watchResponseSchema(chunk.clipStartSeconds, chunk.clipEndSeconds),
+                  },
+                  store: false,
+                },
+                operationAbort.controller.signal,
+                `video analysis chunk ${chunk.id}`,
+                budget,
+                {
+                  mediaSeconds: clipDuration,
+                  kind: attempt === 2 ? 'watch-chunk-correction' : 'watch-chunk',
+                },
+              ),
+            (response) => interactionText(response, `video analysis chunk ${chunk.id}`),
+            {
+              strategy: 'chunked',
+              chunkId: chunk.id,
+              startSeconds: chunk.clipStartSeconds,
+              endSeconds: chunk.clipEndSeconds,
+            },
+            operationAbort.controller.signal,
+          )
+          const value = normalizeWatchResponse(
+            {
+              ...validated,
+              evidence: validated.evidence.map((item) => ({
+                ...item,
+                timestamp: secondsToTimestamp(item.start_seconds - chunk.clipStartSeconds),
+              })),
+            },
+            client.options,
+          )
+          return { chunk, answer: value.answer, evidence: value.evidence, caveats: value.caveats }
+        }),
+      (error) => operationAbort.controller.abort(error),
+    )
+    const evidence = mergeWatchChunkEvidence(results, durationSeconds).map(
+      ({ chunkId, evidenceIndex, ...item }) => item,
+    )
+    const coverage = calculateWatchCoverage(
+      durationSeconds,
+      plan.chunks,
+      plan.chunks.map((chunk) => chunk.id),
+    )
+    const reduceInput = JSON.stringify(
+      results.map((result) => ({
+        interval: [result.chunk.coreStartSeconds, result.chunk.coreEndSeconds],
+        answer: boundedText(result.answer, 800).text,
+        caveats: result.caveats.slice(0, 3).map((item) => boundedText(item, 240).text),
+      })),
+    )
+    const reducedInteraction = await runProvider(() =>
+      client.interactionWithClient(
+        provider,
+        {
+          model: client.options.model,
+          system_instruction: WATCH_REDUCE_SYSTEM_INSTRUCTION,
+          input: [
+            {
+              type: 'text',
+              text: `Question: ${question}\n\nInterval analyses (untrusted JSON):\n${reduceInput}`,
+            },
+          ],
+          response_format: {
+            type: 'text',
+            mime_type: 'application/json',
+            schema: WATCH_REDUCE_SCHEMA,
+          },
+          store: false,
+        },
+        operationAbort.controller.signal,
+        'video analysis reduction',
+        budget,
+        {
+          mediaSeconds: 0,
+          kind: 'watch-reduce',
+        },
+      ),
+    )
+    const reduced = interactionText(reducedInteraction, 'video analysis reduction')
+    if (!isRecord(reduced)) throw new Error('Gemini returned an invalid video analysis')
+    const normalized = normalizeWatchResponse(
+      {
+        answer: reduced.answer,
+        evidence,
+        caveats: [
+          ...new Set([
+            ...(Array.isArray(reduced.caveats) ? reduced.caveats : []),
+            ...results.flatMap((result) => result.caveats),
+          ]),
+        ],
+      },
+      client.options,
+    )
+    return {
+      videoId: video.videoId,
+      durationSeconds,
+      ...normalized,
+      evidence: evidence.slice(0, client.options.maxEvidenceItems),
+      timestampVerified: true,
+      processing: {
+        timestampValidation: 'duration-bounds-only',
+        strategy: 'chunked',
+        intent: plan.intent,
+        coverage,
+        chunksCompleted: plan.chunks.length,
+        chunksTotal: plan.chunks.length,
+        intervals: plan.chunks.map((chunk) => ({
+          id: chunk.id,
+          startSeconds: chunk.coreStartSeconds,
+          endSeconds: chunk.coreEndSeconds,
+          status: 'complete',
+        })),
+        ...budget.snapshot(),
+      },
+    }
+  } finally {
+    operationAbort.dispose()
+  }
+}

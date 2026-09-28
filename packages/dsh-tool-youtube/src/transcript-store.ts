@@ -1,8 +1,87 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdirSync, statSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
-import { DatabaseSync } from 'node:sqlite'
+import { DatabaseSync, type StatementSync, type SQLOutputValue } from 'node:sqlite'
+import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
+
+export interface StoredSegment {
+  ordinal: number
+  startSeconds: number
+  text: string
+  speaker?: string
+}
+export interface TranscriptMetadata<Processing extends object = Record<string, unknown>> {
+  transcriptId: string
+  videoId: string
+  canonicalUrl: string
+  durationSeconds: number
+  compatibilityKey: string
+  model: string
+  transcriberVersion: string
+  language: string
+  speakers: string[]
+  timestampVerified: boolean
+  caveats: string[]
+  processing: Processing
+  createdAt: number
+  lastAccessedAt: number
+  segmentCount: number
+  complete: boolean
+  contentHash: string
+}
+export type StoredTranscript<Processing extends object = Record<string, unknown>> =
+  TranscriptMetadata<Processing> & { segments: StoredSegment[] }
+export interface StoreConfig {
+  path?: string
+  busyTimeoutMs?: number
+  fullTextSearch?: boolean
+}
+export interface CompatibilityQuery {
+  compatibilityKey: string
+  videoId: string
+  durationSeconds: number
+}
+export interface ReadOptions {
+  cursor?: number | undefined
+  startSeconds?: number | undefined
+  endSeconds?: number | undefined
+  limit?: number
+}
+export type SaveTranscriptInput<Processing extends object = Record<string, unknown>> = {
+  videoId: string
+  canonicalUrl: string
+  durationSeconds: number
+  compatibilityKey: string
+  model: string
+  transcriberVersion: string
+  language: string
+  speakers: string[]
+  timestampVerified?: boolean
+  caveats?: string[]
+  segments: Array<{ startSeconds: number; text: string; speaker?: string }>
+  createdAt?: number
+  transcriptId?: string
+} & ({} extends Processing ? { processing?: Processing } : { processing: Processing })
+// The runtime default is {}. Only processing contracts that admit that default
+// may omit it; specialized writers must supply their required metadata.
+type SqlRow = Record<string, SQLOutputValue>
+// SQLite declarations return untyped column records. These narrow adapters describe
+// columns selected from the schema this module creates, not arbitrary provider data.
+function textColumn(row: SqlRow, name: string): string {
+  const value = row[name]
+  if (typeof value !== 'string') throw new TypeError(`Invalid archive text column: ${name}`)
+  return value
+}
+function numberColumn(row: SqlRow, name: string): number {
+  const value = row[name]
+  if (typeof value !== 'number') throw new TypeError(`Invalid archive number column: ${name}`)
+  return value
+}
+function requiredRow(row: SqlRow | undefined): SqlRow {
+  if (row === undefined) throw new Error('Archive query returned no row')
+  return row
+}
 
 export const name = 'youtube-transcript-store'
 export const provide = 'youtubeTranscriptStore'
@@ -20,35 +99,35 @@ export const Config = z.object({
   fullTextSearch: z.boolean().default(true),
 })
 
-function assertNonEmptyString(value, name, maxLength = 100_000) {
+function assertNonEmptyString(value: unknown, name: string, maxLength = 100_000) {
   if (typeof value !== 'string' || value.trim().length === 0 || value.length > maxLength) {
     throw new TypeError(`youtube-transcript-store: ${name} must be a non-empty string`)
   }
   return value
 }
 
-function assertNonNegativeInteger(value, name) {
-  if (!Number.isSafeInteger(value) || value < 0) {
+function assertNonNegativeInteger(value: unknown, name: string) {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) {
     throw new TypeError(`youtube-transcript-store: ${name} must be a non-negative integer`)
   }
   return value
 }
 
-function assertPositiveInteger(value, name) {
-  if (!Number.isSafeInteger(value) || value < 1) {
+function assertPositiveInteger(value: unknown, name: string) {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 1) {
     throw new TypeError(`youtube-transcript-store: ${name} must be a positive integer`)
   }
   return value
 }
 
-function stringList(value, name, maxItems = 1_000, maxLength = 500) {
+function stringList(value: unknown, name: string, maxItems = 1_000, maxLength = 500) {
   if (!Array.isArray(value) || value.length > maxItems) {
     throw new TypeError(`youtube-transcript-store: ${name} must be a bounded string array`)
   }
   return value.map((item) => assertNonEmptyString(item, `${name} item`, maxLength))
 }
 
-function normalizeSegments(value) {
+function normalizeSegments(value: unknown): StoredSegment[] {
   if (!Array.isArray(value) || value.length > MAX_TRANSCRIPT_SEGMENTS) {
     throw new TypeError(
       `youtube-transcript-store: segments must be an array of at most ${MAX_TRANSCRIPT_SEGMENTS} items`,
@@ -56,16 +135,17 @@ function normalizeSegments(value) {
   }
   let totalTextChars = 0
   let previousStartSeconds = -1
-  return value.map((segment, ordinal) => {
+  return value.map((segment: unknown, ordinal) => {
     if (typeof segment !== 'object' || segment === null || Array.isArray(segment)) {
       throw new TypeError('youtube-transcript-store: every segment must be an object')
     }
-    const startSeconds = assertNonNegativeInteger(segment.startSeconds, 'segment startSeconds')
+    const fields = segment as Record<string, unknown>
+    const startSeconds = assertNonNegativeInteger(fields.startSeconds, 'segment startSeconds')
     if (startSeconds < previousStartSeconds) {
       throw new TypeError('youtube-transcript-store: segments must be in chronological order')
     }
     previousStartSeconds = startSeconds
-    const text = assertNonEmptyString(segment.text, 'segment text', 100_000)
+    const text = assertNonEmptyString(fields.text, 'segment text', 100_000)
     totalTextChars += text.length
     if (totalTextChars > MAX_TRANSCRIPT_TEXT_CHARS) {
       throw new TypeError(
@@ -73,51 +153,55 @@ function normalizeSegments(value) {
       )
     }
     const speaker =
-      segment.speaker === undefined
+      fields.speaker === undefined
         ? undefined
-        : assertNonEmptyString(segment.speaker, 'segment speaker', 500)
+        : assertNonEmptyString(fields.speaker, 'segment speaker', 500)
     return { ordinal, startSeconds, text, ...(speaker === undefined ? {} : { speaker }) }
   })
 }
 
-function contentHash(speakers, segments) {
+function contentHash(speakers: string[], segments: StoredSegment[]) {
   return createHash('sha256').update(JSON.stringify({ speakers, segments })).digest('hex')
 }
 
-function ownedMetadata(row) {
+function ownedMetadata<Processing extends object>(
+  row: SqlRow | undefined,
+): TranscriptMetadata<Processing> | undefined {
   if (row === undefined) return undefined
-  const speakers = JSON.parse(row.speakers_json)
+  const speakers: unknown = JSON.parse(textColumn(row, 'speakers_json'))
   return {
-    transcriptId: row.transcript_id,
-    videoId: row.video_id,
-    canonicalUrl: row.canonical_url,
-    durationSeconds: row.duration_seconds,
-    compatibilityKey: row.compatibility_key,
-    model: row.model,
-    transcriberVersion: row.transcriber_version,
-    language: row.language,
+    transcriptId: textColumn(row, 'transcript_id'),
+    videoId: textColumn(row, 'video_id'),
+    canonicalUrl: textColumn(row, 'canonical_url'),
+    durationSeconds: numberColumn(row, 'duration_seconds'),
+    compatibilityKey: textColumn(row, 'compatibility_key'),
+    model: textColumn(row, 'model'),
+    transcriberVersion: textColumn(row, 'transcriber_version'),
+    language: textColumn(row, 'language'),
     speakers: Array.isArray(speakers) ? speakers.map(String) : [],
     timestampVerified: row.timestamp_verified === 1,
-    caveats: JSON.parse(row.caveats_json),
-    processing: JSON.parse(row.processing_json),
-    createdAt: row.created_at,
-    lastAccessedAt: row.last_accessed_at,
-    segmentCount: row.segment_count,
+    // These JSON columns round-trip saveComplete's validated strings and the
+    // caller-owned processing object. They are not Gemini response boundaries.
+    caveats: JSON.parse(textColumn(row, 'caveats_json')) as string[],
+    processing: JSON.parse(textColumn(row, 'processing_json')) as Processing,
+    createdAt: numberColumn(row, 'created_at'),
+    lastAccessedAt: numberColumn(row, 'last_accessed_at'),
+    segmentCount: numberColumn(row, 'segment_count'),
     complete: row.complete === 1,
-    contentHash: row.content_hash,
+    contentHash: textColumn(row, 'content_hash'),
   }
 }
 
-function ownedSegment(row) {
+function ownedSegment(row: SqlRow): StoredSegment {
   return {
-    ordinal: row.ordinal,
-    startSeconds: row.start_seconds,
-    text: row.text,
-    ...(row.speaker === null ? {} : { speaker: row.speaker }),
+    ordinal: numberColumn(row, 'ordinal'),
+    startSeconds: numberColumn(row, 'start_seconds'),
+    text: textColumn(row, 'text'),
+    ...(row.speaker === null ? {} : { speaker: textColumn(row, 'speaker') }),
   }
 }
 
-function searchExpression(query) {
+function searchExpression(query: string) {
   const terms = query.match(/[\p{L}\p{N}]+/gu) ?? []
   if (terms.length === 0) return undefined
   return terms
@@ -126,7 +210,7 @@ function searchExpression(query) {
     .join(' AND ')
 }
 
-export function resolveConfig(config = {}) {
+export function resolveConfig(config: StoreConfig = {}) {
   const path = assertNonEmptyString(config.path, 'path', 10_000)
   const busyTimeoutMs = config.busyTimeoutMs ?? DEFAULT_BUSY_TIMEOUT_MS
   assertPositiveInteger(busyTimeoutMs, 'busyTimeoutMs')
@@ -141,8 +225,25 @@ export function resolveConfig(config = {}) {
   }
 }
 
-export class YoutubeTranscriptArchive {
-  constructor(options) {
+export class YoutubeTranscriptArchive<Processing extends object = Record<string, unknown>> {
+  options: ReturnType<typeof resolveConfig>
+  db: DatabaseSync
+  closed: boolean
+  ftsEnabled = false
+  // prepare runs before the constructor returns; its statements are schema-owned.
+  statements!: Record<
+    | 'findCompatible'
+    | 'getTranscript'
+    | 'touch'
+    | 'upsertVideo'
+    | 'insertTranscript'
+    | 'insertSegment'
+    | 'allSegments'
+    | 'deleteTranscript'
+    | 'listVersions',
+    StatementSync
+  >
+  constructor(options: StoreConfig) {
     this.options = resolveConfig(options)
     if (this.options.path !== ':memory:') {
       mkdirSync(dirname(this.options.path), { recursive: true, mode: 0o700 })
@@ -172,7 +273,10 @@ export class YoutubeTranscriptArchive {
   migrate() {
     this.db.exec('BEGIN IMMEDIATE;')
     try {
-      const version = this.db.prepare('PRAGMA user_version').get().user_version
+      const version = numberColumn(
+        requiredRow(this.db.prepare('PRAGMA user_version').get()),
+        'user_version',
+      )
       if (version > SCHEMA_VERSION) {
         throw new Error(
           `youtube-transcript-store: database schema ${version} is newer than supported schema ${SCHEMA_VERSION}`,
@@ -254,8 +358,9 @@ export class YoutubeTranscriptArchive {
       )
     `,
       )
-      .get().count
-    const obsoleteFts = ftsRow?.sql?.includes('transcript_id UNINDEXED') === true
+      .get()?.count
+    const obsoleteFts =
+      typeof ftsRow?.sql === 'string' && ftsRow.sql.includes('transcript_id UNINDEXED')
     const needsRebuild = ftsRow === undefined || triggerCount !== 3 || obsoleteFts
     this.ftsEnabled = false
     this.db.exec('BEGIN IMMEDIATE;')
@@ -366,7 +471,7 @@ export class YoutubeTranscriptArchive {
     if (this.closed) throw new Error('youtube-transcript-store: archive is closed')
   }
 
-  findCompatible(query) {
+  findCompatible(query: CompatibilityQuery) {
     this.assertOpen()
     const compatibilityKey = assertNonEmptyString(query.compatibilityKey, 'compatibilityKey')
     const videoId = assertNonEmptyString(query.videoId, 'videoId', 100)
@@ -374,9 +479,9 @@ export class YoutubeTranscriptArchive {
     const row = this.statements.findCompatible.get(compatibilityKey, videoId, durationSeconds)
     let metadata
     try {
-      metadata = ownedMetadata(row)
+      metadata = ownedMetadata<Processing>(row)
     } catch {
-      if (row !== undefined) this.statements.deleteTranscript.run(row.transcript_id)
+      if (row !== undefined) this.statements.deleteTranscript.run(textColumn(row, 'transcript_id'))
       return undefined
     }
     if (metadata !== undefined) {
@@ -387,14 +492,14 @@ export class YoutubeTranscriptArchive {
     return metadata
   }
 
-  getTranscript(transcriptId) {
+  getTranscript(transcriptId: string) {
     this.assertOpen()
-    return ownedMetadata(
+    return ownedMetadata<Processing>(
       this.statements.getTranscript.get(assertNonEmptyString(transcriptId, 'transcriptId', 200)),
     )
   }
 
-  loadComplete(transcriptId) {
+  loadComplete(transcriptId: string): StoredTranscript<Processing> | undefined {
     this.assertOpen()
     const id = assertNonEmptyString(transcriptId, 'transcriptId', 200)
     this.db.exec('BEGIN;')
@@ -424,7 +529,10 @@ export class YoutubeTranscriptArchive {
     }
   }
 
-  saveComplete(input) {
+  saveComplete(input: SaveTranscriptInput<Processing>): {
+    created: boolean
+    transcript: StoredTranscript<Processing> | undefined
+  } {
     this.assertOpen()
     const videoId = assertNonEmptyString(input.videoId, 'videoId', 100)
     const canonicalUrl = assertNonEmptyString(input.canonicalUrl, 'canonicalUrl', 10_000)
@@ -457,7 +565,10 @@ export class YoutubeTranscriptArchive {
         throw new TypeError('youtube-transcript-store: segment timestamp exceeds video duration')
       }
     }
-    const now = Number.isSafeInteger(input.createdAt) ? input.createdAt : Date.now()
+    const now =
+      typeof input.createdAt === 'number' && Number.isSafeInteger(input.createdAt)
+        ? input.createdAt
+        : Date.now()
     const transcriptId =
       input.transcriptId === undefined
         ? randomUUID()
@@ -472,9 +583,9 @@ export class YoutubeTranscriptArchive {
         durationSeconds,
       )
       if (existing !== undefined) {
-        this.statements.touch.run(now, existing.transcript_id)
+        this.statements.touch.run(now, textColumn(existing, 'transcript_id'))
         this.db.exec('COMMIT;')
-        const transcript = this.loadComplete(existing.transcript_id)
+        const transcript = this.loadComplete(textColumn(existing, 'transcript_id'))
         if (transcript === undefined) return this.saveComplete(input)
         return { created: false, transcript }
       }
@@ -517,7 +628,7 @@ export class YoutubeTranscriptArchive {
     }
   }
 
-  readSegments(transcriptId, options = {}) {
+  readSegments(transcriptId: string, options: ReadOptions = {}) {
     this.assertOpen()
     const id = assertNonEmptyString(transcriptId, 'transcriptId', 200)
     const cursor = options.cursor ?? 0
@@ -554,11 +665,12 @@ export class YoutubeTranscriptArchive {
         .all(id, cursor, startSeconds, endSeconds, limit + 1)
       const hasMore = rows.length > limit
       const selected = rows.slice(0, limit).map(ownedSegment)
+      const lastSegment = selected.at(-1)
       this.db.exec('COMMIT;')
       return {
         transcript: metadata,
         segments: selected,
-        nextCursor: hasMore && selected.length > 0 ? selected.at(-1).ordinal + 1 : undefined,
+        nextCursor: hasMore && lastSegment !== undefined ? lastSegment.ordinal + 1 : undefined,
       }
     } catch (error) {
       try {
@@ -570,7 +682,7 @@ export class YoutubeTranscriptArchive {
     }
   }
 
-  search(transcriptId, query, options = {}) {
+  search(transcriptId: string, query: string, options: { limit?: number } = {}) {
     this.assertOpen()
     const id = assertNonEmptyString(transcriptId, 'transcriptId', 200)
     const text = assertNonEmptyString(query, 'query', 2_000).trim()
@@ -643,14 +755,14 @@ export class YoutubeTranscriptArchive {
     }
   }
 
-  listVersions(videoId) {
+  listVersions(videoId: string) {
     this.assertOpen()
     return this.statements.listVersions
       .all(assertNonEmptyString(videoId, 'videoId', 100))
-      .map(ownedMetadata)
+      .map((row) => ownedMetadata<Processing>(row))
   }
 
-  deleteTranscript(transcriptId) {
+  deleteTranscript(transcriptId: string) {
     this.assertOpen()
     const result = this.statements.deleteTranscript.run(
       assertNonEmptyString(transcriptId, 'transcriptId', 200),
@@ -660,11 +772,26 @@ export class YoutubeTranscriptArchive {
 
   stats() {
     this.assertOpen()
-    const videos = this.db.prepare('SELECT count(*) AS count FROM videos').get().count
-    const transcripts = this.db.prepare('SELECT count(*) AS count FROM transcripts').get().count
-    const segments = this.db.prepare('SELECT count(*) AS count FROM segments').get().count
-    const pageCount = this.db.prepare('PRAGMA page_count').get().page_count
-    const pageSize = this.db.prepare('PRAGMA page_size').get().page_size
+    const videos = numberColumn(
+      requiredRow(this.db.prepare('SELECT count(*) AS count FROM videos').get()),
+      'count',
+    )
+    const transcripts = numberColumn(
+      requiredRow(this.db.prepare('SELECT count(*) AS count FROM transcripts').get()),
+      'count',
+    )
+    const segments = numberColumn(
+      requiredRow(this.db.prepare('SELECT count(*) AS count FROM segments').get()),
+      'count',
+    )
+    const pageCount = numberColumn(
+      requiredRow(this.db.prepare('PRAGMA page_count').get()),
+      'page_count',
+    )
+    const pageSize = numberColumn(
+      requiredRow(this.db.prepare('PRAGMA page_size').get()),
+      'page_size',
+    )
     let fileBytes = pageCount * pageSize
     if (this.options.path !== ':memory:') {
       let measuredBytes = 0
@@ -689,7 +816,7 @@ export class YoutubeTranscriptArchive {
   }
 }
 
-export function apply(ctx, config) {
+export function apply(ctx: Context, config: StoreConfig) {
   const archive = new YoutubeTranscriptArchive(config)
   ctx.effect(() => () => archive.close(), 'youtube-transcript-store: close archive')
   ctx.provide(TRANSCRIPT_STORE_SERVICE, archive)
