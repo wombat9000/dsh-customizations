@@ -177,7 +177,9 @@ test('repo guidance tracks source pins, script prerequisites, CI distinction, an
   assert.ok(skill.includes(manifest.engines.node))
   assert.equal(manifest.scripts.pretest, 'pnpm run build')
   assert.ok(manifest.scripts.test.includes('packages/dsh-project-steward/test/*.test.js'))
-  assert.match(skill, /fresh checkout-owned offline frozen, scripts-disabled install was validated/)
+  assert.match(skill, /offline frozen, scripts-disabled install was validated/)
+  assert.match(skill, /checkout-owned Linux ARM64 dependency tree with a populated pnpm 11 cache/)
+  assert.match(skill, /does not establish fresh-cache or other-platform install success/)
   for (const phrase of [
     'command -v pnpm',
     '--offline --frozen-lockfile --ignore-scripts',
