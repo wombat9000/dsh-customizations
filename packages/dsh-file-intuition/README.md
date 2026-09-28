@@ -6,11 +6,13 @@ File Intuition adds four Jev-backed tools and a shared `file-intuition` referenc
 
 ## Availability
 
-This bundle targets DSH `0.1.7-rc.2` only. The `personal-web` recipe includes it after the existing shared OpenRouter and Jev bundles. It adds a separate **File Intuition** preset derived from Standard; it does not replace Standard, change the default, or alter an existing session. Select the preset for a new session after a separately approved profile update and restart. Check for a duplicate `file-intuition` preset ID before applying a profile.
+This bundle targets DSH `0.1.7-rc.2` only. The `personal-web` recipe includes it after the existing shared OpenRouter and Jev bundles. While installed and active, its four tools and bundled skill are available across all presets, with no per-session toggle. Disable the plugin as a whole to remove them. The bundle declares no preset and does not change the preset roster or default. Source changes take effect after a separately approved profile update and restart.
 
 The bundle reuses `ctx.jev.evaluate`. It adds no provider SDK, credential store, model selector, browser evaluation endpoint, or second Jev service. Configure the shared **Jev** plugin as usual. Its default model is `typesafe/jev-1.13`. Enable these tools only for workspaces whose eligible contents may be sent to that service.
 
-For an explicitly maintained custom preset, add `@local/dsh-file-intuition` to that preset's plugin roster. Keep the host Jev service shared. Do not register File Intuition globally as a replacement for per-session composition. Preset mounts are shared among agents; File Intuition binds each ephemeral preparation to its execution token, actual agent, session, workspace and arguments.
+The bundle registers one host-wide `local-file-intuition` plugin row, reusing the shared Jev service. Do not also mount `@local/dsh-file-intuition` in custom preset rosters. File Intuition binds each ephemeral preparation to its execution token, actual agent, session, workspace and arguments, keeping concurrent callers isolated.
+
+When upgrading from the former preset-based bundle, remove any manually retained `file-intuition` preset declaration or custom-preset plugin mount to avoid duplicate tools. The bundle no longer supplies the **File Intuition** preset. If it was your saved default, choose an available preset such as Standard. Existing session preset references are not migrated automatically; use a supported preset for new sessions. Applying the profile and restarting DSH remain separately approved operations.
 
 ## Tools
 
@@ -50,7 +52,7 @@ The bundled `file-intuition` skill is a tool manual, not an investigation workfl
 | Visited entries / directories / candidate files | 2,000 / 128 / 256                                      |
 | Directory nesting depth                         | 12                                                     |
 | Snapshot and evaluation deadline                | 120 seconds                                            |
-| Pending preparations per preset mount           | 8                                                      |
+| Pending preparations per plugin mount           | 8                                                      |
 
 `coverage.discoveryComplete` concerns the eligible traversal, not every repository file. A cap makes it false. Counts on partial traversals describe observed entries, not an estimated total. Excluded-directory counters count directories, not unseen descendants. Skipped files and provider failures are not negative judgments. Successful evaluations remain available when other files fail. No hard probability threshold removes uncertain candidates.
 
@@ -74,4 +76,4 @@ node packages/dsh-file-intuition/scripts/build-host.mjs --check
 node scripts/check.mjs
 ```
 
-The source uses strict TypeScript with `noUncheckedIndexedAccess` and `exactOptionalPropertyTypes`. Committed host JavaScript is generated from it; do not edit generated output. Tests use injected Jev responses, opaque filesystem fixtures and the real DSH Tools pipeline, including preservation of other policies. They require no credentials, network requests or paid calls. Packaging checks verify the skill asset, preset roster, license and generated freshness. Applying a profile, restarting DSH, and live provider validation require separate approval.
+The source uses strict TypeScript with `noUncheckedIndexedAccess` and `exactOptionalPropertyTypes`. Committed host JavaScript is generated from it; do not edit generated output. Tests use injected Jev responses, opaque filesystem fixtures and the real DSH Tools pipeline, including preservation of other policies. They require no credentials, network requests or paid calls. Packaging checks verify the skill asset, global registration, unchanged preset rosters and generated freshness. Applying a profile, restarting DSH, and live provider validation require separate approval.

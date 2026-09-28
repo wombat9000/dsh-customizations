@@ -88,7 +88,7 @@ Session Recap can opt in through **Use Jev to choose recap cards** (off by defau
 
 ### File Intuition
 
-[File Intuition](packages/dsh-file-intuition/README.md) adds an opt-in Standard-derived preset with `ask_file`, `classify_file`, `score_file`, `scout_files`, and the `file-intuition` reference skill. It uses the shared Jev service to classify bounded workspace files without returning their bodies to the main agent. Nonempty evaluations send prepared snapshots and questions to OpenRouter/TypeSafe without a File Intuition-specific human approval prompt; other DSH policies remain in force. It reports uncertainty and partial coverage; read shortlisted code before findings or edits. Standard remains the default, and applying this recipe remains a separate approved operation.
+[File Intuition](packages/dsh-file-intuition/README.md) makes `ask_file`, `classify_file`, `score_file`, `scout_files`, and the `file-intuition` reference skill available across all presets while the plugin is installed and active. It adds no preset or per-session toggle; disable the plugin as a whole if needed. It uses the shared Jev service to classify bounded workspace files without returning their bodies to the main agent. Nonempty evaluations send prepared snapshots and questions to OpenRouter/TypeSafe without a File Intuition-specific human approval prompt; other DSH policies remain in force. It reports uncertainty and partial coverage; read shortlisted code before findings or edits. Standard remains the default, and applying this recipe remains a separate approved operation.
 
 ### Linear, YouTube, and Trivy
 

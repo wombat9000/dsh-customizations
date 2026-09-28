@@ -16,6 +16,9 @@ import {
   declarations,
   standardPatch,
   recipeRows,
+  fixture,
+  host,
+  lease,
 } from '../../dsh-product-mode/test/fixtures.js'
 
 const patch = new URL('../cordis.patch.yml', import.meta.url)
@@ -36,31 +39,28 @@ test('strict types, generated reproducibility and committed artifact freshness',
   assert.deepEqual(Scout.inject, ['tools', 'fs', 'skills'])
 })
 
-test('additive preset preserves the Standard roster and default', async () => {
+test('global bundle adds tools without declaring or modifying any preset', async () => {
+  const rows = declarations([patch.pathname])
+  assert.deepEqual(rows, [{ id: 'local-file-intuition', name: '@local/dsh-file-intuition' }])
   const base = declarations([standardPatch])
   const combined = declarations([standardPatch, patch.pathname])
   assert.deepEqual(
-    combined.find((row) => row.config.id === 'standard'),
-    base[0],
-  )
-  const scout = combined.find((row) => row.config.id === 'file-intuition')
-  assert.equal(scout.config.name, 'File Intuition')
-  assert.equal(scout.name, '@deepseek-ai/dsh-agent-preset')
-  const original = base[0].config.plugins
-  const actual = scout.config.plugins
-  assert.deepEqual(
-    actual.filter((row) => !['persona', 'file-intuition'].includes(row.id)),
-    original.filter((row) => row.id !== 'persona'),
-  )
-  assert.equal(actual.filter((row) => row.name === '@local/dsh-file-intuition').length, 1)
-  assert.equal(
-    combined.some((row) => row.name === '@local/dsh-file-intuition'),
-    false,
+    combined.filter((row) => row.name === '@deepseek-ai/dsh-agent-preset'),
+    base,
   )
   const recipe = await recipeRows()
-  assert.equal(recipe.filter((row) => row.config?.id === 'file-intuition').length, 1)
-  const license = await readFile(new URL('../assets/LICENSE.standard', import.meta.url), 'utf8')
-  assert.match(license, /Copyright \(c\) 2026 DeepSeek/)
+  assert.deepEqual(
+    recipe.filter((row) => row.name === '@local/dsh-file-intuition'),
+    rows,
+  )
+  assert.equal(recipe.some((row) => row.config?.id === 'file-intuition'), false)
+  for (const preset of recipe.filter((row) => row.name === '@deepseek-ai/dsh-agent-preset')) {
+    assert.equal(
+      preset.config.plugins.some((row) => row.name === '@local/dsh-file-intuition'),
+      false,
+      `${preset.config.id} must inherit the global plugin, not mount a duplicate`,
+    )
+  }
 })
 
 test('bundled skill asset loads from emitted entrypoint and honors cancellation', async () => {
@@ -116,6 +116,37 @@ test('actual plugin mounts with native registries and publishes four typed tools
     const tool = ctx.get('tools').get(name)
     assert.ok(tool)
     assert.equal(tool.output.schema.type, 'object')
+  }
+})
+
+test('global tools and skill reach different presets and disappear on disposal', async (t) => {
+  // Real Standard and Product mode scopes; no model calls or filesystem collection.
+  const f = await fixture(t)
+  const rows = declarations([standardPatch, join(f.packaged, 'cordis.patch.yml')])
+  const { ctx } = await host(t, f, rows)
+  const registration = ctx.plugin(Scout)
+  await registration.await()
+  const roster = ctx.get('agentPresets')
+  const scopes = [await lease(t, roster, 'standard'), await lease(t, roster, 'product-mode')]
+  const tools = ctx.get('tools')
+  const skills = ctx.get('skills')
+  const names = ['ask_file', 'classify_file', 'score_file', 'scout_files']
+  for (const scope of scopes) {
+    for (const name of names) {
+      assert.ok(tools.view(scope.key).visible.has(name))
+      assert.equal(tools.get(name, scope.key), tools.get(name))
+    }
+    const skill = await skills.get('file-intuition', { scope: scope.key, cwd: f.directory })
+    assert.equal(skill.source, 'bundled')
+    assert.match(skill.content, /^# File intuition/m)
+  }
+  registration.dispose()
+  for (const scope of scopes) {
+    for (const name of names) assert.equal(tools.view(scope.key).visible.has(name), false)
+    assert.equal(
+      await skills.get('file-intuition', { scope: scope.key, cwd: f.directory }),
+      undefined,
+    )
   }
 })
 
