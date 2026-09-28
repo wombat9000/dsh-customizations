@@ -42,6 +42,7 @@ export const CHANNEL = '/session-recap'
 export const Config = z.object({
   autoRecap: z.boolean().default(true).volatile(),
   useJev: z.boolean().default(false).volatile(),
+  bookmarkJev: z.boolean().default(false).volatile(),
   inactivityMinutes: z.number().step(1).min(1).max(10080).default(30).volatile(),
   provider: z.string().default('').volatile(),
   model: z.string().default('').volatile(),
@@ -114,6 +115,7 @@ export function apply(ctx: HostContext, config: ReturnType<typeof Config>) {
     normalizeSettings({
       autoRecap: config.autoRecap.get(),
       useJev: config.useJev.get(),
+      bookmarkJev: config.bookmarkJev.get(),
       inactivityMinutes: config.inactivityMinutes.get(),
       provider: config.provider.get(),
       model: config.model.get(),
@@ -132,6 +134,8 @@ export function apply(ctx: HostContext, config: ReturnType<typeof Config>) {
     settings: () => source(),
     getJev: () => ctx.get('jev'),
   })
+  ctx.on('session/event', (session, event) => runtime.sessionEvent(session.id, event.type))
+  ctx.on('session/disposed', (session) => runtime.sessionEvent(session.id, 'disposed'))
   // This scope is opaque and contains no provider credentials.
   const storageScope = createHash('sha256')
     .update(JSON.stringify([process.env.DSH_HOME ?? '', process.cwd(), name]))
@@ -145,13 +149,18 @@ export function apply(ctx: HostContext, config: ReturnType<typeof Config>) {
     recap: (payload) => runtime.recap(payload),
     models: () => listModels(ctx.llm),
     configure: async (payload) => {
+      const before = source()
       const next = updatedSettings(source, payload)
-      await validateRoute(ctx.llm, next)
+      const stopping = (before.useJev && !next.useJev) || (before.bookmarkJev && !next.bookmarkJev)
+      const sameRoute = before.provider === next.provider && before.model === next.model
+      // Revoking background consent must not depend on a healthy writing provider.
+      if (!(stopping && sameRoute)) await validateRoute(ctx.llm, next)
       const namespace = ctx.fiber.entry?.options.id
       if (!namespace)
         throw new RecapError('invalid-settings', 'Session Recap has no profile entry.')
       if (!settingsService) throw new RecapError('invalid-settings', 'Settings is unavailable.')
       await settingsService.update(namespace, next)
+      runtime.invalidateBookmarks()
       return settings()
     },
   }

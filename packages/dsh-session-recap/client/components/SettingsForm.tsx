@@ -109,6 +109,21 @@ export function SettingsForm({
                 to TypeSafe to choose recap categories. Manage the shared key and model in the
                 OpenRouter and Jev settings cards; no new key is needed.
               </small>
+              <SettingsRow label="Keep Jev bookmarks as the conversation continues">
+                <input
+                  type="checkbox"
+                  checked={draft.bookmarkJev === true}
+                  disabled={busy || !draft.useJev}
+                  aria-describedby={`${ID}-bookmark-privacy`}
+                  onChange={(event) => onChange('bookmarkJev', event.target.checked)}
+                />
+              </SettingsRow>
+              <small id={`${ID}-bookmark-privacy`} className="dsh-session-recap-settings__hint">
+                Experimental; off by default. Requires Jev above. After completed turns, sends new
+                conversation excerpts and relevant earlier passages through OpenRouter to TypeSafe,
+                even if you never open a recap. This incurs API charges. Tracks proposed actions and
+                open questions in memory; no transcript changes. Disabling Jev stops both modes.
+              </small>
               <SettingsRow label="Inactivity (minutes)">
                 <input
                   type="number"

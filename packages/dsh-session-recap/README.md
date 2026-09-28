@@ -37,7 +37,7 @@ To install independently, select `@wombat9000/dsh-session-recap` from `packages/
 
 Enable **Use Jev to choose recap cards** only if sending the bounded conversation excerpt through OpenRouter to TypeSafe is acceptable. The option is off by default. Configure the shared key in the [OpenRouter card](../dsh-openrouter/README.md) and the decision model in the [Jev card](../dsh-jev/README.md); Session Recap has no key field. The `personal-web` recipe includes those plugins in dependency order, but applying it remains a separate operation.
 
-When enabled, the pipeline runs in this order:
+With incremental bookmarks disabled, the pipeline runs in this order:
 
 1. Select the same bounded conversation history used by the standard recap.
 2. Ask Jev, in one request, whether each candidate category is supported and useful for a returning reader.
@@ -52,6 +52,24 @@ The writer can return `null` for a selected category it cannot support, but must
 The writing request uses JSON instructions and strict local validation, not provider-enforced structured output. A valid but oversized response receives at most one shortening attempt under the same request deadline; malformed responses fail.
 
 If Jev is missing, unconfigured, fails, or finds no suitable categories, the existing writer produces standard bullets and the panel explains the fallback. Fallback results are not cached while Jev selection is enabled, so a later request can recover after configuration or service repair. Disabling Jev uses the standard recap without an additional provider call. Jev selection and writing share the recap's overall deadline and stale-session checks.
+
+### Experimental incremental bookmarks
+
+After enabling **Use Jev to choose recap cards**, you can separately enable **Keep Jev bookmarks as the conversation continues**. Both options default to off. This profile-level opt-in sends bounded new conversation excerpts and relevant earlier passages through OpenRouter to TypeSafe after completed turns, even if you never open a recap. Each evaluation can incur charges. Saving settings does not itself run an evaluation. Disabling Jev stops both selection modes.
+
+The initial bookmark vocabulary contains **Next steps** and **Open questions**. Jev first detects explicit actions and questions in completed messages with nearby context. A separate check compares candidate passages with later messages to identify acceptance, answers, reported completion, or superseding statements. The host retains source passages and message IDs, not generated summaries. Proposals remain distinct from user-approved actions; an assistant's completion statement is only reported completion, not verified execution.
+
+When a recap starts, the host synchronizes pending bookmark work and selects current evidence for the existing writing model. The writer reads the bookmarked source passages and status evidence instead of the entire history. If no current evidence is available, the standard bullet recap remains the fallback. Opening a recap never forces unsupported categories into cards.
+
+Expand **Bookmark details** in the resulting recap to inspect retained source IDs, categories, speakers, scores, current statuses, and the messages behind status updates. **Copy bookmark diagnostics JSON** exports that metadata without passage text, generated recap text, credentials, or raw provider errors. Opening and copying diagnostics makes no evaluation call.
+
+Bookmarks are bounded, in-memory, per-session state. They are not written to the transcript, browser storage, or persistent logs. They reset on runtime restart and session disposal; bootstrap examines a bounded recent window rather than replaying the entire history. Older active candidates can remain outside the recent window until resolved or evicted by the retention cap. Edits, history changes, settings changes, and model changes invalidate affected work. If more new messages arrive than the catchup window covers, retained candidates are reset rather than treated as current across an unchecked gap. A failed evaluation does not advance the successful cursor; an explicit recap can retry after recovery. This is not an exhaustive task tracker: truncation, retention limits, and incorrect model judgments can miss or misclassify evidence.
+
+The first version groups actions or questions by source message. Status questions require all relevant items in that passage to be resolved; partial answers or completion leave the group active. Closed markers are not automatically reopened by later corrections; a new explicit action or question can create a new marker. Excerpts preserve the beginning and ending with a visible omission marker. The writer still receives source evidence and must not treat status labels as independent proof.
+
+Bounds are 12 recent messages for bootstrap/catchup, 24 active and 24 closed markers per session, 100 retained session caches, and four concurrent synchronization jobs. Each request has at most 32 questions and a 64 KB payload guard. Synchronization has a 15-second deadline; recap synchronization and writing share the overall 45-second deadline. These bounds can cause a standard-recap fallback. Selection retains up to three active items, preferring recent evidence with representation of both categories; it does not average repeated scores. Disabling background processing does not require the unchanged writing provider to be available.
+
+This experimental flow has deterministic fixture coverage, not a demonstrated accuracy improvement from live Jev evaluations. Keep the original mode available for comparison. No live profile configuration or paid evaluation is part of the test suite.
 
 ### Inspect category selection
 

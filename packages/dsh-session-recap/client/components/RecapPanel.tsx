@@ -1,6 +1,7 @@
 import React from 'react'
 import { CARD_LABELS, visualCards } from '../cards.ts'
 import { SelectionDetails } from './SelectionDetails.tsx'
+import { BookmarkDetails } from './BookmarkDetails.tsx'
 import type { RecapCard, Selection } from '../../shared/contracts.ts'
 import type { ControllerSnapshot } from '../controller-types.ts'
 
@@ -63,6 +64,10 @@ export function RecapBulletList({ bullets }: RecapBulletListProps) {
 
 function selectionCaption(selection: Selection | undefined) {
   if (selection?.mode !== 'standard') return null
+  if (selection.bookmarks)
+    return selection.reason === 'unavailable'
+      ? 'Bookmarks unavailable; using standard recap'
+      : 'No active bookmarks; using standard recap'
   if (selection.reason === 'unavailable') return 'Jev unavailable'
   if (selection.reason === 'no-labels') return 'No suitable categories'
   return null
@@ -106,6 +111,9 @@ export function RecapPanel({ busy, error, recap, selection, diagnosticsKey }: Re
             )}
             {caption ? <p className="dsh-session-recap-card__caption">{caption}</p> : null}
           </div>
+          {selection && 'bookmarks' in selection && selection.bookmarks ? (
+            <BookmarkDetails key={diagnosticsKey} diagnostics={selection.bookmarks} />
+          ) : null}
           {selection?.diagnostics ? (
             <SelectionDetails key={diagnosticsKey} diagnostics={selection.diagnostics} />
           ) : null}

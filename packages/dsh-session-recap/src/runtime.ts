@@ -1,4 +1,5 @@
 import { RecapError } from './errors.js'
+import { BookmarkEngine } from './bookmarks.js'
 import { generateRecap } from './generation.js'
 import { boundedHistory } from './history.js'
 import { LIMITS, normalizeSettings } from './settings.js'
@@ -36,7 +37,57 @@ export class RecapRuntime {
   readonly cache = new Map<string, RecapResult>()
   readonly pending = new Map<string, Promise<RecapResult>>()
   readonly controllers = new Set<AbortController>()
+  readonly bookmarks = new BookmarkEngine()
   disposed = false
+
+  invalidateBookmarks() {
+    this.bookmarks.clear()
+    this.cache.clear()
+    for (const controller of this.controllers)
+      controller.abort(
+        new RecapError('stale', 'The recap settings changed. Request a fresh recap.'),
+      )
+  }
+
+  sessionEvent(sessionId: string, type: string) {
+    if (type === 'turn/start') {
+      this.bookmarks.cancel(sessionId)
+      return
+    }
+    if (type === 'disposed') {
+      this.bookmarks.cancel(sessionId, true)
+      this.cache.clear()
+      return
+    }
+    // Official observers run after commit and must never delay the session publisher.
+    if (type !== 'turn/end' || this.disposed) {
+      this.bookmarks.cancel(sessionId)
+      return
+    }
+    const settings = normalizeSettings(this.settings())
+    const jev = this.jevContext(settings)
+    this.bookmarks.fence(JSON.stringify([settings, jev.identity]))
+    if (!settings.useJev || !settings.bookmarkJev) return
+    const session = this.sessions.get(sessionId)
+    if (!session) return
+    const revision = session.seq
+    void this.bookmarks
+      .synchronize(sessionId, session.deriveMessages(), jev, () =>
+        this.checkCurrent(sessionId, session, revision, settings, jev),
+      )
+      .catch(() => {})
+  }
+
+  synchronizeBookmarks(
+    sessionId: string,
+    session: RecapSession,
+    settings: Settings,
+    jev: JevContext,
+    check: () => void,
+  ) {
+    this.bookmarks.fence(JSON.stringify([settings, jev.identity]))
+    return this.bookmarks.synchronize(sessionId, session.deriveMessages(), jev, check, true)
+  }
 
   constructor({
     sessions,
@@ -54,6 +105,7 @@ export class RecapRuntime {
 
   dispose() {
     this.disposed = true
+    this.bookmarks.dispose()
     for (const controller of this.controllers) controller.abort()
     this.cache.clear()
   }
@@ -116,7 +168,10 @@ export class RecapRuntime {
     jev: JevContext,
     signal?: AbortSignal,
   ) {
-    if (signal?.aborted) throw new RecapError('cancelled', 'The recap request was cancelled.')
+    if (signal?.aborted)
+      throw signal.reason instanceof RecapError
+        ? signal.reason
+        : new RecapError('cancelled', 'The recap request was cancelled.')
     if (
       this.disposed ||
       session.seq !== revision ||
@@ -166,6 +221,7 @@ export class RecapRuntime {
     }
     const revision = session.seq
     const jev = this.jevContext(settings)
+    this.bookmarks.fence(JSON.stringify([settings, jev.identity]))
     const key = JSON.stringify([sessionId, revision, settings, jev.identity])
     const cached = this.cache.get(key)
     if (cached) return { ...cached, cached: true }
@@ -180,7 +236,12 @@ export class RecapRuntime {
     const promise = this.generate(sessionId, revision, settings, history, session, jev)
       .then((value) => {
         this.checkCurrent(sessionId, session, revision, settings, jev)
-        if (!settings.useJev || value.selection.mode === 'jev') this.cache.set(key, value)
+        if (
+          !settings.useJev ||
+          value.selection.mode === 'jev' ||
+          value.selection.mode === 'bookmarks'
+        )
+          this.cache.set(key, value)
         while (this.cache.size > LIMITS.cacheEntries)
           this.cache.delete(this.cache.keys().next().value!)
         return value

@@ -3,6 +3,7 @@ import { RecapError } from './errors.js';
 export const DEFAULT_SETTINGS = Object.freeze({
     autoRecap: true,
     useJev: false,
+    bookmarkJev: false,
     inactivityMinutes: 30,
     provider: '',
     model: '',
@@ -31,7 +32,7 @@ export function normalizeSettings(value = {}) {
         settings.inactivityMinutes > 10080) {
         throw new RecapError('invalid-settings', 'Use an inactivity interval between 1 and 10080 minutes.');
     }
-    if (typeof settings.useJev !== 'boolean') {
+    if (typeof settings.useJev !== 'boolean' || typeof settings.bookmarkJev !== 'boolean') {
         throw new RecapError('invalid-settings', 'Use a boolean for Jev selection.');
     }
     const identifiers = { provider: '', model: '' };
@@ -47,6 +48,7 @@ export function normalizeSettings(value = {}) {
     return {
         autoRecap: settings.autoRecap,
         useJev: settings.useJev,
+        bookmarkJev: settings.bookmarkJev,
         inactivityMinutes: settings.inactivityMinutes,
         ...identifiers,
     };

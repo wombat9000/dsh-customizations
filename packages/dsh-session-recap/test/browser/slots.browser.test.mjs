@@ -596,6 +596,7 @@ test('Jev setting is default-off with privacy description and saves without gene
   expect(fixture.rpc.call).toHaveBeenCalledWith('/session-recap', 'configure', {
     autoRecap: false,
     useJev: true,
+    bookmarkJev: false,
     inactivityMinutes: 30,
     provider: 'fixture-provider',
     model: 'fixture-model',
@@ -630,6 +631,7 @@ test('settings starts collapsed and preserves the draft across expansion', async
   expect(fixture.rpc.call).toHaveBeenCalledWith('/session-recap', 'configure', {
     autoRecap: false,
     useJev: false,
+    bookmarkJev: false,
     inactivityMinutes: 30,
     provider: 'fixture-provider',
     model: 'edited-model',

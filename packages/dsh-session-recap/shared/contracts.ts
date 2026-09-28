@@ -1,7 +1,9 @@
+import type { BookmarkDiagnostics } from './bookmarks.js'
 // Type-only descriptions of host-validated wire values. Host validation stays in src/.
 export interface Settings {
   autoRecap: boolean
   useJev: boolean
+  bookmarkJev: boolean
   inactivityMinutes: number
   provider: string
   model: string
@@ -63,8 +65,15 @@ export type Selection =
       readonly mode: 'standard'
       readonly reason?: 'unavailable' | 'no-labels'
       readonly diagnostics?: SelectionDiagnostics
+      readonly bookmarks?: BookmarkDiagnostics
     }
   | { readonly mode: 'jev'; readonly diagnostics: SelectionDiagnostics; readonly reason?: never }
+  | {
+      readonly mode: 'bookmarks'
+      readonly bookmarks: BookmarkDiagnostics
+      readonly reason?: never
+      readonly diagnostics?: never
+    }
 export interface RecapResult {
   readonly sessionId: string
   readonly revision: number

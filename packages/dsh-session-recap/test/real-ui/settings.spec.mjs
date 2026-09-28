@@ -23,11 +23,17 @@ test('Jev selection persists through the real plugin row configuration with no k
 
 for (const scheme of ['light', 'dark']) {
   test(`real plugin row configuration in ${scheme} mode`, async ({ app }) => {
+    // Keep the expanded consent text and Save control visible in the capture.
+    await app.setViewportSize({ width: app.viewportSize().width, height: 1100 })
     const configuration = await pluginSettings(app, scheme)
     await expect(configuration.getByLabel('Provider ID')).toHaveValue('')
     await expect(configuration.getByLabel('Model ID', { exact: true })).toHaveValue('')
     await expect(configuration.getByLabel('Automatic recap on return')).toBeChecked()
     await expect(configuration.getByLabel('Use Jev to choose recap cards')).not.toBeChecked()
+    const bookmarks = configuration.getByLabel('Keep Jev bookmarks as the conversation continues')
+    await expect(bookmarks).not.toBeChecked()
+    await expect(bookmarks).toBeDisabled()
+    await expect(configuration.getByRole('button', { name: 'Save', exact: true })).toBeInViewport()
     await expect(configuration.getByLabel('Inactivity (minutes)')).toHaveValue('30')
     await expect(configuration).toHaveScreenshot(`settings-${scheme}-expanded.png`)
     const collapse = configuration.getByRole('button', {
