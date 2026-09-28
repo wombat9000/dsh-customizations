@@ -1,0 +1,40 @@
+import { readFile } from 'node:fs/promises'
+import { fileURLToPath } from 'node:url'
+import { BUNDLED_SKILL_RANK, type SkillProvider, type SkillCandidate } from '@deepseek-ai/dsh-skill'
+
+const body = new URL('../../assets/repository-scout.md', import.meta.url)
+const candidate = {
+  name: 'repository-scout',
+  description:
+    'Use Jev-backed file tools for bounded semantic repository triage. Choose boolean, category or rubric questions; batch independent judgments; interpret probabilities and incomplete coverage; then read shortlisted code before findings or edits. Use grep for literal searches instead.',
+  whenToUse:
+    'Use when locating responsibilities or ranking candidate files in an unfamiliar repository, not for authoritative security audits, bug proofs or literal text searches.',
+  invocation: { modelInvocable: true, userInvocable: true },
+  provider: 'repository-scout-bundled',
+  source: 'bundled',
+  resourceBase: {
+    kind: 'directory',
+    path: fileURLToPath(new URL('../../assets/', import.meta.url)),
+  },
+  rank: BUNDLED_SKILL_RANK,
+  locator: body,
+} as const satisfies SkillCandidate
+
+export function createScoutSkillProvider(): SkillProvider {
+  return {
+    name: candidate.provider,
+    async list() {
+      return [candidate]
+    },
+    async get(selected, options) {
+      if (selected.name !== candidate.name) return undefined
+      return {
+        ...candidate,
+        content: await readFile(body, {
+          encoding: 'utf8',
+          ...(options.signal === undefined ? {} : { signal: options.signal }),
+        }),
+      }
+    },
+  }
+}

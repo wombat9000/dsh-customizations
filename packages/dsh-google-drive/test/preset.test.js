@@ -46,6 +46,7 @@ test('Drive adds no preset and personal-web preserves shipped and custom declara
     'product-mode',
     'project-steward',
     'ptc',
+    'repository-scout',
     'standard',
     'worktree-coordinator',
   ])

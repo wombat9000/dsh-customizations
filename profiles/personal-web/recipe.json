@@ -23,6 +23,10 @@
       "source": "../../packages/dsh-jev"
     },
     {
+      "name": "@local/dsh-repository-scout",
+      "source": "../../packages/dsh-repository-scout"
+    },
+    {
       "name": "@wombat9000/dsh-session-recap",
       "source": "../../packages/dsh-session-recap"
     },
