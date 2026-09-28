@@ -10,7 +10,7 @@ const candidate = {
   whenToUse:
     'Read when using ask_file, classify_file, score_file, or scout_files for guidance on question design and interpreting their results.',
   invocation: { modelInvocable: true, userInvocable: true },
-  provider: 'repository-scout-bundled',
+  provider: 'file-intuition-bundled',
   source: 'bundled',
   resourceBase: {
     kind: 'directory',

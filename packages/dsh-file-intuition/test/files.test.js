@@ -382,7 +382,7 @@ test('version or identity changes discard snapshots and sanitize backend failure
       },
     },
   )
-  await assert.rejects(run(unavailable), /^Error: Repository Scout workspace is unavailable\.$/)
+  await assert.rejects(run(unavailable), /^Error: File Intuition workspace is unavailable\.$/)
 })
 
 test('wildcard characters in POSIX filenames do not suppress glob matches', async () => {

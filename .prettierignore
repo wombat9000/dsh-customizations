@@ -13,7 +13,7 @@ artifacts/
 /pnpm-lock.yaml
 /packages/dsh-session-recap/client.js
 /packages/dsh-session-recap/dist/
-/packages/dsh-repository-scout/dist/
+/packages/dsh-file-intuition/dist/
 /packages/dsh-github/client.js
 /packages/dsh-projects/client.js
 /packages/dsh-projects/dist/

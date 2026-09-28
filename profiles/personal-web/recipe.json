@@ -23,8 +23,8 @@
       "source": "../../packages/dsh-jev"
     },
     {
-      "name": "@local/dsh-repository-scout",
-      "source": "../../packages/dsh-repository-scout"
+      "name": "@local/dsh-file-intuition",
+      "source": "../../packages/dsh-file-intuition"
     },
     {
       "name": "@wombat9000/dsh-session-recap",

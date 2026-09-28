@@ -4,7 +4,7 @@ A reference for fast, first-pass file judgments with Jev: `ask_file`, `classify_
 
 These tools provide **System 1-style intelligence**: narrow judgments resembling a first impression, rather than deliberate investigation. “Intuition” describes their role, not human cognition or a guarantee of speed or correctness. Actual latency depends on the provider. The outputs are useful signals, not verified findings.
 
-Each evaluation sees one bounded file snapshot and the supplied questions. It does not see the main conversation, other files, imported implementations, or answers to sibling questions. Source contents and questions go directly to OpenRouter/TypeSafe without a Scout-specific human approval prompt; calls can incur charges. Tool results contain judgments and snapshot metadata, not file bodies or explanations.
+Each evaluation sees one bounded file snapshot and the supplied questions. It does not see the main conversation, other files, imported implementations, or answers to sibling questions. Source contents and questions go directly to OpenRouter/TypeSafe without a File Intuition-specific human approval prompt; calls can incur charges. Tool results contain judgments and snapshot metadata, not file bodies or explanations.
 
 ## Tool selection
 
@@ -176,7 +176,7 @@ Usage totals appear only when the corresponding metric is reported for every dis
 
 Files are included in full or skipped, never silently truncated. Eligible inputs are workspace-relative regular source/text files. Hidden paths, symlinks, dependency/generated directories, common secret files, binary content and recognized secret material are excluded by code. These exclusions are not comprehensive secret detection. Git-ignored files can remain eligible.
 
-Nonempty evaluations send the prepared snapshots and questions automatically through the configured Jev service. Scout adds no human approval gate. Other DSH policies remain effective and can independently restrict execution or request approval. Empty discovery makes no provider call.
+Nonempty evaluations send the prepared snapshots and questions automatically through the configured Jev service. File Intuition adds no human approval gate. Other DSH policies remain effective and can independently restrict execution or request approval. Empty discovery makes no provider call.
 
 Prepared content remains in memory only; no persistent source cache or automatic edits are part of these tools. Tool results enter normal DSH history. Remote retention follows provider policy. Cancellation stops queued work but cannot retract content already sent or guarantee zero charges.
 

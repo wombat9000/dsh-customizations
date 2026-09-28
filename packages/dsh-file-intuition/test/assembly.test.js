@@ -25,6 +25,12 @@ test('strict types, generated reproducibility and committed artifact freshness',
   assert.deepEqual([...first.files], [...buildHost().files])
   checkHost(first)
   const manifest = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'))
+  assert.equal(manifest.name, '@local/dsh-file-intuition')
+  assert.equal(Scout.name, 'file-intuition')
+  assert.equal(
+    import.meta.resolve('@local/dsh-file-intuition'),
+    new URL('../dist/src/index.js', import.meta.url).href,
+  )
   assert.equal(manifest.main, 'dist/src/index.js')
   assert.equal(manifest.dsh.client, undefined)
   assert.deepEqual(Scout.inject, ['tools', 'fs', 'skills'])
@@ -37,22 +43,22 @@ test('additive preset preserves the Standard roster and default', async () => {
     combined.find((row) => row.config.id === 'standard'),
     base[0],
   )
-  const scout = combined.find((row) => row.config.id === 'repository-scout')
-  assert.equal(scout.config.name, 'Repository Scout')
+  const scout = combined.find((row) => row.config.id === 'file-intuition')
+  assert.equal(scout.config.name, 'File Intuition')
   assert.equal(scout.name, '@deepseek-ai/dsh-agent-preset')
   const original = base[0].config.plugins
   const actual = scout.config.plugins
   assert.deepEqual(
-    actual.filter((row) => !['persona', 'repository-scout'].includes(row.id)),
+    actual.filter((row) => !['persona', 'file-intuition'].includes(row.id)),
     original.filter((row) => row.id !== 'persona'),
   )
-  assert.equal(actual.filter((row) => row.name === '@local/dsh-repository-scout').length, 1)
+  assert.equal(actual.filter((row) => row.name === '@local/dsh-file-intuition').length, 1)
   assert.equal(
-    combined.some((row) => row.name === '@local/dsh-repository-scout'),
+    combined.some((row) => row.name === '@local/dsh-file-intuition'),
     false,
   )
   const recipe = await recipeRows()
-  assert.equal(recipe.filter((row) => row.config?.id === 'repository-scout').length, 1)
+  assert.equal(recipe.filter((row) => row.config?.id === 'file-intuition').length, 1)
   const license = await readFile(new URL('../assets/LICENSE.standard', import.meta.url), 'utf8')
   assert.match(license, /Copyright \(c\) 2026 DeepSeek/)
 })
@@ -63,6 +69,7 @@ test('bundled skill asset loads from emitted entrypoint and honors cancellation'
   assert.equal(candidates.length, 1)
   const skill = await provider.get(candidates[0], {})
   assert.equal(skill.name, 'file-intuition')
+  assert.equal(skill.provider, 'file-intuition-bundled')
   assert.match(skill.content, /^# File intuition/m)
   assert.match(skill.description, /Reference/)
   assert.match(skill.content, /## Result envelope and failure semantics/)

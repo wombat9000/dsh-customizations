@@ -23,7 +23,7 @@ export function registerScoutTools(ctx) {
         for (const entry of pending.values())
             entry.release();
         pending.clear();
-    }, 'repository-scout: release prepared snapshots');
+    }, 'file-intuition: release prepared snapshots');
     ctx.on('tools/pre-execute', async (exec, next) => {
         if (!isTool(exec.name))
             return next();
@@ -34,20 +34,20 @@ export function registerScoutTools(ctx) {
             pending.size >= MAX_PENDING) {
             return {
                 kind: 'deny',
-                reason: 'Scout preparation is unavailable, duplicated, or at its bounded concurrency limit.',
+                reason: 'File Intuition preparation is unavailable, duplicated, or at its bounded concurrency limit.',
             };
         }
         const cwd = exec.agent.session.header.cwd;
         if (typeof cwd !== 'string' || !cwd)
             return {
                 kind: 'deny',
-                reason: 'Scout requires a calling session with an explicit workspace.',
+                reason: 'File Intuition requires a calling session with an explicit workspace.',
             };
         const jev = ctx.get('jev');
         if (!isJev(jev))
             return {
                 kind: 'deny',
-                reason: 'The shared Jev service is unavailable. Configure the existing OpenRouter and Jev plugins; Scout never creates a replacement provider.',
+                reason: 'The shared Jev service is unavailable. Configure the existing OpenRouter and Jev plugins; File Intuition never creates a replacement provider.',
             };
         const request = parseRequest(exec.name, exec.arguments);
         const deadline = new AbortController();
@@ -75,7 +75,7 @@ export function registerScoutTools(ctx) {
         signal.addEventListener('abort', entry.release, { once: true });
         try {
             if (signal.aborted)
-                throw new Error('Scout preparation cancelled.');
+                throw new Error('File Intuition preparation cancelled.');
             const discovery = await collectFiles(ctx.fs, cwd, request, signal);
             entry.prepared = prepareScan(request, jev.settings().model, discovery);
             const downstream = await next();
@@ -87,10 +87,10 @@ export function registerScoutTools(ctx) {
                 entry.release();
                 return {
                     kind: 'deny',
-                    reason: 'Scout snapshot expired or was cancelled. Nothing was sent.',
+                    reason: 'File Intuition snapshot expired or was cancelled. Nothing was sent.',
                 };
             }
-            // Scout adds no human approval gate. Other DSH policies keep their
+            // File Intuition adds no human approval gate. Other DSH policies keep their
             // decisions, including asks, localized disclosures, denials and cancellation.
             return downstream;
         }
@@ -98,7 +98,7 @@ export function registerScoutTools(ctx) {
             entry.release();
             return {
                 kind: 'deny',
-                reason: 'Scout could not prepare a safe bounded snapshot. Check relative paths, supported patterns, exclusions, limits and Jev configuration. No file content was sent.',
+                reason: 'File Intuition could not prepare a safe bounded snapshot. Check relative paths, supported patterns, exclusions, limits and Jev configuration. No file content was sent.',
             };
         }
     });
@@ -119,7 +119,7 @@ export function registerScoutTools(ctx) {
             JSON.stringify(parseRequest(name, args)) !== entry.requestKey ||
             JSON.stringify(parseRequest(name, exec.arguments)) !== entry.requestKey) {
             entry?.release();
-            throw new Error('Scout requires an unused preparation for this exact caller, workspace, query, model and file snapshot.');
+            throw new Error('File Intuition requires an unused preparation for this exact caller, workspace, query, model and file snapshot.');
         }
         const scan = entry.prepared;
         // Consume before any await. A replay cannot reuse the same execution token.

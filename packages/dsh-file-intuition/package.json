@@ -1,8 +1,8 @@
 {
-  "name": "@local/dsh-repository-scout",
+  "name": "@local/dsh-file-intuition",
   "version": "0.1.0",
   "private": true,
-  "description": "Bounded repository scouting through the shared Jev decision service",
+  "description": "Jev-backed file judgments and the File Intuition reference",
   "type": "module",
   "main": "dist/src/index.js",
   "exports": {

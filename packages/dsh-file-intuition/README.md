@@ -1,16 +1,16 @@
-# Repository Scout
+# File Intuition
 
-Repository Scout adds four Jev-backed tools and a shared `file-intuition` reference skill for fast, first-pass file judgments. It reads bounded source files, asks narrow questions, and returns typed judgments without adding file bodies to the main agent context.
+File Intuition adds four Jev-backed tools and a shared `file-intuition` reference skill for fast, first-pass file judgments. It reads bounded source files, asks narrow questions, and returns typed judgments without adding file bodies to the main agent context.
 
-**Source contents leave the machine.** Nonempty evaluations send prepared snapshots and questions to OpenRouter/TypeSafe automatically, without a Scout-specific human approval prompt. Calls can incur charges. Secret exclusions are incomplete; do not select confidential material that you cannot disclose.
+**Source contents leave the machine.** Nonempty evaluations send prepared snapshots and questions to OpenRouter/TypeSafe automatically, without a File Intuition-specific human approval prompt. Calls can incur charges. Secret exclusions are incomplete; do not select confidential material that you cannot disclose.
 
 ## Availability
 
-This bundle targets DSH `0.1.7-rc.2` only. The `personal-web` recipe includes it after the existing shared OpenRouter and Jev bundles. It adds a separate **Repository Scout** preset derived from Standard; it does not replace Standard, change the default, or alter an existing session. Select the preset for a new session after a separately approved profile update and restart. Check for a duplicate `repository-scout` preset ID before applying a profile.
+This bundle targets DSH `0.1.7-rc.2` only. The `personal-web` recipe includes it after the existing shared OpenRouter and Jev bundles. It adds a separate **File Intuition** preset derived from Standard; it does not replace Standard, change the default, or alter an existing session. Select the preset for a new session after a separately approved profile update and restart. Check for a duplicate `file-intuition` preset ID before applying a profile.
 
 The bundle reuses `ctx.jev.evaluate`. It adds no provider SDK, credential store, model selector, browser evaluation endpoint, or second Jev service. Configure the shared **Jev** plugin as usual. Its default model is `typesafe/jev-1.13`. Enable these tools only for workspaces whose eligible contents may be sent to that service.
 
-For an explicitly maintained custom preset, add `@local/dsh-repository-scout` to that preset's plugin roster. Keep the host Jev service shared. Do not register Scout globally as a replacement for per-session composition. Preset mounts are shared among agents; Scout binds each ephemeral preparation to its execution token, actual agent, session, workspace and arguments.
+For an explicitly maintained custom preset, add `@local/dsh-file-intuition` to that preset's plugin roster. Keep the host Jev service shared. Do not register File Intuition globally as a replacement for per-session composition. Preset mounts are shared among agents; File Intuition binds each ephemeral preparation to its execution token, actual agent, session, workspace and arguments.
 
 ## Tools
 
@@ -29,12 +29,12 @@ The bundled `file-intuition` skill is a tool manual, not an investigation workfl
 
 ## Safety and privacy contract
 
-- Scout uses the injected DSH filesystem and the caller's session cwd. It does not use host filesystem fallbacks, subprocesses, Git, or a process-global cwd to access repository contents. Opaque filesystem target keys are never interpreted as paths.
-- DSH's file sandbox fences mutations, not all reads or external disclosure. Scout adds its own workspace containment, regular-file checks, symlink rejection, exclusions, version checks, byte limits. Other DSH policies remain in force. It never escalates a filesystem denial.
-- Hidden paths, dependency/generated directories, non-text formats, common credential/key files, and recognized private-key or token material are excluded. Both filename and content checks are conservative heuristics, not comprehensive data-loss prevention. Git-ignored files can remain eligible if no Scout exclusion applies.
-- Scout adds no per-call approval request and does not require an approval service. It sends the prepared in-memory snapshots and questions directly to the shared Jev service, not a later reread of changed files. Source bodies do not appear in tool results.
-- Execution preparations are bound to the caller, session, workspace and arguments and cannot be replayed. A changed service, model or workspace prevents new dispatch. Other DSH policies can still deny, cancel or request approval; Scout preserves those decisions. Empty discovery makes no provider call.
-- Prepared content is memory-only, expires with the two-minute tool deadline, and is cleared on cancellation, results or plugin disposal. It is not persisted as an evaluation cache or emitted in tool output. Tool results enter normal DSH history. Remote retention follows provider policy; Scout makes no zero-retention promise.
+- File Intuition uses the injected DSH filesystem and the caller's session cwd. It does not use host filesystem fallbacks, subprocesses, Git, or a process-global cwd to access repository contents. Opaque filesystem target keys are never interpreted as paths.
+- DSH's file sandbox fences mutations, not all reads or external disclosure. File Intuition adds its own workspace containment, regular-file checks, symlink rejection, exclusions, version checks, byte limits. Other DSH policies remain in force. It never escalates a filesystem denial.
+- Hidden paths, dependency/generated directories, non-text formats, common credential/key files, and recognized private-key or token material are excluded. Both filename and content checks are conservative heuristics, not comprehensive data-loss prevention. Git-ignored files can remain eligible if no File Intuition exclusion applies.
+- File Intuition adds no per-call approval request and does not require an approval service. It sends the prepared in-memory snapshots and questions directly to the shared Jev service, not a later reread of changed files. Source bodies do not appear in tool results.
+- Execution preparations are bound to the caller, session, workspace and arguments and cannot be replayed. A changed service, model or workspace prevents new dispatch. Other DSH policies can still deny, cancel or request approval; File Intuition preserves those decisions. Empty discovery makes no provider call.
+- Prepared content is memory-only, expires with the two-minute tool deadline, and is cleared on cancellation, results or plugin disposal. It is not persisted as an evaluation cache or emitted in tool output. Tool results enter normal DSH history. Remote retention follows provider policy; File Intuition makes no zero-retention promise.
 - No automatic retries occur. Cancellation stops queued requests and signals active requests, but cannot retract an already-sent request or guarantee zero charges. The shared Jev service also imposes its own deadline and host-wide concurrency limit.
 - Scouting does not emit filesystem observation records. A model classification is not a normal file read for observed-edit authorization.
 
@@ -58,7 +58,7 @@ The bundled `file-intuition` skill is a tool manual, not an investigation workfl
 
 ### Backend limitations
 
-The filesystem API returns an entire directory listing without pagination. Scout bounds processing but cannot cap the backend allocation for one enormous directory. Pre/post identity and version checks reduce stale snapshots, but the API provides no atomic no-follow containment-and-read transaction. This is not isolation against a hostile process racing filesystem replacement. Use an appropriately isolated execution environment for adversarial workspaces.
+The filesystem API returns an entire directory listing without pagination. File Intuition bounds processing but cannot cap the backend allocation for one enormous directory. Pre/post identity and version checks reduce stale snapshots, but the API provides no atomic no-follow containment-and-read transaction. This is not isolation against a hostile process racing filesystem replacement. Use an appropriately isolated execution environment for adversarial workspaces.
 
 Tests cover opaque remote-style targets, not an actual Docker filesystem transport. The implementation follows the injected filesystem contract; Docker behavior remains a deployment validation step. No live Jev accuracy, cost, latency or calibration benchmark is claimed by the mocked suite.
 
@@ -67,10 +67,10 @@ Tests cover opaque remote-style targets, not an actual Docker filesystem transpo
 After repository setup and any required install approval, run from the repository root:
 
 ```sh
-node packages/dsh-repository-scout/scripts/typecheck.mjs
-node packages/dsh-repository-scout/scripts/build-host.mjs
-node --test packages/dsh-repository-scout/test/*.test.js
-node packages/dsh-repository-scout/scripts/build-host.mjs --check
+node packages/dsh-file-intuition/scripts/typecheck.mjs
+node packages/dsh-file-intuition/scripts/build-host.mjs
+node --test packages/dsh-file-intuition/test/*.test.js
+node packages/dsh-file-intuition/scripts/build-host.mjs --check
 node scripts/check.mjs
 ```
 

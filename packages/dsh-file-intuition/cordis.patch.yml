@@ -1,12 +1,12 @@
 # Derived from DSH 0.1.7-rc.2 Standard; license: assets/LICENSE.standard.
 # Adds an opt-in preset; does not replace Standard or change the default.
 - insert:
-    - id: local-preset-repository-scout
+    - id: local-preset-file-intuition
       name: '@deepseek-ai/dsh-agent-preset'
       config:
-        id: repository-scout
-        name: Repository Scout
-        description: Standard coding tools plus bounded Jev-backed repository scouting.
+        id: file-intuition
+        name: File Intuition
+        description: Standard coding tools plus Jev-backed file judgments and the File Intuition reference.
         order: 30
         plugins:
           - id: persona
@@ -37,8 +37,8 @@
             name: '@deepseek-ai/dsh-tool-jobs'
           - id: skill-filesystem
             name: '@deepseek-ai/dsh-skill-filesystem'
-          - id: repository-scout
-            name: '@local/dsh-repository-scout'
+          - id: file-intuition
+            name: '@local/dsh-file-intuition'
           - id: tool-skill
             name: '@deepseek-ai/dsh-tool-skill'
           - id: command-goal

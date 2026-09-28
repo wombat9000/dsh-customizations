@@ -42,11 +42,11 @@ test('Drive adds no preset and personal-web preserves shipped and custom declara
     .map((row) => row.config.id)
   assert.deepEqual(ids.sort(), [
     'cordis',
+    'file-intuition',
     'minimal',
     'product-mode',
     'project-steward',
     'ptc',
-    'repository-scout',
     'standard',
     'worktree-coordinator',
   ])

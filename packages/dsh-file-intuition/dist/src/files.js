@@ -18,13 +18,13 @@ const textNames = new Set([
 class Rejected extends Error {
     reason;
     constructor(reason) {
-        super(`Repository Scout file rejected: ${reason}.`);
+        super(`File Intuition file rejected: ${reason}.`);
         this.reason = reason;
     }
 }
 function check(signal) {
     if (signal.aborted)
-        throw new Error('Repository Scout collection cancelled.');
+        throw new Error('File Intuition collection cancelled.');
 }
 function validatePath(path, glob) {
     if (!path || path.length > 1024 || /[\\\x00-\x1f\x7f:{}\[\]!]/u.test(path))
@@ -145,16 +145,16 @@ function reason(error) {
 export async function collectFiles(fs, cwd, request, signal) {
     check(signal);
     if (!cwd || /[\x00-\x1f\x7f]/u.test(cwd) || !/^(?:\/|[A-Za-z]:[\\/])/u.test(cwd))
-        throw new Error('Repository Scout requires an absolute session cwd.');
+        throw new Error('File Intuition requires an absolute session cwd.');
     const batch = request.kind === 'files';
     const parts = validatePath(batch ? request.pattern : request.path, batch);
     if (!batch && parts.length > LIMITS.depth + 1)
-        throw new Error('Repository Scout path exceeds the depth limit.');
+        throw new Error('File Intuition path exceeds the depth limit.');
     if (batch &&
         (!Number.isSafeInteger(request.maxFiles) ||
             request.maxFiles < 1 ||
             request.maxFiles > LIMITS.maxFiles))
-        throw new Error('Invalid Repository Scout file budget.');
+        throw new Error('Invalid File Intuition file budget.');
     const match = matcher(parts);
     const files = [];
     const skips = new Map();
@@ -181,7 +181,7 @@ export async function collectFiles(fs, cwd, request, signal) {
     }
     catch {
         check(signal);
-        throw new Error('Repository Scout workspace is unavailable.');
+        throw new Error('File Intuition workspace is unavailable.');
     }
     async function probe(path) {
         check(signal);

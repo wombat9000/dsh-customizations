@@ -8,7 +8,7 @@ const candidate = {
     description: 'Reference for fast, System 1-style file judgments with Jev: ask_file, classify_file, score_file and scout_files. Covers tool selection, parameters, examples, question design, probability and score semantics, coverage, failures and disclosure limits.',
     whenToUse: 'Read when using ask_file, classify_file, score_file, or scout_files for guidance on question design and interpreting their results.',
     invocation: { modelInvocable: true, userInvocable: true },
-    provider: 'repository-scout-bundled',
+    provider: 'file-intuition-bundled',
     source: 'bundled',
     resourceBase: {
         kind: 'directory',
