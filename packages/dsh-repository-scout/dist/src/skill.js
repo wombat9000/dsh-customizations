@@ -5,8 +5,8 @@ import { BUNDLED_SKILL_RANK } from '@deepseek-ai/dsh-skill';
 const body = new URL('../../assets/file-intuition.md', import.meta.url);
 const candidate = {
     name: 'file-intuition',
-    description: 'Reference for fast, System 1-style file judgments with Jev: ask_file, classify_file, score_file and scout_files. Covers tool selection, parameters, examples, question design, probability and score semantics, coverage, failures and disclosure limits. Not an investigation workflow or verification method.',
-    whenToUse: 'Consult when choosing among these file tools, formulating questions or rubrics, or interpreting their outputs and limitations.',
+    description: 'Reference for fast, System 1-style file judgments with Jev: ask_file, classify_file, score_file and scout_files. Covers tool selection, parameters, examples, question design, probability and score semantics, coverage, failures and disclosure limits.',
+    whenToUse: 'Read when using ask_file, classify_file, score_file, or scout_files for guidance on question design and interpreting their results.',
     invocation: { modelInvocable: true, userInvocable: true },
     provider: 'repository-scout-bundled',
     source: 'bundled',
