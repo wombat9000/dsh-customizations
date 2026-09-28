@@ -23,6 +23,10 @@
       "source": "../../packages/dsh-jev"
     },
     {
+      "name": "@local/dsh-file-intuition",
+      "source": "../../packages/dsh-file-intuition"
+    },
+    {
       "name": "@wombat9000/dsh-session-recap",
       "source": "../../packages/dsh-session-recap"
     },

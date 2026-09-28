@@ -1,0 +1,43 @@
+{
+  "name": "@local/dsh-file-intuition",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Jev-backed file judgments and the File Intuition reference",
+  "type": "module",
+  "main": "dist/src/index.js",
+  "exports": {
+    ".": "./dist/src/index.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist/**/*.js",
+    "src/**/*.ts",
+    "assets",
+    "cordis.patch.yml",
+    "README.md",
+    "scripts/*.mjs",
+    "tsconfig.json"
+  ],
+  "scripts": {
+    "build": "node scripts/build-host.mjs",
+    "typecheck": "node scripts/typecheck.mjs",
+    "test": "node scripts/typecheck.mjs && node --test test/*.test.js"
+  },
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "dependencies": {
+    "@deepseek-ai/dsh-fs": "0.1.7-rc.2",
+    "@deepseek-ai/dsh-skill": "0.1.7-rc.2",
+    "@deepseek-ai/dsh-tools": "0.1.7-rc.2"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "4.0.4"
+  },
+  "license": "UNLICENSED"
+}
