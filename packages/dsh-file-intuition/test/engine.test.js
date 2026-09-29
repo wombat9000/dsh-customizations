@@ -302,40 +302,45 @@ test('malformed model, IDs, types and ranges fail closed; provider prose never e
   )
 })
 
-test('bounded two-call concurrency, partial failure, deterministic relevance order, no retry', async () => {
+test('eight workers refill independently, preserve partial failure and ranking, and never retry', async () => {
   const prepared = prepareScan(
     batch(),
     model,
-    discovery(['c', 'a', 'b', 'd'].map((path) => file(path))),
+    discovery(
+      ['c', 'a', 'b', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l'].map((path) => file(path)),
+    ),
   )
   let active = 0
   let peak = 0
   let calls = 0
-  const gates = [deferred(), deferred()]
+  const gates = Array.from({ length: 8 }, deferred)
   const started = deferred()
+  const ninth = deferred()
   const pending = run(prepared, async ({ state, questions }) => {
     const index = calls++
     active++
     peak = Math.max(peak, active)
-    if (calls === 2) started.resolve()
-    if (index < 2) await gates[index].promise
+    if (calls === 8) started.resolve()
+    if (calls === 9) ninth.resolve()
+    if (index < 8) await gates[index].promise
     active--
     if (state.file.path === 'b') throw new Error('SECRET provider failure')
     return response(questions, state.file.path === 'd' ? 0.9 : 0.5)
   })
   await started.promise
-  assert.equal(calls, 2)
+  assert.equal(calls, 8)
   gates[0].resolve()
-  gates[1].resolve()
+  await ninth.promise // A free worker advances without waiting for the other seven.
+  for (const gate of gates.slice(1)) gate.resolve()
   const result = await pending
-  assert.equal(peak, 2)
-  assert.equal(calls, 4)
+  assert.equal(peak, 8)
+  assert.equal(calls, 12)
   assert.deepEqual(
     result.files.map((f) => f.path),
-    ['d', 'a', 'c', 'b'],
+    ['d', 'a', 'c', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'b'],
   )
-  assert.equal(result.files[3].reason, 'provider_error')
-  assert.equal(result.coverage.evaluatedFiles, 3)
+  assert.equal(result.files.at(-1).reason, 'provider_error')
+  assert.equal(result.coverage.evaluatedFiles, 11)
   assert.equal(result.usage.complete, false)
   assert.equal(Object.hasOwn(result.usage, 'cost'), false)
   assert.equal(JSON.stringify(result).includes('SECRET'), false)
@@ -345,7 +350,7 @@ test('cancellation before dispatch makes no call; cancellation in flight returns
   const prepared = prepareScan(
     batch(),
     model,
-    discovery(['a', 'b', 'c', 'd'].map((path) => file(path))),
+    discovery(Array.from({ length: 12 }, (_, i) => file(`file-${i}`))),
   )
   const pre = new AbortController()
   pre.abort()
@@ -365,7 +370,7 @@ test('cancellation before dispatch makes no call; cancellation in flight returns
   const pending = run(
     prepared,
     async () => {
-      if (++calls === 2) started.resolve()
+      if (++calls === 8) started.resolve()
       return pendingProvider.promise
     },
     controller.signal,
@@ -373,9 +378,9 @@ test('cancellation before dispatch makes no call; cancellation in flight returns
   await started.promise
   controller.abort()
   const result = await pending
-  assert.equal(calls, 2)
+  assert.equal(calls, 8)
   assert.ok(result.files.every((f) => f.reason === 'cancelled'))
-  assert.equal(result.usage.providerCalls, 2)
+  assert.equal(result.usage.providerCalls, 8)
   assert.equal(result.usage.complete, false)
   pendingProvider.resolve(null)
 })
@@ -480,6 +485,58 @@ test('larger files pass through the real Jev service without truncation (mocked 
         runtime.dispose()
       }
     })
+})
+
+test('simultaneous scans share eight Jev slots without busy failures or retries', async (t) => {
+  const gate = deferred()
+  const started = deferred()
+  const calls = new Map()
+  let active = 0
+  let peak = 0
+  const runtime = createJevRuntime({
+    openrouter: { resolveApiKey: async () => 'fixture-key' },
+    getModel: () => model,
+    saveModel: async () => {},
+    fetch: async (_url, init) => {
+      const { state, questions } = JSON.parse(init.body)
+      calls.set(state.file.path, (calls.get(state.file.path) ?? 0) + 1)
+      peak = Math.max(peak, ++active)
+      if (active === 8) started.resolve()
+      try {
+        await gate.promise
+        return new Response(JSON.stringify(response(questions)))
+      } finally {
+        active--
+      }
+    },
+  })
+  t.after(() => runtime.dispose())
+  const pending = Promise.all(
+    Array.from({ length: 3 }, (_, scan) =>
+      evaluateScan(
+        prepareScan(
+          batch(),
+          model,
+          discovery(Array.from({ length: 12 }, (_, i) => file(`${scan}/${i}.ts`))),
+        ),
+        runtime.service,
+        new AbortController().signal,
+      ),
+    ),
+  )
+  await started.promise
+  assert.equal(calls.size, 8)
+  assert.equal(active, 8)
+  gate.resolve()
+  const results = await pending
+  assert.equal(peak, 8)
+  assert.equal(calls.size, 36)
+  assert.ok([...calls.values()].every((count) => count === 1))
+  for (const result of results) {
+    assert.equal(result.coverage.evaluatedFiles, 12, JSON.stringify(result))
+    assert.equal(result.coverage.failedFiles, 0)
+    assert.equal(result.usage.providerCalls, 12)
+  }
 })
 
 test('encoded request accepts its exact boundary and rejects one additional escaped byte', () => {

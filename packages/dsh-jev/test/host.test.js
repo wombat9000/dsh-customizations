@@ -16,11 +16,27 @@ const answer = () => ({
 const response = (value) => new Response(JSON.stringify(value))
 const never = () => new Promise(() => {})
 const deferred = () => {
-  let resolve
-  const promise = new Promise((r) => {
+  let resolve, reject
+  const promise = new Promise((r, j) => {
     resolve = r
+    reject = j
   })
-  return { promise, resolve }
+  return { promise, resolve, reject }
+}
+const flush = () => new Promise(setImmediate)
+function queuedFixture(t, overrides = {}) {
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+  const calls = []
+  const f = fixture({
+    fetch: (_, init) => {
+      const done = deferred()
+      calls.push({ ...done, signal: init.signal, state: JSON.parse(init.body).state })
+      return done.promise
+    },
+    ...overrides,
+  })
+  t.after(() => f.dispose())
+  return { ...f, calls }
 }
 function fixture(overrides = {}) {
   let config = { model: DEFAULT_MODEL },
@@ -521,21 +537,235 @@ test('caller cancellation before dispatch and during body, plus plugin disposal'
   }
 })
 
-test('max four concurrent requests, no retries, released slots after timeout', async () => {
-  let count = 0
-  const f = fixture({
-    timeoutMs: 15,
-    fetch: () => {
-      count++
-      return never()
+test('eight active evaluations and FIFO handoff before credentials for the ninth', async (t) => {
+  const f = queuedFixture(t)
+  const pending = Array.from({ length: 11 }, (_, state) =>
+    f.service.evaluate({ ...input(), state: String(state) }),
+  )
+  await flush()
+  assert.equal(f.resolutions(), 8)
+  assert.deepEqual(
+    f.calls.map((c) => c.state),
+    Array.from({ length: 8 }, (_, i) => String(i)),
+  )
+  for (let i = 0; i < 3; i++) {
+    f.calls[i].resolve(response(answer()))
+    await pending[i]
+    await flush()
+    assert.equal(f.resolutions(), 9 + i)
+    assert.equal(f.calls[8 + i].state, String(8 + i))
+  }
+  for (const call of f.calls.slice(3)) call.resolve(response(answer()))
+  await Promise.all(pending)
+  assert.equal(f.calls.length, 11, 'each request dispatches exactly once')
+})
+
+test('32 waiting evaluations bound the queue; queued cancellation frees capacity', async (t) => {
+  const f = queuedFixture(t)
+  const controllers = Array.from({ length: 40 }, () => new AbortController())
+  const pending = controllers.map((c) =>
+    rejects(f.service.evaluate({ ...input(), signal: c.signal }), 'cancelled'),
+  )
+  await flush()
+  assert.equal(f.resolutions(), 8)
+  await rejects(f.service.evaluate(input()), 'busy')
+  controllers[8].abort()
+  await pending[8]
+  const replacement = new AbortController()
+  const replaced = rejects(
+    f.service.evaluate({ ...input(), signal: replacement.signal }),
+    'cancelled',
+  )
+  await rejects(f.service.evaluate(input()), 'busy')
+  assert.equal(f.resolutions(), 8)
+  // Cancel all queued entries before releasing active slots.
+  for (const c of controllers.slice(8)) c.abort()
+  replacement.abort()
+  for (const c of controllers.slice(0, 8)) c.abort()
+  await Promise.all([...pending, replaced])
+  assert.equal(f.resolutions(), 8)
+  const next = f.service.evaluate(input())
+  await flush()
+  f.calls[8].resolve(response(answer()))
+  await next
+})
+
+test('queue timeout never resolves credentials and releases all slots without retries', async (t) => {
+  const f = queuedFixture(t)
+  const pending = Array.from({ length: 40 }, () => rejects(f.service.evaluate(input()), 'timeout'))
+  await flush()
+  t.mock.timers.tick(15000)
+  await Promise.all(pending)
+  assert.equal(f.resolutions(), 8)
+  assert.equal(f.calls.length, 8)
+  assert.ok(f.calls.every((c) => c.signal.aborted))
+  const next = Array.from({ length: 8 }, () => f.service.evaluate(input()))
+  await flush()
+  assert.equal(f.calls.length, 16)
+  for (const call of f.calls.slice(8)) call.resolve(response(answer()))
+  await Promise.all(next)
+})
+
+test('handoff retains the original deadline including queue wait', async (t) => {
+  const f = queuedFixture(t)
+  const controllers = Array.from({ length: 8 }, () => new AbortController())
+  const active = controllers.map((c) =>
+    rejects(f.service.evaluate({ ...input(), signal: c.signal }), 'cancelled'),
+  )
+  const queued = rejects(f.service.evaluate(input()), 'timeout')
+  await flush()
+  t.mock.timers.tick(14999)
+  controllers[0].abort()
+  await active[0]
+  await flush()
+  assert.equal(f.calls.length, 9)
+  for (const c of controllers.slice(1)) c.abort()
+  await Promise.all(active)
+  assert.equal(f.calls[8].signal.aborted, false)
+  t.mock.timers.tick(1)
+  await queued
+  assert.equal(f.calls[8].signal.aborted, true)
+})
+
+test('settings change and disposal reject the whole queue without draining stale work', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+  for (const mode of ['changed', 'configure', 'dispose']) {
+    const key = deferred()
+    let resolutions = 0
+    const f = fixture({
+      openrouter: {
+        resolveApiKey: () => {
+          resolutions++
+          return key.promise
+        },
+      },
+    })
+    const pending = Array.from({ length: 40 }, () =>
+      rejects(f.service.evaluate(input()), mode === 'dispose' ? 'stopped' : 'changed'),
+    )
+    await flush()
+    assert.equal(resolutions, 8)
+    if (mode === 'configure') await f.rpc('configure', { model: '~typesafe/jev-latest' })
+    else if (mode === 'changed') f.changed()
+    else f.dispose()
+    await Promise.all(pending)
+    key.resolve('private-key')
+    await flush()
+    assert.equal(resolutions, 8)
+    assert.equal(f.fetches.length, 0)
+    if (mode !== 'dispose') {
+      const next = Array.from({ length: 8 }, () => f.service.evaluate(input()))
+      await Promise.all(next)
+      assert.equal(resolutions, 16)
+      assert.equal(f.fetches.length, 8)
+    } else await rejects(f.service.evaluate(input()), 'stopped')
+    f.dispose()
+  }
+})
+
+test('active failures hand off once and late abort-ignoring fetches cannot release twice', async (t) => {
+  const f = queuedFixture(t)
+  const controller = new AbortController()
+  const cancelled = rejects(
+    f.service.evaluate({ ...input(), signal: controller.signal }),
+    'cancelled',
+  )
+  const failed = rejects(f.service.evaluate(input()), 'network')
+  const active = Array.from({ length: 6 }, () => f.service.evaluate(input()))
+  const queued = Array.from({ length: 3 }, () => f.service.evaluate(input()))
+  await flush()
+  controller.abort()
+  f.calls[1].reject(new Error('private-key'))
+  await Promise.all([cancelled, failed])
+  await flush()
+  assert.equal(f.calls.length, 10)
+  let lateCancelled = 0
+  f.calls[0].resolve({
+    ok: true,
+    body: {
+      cancel() {
+        lateCancelled++
+      },
     },
   })
-  const pending = Array.from({ length: 4 }, () => rejects(f.service.evaluate(input()), 'timeout'))
-  await rejects(f.service.evaluate(input()), 'busy')
-  await Promise.all(pending)
-  assert.equal(count, 4)
-  await rejects(f.service.evaluate(input()), 'timeout')
-  assert.equal(count, 5)
+  await flush()
+  assert.equal(lateCancelled, 1)
+  assert.equal(f.calls.length, 10, 'late completion must not release a second slot')
+  f.calls[2].resolve(response(answer()))
+  await active[0]
+  await flush()
+  assert.equal(f.calls.length, 11)
+  for (const call of f.calls.slice(3)) call.resolve(response(answer()))
+  await Promise.all([...active, ...queued])
+})
+
+test('credential failure and cancellation hand off without late-key dispatch or leaked slots', async (t) => {
+  const keys = []
+  const f = queuedFixture(t, {
+    openrouter: {
+      resolveApiKey() {
+        const key = deferred()
+        keys.push(key)
+        return key.promise
+      },
+    },
+  })
+  const controller = new AbortController()
+  const cancelled = rejects(
+    f.service.evaluate({ ...input(), signal: controller.signal }),
+    'cancelled',
+  )
+  const failed = rejects(f.service.evaluate(input()), 'credential')
+  const remaining = Array.from({ length: 9 }, () => f.service.evaluate(input()))
+  await flush()
+  assert.equal(keys.length, 8)
+  controller.abort()
+  keys[1].reject(new Error('private-key'))
+  await Promise.all([cancelled, failed])
+  await flush()
+  assert.equal(keys.length, 10)
+  keys[0].resolve('private-key')
+  await flush()
+  assert.equal(f.calls.length, 0)
+  assert.equal(keys.length, 10)
+  for (const key of keys.slice(2)) key.resolve('private-key')
+  await flush()
+  assert.equal(f.calls.length, 8)
+  f.calls[0].resolve(response(answer()))
+  await remaining[0]
+  await flush()
+  assert.equal(keys.length, 11)
+  keys[10].resolve('private-key')
+  await flush()
+  for (const call of f.calls.slice(1)) call.resolve(response(answer()))
+  await Promise.all(remaining)
+})
+
+test('response failure and queued cancellation racing handoff preserve capacity', async (t) => {
+  const f = queuedFixture(t)
+  const failed = rejects(f.service.evaluate(input()), 'response')
+  const active = Array.from({ length: 7 }, () => f.service.evaluate(input()))
+  const controller = new AbortController()
+  const cancelled = rejects(
+    f.service.evaluate({ ...input(), signal: controller.signal }),
+    'cancelled',
+  )
+  const next = f.service.evaluate({ ...input(), state: 'next' })
+  const last = f.service.evaluate({ ...input(), state: 'last' })
+  await flush()
+  f.calls[0].resolve(response({}))
+  controller.abort()
+  await Promise.all([failed, cancelled])
+  await flush()
+  assert.equal(f.resolutions(), 9)
+  assert.equal(f.calls[8].state, 'next')
+  f.calls[1].resolve(response(answer()))
+  await active[0]
+  await flush()
+  assert.equal(f.resolutions(), 10)
+  assert.equal(f.calls[9].state, 'last')
+  for (const call of f.calls.slice(2)) call.resolve(response(answer()))
+  await Promise.all([...active, next, last])
 })
 
 test('snapshots state/questions before asynchronous key resolution', async () => {
