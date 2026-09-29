@@ -23,7 +23,7 @@ const id = {
 const path = {
   ...text,
   description:
-    'Workspace-relative regular text/source file. No absolute paths, .., symlinks, hidden paths, secrets, or generated/dependency directories. Files over 16 KiB are rejected, not truncated.',
+    'Workspace-relative regular text/source file. No absolute paths, .., symlinks, hidden paths, secrets, or generated/dependency directories. Files over 96 KiB are rejected, not truncated. This byte cap does not guarantee the content fits Jev’s token context.',
 }
 const commonQuestions = {
   type: 'array',

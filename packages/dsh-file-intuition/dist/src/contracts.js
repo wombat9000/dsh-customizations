@@ -5,9 +5,14 @@ export const LIMITS = Object.freeze({
     criterionChars: 512,
     choiceOptions: 16,
     scoreLevels: 10,
-    fileBytes: 16_384,
-    batchBytes: 131_072,
-    requestBytes: 60_000,
+    // Jev 1.13: 32k tokens for state + longest question (docs.typesafe.ai/models).
+    // 96 KiB is ~24.6k tokens at 4 bytes/token, leaving room for question/metadata.
+    // This is a byte heuristic, not tokenizer-based context enforcement.
+    fileBytes: 96 * 1024,
+    // Retain at most eight maximum-sized snapshots; each file is a separate request.
+    batchBytes: 8 * 96 * 1024,
+    // Allow JSON escaping and questions, below the shared Jev service's 256 KiB cap.
+    requestBytes: 240 * 1024,
     defaultFiles: 12,
     maxFiles: 24,
     visitedEntries: 2_000,

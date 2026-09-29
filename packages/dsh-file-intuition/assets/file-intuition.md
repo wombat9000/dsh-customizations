@@ -162,19 +162,21 @@ Usage totals appear only when the corresponding metric is reported for every dis
 
 ## Limits and disclosure
 
-| Limit                                                          | Value                                              |
-| -------------------------------------------------------------- | -------------------------------------------------- |
-| Independent questions per single-file call                     | 1–8                                                |
-| Question / criterion or level / ID length                      | 1,024 / 512 / 128 characters maximum               |
-| Options per classification / levels per rubric                 | 2–16 / 2–10                                        |
-| Complete file content / aggregate retained content             | 16 KiB / 128 KiB                                   |
-| Files per scouting call                                        | Default 12, maximum 24                             |
-| Concurrent provider requests per call                          | At most 2, subject to shared service capacity      |
-| Encoded request size                                           | 60,000 bytes, including model, state and questions |
-| Visited entries / directories / candidates / directory nesting | 2,000 / 128 / 256 / 12                             |
-| Snapshot and evaluation deadline                               | 120 seconds                                        |
+| Limit                                                          | Value                                         |
+| -------------------------------------------------------------- | --------------------------------------------- |
+| Independent questions per single-file call                     | 1–8                                           |
+| Question / criterion or level / ID length                      | 1,024 / 512 / 128 characters maximum          |
+| Options per classification / levels per rubric                 | 2–16 / 2–10                                   |
+| Complete file content / aggregate retained content             | 96 KiB / 768 KiB                              |
+| Files per scouting call                                        | Default 12, maximum 24                        |
+| Concurrent provider requests per call                          | At most 2, subject to shared service capacity |
+| Encoded request size                                           | 240 KiB, including model, state and questions |
+| Visited entries / directories / candidates / directory nesting | 2,000 / 128 / 256 / 12                        |
+| Snapshot and evaluation deadline                               | 120 seconds                                   |
 
-Files are included in full or skipped, never silently truncated. Eligible inputs are workspace-relative regular source/text files. Hidden paths, symlinks, dependency/generated directories, common secret files, binary content and recognized secret material are excluded by code. These exclusions are not comprehensive secret detection. Git-ignored files can remain eligible.
+[Jev 1.13's context limits](https://docs.typesafe.ai/models) are 32k tokens for `state` plus the longest question and 64k for `state` plus all questions. [OpenRouter advertises 32,000 tokens](https://openrouter.ai/typesafe/jev-1.13). The 96 KiB file cap approximates 24.6k tokens at four UTF-8 bytes per token, leaving headroom for metadata and a question. It is a heuristic, not a tokenizer check: dense code or long questions can still exceed provider context. The encoded-request guard accounts for JSON escaping and questions but does not measure tokens. Each file uses a separate request; the aggregate cap bounds retained memory, not model context.
+
+Files are included in full or skipped, never silently truncated. There is no automatic chunking or retry after a context rejection. Eligible inputs are workspace-relative regular source/text files. Hidden paths, symlinks, dependency/generated directories, common secret files, binary content and recognized secret material are excluded by code. These exclusions are not comprehensive secret detection. Git-ignored files can remain eligible.
 
 Nonempty evaluations send the prepared snapshots and questions automatically through the configured Jev service. File Intuition adds no human approval gate. Other DSH policies remain effective and can independently restrict execution or request approval. Empty discovery makes no provider call.
 

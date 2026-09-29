@@ -44,15 +44,19 @@ The bundled `file-intuition` skill is a tool manual, not an investigation workfl
 
 | Bound                                           | Limit                                                  |
 | ----------------------------------------------- | ------------------------------------------------------ |
-| File content                                    | 16 KiB; complete file or skip, never silent truncation |
-| Aggregate retained file bodies                  | 128 KiB                                                |
+| File content                                    | 96 KiB; complete file or skip, never silent truncation |
+| Aggregate retained file bodies                  | 768 KiB                                                |
 | Evaluated files                                 | Default 12; maximum 24                                 |
 | Concurrent Jev requests                         | 2 per scan, subject to shared service capacity         |
-| Encoded Jev request                             | 60,000 bytes including model, state and questions      |
+| Encoded Jev request                             | 240 KiB including model, state and questions           |
 | Visited entries / directories / candidate files | 2,000 / 128 / 256                                      |
 | Directory nesting depth                         | 12                                                     |
 | Snapshot and evaluation deadline                | 120 seconds                                            |
 | Pending preparations per plugin mount           | 8                                                      |
+
+[TypeSafe documents Jev 1.13](https://docs.typesafe.ai/models) as allowing 32k tokens for `state` plus the longest question, and 64k tokens for `state` plus all questions. [OpenRouter lists a 32,000-token context](https://openrouter.ai/typesafe/jev-1.13). The 96 KiB file cap is a sizing heuristic: at roughly four UTF-8 bytes per token, a maximum-sized file uses about 24.6k tokens, leaving headroom for metadata and a question. Token density varies; this is not tokenizer-based enforcement or a guarantee that an accepted file fits. Questions and criteria also consume context. Provider rejections remain explicit failures; files are not automatically chunked, truncated, or retried.
+
+The encoded-request cap allows JSON escaping and question text and stays below the shared Jev service's 256 KiB request guard. Neither byte cap represents model token capacity. The 768 KiB aggregate holds eight maximum-sized snapshots; each file is evaluated in its own request, so aggregate bytes do not share one model context.
 
 `coverage.discoveryComplete` concerns the eligible traversal, not every repository file. A cap makes it false. Counts on partial traversals describe observed entries, not an estimated total. Excluded-directory counters count directories, not unseen descendants. Skipped files and provider failures are not negative judgments. Successful evaluations remain available when other files fail. No hard probability threshold removes uncertain candidates.
 

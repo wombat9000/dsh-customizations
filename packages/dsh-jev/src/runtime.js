@@ -1,7 +1,11 @@
 export const DEFAULT_MODEL = 'typesafe/jev-1.13'
 export const CHANNEL = '/jev-integration'
 export const ENDPOINT = 'https://openrouter.ai/api/alpha/decisions'
-const LIMIT = 65536
+// Byte/memory guards, not model token guarantees.
+const MAX_SNAPSHOT_BYTES = 262144
+const MAX_REQUEST_BYTES = 262144
+const MAX_RESPONSE_BYTES = 65536
+const MAX_TRAVERSAL_NODES = 65536
 const messages = {
   invalid: 'Invalid Jev request.',
   model: 'Invalid Jev model.',
@@ -49,11 +53,11 @@ const exact = (value, keys) =>
   keys.every((k) => Object.hasOwn(value, k))
 // Copy JSON without invoking toJSON/getters, and bound traversal before encoding.
 function snapshot(value) {
-  let budget = LIMIT,
+  let budget = MAX_SNAPSHOT_BYTES,
     nodes = 0
   const seen = new Set()
   function copy(v, depth) {
-    if (++nodes > LIMIT || depth > 64) fail('invalid')
+    if (++nodes > MAX_TRAVERSAL_NODES || depth > 64) fail('invalid')
     if (v === null || typeof v === 'boolean') {
       budget -= 5
       return v
@@ -132,7 +136,7 @@ function prepare(input, model) {
     } else fail('invalid')
   }
   const body = JSON.stringify({ model, state: data.state, questions: data.questions })
-  if (Buffer.byteLength(body) > LIMIT) fail('invalid')
+  if (Buffer.byteLength(body) > MAX_REQUEST_BYTES) fail('invalid')
   return { body, questions: data.questions }
 }
 function probabilities(value, keys) {
@@ -305,7 +309,7 @@ export function createJevRuntime({
         if (!response?.ok || response.redirected || (response.url && response.url !== ENDPOINT))
           fail('network')
         const size = response.headers?.get('content-length')
-        if (size && Number(size) > LIMIT) fail('response')
+        if (size && Number(size) > MAX_RESPONSE_BYTES) fail('response')
         if (!response.body?.getReader) fail('response')
         reader = response.body.getReader()
         const chunks = []
@@ -316,7 +320,7 @@ export function createJevRuntime({
           if (chunk.done) break
           if (!(chunk.value instanceof Uint8Array)) fail('response')
           bytes += chunk.value.byteLength
-          if (bytes > LIMIT) fail('response')
+          if (bytes > MAX_RESPONSE_BYTES) fail('response')
           chunks.push(chunk.value)
         }
         let raw
