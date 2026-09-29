@@ -397,10 +397,15 @@ window.__ModuleLoader__.load({
       name: 'local-worktrees',
       inject: ['slots', 'sessions', 'connection', 'jobs'],
       apply(ctx) {
-        ctx.slots.inject('conversation.view', () =>
-          watchCapability({
+        ctx.slots.inject('conversation.view', () => {
+          // Cordis service reads create caller-scoped wrappers. Capture them for
+          // this slot lifetime, not during render: composer updates must not
+          // restart Panel's effect, reader, selection, or job subscription.
+          const jobs = ctx.jobs
+          const rpc = ctx.connection.rpc
+          return watchCapability({
             sessions: ctx.sessions,
-            rpc: ctx.connection.rpc,
+            rpc,
             register: (sessionId) =>
               ctx.slots.register(
                 {
@@ -415,13 +420,13 @@ window.__ModuleLoader__.load({
                     ? h(Panel, {
                         key: sessionId,
                         sessionId,
-                        jobs: ctx.jobs,
-                        rpc: ctx.connection.rpc,
+                        jobs,
+                        rpc,
                       })
                     : null,
               ),
-          }),
-        )
+          })
+        })
       },
       createReader,
       watchCapability,

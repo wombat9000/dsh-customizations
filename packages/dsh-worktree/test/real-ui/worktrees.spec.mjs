@@ -22,6 +22,72 @@ const beforeClient = beforeRef
     )
   : undefined
 
+test('typing in the resident composer preserves the Worktrees panel and selection', async ({
+  app,
+}) => {
+  let snapshots = 0
+  await app.route('**/local-worktrees/*', async (route) => {
+    const request = route.request().postDataJSON()
+    const { sessionId, path } = request.payload
+    const worktrees = ['main', 'feature'].map((name) => ({
+      path: `/workspace/${name}`,
+      name,
+      branch: name,
+      workerStatus: 'idle',
+      changes: { count: 0, files: [] },
+    }))
+    if (request.method === 'snapshot') snapshots++
+    const value =
+      request.method === 'capability'
+        ? { sessionId, state: 'ready' }
+        : {
+            sessionId,
+            state: 'ready',
+            repository: '/workspace/main',
+            worktrees,
+            selected: {
+              path: path ?? worktrees[0].path,
+              changes: { count: 0, files: [] },
+              runs: [],
+              run: null,
+            },
+          }
+    await route.fulfill({
+      json: { type: 'server-response', rpcId: request.rpcId, result: { ok: true, value } },
+    })
+  })
+  // Install before mounting the panel so its polling timer is controllable.
+  await app.clock.install()
+  await openSeededSession(app)
+  await app.getByRole('tab', { name: 'Worktrees', exact: true }).click()
+  const panel = app.getByRole('region', { name: 'Worktrees', exact: true })
+  await panel.getByRole('button', { name: 'feature — feature', exact: true }).click()
+  await expect(panel.locator('.wt-detail .wt-path')).toHaveText('/workspace/feature')
+  // Pause periodic polling, but keep actual browser input and React effects live.
+  await app.clock.pauseAt(new Date())
+  const before = snapshots
+  await panel.locator('.wt-layout').evaluate((element) => {
+    window.worktreesLayoutBeforeTyping = element
+  })
+  const editor = app.locator('[contenteditable="true"][role="textbox"]')
+  await editor.pressSequentially('draft without submitting')
+  await expect(editor).toHaveText('draft without submitting')
+  // Flush the native render/effect work without waiting for the polling timer.
+  await app.clock.runFor(100)
+  await expect(panel.locator('.wt-detail .wt-path')).toHaveText('/workspace/feature')
+  expect(
+    await panel
+      .locator('.wt-layout')
+      .evaluate((element) => element === window.worktreesLayoutBeforeTyping),
+  ).toBe(true)
+  expect(snapshots).toBe(before)
+  await expect(panel.getByText('Loading worktrees…', { exact: true })).toHaveCount(0)
+  // Stabilizing the handles must not disable the normal periodic refresh.
+  await app.clock.runFor(10000)
+  await expect.poll(() => snapshots).toBe(before + 1)
+  await expect(panel.locator('.wt-detail .wt-path')).toHaveText('/workspace/feature')
+})
+
 // Real shell, plugin bundle and theme; fixed RPC data avoids host paths, process
 // history and Git timing in pixel baselines. Transport has its own Node tests.
 for (const [theme, narrow] of [
