@@ -123,11 +123,15 @@ test('planning instructions preserve exact-call approval and built-in plan-mode 
 test('publication instructions use only existing shared GitHub tools and their supported inputs', async () => {
   const text = await readFile(path, 'utf8')
   const actual = [...new Set(text.match(/\bgithub_[a-z_]+\b/g))].sort()
-  const known = [...Object.values(TOOL_NAMES), ...GITHUB_WRITE_TOOL_NAMES].sort()
+  // Product mode publishes issues/projects, not implementation PRs. Its guide
+  // inventories that planning surface, not every integration capability.
+  const known = [...Object.values(TOOL_NAMES), ...GITHUB_WRITE_TOOL_NAMES]
+    .filter((name) => !name.includes('_pull_request'))
+    .sort()
   assert.deepEqual(
     actual,
     known,
-    'instructions neither omit shared capabilities nor invent new tool names',
+    'instructions neither omit issue/project planning capabilities nor invent tool names',
   )
   for (const pattern of [
     /Repository owner, project owner, and optional template owner are separate choices/,

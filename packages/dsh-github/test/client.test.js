@@ -58,13 +58,25 @@ const status = {
   history: [],
 }
 
-test('client owns exactly eight intended tool keys and disposes every registration', () => {
+test('client owns its intended tool keys and disposes every registration', () => {
   const { record, plugin } = load(),
     entries = [],
     disposed = []
   const keys = [
     'github_request_issue_management',
     'github_set_project_item_field',
+    'github_list_pull_requests',
+    'github_get_pull_request',
+    'github_get_pull_request_files',
+    'github_get_pull_request_reviews',
+    'github_get_pull_request_threads',
+    'github_get_pull_request_checks',
+    'github_get_pull_request_stack',
+    'github_create_pull_request',
+    'github_update_pull_request',
+    'github_submit_pull_request_review',
+    'github_create_pull_request_stack',
+    'github_add_pull_request_to_stack',
     'github_list_projects',
     'github_get_project',
     'github_list_project_items',
@@ -92,7 +104,9 @@ test('client owns exactly eight intended tool keys and disposes every registrati
             ? plugin.GrantCard
             : options.key === keys[1]
               ? plugin.FieldChangeCard
-              : plugin.ReadCard,
+              : options.key.includes('pull_request')
+                ? plugin.PullRequestCard
+                : plugin.ReadCard,
         )
         return () => disposed.push(options.key)
       },

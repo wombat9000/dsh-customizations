@@ -1,5 +1,10 @@
 import { githubSessionSeed } from './github-grants-fixture.mjs'
 import { projectItemsBlock } from './project-items-fixture.js'
+import {
+  prReadSnapshots,
+  prWriteSnapshots,
+  cardWriteEnvelope,
+} from './pull-request-card-fixtures.js'
 export const githubItemsWorkspace = 'github-items-workspace'
 export const githubItemsPrompt = 'Review the synthetic historical project items.'
 export function githubItemsSeed(cwd) {
@@ -70,17 +75,25 @@ export function githubItemsSeed(cwd) {
       { ...connection([issue, closed]), issueCount: 2, searchLimit: 1000, exhaustive: true },
     ],
     ['github_get_issue', detail],
+    ...prReadSnapshots,
+    ...prWriteSnapshots.map(([name, resource, change]) => [
+      name,
+      null,
+      cardWriteEnvelope(resource, change),
+    ]),
   ]
   const end = events.pop()
-  for (const [index, [name, data]] of snapshots.entries()) {
+  for (const [index, [name, data, envelope]] of snapshots.entries()) {
     const callId = `visual-github-issue-${index}`,
       step = index + 2,
       time = events[0].time
     const argumentsRaw = JSON.stringify({
       owner: 'fixture-org',
-      ...(name === 'github_search_issues'
-        ? { query: 'fixture' }
-        : { repo: 'demo', ...(name === 'github_get_issue' ? { issueNumber: 59 } : {}) }),
+      ...(name.includes('pull_request')
+        ? { repo: 'demo', pullNumber: 61 }
+        : name === 'github_search_issues'
+          ? { query: 'fixture' }
+          : { repo: 'demo', ...(name === 'github_get_issue' ? { issueNumber: 59 } : {}) }),
     })
     events.push({
       seq: events.length,
@@ -133,6 +146,7 @@ export function githubItemsSeed(cwd) {
                 data,
                 truncated: false,
                 truncations: [],
+                ...envelope,
               }),
             },
           ],

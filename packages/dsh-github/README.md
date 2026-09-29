@@ -1,6 +1,6 @@
 # GitHub tools
 
-This bundle adds eleven read tools, seven write tools, and a session issue-management grant request to every DSH session, independent of preset. Writes require individual approval unless a live grant covers a supported field update or dependency addition. It targets DSH `0.1.7-rc.2` and `github.com`. It uses the GitHub CLI already available through DSH’s managed subprocess backend; it adds no SDK, login flow, or credential store. The Web conversation card shows grant scope, revocation, and recent change outcomes.
+This bundle adds eighteen read tools, twelve write tools, and a session issue-management grant request to every DSH session, independent of preset. Writes require individual approval unless a live grant covers a supported field update or dependency addition. It targets DSH `0.1.7-rc.2` and `github.com`. It uses the GitHub CLI already available through DSH’s managed subprocess backend; it adds no SDK, login flow, or credential store. The Web conversation card shows grant scope, revocation, and recent change outcomes.
 
 ## Access and execution
 
@@ -108,6 +108,43 @@ Field writes use IDs, not fuzzy name matching. Supported values are text, finite
 - Existing links, project memberships (including archived items), dependencies, and unchanged field values are reported without another mutation. Closed projects and known insufficient permissions fail before approval.
 
 The bundle does not persist planning state or workspace mappings, dispatch agents, close/delete resources, edit existing issue specifications, remove dependencies, or configure project fields/views/workflows. Product mode is a separate preset; these tools do not implement its planning behavior.
+
+## Pull requests and native stacks
+
+All PR writes require exact-call approval. Session issue-management grants never cover them. Every tool requires `owner` and `repo`; existing PR targets use `pullNumber`.
+
+| Tool                                | Purpose                                                                                    |
+| ----------------------------------- | ------------------------------------------------------------------------------------------ |
+| `github_list_pull_requests`         | List repository PRs by open/closed/all state.                                              |
+| `github_get_pull_request`           | Read description, draft state, branches, SHAs, and observed mergeability.                  |
+| `github_get_pull_request_files`     | Read changed files and available patches.                                                  |
+| `github_get_pull_request_reviews`   | Read chronological reviews and their reviewed commit SHAs.                                 |
+| `github_get_pull_request_threads`   | Read inline discussions, resolution/outdated state, and paginated comments.                |
+| `github_get_pull_request_checks`    | Read check runs and commit statuses at the observed head SHA.                              |
+| `github_get_pull_request_stack`     | Read native stack membership, ordered layers, and trunk.                                   |
+| `github_create_pull_request`        | Create a **draft** from existing pushed `head` and `base` branches in the same repository. |
+| `github_update_pull_request`        | Update title/body, or change `draft` in a separate call.                                   |
+| `github_submit_pull_request_review` | Submit `COMMENT`, `APPROVE`, or `REQUEST_CHANGES`, with optional inline comments.          |
+| `github_create_pull_request_stack`  | Link existing PRs listed in `pullNumbers`, bottom to top.                                  |
+| `github_add_pull_request_to_stack`  | Append `pullNumber` to the stack containing explicit `stackPullNumber`.                    |
+
+REST collection reads use `limit` (1–50, default 20) and `page` (default 1). A full page without a reported total requires another page before claiming completeness. Stack member pages use `membersPage`; check runs and statuses use independent `checksPage` and `statusesPage`. Threads use `cursor`. To continue comments for one thread, supply its `threadId` and `commentsCursor`; `commentsLimit` bounds comments per thread independently. Continue the same explicit target, preserving the matching page size. Missing patches and GitHub's 3,000-file limit do not establish a complete diff. Checks report observed state, not permission or a merge decision.
+
+Creation takes exact `title`, `body`, `head`, and `base`; no argument can disable draft creation. Update accepts title/body together, **or** `draft: true`/`false` alone. Marking ready can request CODEOWNER reviews. Review submission does not change readiness. It takes required `expectedHeadSha`, `event`, and `body`, plus at most 20 inline comments using `path`, `body`, `line`, `side`, and optional paired `startLine`/`startSide`. Inline locations must be valid in complete patches. Preflight requires the complete changed-file list within 50 files and validates each commented file's patch; unrelated binary files do not prevent comments on a verified text diff. Incomplete or oversized relevant state fails closed.
+
+Draft creation and stack edits require known repository write permission. Updates rely on GitHub's PR-update capability; read-access reviewers can prepare reviews. The server still decides token and repository permissions. A successful read never establishes permission to write.
+
+Stack creation accepts 2–50 existing, open, same-repository PRs. Their branch bases must already match the heads below them. Append adds one existing PR at the top. Both operations preserve draft states. They reject conflicting membership, incomplete snapshots, and changed ordered layers or SHAs after approval. They never create or push branches, retarget PRs, rebase, rearrange/remove layers, or merge.
+
+Native stack endpoints are in public preview. Requests pin REST API version `2026-03-10`; the plugin does not install a CLI extension. Missing or inaccessible resources and unavailable features can be indistinguishable. The tools report that ambiguity instead of claiming feature availability from a generic error. See [GitHub's stack API contracts](https://docs.github.com/en/rest/pulls/stacks?apiVersion=2026-03-10).
+
+**Concurrency limit:** GitHub's create, update, readiness, and stack mutation contracts do not provide atomic approved-SHA locking. The plugin compares account, target, permissions, and relevant snapshots immediately before dispatch. A collaborator can still change them between that read and the mutation. Reviews explicitly bind to `expectedHeadSha`, but that does not lock the PR's current head. Post-dispatch verification failures return **uncertain**, never an automatic retry or rollback. See [GitHub's review API](https://docs.github.com/en/rest/pulls/reviews?apiVersion=2026-03-10).
+
+### PR conversation cards
+
+All twelve PR tools have concise historical session cards. They show the action, repository/PR, branch direction, draft/readiness or review state, relevant counts, and stack layers where supplied. Long collections and exact changes expand on demand. Pagination, missing-patch, error, and uncertain-outcome warnings remain visible. An approved review is not a ready PR or a merge.
+
+Cards render only supplied arguments/results. They make no additional HTTP or GitHub requests and expose no write, retry, or approval controls. Native approval retains the complete exact payload; PR approvals use its plain-text fallback. Missing or malformed results never establish success. **Raw tool details** remain available, including after restoration. Source tests cover defensive models; real React/browser and disposable-shell tests cover rendering and the established tool-card seat.
 
 ## Project-field change card
 

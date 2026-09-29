@@ -477,16 +477,30 @@ export function boundedResult(data, { maxResultBytes = 196608, maxTextChars = 81
         Object.entries(value).map(([k, v]) => [sanitize(k), visit(v, `${path}.${sanitize(k)}`, k)]),
       )
       if (value.pageInfo) {
-        connection(value)
+        const rest = Object.hasOwn(value.pageInfo, 'page')
+        if (rest) {
+          if (
+            !Array.isArray(value.nodes) ||
+            !Number.isSafeInteger(value.pageInfo.page) ||
+            value.pageInfo.page < 1 ||
+            typeof value.pageInfo.hasNextPage !== 'boolean' ||
+            (value.pageInfo.hasNextPage &&
+              (!Number.isSafeInteger(value.pageInfo.nextPage) ||
+                value.pageInfo.nextPage !== value.pageInfo.page + 1))
+          )
+            fail('INVALID_RESPONSE')
+        } else connection(value)
         result.truncated = value.pageInfo.hasNextPage
-        result.nextCursor = value.pageInfo.hasNextPage ? result.pageInfo.endCursor : null
+        if (rest) result.nextPage = value.pageInfo.hasNextPage ? result.pageInfo.nextPage : null
+        else result.nextCursor = value.pageInfo.hasNextPage ? result.pageInfo.endCursor : null
         if (result.truncated)
           truncations.push({
             path,
             kind: 'connection',
-            nextCursor: result.nextCursor,
-            continuation:
-              'Repeat the same explicit target using this connection’s cursor parameter.',
+            ...(rest ? { nextPage: result.nextPage } : { nextCursor: result.nextCursor }),
+            continuation: rest
+              ? 'Repeat the same explicit target using pageInfo.nextPage in the matching page parameter documented by the tool.'
+              : 'Repeat the same explicit target using this connection’s cursor parameter.',
           })
       }
       return result
