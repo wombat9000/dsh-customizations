@@ -297,11 +297,62 @@ test('invalid requests are rejected before credentials or dispatch', async () =>
   ]
   for (const questions of badQuestions)
     await rejects(fixture().service.evaluate({ state: '', questions }), 'invalid')
-  await rejects(fixture().service.evaluate({ ...input(), state: 'x'.repeat(65536) }), 'invalid')
+  for (const state of ['x'.repeat(262144), '\u0000'.repeat(44000), '😀'.repeat(65536)]) {
+    const f = fixture()
+    await rejects(f.service.evaluate({ ...input(), state }), 'invalid')
+    assert.equal(f.resolutions(), 0)
+    assert.equal(f.fetches.length, 0)
+  }
+})
+
+test('requests larger than 64 KiB reach mocked fetch', async () => {
+  const f = fixture()
+  const state = 'x'.repeat(96 * 1024)
+  await f.service.evaluate({ ...input(), state })
+  assert.ok(Buffer.byteLength(f.fetches[0][1].body) > 65536)
+  assert.equal(JSON.parse(f.fetches[0][1].body).state, state)
+  assert.equal(f.resolutions(), 1)
+})
+
+test('encoded request cap counts escaped and multibyte bytes at the exact boundary', async () => {
+  const cap = 262144
+  const overhead = Buffer.byteLength(
+    JSON.stringify({ model: DEFAULT_MODEL, ...input(), state: '' }),
+  )
+  for (const prefix of ['', '\u0000'.repeat(40000), '😀'.repeat(60000)]) {
+    const encodedPrefixBytes = Buffer.byteLength(JSON.stringify(prefix)) - 2
+    const state = prefix + 'x'.repeat(cap - overhead - encodedPrefixBytes)
+    const data = { ...input(), state }
+    assert.equal(Buffer.byteLength(JSON.stringify({ model: DEFAULT_MODEL, ...data })), cap)
+    const accepted = fixture()
+    await accepted.service.evaluate(data)
+    assert.equal(Buffer.byteLength(accepted.fetches[0][1].body), cap)
+    assert.equal(JSON.parse(accepted.fetches[0][1].body).state, state)
+    assert.equal(accepted.resolutions(), 1)
+
+    const rejected = fixture()
+    const oversized = { ...data, state: state + 'x' }
+    assert.equal(Buffer.byteLength(JSON.stringify({ model: DEFAULT_MODEL, ...oversized })), cap + 1)
+    await rejects(rejected.service.evaluate(oversized), 'invalid')
+    assert.equal(rejected.resolutions(), 0)
+    assert.equal(rejected.fetches.length, 0)
+  }
+})
+
+test('traversal retains its independent 65536-node bound', async (t) => {
+  // Isolate traversal: conservative snapshot accounting otherwise hits the byte cap first.
+  t.mock.method(Buffer, 'byteLength', () => 0)
+  const accepted = fixture()
+  // Root, state, questions, ready, type and instructions account for six nodes.
+  await accepted.service.evaluate({ ...input(), state: Array(65536 - 6).fill('') })
+  assert.equal(accepted.fetches.length, 1)
+  const rejected = fixture()
   await rejects(
-    fixture().service.evaluate({ ...input(), state: '\u0000'.repeat(12000) }),
+    rejected.service.evaluate({ ...input(), state: Array(65536 - 5).fill('') }),
     'invalid',
   )
+  assert.equal(rejected.resolutions(), 0)
+  assert.equal(rejected.fetches.length, 0)
 })
 
 test('missing/locked credentials fail closed, status is unavailable without errors leaking', async () => {
@@ -416,6 +467,20 @@ test('response cap counts stream bytes without calling json, and cancels oversiz
     }).service.evaluate(input()),
     'response',
   )
+})
+
+test('valid JSON responses remain bounded at 64 KiB rather than the request cap', async () => {
+  const base = { ...answer(), padding: '' }
+  const overhead = Buffer.byteLength(JSON.stringify(base))
+  for (const bytes of [65536, 65537]) {
+    const raw = { ...base, padding: 'x'.repeat(bytes - overhead) }
+    assert.equal(Buffer.byteLength(JSON.stringify(raw)), bytes)
+    const f = fixture({ fetch: async () => response(raw) })
+    if (bytes === 65536) {
+      const result = await f.service.evaluate(input())
+      assert.deepEqual(JSON.parse(JSON.stringify(result)), answer())
+    } else await rejects(f.service.evaluate(input()), 'response')
+  }
 })
 
 test('total deadline covers credentials, fetch and stalled stream adapters ignoring signals', async () => {

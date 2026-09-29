@@ -44,7 +44,8 @@ Supported question types are `noul` (yes/no probability), `choice` (one defined 
 
 ## Bounds and failures
 
-- Requests and responses are bounded to 64 KiB each, with at most 32 questions and 32 options per choice or score.
+- Encoded requests are bounded to 256 KiB; responses remain bounded to 64 KiB. Input snapshots also have a 256 KiB byte budget, a 65,536-node traversal limit, and a depth limit of 64. There are at most 32 questions and 32 options per choice or score.
+- These are local byte/memory guards, not token guarantees. [TypeSafe documents Jev 1.13](https://docs.typesafe.ai/models) as supporting 32k tokens for `state` plus the longest question and 64k for `state` plus all questions. [OpenRouter advertises 32,000-token context](https://openrouter.ai/typesafe/jev-1.13). Callers must allow for question overhead and varying token density; fitting the local byte guard does not guarantee provider acceptance.
 - At most four evaluations run concurrently. A 15-second deadline covers credential resolution, HTTP, and response reading.
 - Caller cancellation and plugin disposal abort pending evaluations. Redirects are rejected; the plugin sends credentials only to `https://openrouter.ai/api/alpha/decisions`.
 - There are no automatic retries. Errors are sanitized and never include keys, request text, or provider response bodies.

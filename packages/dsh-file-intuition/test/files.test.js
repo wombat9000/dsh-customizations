@@ -238,6 +238,21 @@ test('rejects non UTF8, binary, private keys, obvious secrets and oversized file
   assert.ok(!fake.calls.some((c) => c[0] === 'read' && c[1] === 'large.ts'))
 })
 
+test('accepts complete 10,000-line files and enforces the new UTF8 byte boundary', async () => {
+  const large = 'void 0;\n'.repeat(10_000)
+  assert.ok(Buffer.byteLength(large) > 65_536)
+  const accepted = await run(remote({ 'large.ts': large }), single('large.ts'))
+  assert.equal(accepted.files[0].content, large)
+  assert.equal(accepted.complete, true)
+  const boundary = '界'.repeat(LIMITS.fileBytes / 3)
+  const exact = await run(remote({ 'boundary.ts': boundary }), single('boundary.ts'))
+  assert.equal(exact.files[0].bytes, LIMITS.fileBytes)
+  assert.equal(exact.files[0].content, boundary)
+  const oversized = remote({ 'boundary.ts': boundary + 'x' })
+  await assert.rejects(run(oversized, single('boundary.ts')), /too_large/)
+  assert.ok(!oversized.calls.some(([operation]) => operation === 'read'))
+})
+
 test('file and aggregate byte budgets count skipped candidates without truncating', async () => {
   const input = Object.fromEntries(
     Array.from({ length: 12 }, (_, i) => [

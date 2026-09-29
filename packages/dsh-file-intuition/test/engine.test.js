@@ -3,6 +3,8 @@ import { createHash } from 'node:crypto'
 import test from 'node:test'
 import { parseRequest, prepareScan, evaluateScan } from '../dist/src/engine.js'
 import { LIMITS } from '../dist/src/contracts.js'
+import { readFile } from 'node:fs/promises'
+import { createJevRuntime } from '../../dsh-jev/src/runtime.js'
 
 const model = 'typesafe/jev-1.13'
 const bool = (questions = [{ id: 'q', question: 'Does this file validate input?' }]) =>
@@ -411,8 +413,8 @@ test('captured settings checked before every dispatch; changed setting stops que
 })
 
 test('full serialized UTF8 request cap includes escaping, model, state, questions before any call', () => {
-  const escaped = file('a', '\u0001'.repeat(10_000))
-  assert.ok(escaped.bytes < LIMITS.fileBytes)
+  const escaped = file('a', '\u0001'.repeat(LIMITS.fileBytes))
+  assert.equal(escaped.bytes, LIMITS.fileBytes)
   assert.throws(() => prepareScan(bool(), model, discovery([escaped])), {
     code: 'request_too_large',
   })
@@ -425,7 +427,10 @@ test('full serialized UTF8 request cap includes escaping, model, state, question
     choices: Array.from({ length: 16 }, (_, j) => ({ id: `c${j}`, description: '界'.repeat(512) })),
   }))
   const request = parseRequest('classify_file', { path: 'a', questions })
-  assert.throws(() => prepareScan(request, model, discovery()), { code: 'request_too_large' })
+  assert.throws(
+    () => prepareScan(request, model, discovery([file('a', 'x'.repeat(LIMITS.fileBytes))])),
+    { code: 'request_too_large' },
+  )
   assert.throws(() =>
     prepareScan(batch(24), model, discovery(Array.from({ length: 25 }, (_, i) => file(String(i))))),
   )
@@ -433,9 +438,76 @@ test('full serialized UTF8 request cap includes escaping, model, state, question
     prepareScan(
       batch(24),
       model,
-      discovery(Array.from({ length: 9 }, (_, i) => file(String(i), 'x'.repeat(16_384)))),
+      discovery(Array.from({ length: 9 }, (_, i) => file(String(i), 'x'.repeat(LIMITS.fileBytes)))),
     ),
   )
+})
+
+test('larger files pass through the real Jev service without truncation (mocked HTTP)', async (t) => {
+  const github = await readFile(new URL('../../dsh-github/src/runtime.js', import.meta.url), 'utf8')
+  const samples = [
+    ['GitHub runtime previously excluded by the 16 KiB cap', github],
+    ['96 KiB ASCII boundary', 'x'.repeat(LIMITS.fileBytes)],
+    ['96 KiB UTF8 boundary', '界'.repeat(LIMITS.fileBytes / 3)],
+    ['96 KiB quotes requiring JSON escaping', '"'.repeat(LIMITS.fileBytes)],
+  ]
+  for (const [name, content] of samples)
+    await t.test(name, async () => {
+      assert.ok(Buffer.byteLength(content) > 16_384)
+      let calls = 0
+      const runtime = createJevRuntime({
+        openrouter: { resolveApiKey: async () => 'fixture-key' },
+        getModel: () => model,
+        saveModel: async () => {},
+        fetch: async (_url, init) => {
+          calls++
+          const body = JSON.parse(init.body)
+          assert.equal(body.state.file.content, content)
+          assert.equal(body.state.file.sha256, file('a', content).sha256)
+          return new Response(JSON.stringify(response(body.questions)))
+        },
+      })
+      try {
+        const result = await evaluateScan(
+          prepareScan(bool(), model, discovery([file('a', content)])),
+          runtime.service,
+          new AbortController().signal,
+        )
+        assert.equal(result.coverage.evaluatedFiles, 1, JSON.stringify(result))
+        assert.equal(result.files[0].bytes, Buffer.byteLength(content))
+        assert.equal(calls, 1)
+      } finally {
+        runtime.dispose()
+      }
+    })
+})
+
+test('encoded request accepts its exact boundary and rejects one additional escaped byte', () => {
+  const request = bool(
+    Array.from({ length: 8 }, (_, i) => ({
+      id: `q${i}`,
+      question: 'q'.repeat(1024),
+      criteria: { true: '\u0001'.repeat(512), false: '\u0001'.repeat(512) },
+    })),
+  )
+  const base = file('a', 'x'.repeat(LIMITS.fileBytes))
+  const { questions } = prepareScan(request, model, discovery([base]))
+  const encodedBytes = ({ path, content, sha256 }) =>
+    Buffer.byteLength(
+      JSON.stringify({
+        model,
+        state: { file: { path, content, sha256 } },
+        questions,
+      }),
+    )
+  const extra = LIMITS.requestBytes - encodedBytes(base)
+  assert.ok(extra > 0 && extra < LIMITS.fileBytes)
+  const exact = file('a', '"'.repeat(extra) + 'x'.repeat(LIMITS.fileBytes - extra))
+  assert.equal(encodedBytes(exact), LIMITS.requestBytes)
+  assert.doesNotThrow(() => prepareScan(request, model, discovery([exact])))
+  const over = file('a', '"'.repeat(extra + 1) + 'x'.repeat(LIMITS.fileBytes - extra - 1))
+  assert.equal(encodedBytes(over), LIMITS.requestBytes + 1)
+  assert.throws(() => prepareScan(request, model, discovery([over])), { code: 'request_too_large' })
 })
 
 test('usage partial metrics omit unknown sums, complete requires every metric on every call', async () => {
