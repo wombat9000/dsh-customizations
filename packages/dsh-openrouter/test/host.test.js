@@ -108,9 +108,13 @@ test('unsupported record kinds and custom endpoint fail closed without writes', 
     const f = fixture()
     f.state.record = record
     f.state.refs.set(DEFAULT_REFERENCE, { value: 'fallback-secret' })
+    const before = { record: structuredClone(record), refs: structuredClone(f.state.refs) }
     assert.equal((await f.runtime.service.status()).writable, false)
     await assert.rejects(f.runtime.service.resolveApiKey(), /unsupported/)
     assert.equal((await save(f)).ok, false)
+    assert.deepEqual(f.state.writes, [])
+    assert.deepEqual(f.state.record, before.record)
+    assert.deepEqual(f.state.refs, before.refs)
   }
   for (const baseURL of [
     'https://custom.invalid/api/v1',

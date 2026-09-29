@@ -170,22 +170,27 @@ test('fetch maps scraped markdown and final target metadata', async () => {
 })
 
 test('fetch caps large bodies and detects partial PDF extraction', () => {
-  const result = mapFirecrawlScrapeResponse(
-    {
-      markdown: 'abcdefghij',
-      metadata: {
-        sourceURL: 'https://example.com/document.pdf',
-        statusCode: 200,
-        numPages: 2,
-        totalPages: 5,
+  for (const [label, maxBodyChars, numPages, expectedBody, truncated] of [
+    ['oversized complete document', 6, 5, 'abcdef', true],
+    ['partial document below body limit', 20, 2, 'abcdefghij', true],
+    ['complete document below body limit', 20, 5, 'abcdefghij', false],
+  ]) {
+    const result = mapFirecrawlScrapeResponse(
+      {
+        markdown: 'abcdefghij',
+        metadata: {
+          sourceURL: 'https://example.com/document.pdf',
+          statusCode: 200,
+          numPages,
+          totalPages: 5,
+        },
       },
-    },
-    'https://example.com/document.pdf',
-    6,
-  )
-
-  assert.equal(result.body.content, 'abcdef')
-  assert.equal(result.truncated, true)
+      'https://example.com/document.pdf',
+      maxBodyChars,
+    )
+    assert.equal(result.body.content, expectedBody, label)
+    assert.equal(result.truncated, truncated, label)
+  }
 })
 
 test('rejects scrape metadata errors instead of returning them as page content', () => {

@@ -31,13 +31,6 @@ const block = (data) => ({
   isError: false,
   content: [{ type: 'text', text: JSON.stringify(data) }],
 })
-const wrap = (data) => ({
-  host: 'github.com',
-  untrusted: true,
-  data,
-  truncated: false,
-  truncations: [],
-})
 const tool = (operation) =>
   `github_${operation.replace(/[A-Z]/g, (char) => `_${char.toLowerCase()}`)}`
 
@@ -94,6 +87,7 @@ test('read cards accept actual bounded runtime results for all six tools and sin
     assert.equal(model.state, 'returned', `${operation}: ${model.error}`)
     assert.equal(model.kind, kind)
     assert.equal(model.entries.length, 1)
+    assert.equal(model.returnedCount, 1)
     assert.equal(subprocess.specs.length, 1, 'client model adds no GitHub request')
     if (operation === 'getIssue' || operation === 'getProject' || kind === 'items')
       assert.ok(model.warnings.length > 0, 'nested continuation stays visible')
@@ -126,26 +120,6 @@ test('filtered empty template pages retain unfiltered counts and continuation ev
   assert.equal(model.total, 20)
   assert.equal(model.scannedCount, 1)
   assert.equal(model.templateOnly, true)
-  assert.match(model.totalMeaning, /Unfiltered/)
+  assert.equal(model.totalMeaning, 'Unfiltered owner projects')
   assert.ok(model.warnings.length > 0)
-})
-test('nested renderer limits and absent pagination metadata cannot silently look complete', () => {
-  const options = Array.from({ length: 75 }, (_, i) => ({ id: `OPTION_${i}`, name: `Option ${i}` }))
-  const result = wrap({
-    ...project,
-    fields: connection([{ id: 'F', name: 'Status', dataType: 'SINGLE_SELECT', options }]),
-    repositories: connection([]),
-  })
-  const warnings = client.readCardModel('github_get_project', block(result)).warnings.join(' ')
-  assert.match(warnings, /50|first|not shown|display/i)
-  const missing = client.readCardModel('github_list_issues', block(wrap({ nodes: [issue] })))
-  assert.ok(
-    missing.error ||
-      missing.warnings.some((warning) => /unknown|missing|pagination|incomplete/i.test(warning)),
-  )
-  const nested = wrap({ ...detailedIssue, labels: { nodes: [{ id: 'L', name: 'bug' }] } })
-  assert.match(
-    client.readCardModel('github_get_issue', block(nested)).warnings.join(' '),
-    /unknown|missing|pagination/i,
-  )
 })

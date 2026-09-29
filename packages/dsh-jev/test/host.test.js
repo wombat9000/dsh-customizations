@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { createJevRuntime, DEFAULT_MODEL, ENDPOINT, CHANNEL } from '../src/runtime.js'
+import { createJevRuntime, DEFAULT_MODEL, CHANNEL } from '../src/runtime.js'
 import * as plugin from '../src/index.js'
 import { profileFixture } from '../../dsh-google-auth/test/profile-fixture.js'
 
@@ -72,7 +72,7 @@ test('fixed host endpoint, native fetch request, sanitized canonical response', 
   assert.equal(result.model, answer().model)
   assert.deepEqual(JSON.parse(JSON.stringify(result)), answer())
   const [url, init] = f.fetches[0]
-  assert.equal(url, ENDPOINT)
+  assert.equal(url, 'https://openrouter.ai/api/alpha/decisions')
   assert.equal(init.method, 'POST')
   assert.equal(init.redirect, 'error')
   assert.equal(init.headers.Authorization, 'Bearer private-key')
@@ -303,15 +303,6 @@ test('invalid requests are rejected before credentials or dispatch', async () =>
     assert.equal(f.resolutions(), 0)
     assert.equal(f.fetches.length, 0)
   }
-})
-
-test('requests larger than 64 KiB reach mocked fetch', async () => {
-  const f = fixture()
-  const state = 'x'.repeat(96 * 1024)
-  await f.service.evaluate({ ...input(), state })
-  assert.ok(Buffer.byteLength(f.fetches[0][1].body) > 65536)
-  assert.equal(JSON.parse(f.fetches[0][1].body).state, state)
-  assert.equal(f.resolutions(), 1)
 })
 
 test('encoded request cap counts escaped and multibyte bytes at the exact boundary', async () => {

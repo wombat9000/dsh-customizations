@@ -98,6 +98,8 @@ test('serialized budgets include escaping, Unicode, omission metadata, and block
     assert.ok(rows[0].text.startsWith('Start 0 '))
     assert.ok(rows.at(-1).text.endsWith(` End 92`))
   }
+  const escaped = boundedHistory([message('\u0000'.repeat(100000))])
+  assert.ok(Buffer.byteLength(JSON.stringify(escaped)) <= LIMITS.inputBytes)
   const input = message('')
   input.content = Array.from({ length: LIMITS.blocks + 1 }, (_, i) => ({
     type: 'text',
@@ -158,8 +160,4 @@ test('short exploratory conversations retain all visible text without gaps', () 
       { role: 'assistant', text: 'Both remain open.' },
     ],
   )
-})
-test('JSON escaping cannot exceed transmitted input bound', () => {
-  const rows = boundedHistory([message('\u0000'.repeat(100000))])
-  assert.ok(Buffer.byteLength(JSON.stringify(rows)) <= LIMITS.inputBytes)
 })

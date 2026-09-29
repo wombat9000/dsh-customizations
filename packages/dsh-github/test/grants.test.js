@@ -106,15 +106,38 @@ test('explicit bounded issue/project/operation arguments reject wildcard, unknow
     'addIssueDependency',
     'setProjectItemField',
   ])
+  const maximum = validateGrantArguments({
+    ...input,
+    issues: Array.from({ length: 50 }, (_, index) => ({
+      ...input.issues[0],
+      issueNumber: index + 1,
+    })),
+    projects: Array.from({ length: 20 }, (_, index) => ({
+      ...input.projects[0],
+      projectNumber: index + 1,
+    })),
+  })
+  assert.equal(maximum.issues.length, 50)
+  assert.equal(maximum.projects.length, 20)
   for (const change of [
     { operations: [] },
     { operations: ['createIssue'] },
     { operations: ['setProjectItemField', 'setProjectItemField'] },
     { issues: [] },
     { issues: [...input.issues, input.issues[0]] },
-    { issues: Array(51).fill(input.issues[0]) },
+    {
+      issues: Array.from({ length: 51 }, (_, index) => ({
+        ...input.issues[0],
+        issueNumber: index + 1,
+      })),
+    },
     { projects: [] },
-    { projects: Array(21).fill(input.projects[0]) },
+    {
+      projects: Array.from({ length: 21 }, (_, index) => ({
+        ...input.projects[0],
+        projectNumber: index + 1,
+      })),
+    },
     { issues: [{ owner: '*', repo: 'example', issueNumber: 1 }] },
     { projects: [{ owner: 'destination', projectNumber: 7, any: true }] },
     { repositories: ['all'] },

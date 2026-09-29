@@ -126,6 +126,15 @@ test('untrusted @file strings use raw gh fields and never trigger typed-field fi
     exec,
   )
   const argv = subprocess.specs[0].argv
+  for (const field of [
+    'cursor=@/private/token',
+    'labels[]=@/private/credentials',
+    'labels[]=$(touch injected); `echo unsafe`',
+  ]) {
+    const index = argv.indexOf(field)
+    assert.ok(index > 0, `untrusted field must reach gh unchanged: ${field}`)
+    assert.equal(argv[index - 1], '--raw-field')
+  }
   for (let index = 0; index < argv.length; index++) {
     if (argv[index].includes('@/private/') || argv[index].includes('$(touch'))
       assert.equal(argv[index - 1], '--raw-field')

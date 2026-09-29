@@ -70,6 +70,10 @@ fs.appendFileSync(process.env.CALLS, JSON.stringify(a) + '\\n');
 const d = p.join(process.env.DSH_HOME, 'profiles', a[0] === 'plugin' ? a[2] : a[1]);
 const manifestPath = p.join(d, 'package.json');
 if (a[0] === 'plugin') {
+  if (a[3] === 'add') {
+    fs.copyFileSync(p.join(d, 'pnpm-workspace.yaml'), process.env.CALLS + '-add-workspace');
+    fs.copyFileSync(p.join(d, 'patches', '${patchName}'), process.env.CALLS + '-add-patch');
+  }
   fs.mkdirSync(d, { recursive: true });
   const manifest = fs.existsSync(manifestPath) ? JSON.parse(fs.readFileSync(manifestPath)) : {
     name: 'fixture-profile', private: true,
@@ -188,6 +192,13 @@ test('apply preserves YAML settings and pins copied patch before one complete of
   assert.ok(calls[0].includes(`@deepseek-ai/dsh-web-app@${version}`))
   assert.ok(calls[0].includes('--offline') && calls[0].includes('--ignore-scripts'))
   assert.ok(calls[1].includes('--frozen-lockfile'))
+  assert.ok(calls[1].includes('--offline'))
+  assert.ok(calls[1].includes('--ignore-scripts'))
+  assert.equal(readFileSync(join(f.dir, 'calls-add-workspace'), 'utf8'), workspace)
+  assert.equal(
+    readFileSync(join(f.dir, 'calls-add-patch'), 'utf8'),
+    readFileSync(join(root, 'patches', patchName), 'utf8'),
+  )
   assert.ok(calls[2].includes('--dump-config'))
 })
 
@@ -229,6 +240,17 @@ for (const retained of [
       const result = f.run()
       assert.equal(result.status, 0, result.stderr)
       const manifest = JSON.parse(readFileSync(join(f.dir, 'calls-dump-manifest'), 'utf8'))
+      const calls = readFileSync(join(f.dir, 'calls'), 'utf8').trim().split('\n').map(JSON.parse)
+      const add = calls.filter((args) => args[3] === 'add').at(-1)
+      assert.deepEqual(add, [
+        'plugin',
+        '--profile',
+        'example',
+        'add',
+        ...names.map((name) => (name === '@deepseek-ai/dsh-web-app' ? `${name}@${version}` : name)),
+        '--offline',
+        '--ignore-scripts',
+      ])
       assert.deepEqual(
         manifest.dsh.profile.bundles,
         expected,

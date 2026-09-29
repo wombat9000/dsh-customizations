@@ -143,6 +143,14 @@ test('configuration changes during a read reject stale results and cancellation 
   controller.abort()
   await assert.rejects(service.issues(request(), controller.signal), { code: 'cancelled' })
   assert.equal(received.aborted, false)
+  const activeController = new AbortController()
+  const priorSignal = received
+  const active = service.issues(request(), activeController.signal)
+  assert.notEqual(received, priorSignal, 'the provider must receive the new active request')
+  assert.equal(received.aborted, false)
+  activeController.abort()
+  assert.equal(received.aborted, true, 'in-flight cancellation must reach the provider')
+  await assert.rejects(active, { code: 'cancelled' })
 })
 
 test('disposal cancels active reads, rejects queued writes and prevents subsequent access', async () => {
@@ -172,11 +180,36 @@ test('disposal cancels active reads, rejects queued writes and prevents subseque
 })
 
 test('eight active reads are bounded and slots are released after failures', async () => {
-  const gate = deferred()
-  const { service } = fixture({ github: { listIssues: () => gate.promise } })
-  const reads = Array.from({ length: 8 }, () => service.issues(request()))
-  await assert.rejects(service.issues(request()), { code: 'failed' })
-  gate.resolve(github())
-  await Promise.all(reads)
-  assert.equal((await service.issues(request())).issues.length, 0)
+  for (const outcome of ['success', 'failure']) {
+    const gates = Array.from({ length: 8 }, deferred)
+    let dispatched = 0
+    const { service } = fixture({
+      github: { listIssues: () => gates[dispatched++]?.promise ?? Promise.resolve(github()) },
+    })
+    const reads = Array.from({ length: 8 }, () => service.issues(request()))
+    const settled = Promise.allSettled(reads)
+    try {
+      await assert.rejects(service.issues(request()), { code: 'failed' })
+      assert.equal(dispatched, 8)
+      if (outcome === 'success') {
+        gates[0].resolve(github())
+        await reads[0]
+      } else {
+        gates[0].reject(new Error('synthetic provider failure'))
+        await assert.rejects(reads[0], { code: 'failed' })
+      }
+      assert.equal(
+        (await service.issues(request())).issues.length,
+        0,
+        `${outcome} releases one slot while seven remain active`,
+      )
+      assert.equal(dispatched, 9)
+    } finally {
+      for (const gate of gates) gate.resolve(github())
+      await settled
+    }
+    const results = await settled
+    assert.equal(results[0].status, outcome === 'success' ? 'fulfilled' : 'rejected')
+    assert.ok(results.slice(1).every((result) => result.status === 'fulfilled'))
+  }
 })

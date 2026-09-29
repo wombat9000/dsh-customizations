@@ -300,14 +300,17 @@ test('project status report is concurrency-checked and returns its author', asyn
     },
   }
   let updateInput
+  let current = existing
+  let mutations = 0
   const client = selectors({
     async projects() {
       return page([existing])
     },
     async project() {
-      return existing
+      return current
     },
     async createProjectUpdate(input) {
+      mutations += 1
       updateInput = input
       return { success: true, projectUpdateId: 'update-id' }
     },
@@ -322,7 +325,18 @@ test('project status report is concurrency-checked and returns its author', asyn
     body: 'Migration is on schedule.',
   })
   assert.match(prepared.reason, /Health: onTrack/)
+  current = project({ updatedAt: new Date('2026-03-20T16:00:00Z') })
+  assert.notEqual(current.updatedAt.toISOString(), prepared.expectedUpdatedAt)
+  await assert.rejects(
+    writes.executeProjectUpdate(prepared),
+    /changed while approval was pending; review it and approve the status report again/,
+  )
+  assert.equal(mutations, 0)
+  assert.equal(updateInput, undefined)
+
+  current = existing
   const result = await writes.executeProjectUpdate(prepared)
+  assert.equal(mutations, 1)
   assert.deepEqual(updateInput, {
     projectId: 'project-id',
     health: 'onTrack',
