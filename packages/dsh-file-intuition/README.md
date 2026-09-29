@@ -47,7 +47,7 @@ The bundled `file-intuition` skill is a tool manual, not an investigation workfl
 | File content                                    | 96 KiB; complete file or skip, never silent truncation |
 | Aggregate retained file bodies                  | 768 KiB                                                |
 | Evaluated files                                 | Default 12; maximum 24                                 |
-| Concurrent Jev requests                         | 2 per scan, subject to shared service capacity         |
+| Concurrent Jev requests                         | 8 per scan, subject to shared service capacity         |
 | Encoded Jev request                             | 240 KiB including model, state and questions           |
 | Visited entries / directories / candidate files | 2,000 / 128 / 256                                      |
 | Directory nesting depth                         | 12                                                     |
@@ -58,9 +58,11 @@ The bundled `file-intuition` skill is a tool manual, not an investigation workfl
 
 The encoded-request cap allows JSON escaping and question text and stays below the shared Jev service's 256 KiB request guard. Neither byte cap represents model token capacity. The 768 KiB aggregate holds eight maximum-sized snapshots; each file is evaluated in its own request, so aggregate bytes do not share one model context.
 
+Discovery and snapshot preparation finish before evaluation starts. Up to eight workers then evaluate files independently; a free worker takes the next file without waiting for the others. The shared Jev service permits eight active evaluations across callers and queues up to 32 more in FIFO order before returning `busy`. Its 15-second request deadline includes queue wait; cancelled, expired or invalidated queued requests do not resolve credentials or contact the provider. The scan's overall deadline remains 120 seconds.
+
 `coverage.discoveryComplete` concerns the eligible traversal, not every repository file. A cap makes it false. Counts on partial traversals describe observed entries, not an estimated total. Excluded-directory counters count directories, not unseen descendants. Skipped files and provider failures are not negative judgments. Successful evaluations remain available when other files fail. No hard probability threshold removes uncertain candidates.
 
-`usage.providerCalls` counts dispatched requests. `reportedCalls` counts responses with usable usage metadata. Token and `cost` totals appear only when that metric is reported for every dispatched call; `complete` requires all three metrics. `cost` preserves the upstream field's units rather than assigning a new currency contract. Missing totals never mean zero cost.
+`usage.providerCalls` counts evaluation attempts submitted to the shared Jev service, including queued requests that can fail before HTTP dispatch. It is not an exact count of paid provider requests. `reportedCalls` counts responses with usable usage metadata. Token and `cost` totals appear only when that metric is reported for every dispatched call; `complete` requires all three metrics. `cost` preserves the upstream field's units rather than assigning a new currency contract. Missing totals never mean zero cost.
 
 ### Backend limitations
 

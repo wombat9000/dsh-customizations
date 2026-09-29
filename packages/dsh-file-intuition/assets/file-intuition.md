@@ -158,7 +158,7 @@ A hash identifies the evaluated snapshot, not necessarily the current file. The 
 
 Invalid arguments or an unavailable safe snapshot can fail before evaluation. After dispatch, file-level reasons such as `provider_error`, `invalid_response`, `model_changed` or `cancelled` describe unsuccessful evaluations, not the file's relevance. No automatic retries occur.
 
-Usage totals appear only when the corresponding metric is reported for every dispatched call. `usage.complete` requires input tokens, output tokens and cost for every call. Missing totals do not mean zero usage or zero charges; `cost` preserves the upstream field's units.
+`usage.providerCalls` counts attempts submitted to the shared Jev service, not necessarily HTTP requests: queued attempts can be cancelled or expire before dispatch. Usage totals appear only when the corresponding metric is reported for every submitted call. `usage.complete` requires input tokens, output tokens and cost for every call. Missing totals do not mean zero usage or zero charges; `cost` preserves the upstream field's units.
 
 ## Limits and disclosure
 
@@ -169,12 +169,14 @@ Usage totals appear only when the corresponding metric is reported for every dis
 | Options per classification / levels per rubric                 | 2–16 / 2–10                                   |
 | Complete file content / aggregate retained content             | 96 KiB / 768 KiB                              |
 | Files per scouting call                                        | Default 12, maximum 24                        |
-| Concurrent provider requests per call                          | At most 2, subject to shared service capacity |
+| Concurrent provider requests per call                          | At most 8, subject to shared service capacity |
 | Encoded request size                                           | 240 KiB, including model, state and questions |
 | Visited entries / directories / candidates / directory nesting | 2,000 / 128 / 256 / 12                        |
 | Snapshot and evaluation deadline                               | 120 seconds                                   |
 
 [Jev 1.13's context limits](https://docs.typesafe.ai/models) are 32k tokens for `state` plus the longest question and 64k for `state` plus all questions. [OpenRouter advertises 32,000 tokens](https://openrouter.ai/typesafe/jev-1.13). The 96 KiB file cap approximates 24.6k tokens at four UTF-8 bytes per token, leaving headroom for metadata and a question. It is a heuristic, not a tokenizer check: dense code or long questions can still exceed provider context. The encoded-request guard accounts for JSON escaping and questions but does not measure tokens. Each file uses a separate request; the aggregate cap bounds retained memory, not model context.
+
+After file preparation completes, up to eight workers evaluate files concurrently. The shared Jev service caps active evaluations at eight across callers, with up to 32 additional requests waiting in FIFO order. Its 15-second request deadline includes queue wait. A full queue rejects additional requests; cancellation, expiry and settings changes prevent queued work from reaching the provider.
 
 Files are included in full or skipped, never silently truncated. There is no automatic chunking or retry after a context rejection. Eligible inputs are workspace-relative regular source/text files. Hidden paths, symlinks, dependency/generated directories, common secret files, binary content and recognized secret material are excluded by code. These exclusions are not comprehensive secret detection. Git-ignored files can remain eligible.
 

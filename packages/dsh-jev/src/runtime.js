@@ -1,6 +1,8 @@
 export const DEFAULT_MODEL = 'typesafe/jev-1.13'
 export const CHANNEL = '/jev-integration'
 export const ENDPOINT = 'https://openrouter.ai/api/alpha/decisions'
+const MAX_ACTIVE = 8
+const MAX_WAITING = 32
 // Byte/memory guards, not model token guarantees.
 const MAX_SNAPSHOT_BYTES = 262144
 const MAX_REQUEST_BYTES = 262144
@@ -224,6 +226,17 @@ export function createJevRuntime({
   let active = true,
     revision = 0
   const pending = new Set()
+  const waiting = []
+  let running = 0
+  function drain() {
+    while (active && running < MAX_ACTIVE && waiting.length) {
+      const entry = waiting.shift()
+      if (entry.controller.signal.aborted) continue
+      entry.running = true
+      running++
+      entry.resolve()
+    }
+  }
   function current() {
     try {
       const model = getModel()
@@ -257,12 +270,12 @@ export function createJevRuntime({
     return { model, available: active && credential.configured && !credential.error, credential }
   }
   async function evaluate(input) {
-    let controller, timer, listener, reader, signal, response
+    let controller, timer, listener, reader, signal, response, entry
     try {
       guard()
       signal = input?.signal
       if (signal?.aborted) fail('cancelled')
-      if (pending.size >= 4) fail('busy')
+      if (running >= MAX_ACTIVE && waiting.length >= MAX_WAITING) fail('busy')
       const { model } = current(),
         startRevision = revision
       const request = prepare(input, model)
@@ -282,7 +295,16 @@ export function createJevRuntime({
       signal?.addEventListener('abort', listener, { once: true })
       if (signal?.aborted) listener()
       timer = setTimeout(() => controller.abort(new JevError('timeout')), timeoutMs)
+      const admitted = new Promise((resolve) => {
+        entry = { controller, resolve, running: false }
+        waiting.push(entry)
+        drain()
+      })
       const work = async () => {
+        await admitted
+        // Admission can race cancellation or a settings change. Never resolve a
+        // credential for stale work, even when an adapter ignores abort.
+        check()
         let key
         try {
           key = await openrouter.resolveApiKey()
@@ -348,6 +370,14 @@ export function createJevRuntime({
         const cleanup = reader ? reader.cancel() : response?.body?.cancel()
         Promise.resolve(cleanup).catch(() => {})
       } catch {}
+      if (entry) {
+        const index = waiting.indexOf(entry)
+        if (index !== -1) waiting.splice(index, 1)
+        // Only the outer evaluation owns its slot. Late adapter completion
+        // cannot release it again or start another queued evaluation.
+        if (entry.running) running--
+        drain()
+      }
     }
   }
   return {

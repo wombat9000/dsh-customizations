@@ -134,6 +134,6 @@ export const LIMITS = Object.freeze({
   directories: 128,
   candidates: 256,
   depth: 12,
-  concurrentRequests: 2,
+  concurrentRequests: 8,
   timeoutMs: 120_000,
 })
