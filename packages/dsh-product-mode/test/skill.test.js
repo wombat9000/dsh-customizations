@@ -208,12 +208,55 @@ SOFTWARE.
 
 test('walkthrough documents conversational review, individually approved publication and fixture validation limits', async () => {
   const readme = await readFile(join(packageRoot, 'README.md'), 'utf8')
-  assert.match(readme, /walkthrough/i)
-  assert.match(readme, /github_create_project/)
-  assert.match(readme, /github_create_issue/)
-  assert.match(readme, /github_add_issue_dependency/)
-  assert.match(readme, /fixture/i)
-  assert.match(readme, /live/i)
-  assert.match(readme, /approval/i)
-  assert.match(readme, /restart/i)
+  const walkthrough = readme.split('## Walk through a task\n')[1]?.split('\n## ')[0]
+  const validation = readme.split('## Validation and provenance\n')[1]
+  assert.ok(walkthrough, 'walkthrough section is present')
+  assert.ok(validation, 'validation section is present')
+  // Static publication guidance: these assertions do not establish model compliance.
+  for (const pattern of [
+    /proposed acceptance walkthrough\*\*, not a report of live execution/,
+    /Use an explicitly authorized disposable GitHub destination for any live exercise/,
+    /Keep all drafts in the conversation/,
+    /Create the project with one exact-call approval/,
+    /Publish project context with a new approval/,
+    /Link the repository with another approval/,
+    /Create each issue with its own approval/,
+    /Add each issue with separate approvals/,
+    /Publish only genuine dependencies, separately approved/,
+    /Record the actual returned project number and URL/,
+    /replace it with the real result/,
+    /confirmed issue numbers are `41` and `42`; never guess them/,
+    /42 is blocked by 41\*\*, not the reverse/,
+    /If there is no genuine blocker, omit this call/,
+    /Stop before implementation or dispatch/,
+    /If a later call fails, earlier successful writes remain/,
+    /After a dispatched timeout or uncertain result, inspect GitHub before deciding whether to retry/,
+    /There is no batch transaction, automatic rollback, or durable recovery ledger/,
+  ])
+    assert.match(walkthrough, pattern)
+  assert.match(
+    validation,
+    /No install, profile application, restart, or network write is part of this package's validation procedure/,
+  )
+  assert.match(
+    validation,
+    /Fixture-based composition, skill-loading, and GitHub compatibility checks are not evidence of a live model session or deployed GUI/,
+  )
+  assert.match(validation, /No live GitHub acceptance exercise is claimed here/)
+
+  const dependencyExample = walkthrough.match(/call `github_add_issue_dependency` with `([^`]+)`/)
+  assert.ok(dependencyExample, 'native dependency call includes a JSON example')
+  const dependency = JSON.parse(dependencyExample[1])
+  assert.deepEqual(Object.keys(dependency).sort(), [
+    'blockingIssueNumber',
+    'blockingOwner',
+    'blockingRepo',
+    'issueNumber',
+    'owner',
+    'repo',
+  ])
+  assert.equal(dependency.issueNumber, 42, 'dependent issue is B')
+  assert.equal(dependency.blockingIssueNumber, 41, 'blocking issue is A')
+  assert.equal(dependency.owner, dependency.blockingOwner)
+  assert.equal(dependency.repo, dependency.blockingRepo)
 })

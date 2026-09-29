@@ -15,7 +15,6 @@ import {
   normalizeScanOptions,
   normalizeTrivyReport,
   parseTrivyVersion,
-  registerTrivyStatusRpc,
   renderTrivyResult,
   resolveScanTarget,
   runCollected,
@@ -406,46 +405,6 @@ test('bundled provider loads the Trivy audit instructions', async () => {
   const definition = await provider.get(candidate)
   assert.match(definition.content, /never installs or updates/)
   assert.match(definition.content, /trivy_scan/)
-})
-
-test('status RPC forwards cancellation and removes executable paths from its response', async () => {
-  let registration
-  let received
-  registerTrivyStatusRpc(
-    {
-      get: () => ({
-        rpc: {
-          handle(channel, handler, options) {
-            registration = { channel, handler, options }
-            return () => {}
-          },
-        },
-      }),
-      effect(installer) {
-        installer()
-      },
-    },
-    {
-      async check(options) {
-        received = options
-        return {
-          state: 'ready',
-          path: '/private/host/bin/trivy',
-          version: '0.72.0',
-          minimumVersion: '0.50.0',
-          checkedAt: '2026-01-01T00:00:00.000Z',
-          message: 'ready',
-        }
-      },
-    },
-  )
-  const controller = new AbortController()
-  const response = await registration.handler(TRIVY_STATUS_RECHECK, {}, controller.signal)
-  assert.equal(received.signal, controller.signal)
-  assert.equal(received.force, true)
-  assert.equal(response.value.path, undefined)
-  assert.equal(response.value.version, '0.72.0')
-  assert.deepEqual(registration.options, { authority: 'trusted-host' })
 })
 
 test('headless plugin registers tools and skills without activating optional web RPC', () => {

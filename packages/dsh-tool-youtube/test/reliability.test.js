@@ -387,36 +387,6 @@ test('watch formatter labels observation, inference, and missing basis alongside
   assert.equal(Object.hasOwn(value.evidence[2], 'basis'), false)
 })
 
-test('extracted transport retains direct and chunked transcript orchestration', async () => {
-  for (const duration of [20, 1800]) {
-    const client = new GeminiYoutubeClient({
-      ...options,
-      maxTranscriptOutputChars: 60000,
-      durationFetcher: async () => duration,
-      clientFactory: () => ({
-        interactions: {
-          delete: async () => {},
-          create: async (request) => {
-            const clipDuration = request.response_format.schema.properties.duration_seconds.enum[0]
-            return {
-              status: 'completed',
-              output_text: JSON.stringify({
-                duration_seconds: clipDuration,
-                language: 'English',
-                speakers: ['Narrator'],
-                segments: [{ start_seconds: 20, text: 'Hello', speaker: 'Narrator' }],
-              }),
-            }
-          },
-        },
-      }),
-    })
-    const result = await client.transcript({ url })
-    assert.equal(result.durationSeconds, duration)
-    assert.equal(result.segments.length, duration === 20 ? 1 : 2)
-  }
-})
-
 test('legacy duration helper also rejects mismatched identity', async () => {
   const fetchImpl = async () => ({
     ok: true,

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { issue, project, detailedIssue, detailedProject, projectItem } from './payloads.js'
+import { issue, detailedIssue, detailedProject, projectItem } from './payloads.js'
 import { connection } from './fixtures.js'
 import { registerTypeScript } from './source-loader.mjs'
 registerTypeScript()
@@ -22,48 +22,11 @@ const block = (data, extra = {}) => ({
   ],
 })
 
-test('six actual payload shapes render supplied identities without network access', () => {
-  for (const [tool, data, kind] of [
-    ['github_list_projects', connection([project]), 'projects'],
-    ['github_get_project', detailedProject, 'projects'],
-    ['github_list_project_items', connection([projectItem]), 'items'],
-    ['github_list_issues', connection([issue]), 'issues'],
-    [
-      'github_search_issues',
-      { ...connection([issue]), issueCount: 1, searchLimit: 1000, exhaustive: true },
-      'issues',
-    ],
-    ['github_get_issue', detailedIssue, 'issues'],
-  ]) {
-    const model = readCardModel(tool, block(data))
-    assert.equal(model.state, 'returned', tool)
-    assert.equal(model.kind, kind)
-    assert.equal(model.returnedCount, 1)
-  }
-})
 test('single project item continuation retains nested pagination warning', () => {
   const model = readCardModel('github_list_project_items', block(projectItem))
   assert.equal(model.singular, true)
   assert.equal(model.entries[0].id, 'PI_1')
   assert.ok(model.warnings.some((value) => value.includes('fieldValues.nodes[1].labels')))
-})
-test('empty template page preserves scanned/unfiltered counts and continuation', () => {
-  const model = readCardModel(
-    'github_list_projects',
-    block({
-      ...connection([], true, 'next'),
-      totalCount: 100,
-      scannedCount: 20,
-      templateOnly: true,
-      totalCountMeaning: 'Unfiltered owner projects',
-    }),
-  )
-  assert.equal(model.returnedCount, 0)
-  assert.equal(model.total, 100)
-  assert.equal(model.scannedCount, 20)
-  assert.equal(model.templateOnly, true)
-  assert.equal(model.totalMeaning, 'Unfiltered owner projects')
-  assert.ok(model.warnings.length)
 })
 test('search cap and outer truncation remain visible alongside nested cursor warnings', () => {
   const model = readCardModel(
@@ -107,10 +70,20 @@ test('nested UI bounds and missing metadata never imply completeness', () => {
     fields: { nodes: [{ id: 'F', options }], pageInfo: { hasNextPage: false } },
     repositories: { nodes: Array.from({ length: 51 }, () => ({ id: 'R' })) },
   }
-  const warnings = readWarnings({ data }, 'github_get_project')
+  const warnings = readCardModel('github_get_project', block(data)).warnings
   assert.ok(warnings.some((value) => value.includes('options') && value.includes('50')))
   assert.ok(warnings.some((value) => value.includes('repositories.nodes') && value.includes('50')))
   assert.ok(warnings.some((value) => value.includes('metadata') && value.includes('unknown')))
+  const missing = readCardModel('github_list_issues', block({ nodes: [issue] }))
+  assert.ok(
+    missing.error ||
+      missing.warnings.some((warning) => /unknown|missing|pagination|incomplete/i.test(warning)),
+  )
+  const nested = readCardModel(
+    'github_get_issue',
+    block({ ...detailedIssue, labels: { nodes: [{ id: 'L', name: 'bug' }] } }),
+  )
+  assert.match(nested.warnings.join(' '), /unknown|missing|pagination/i)
 })
 test('deep malformed data is bounded and produces an explicit inspection warning', () => {
   let data = {}

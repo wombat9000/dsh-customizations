@@ -533,6 +533,7 @@ test('pending status is account-wide and successful cancel clears tracked regist
   assert.equal((await f.service.status()).pendingIntegrationId, undefined)
   assert.deepEqual(f.service.pendingIntegrations, [f.service.integration('drive')])
   assert.deepEqual(await f.service.cancel(), {})
+  assert.equal(f.service.pendingIntegrations, undefined)
   assert.equal((await f.service.status()).pendingIntegrationId, undefined)
 })
 

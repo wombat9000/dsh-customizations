@@ -544,7 +544,16 @@ test('post-dispatch errors, invalid responses, loss and timeouts are uncertain a
     ['malformed JSON', { stdout: 'not JSON' }],
     [
       'wrong identity',
-      json({ data: { createIssue: { issue: { ...issue, repository: { id: 'R_WRONG' } } } } }),
+      json({
+        data: {
+          createIssue: {
+            issue: {
+              ...mutationResult('createIssue').createIssue.issue,
+              repository: { ...issue.repository, id: 'R_WRONG' },
+            },
+          },
+        },
+      }),
     ],
     ['truncated output', { ...json({ data: mutationResult('createIssue') }), lossy: true }],
     ['spawn exception', { spawnError: new Error('ghp_SYNTHETIC_SECRET') }],

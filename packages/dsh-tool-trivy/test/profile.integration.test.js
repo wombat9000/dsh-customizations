@@ -39,7 +39,7 @@ test('Trivy status RPC strips executable paths and owns its lifecycle', async ()
   const runtime = {
     async check(options) {
       calls.push(options)
-      return { state: 'ready', version: '0.69.2', path: '/private/example/trivy' }
+      return { state: 'ready', version: '0.72.0', path: '/private/example/trivy' }
     },
   }
   let handler
@@ -49,7 +49,7 @@ test('Trivy status RPC strips executable paths and owns its lifecycle', async ()
     rpc: {
       handle(channel, callback, options) {
         assert.equal(channel, '/trivy-status')
-        assert.equal(options.authority, 'trusted-host')
+        assert.deepEqual(options, { authority: 'trusted-host' })
         handler = callback
         return () => {
           removed = true
@@ -72,13 +72,18 @@ test('Trivy status RPC strips executable paths and owns its lifecycle', async ()
   const signal = new AbortController().signal
   assert.deepEqual(await handler('get', {}, signal), {
     ok: true,
-    value: { state: 'ready', version: '0.69.2' },
+    value: { state: 'ready', version: '0.72.0' },
   })
-  await handler('recheck', {}, signal)
+  const rechecked = await handler('recheck', {}, signal)
+  assert.deepEqual(rechecked, { ok: true, value: { state: 'ready', version: '0.72.0' } })
+  assert.equal(rechecked.value.path, undefined)
+  assert.equal(rechecked.value.version, '0.72.0')
   assert.deepEqual(calls, [
     { force: false, signal },
     { force: true, signal },
   ])
+  assert.equal(calls[0].signal, signal)
+  assert.equal(calls[1].signal, signal)
   assert.equal((await handler('scan', {}, signal)).ok, false)
   assert.equal(calls.length, 2)
   dispose()

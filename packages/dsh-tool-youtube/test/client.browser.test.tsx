@@ -178,25 +178,69 @@ test('live progress uses weighted intervals, stops at terminal response and canc
   expect(call).toHaveBeenCalledTimes(3)
 })
 
-test('an old progress response cannot update an unmounted card', async () => {
+test('an old progress response cannot replace the current mounted call or restart its polling', async () => {
+  vi.useFakeTimers()
   let resolve:
     ((value: Awaited<ReturnType<NonNullable<ToolCardProps['rpc']>['call']>>) => void) | undefined
-  const call = vi.fn<NonNullable<ToolCardProps['rpc']>['call']>(
-    () =>
-      new Promise((done) => {
-        resolve = done
-      }),
-  )
+  const currentProgress = {
+    phase: 'transcribing',
+    durationSeconds: 100,
+    chunks: [
+      { id: 'current-done', status: 'complete', startSeconds: 0, endSeconds: 25 },
+      { id: 'current-running', status: 'running', startSeconds: 25, endSeconds: 100 },
+    ],
+  }
+  const call = vi
+    .fn<NonNullable<ToolCardProps['rpc']>['call']>()
+    .mockImplementationOnce(
+      () =>
+        new Promise((done) => {
+          resolve = done
+        }),
+    )
+    .mockResolvedValue({ ok: true, value: currentProgress })
+  const rpc = { call }
   await render(
     <YoutubeToolCard
       callId="old"
-      rpc={{ call }}
+      rpc={rpc}
       block={{ kind: 'tool-call', name: 'youtube_transcript' }}
     />,
   )
-  await unmount()
-  await act(async () => resolve?.({ ok: true, value: { phase: 'complete' } }))
-  expect(call).toHaveBeenCalledTimes(1)
+  expect(call).toHaveBeenCalledExactlyOnceWith('/youtube-transcript-progress', 'get', {
+    callId: 'old',
+  })
+  await render(
+    <YoutubeToolCard
+      callId="current"
+      rpc={rpc}
+      block={{ kind: 'tool-call', name: 'youtube_transcript' }}
+    />,
+  )
+  expect(container.querySelector('[role="progressbar"]')?.getAttribute('aria-valuenow')).toBe('25')
+  const currentText = container.textContent
+  expect(resolve).toBeTypeOf('function')
+  await act(async () =>
+    resolve?.({
+      ok: true,
+      value: {
+        phase: 'transcribing',
+        durationSeconds: 100,
+        chunks: [{ id: 'old-done', status: 'complete', startSeconds: 0, endSeconds: 100 }],
+      },
+    }),
+  )
+  expect(container.textContent).toBe(currentText)
+  expect(container.querySelector('[role="progressbar"]')?.getAttribute('aria-valuenow')).toBe('25')
+  await act(async () => vi.advanceTimersByTimeAsync(1500))
+  expect(call.mock.calls.map((args) => args[2].callId)).toEqual([
+    'old',
+    'current',
+    'current',
+    'current',
+    'current',
+  ])
+  expect(container.querySelector('[role="progressbar"]')?.getAttribute('aria-valuenow')).toBe('25')
 })
 
 test('six missed polls disclose degradation without inventing progress; settled calls poll once', async () => {

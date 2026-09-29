@@ -44,14 +44,17 @@ test('auth and caller listeners clean up after success and failure', async () =>
   const auth = new AbortController(),
     caller = new AbortController()
   for (const bad of [false, true]) {
-    const { client } = fixture({
+    const { client, calls } = fixture({
       auth: (fn) => fn('secret-token', auth.signal),
       fetch: async () => {
         if (bad) throw Error('failure')
         return Response.json(data())
       },
     })
-    await client.read({ fileId, range, signal: caller.signal }).catch(() => {})
+    const pending = client.read({ fileId, range, signal: caller.signal })
+    if (bad) await assert.rejects(pending, { code: 'request', diagnostic: 'network' })
+    else assert.equal((await pending).cells.length, 4)
+    assert.equal(calls.length, 1, 'cleanup must follow an actual transport request')
     assert.equal(getEventListeners(auth.signal, 'abort').length, 0)
     assert.equal(getEventListeners(caller.signal, 'abort').length, 0)
   }

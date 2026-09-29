@@ -48,8 +48,16 @@ test('all requests use the shared same-origin POST contract', async () => {
     calls.push({ url, options })
     return { ok: true, json: async () => ({ ok: true, value: {} }) }
   })
-  for (const method of ['status', 'configure', 'clear-config', 'connect', 'cancel', 'disconnect']) {
-    const body = method === 'configure' ? { clientJson: 'fixture' } : {}
+  for (const [method, body] of [
+    ['status', {}],
+    ['configure', { clientJson: 'fixture' }],
+    ['clear-config', {}],
+    ['connect', {}],
+    ['cancel', {}],
+    ['disconnect', {}],
+    ['callback-mode', { useSandbox: true }],
+    ['callback-mode', { useSandbox: false }],
+  ]) {
     await api(method, body)
     const { url, options } = calls.at(-1)
     assert.equal(url, `/api/plugins/google-auth/${method}`)
@@ -58,23 +66,6 @@ test('all requests use the shared same-origin POST contract', async () => {
     assert.equal(options.headers['X-DSH-Google-Auth'], '1')
     assert.equal(options.headers['Content-Type'], 'application/json')
     assert.deepEqual(JSON.parse(options.body), body)
-  }
-})
-test('callback mode saves exact boolean bodies through the same-origin transport', async () => {
-  const calls = []
-  const { api } = load(async (url, options) => {
-    calls.push({ url, options })
-    return { ok: true, json: async () => ({ ok: true, value: {} }) }
-  })
-  for (const useSandbox of [true, false]) {
-    await api('callback-mode', { useSandbox })
-    const { url, options } = calls.at(-1)
-    assert.equal(url, '/api/plugins/google-auth/callback-mode')
-    assert.equal(options.method, 'POST')
-    assert.equal(options.credentials, 'same-origin')
-    assert.equal(options.headers['X-DSH-Google-Auth'], '1')
-    assert.equal(options.headers['Content-Type'], 'application/json')
-    assert.deepEqual(JSON.parse(options.body), { useSandbox })
   }
 })
 test('authorization links reject untrusted origins, credentials, paths, fragments and protocols', () => {

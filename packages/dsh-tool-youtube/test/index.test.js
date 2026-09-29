@@ -528,95 +528,100 @@ test('adaptive watch chunks long global questions and reduces verified evidence'
   assert.equal(requests.filter((request) => request.input[0].type === 'text').length, 1)
 })
 
-test('short transcript sends one native YouTube structured request', async () => {
-  let observedRequest
-  const client = new GeminiYoutubeClient(
-    clientOptions({
-      durationFetcher: async () => 10,
-      clientFactory: () =>
-        fakeGeminiClient(async (request) => {
-          observedRequest = request
-          return fakeInteraction({
-            duration_seconds: 10,
-            language: 'English',
-            speakers: ['Narrator'],
-            segments: [{ start_seconds: 4, text: 'Hello world.', speaker: 'Narrator' }],
-          })
-        }),
-    }),
-  )
-  const progress = []
-  const result = await client.transcript(
-    { url: WATCH_URL },
-    new AbortController().signal,
-    (value) => progress.push(value),
-  )
-  assert.deepEqual(result, {
-    videoId: VIDEO_ID,
-    language: 'English',
-    speakers: ['Narrator'],
-    segments: [{ startSeconds: 4, timestamp: '0:04', text: 'Hello world.', speaker: 'Narrator' }],
-    truncated: false,
-    durationSeconds: 10,
-    timestampVerified: true,
-    caveats: [],
-    processing: {
+for (const { duration, start, timestamp, estimatedTokens } of [
+  { duration: 10, start: 4, timestamp: '0:04', estimatedTokens: 5430 },
+  { duration: 20, start: 20, timestamp: '0:20', estimatedTokens: 8430 },
+]) {
+  test(`short transcript sends one native YouTube structured request (duration ${duration})`, async () => {
+    let observedRequest
+    const client = new GeminiYoutubeClient(
+      clientOptions({
+        durationFetcher: async () => duration,
+        clientFactory: () =>
+          fakeGeminiClient(async (request) => {
+            observedRequest = request
+            return fakeInteraction({
+              duration_seconds: duration,
+              language: 'English',
+              speakers: ['Narrator'],
+              segments: [{ start_seconds: start, text: 'Hello world.', speaker: 'Narrator' }],
+            })
+          }),
+      }),
+    )
+    const progress = []
+    const result = await client.transcript(
+      { url: WATCH_URL },
+      new AbortController().signal,
+      (value) => progress.push(value),
+    )
+    assert.deepEqual(result, {
+      videoId: VIDEO_ID,
+      language: 'English',
+      speakers: ['Narrator'],
+      segments: [{ startSeconds: start, timestamp, text: 'Hello world.', speaker: 'Narrator' }],
+      truncated: false,
+      durationSeconds: duration,
+      timestampVerified: true,
+      caveats: [],
+      processing: {
+        strategy: 'direct',
+        chunksCompleted: 1,
+        chunksTotal: 1,
+        collectedSegments: 1,
+        intervals: [
+          {
+            id: '1',
+            index: 0,
+            startSeconds: 0,
+            endSeconds: duration,
+            status: 'complete',
+            attempt: 1,
+            segmentCount: 1,
+          },
+        ],
+        providerCalls: 1,
+        providerCallLimit: 64,
+        estimatedInputTokens: estimatedTokens,
+        estimatedInputTokenLimit: 3_000_000,
+        attempts: [
+          {
+            index: 1,
+            operation: 'transcription',
+            kind: 'transcript-primary',
+            estimatedInputTokens: estimatedTokens,
+          },
+        ],
+      },
+    })
+    assert.deepEqual(observedRequest.input[0], { type: 'video', uri: WATCH_URL })
+    assert.deepEqual(
+      progress.map((value) => value.phase),
+      ['inspecting', 'transcribing', 'transcribing', 'complete'],
+    )
+    assert.deepEqual(progress.at(-1), {
+      phase: 'complete',
       strategy: 'direct',
-      chunksCompleted: 1,
-      chunksTotal: 1,
+      durationSeconds: duration,
+      totalChunks: 1,
+      completedChunks: 1,
+      activeChunks: 0,
       collectedSegments: 1,
-      intervals: [
+      chunks: [
         {
           id: '1',
           index: 0,
           startSeconds: 0,
-          endSeconds: 10,
+          endSeconds: duration,
           status: 'complete',
           attempt: 1,
           segmentCount: 1,
         },
       ],
-      providerCalls: 1,
-      providerCallLimit: 64,
-      estimatedInputTokens: 5430,
-      estimatedInputTokenLimit: 3_000_000,
-      attempts: [
-        {
-          index: 1,
-          operation: 'transcription',
-          kind: 'transcript-primary',
-          estimatedInputTokens: 5430,
-        },
-      ],
-    },
+      truncated: false,
+    })
   })
-  assert.deepEqual(observedRequest.input[0], { type: 'video', uri: WATCH_URL })
-  assert.deepEqual(
-    progress.map((value) => value.phase),
-    ['inspecting', 'transcribing', 'transcribing', 'complete'],
-  )
-  assert.deepEqual(progress.at(-1), {
-    phase: 'complete',
-    strategy: 'direct',
-    durationSeconds: 10,
-    totalChunks: 1,
-    completedChunks: 1,
-    activeChunks: 0,
-    collectedSegments: 1,
-    chunks: [
-      {
-        id: '1',
-        index: 0,
-        startSeconds: 0,
-        endSeconds: 10,
-        status: 'complete',
-        attempt: 1,
-        segmentCount: 1,
-      },
-    ],
-    truncated: false,
-  })
-})
+}
 
 test('uses independently fetched duration to verify transcript timestamps', async () => {
   let observedRequest
@@ -2145,15 +2150,42 @@ test('missing credentials fail before creating a Gemini client', async () => {
 })
 
 test('aborts while credential resolution is stalled', async () => {
+  const entered = Promise.withResolvers()
+  const credential = Promise.withResolvers()
+  let resolutions = 0
+  let constructions = 0
   const client = new GeminiYoutubeClient(
     clientOptions({
-      resolveApiKey: () => new Promise(() => {}),
+      resolveApiKey: () => {
+        resolutions += 1
+        entered.resolve()
+        return credential.promise
+      },
+      clientFactory: () => {
+        constructions += 1
+        return fakeGeminiClient(async () => fakeInteraction({ answer: 'Unexpected request' }))
+      },
     }),
   )
   const controller = new AbortController()
   const pending = client.watch({ url: WATCH_URL, question: 'What happens?' }, controller.signal)
+  await entered.promise
+  assert.equal(resolutions, 1)
   controller.abort(new Error('test cancellation'))
-  await assert.rejects(pending, /was aborted/)
+  const rejected = assert.rejects(pending, /was aborted/)
+  assert.equal(
+    await Promise.race([
+      rejected.then(() => true),
+      new Promise((resolve) => setImmediate(() => resolve(false))),
+    ]),
+    true,
+    'cancellation must reject without waiting for stalled dependency work',
+  )
+  assert.equal(constructions, 0)
+  credential.resolve('late-test-key')
+  await new Promise((resolve) => setImmediate(resolve))
+  assert.equal(constructions, 0)
+  assert.equal(resolutions, 1)
 })
 
 test('provider failures are sanitized and never reveal credentials', async () => {
@@ -2222,29 +2254,48 @@ test('never reflects arbitrary HTTP 400 provider text', async () => {
 })
 
 test('aborts an in-flight Gemini interaction through the supplied signal', async () => {
+  const entered = Promise.withResolvers()
+  let interactions = 0
+  let aborts = 0
   const client = new GeminiYoutubeClient(
     clientOptions({
       clientFactory: () =>
         fakeGeminiClient(
           (_request, { signal }) =>
             new Promise((_resolve, reject) => {
+              interactions += 1
               signal.addEventListener(
                 'abort',
                 () => {
+                  aborts += 1
                   const error = new Error('cancelled')
                   error.name = 'APIUserAbortError'
                   reject(error)
                 },
                 { once: true },
               )
+              entered.resolve()
             }),
         ),
     }),
   )
   const controller = new AbortController()
   const pending = client.watch({ url: WATCH_URL, question: 'What happens?' }, controller.signal)
+  await entered.promise
+  assert.equal(interactions, 1)
+  assert.equal(aborts, 0)
   controller.abort(new Error('test cancellation'))
-  await assert.rejects(pending, /was aborted/)
+  const rejected = assert.rejects(pending, /was aborted/)
+  assert.equal(
+    await Promise.race([
+      rejected.then(() => true),
+      new Promise((resolve) => setImmediate(() => resolve(false))),
+    ]),
+    true,
+    'cancellation must reject without waiting for stalled dependency work',
+  )
+  assert.equal(aborts, 1)
+  assert.equal(interactions, 1)
 })
 
 test('aborts a stateful correction and still deletes the stored parent interaction', async () => {
@@ -2573,5 +2624,5 @@ test('registers YouTube analysis and transcript archive tools with prompt guidan
   assert.match(sdk, /youtube_transcript:/)
   assert.match(sdk, /youtube_transcript_read:/)
   assert.match(sdk, /youtube_transcript_search:/)
-  assert.match(sdk, /modality: "visual" | "spoken" | "mixed"/)
+  assert.match(sdk, /modality: "visual" \| "spoken" \| "mixed"/)
 })

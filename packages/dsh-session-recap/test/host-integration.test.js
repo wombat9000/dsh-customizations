@@ -182,7 +182,9 @@ test('configure validates exact custom route without catalog allowlist', async (
   assert.equal(preparations(), 1)
 })
 test('configure rejects unknown fields and invalid values without writing', async (t) => {
-  const { rpc } = await host(t)
+  const { rpc, ctx } = await host(t)
+  const before = await rpc('settings')
+  const update = t.mock.method(ctx.settings, 'update')
   for (const payload of [
     null,
     [],
@@ -191,9 +193,11 @@ test('configure rejects unknown fields and invalid values without writing', asyn
     { provider: 'alone' },
     { autoRecap: 0 },
     { useJev: 'true' },
-  ])
+  ]) {
     assert.equal((await rpc('configure', payload)).ok, false)
-  assert.equal((await rpc('settings')).value.provider, '')
+    assert.deepEqual(await rpc('settings'), before)
+    assert.equal(update.mock.callCount(), 0)
+  }
 })
 test('unconfigured recap returns a complete DSH RPC failure envelope', async (t) => {
   const { rpc } = await host(t)

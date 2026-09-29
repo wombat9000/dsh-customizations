@@ -245,20 +245,97 @@ test(
 )
 
 test('concurrency, cancellation, disposal and private temp cleanup', native, async () => {
-  const before = (await readdir(tmpdir())).filter((name) => name.startsWith('dsh-pdf-')).sort()
-  const processor = new PdfProcessor(),
-    controller = new AbortController()
-  const one = processor.read(textPdf('Hello'), { signal: controller.signal })
-  const two = processor.read(textPdf('World'))
-  const results = Promise.allSettled([one, two])
-  await assert.rejects(processor.read(textPdf('Busy')), /busy/u)
-  controller.abort()
-  processor.dispose()
-  assert.ok((await results).every((result) => result.status === 'rejected'))
-  assert.deepEqual(
-    (await readdir(tmpdir())).filter((name) => name.startsWith('dsh-pdf-')).sort(),
-    before,
-  )
+  const { Worker } = await import('node:worker_threads')
+  const { realpath } = await import('node:fs/promises')
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'pdf-lifecycle-')))
+  // A worker owns its environment: other tests never see this TMPDIR.
+  async function lifecycle() {
+    const { workerData } = await import('node:worker_threads')
+    const { watch, readdirSync, statSync } = await import('node:fs')
+    const { readdir } = await import('node:fs/promises')
+    const { tmpdir } = await import('node:os')
+    const { join } = await import('node:path')
+    const { default: assert } = await import('node:assert/strict')
+    const { PdfProcessor } = await import(workerData.module)
+    assert.equal(tmpdir(), workerData.root)
+    const processor = new PdfProcessor()
+    const pending = []
+    let watcher, timer
+    // This is a real allocation observation, not a delay or a mocked write.
+    // The timeout only bounds a missing observation; it never releases the barrier.
+    const allocation = () =>
+      new Promise((resolve, reject) => {
+        watcher = watch(workerData.root, () => {
+          try {
+            const names = readdirSync(workerData.root)
+            const name = names.find((name) => name.startsWith('dsh-pdf-'))
+            if (!name) return
+            assert.ok(statSync(join(workerData.root, name)).isDirectory())
+            clearTimeout(timer)
+            watcher.close()
+            resolve(name)
+          } catch (error) {
+            reject(error)
+          }
+        })
+        watcher.on('error', reject)
+        timer = setTimeout(() => reject(new Error('No private PDF allocation observed')), 5000)
+      })
+    const start = (options) => {
+      const read = processor.read(workerData.fixture, options)
+      pending.push(read)
+      // Observe rejection immediately, including failures before the allocation barrier.
+      read.catch(() => {})
+      return read
+    }
+    try {
+      const controller = new AbortController()
+      const allocated = allocation()
+      const cancelled = start({ signal: controller.signal })
+      await allocated
+      controller.abort()
+      await assert.rejects(cancelled, /cancelled/u)
+      assert.deepEqual(await readdir(workerData.root), [])
+
+      const allocatedAgain = allocation()
+      const one = start()
+      const two = start()
+      await assert.rejects(processor.read(workerData.fixture), /busy/u)
+      await allocatedAgain
+      processor.dispose()
+      for (const read of [one, two]) await assert.rejects(read, /cancelled/u)
+      await assert.rejects(processor.read(workerData.fixture), /disposed/u)
+      assert.deepEqual(await readdir(workerData.root), [])
+    } finally {
+      clearTimeout(timer)
+      watcher?.close()
+      processor.dispose()
+      await Promise.allSettled(pending)
+    }
+  }
+  let worker
+  try {
+    worker = new Worker(`(${lifecycle.toString()})()`, {
+      eval: true,
+      env: { ...process.env, TMPDIR: root, TMP: root, TEMP: root },
+      workerData: {
+        root,
+        module: new URL('../src/pdf.js', import.meta.url).href,
+        fixture: textPdf('Hello'),
+      },
+    })
+    await new Promise((resolve, reject) => {
+      worker.once('error', reject)
+      worker.once('exit', (code) =>
+        code === 0 ? resolve() : reject(new Error(`PDF worker exited ${code}`)),
+      )
+    })
+    assert.deepEqual(await readdir(root), [])
+  } finally {
+    await worker?.terminate()
+    // Remove only this test's root, including leftovers from a failing cleanup assertion.
+    await rm(root, { recursive: true, force: true })
+  }
 })
 
 test('assembled Drive client reads native PDF through fixed media transport', native, async () => {

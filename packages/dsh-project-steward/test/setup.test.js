@@ -9,7 +9,6 @@ import {
   readdir,
   realpath,
   rm,
-  symlink,
   writeFile,
 } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -150,29 +149,12 @@ test('fresh source fixture runs dependency-free checks with no pnpm executable o
   // agent will obey prose. No executable setup/installer is shipped in v1.
 })
 
-test('fresh fixture exposes shared root and workspace dependency links without modifying targets', async (t) => {
-  const { root, directory } = await fresh(t)
-  const shared = join(root, 'other-checkout/node_modules')
-  await mkdir(shared, { recursive: true })
-  await writeFile(join(shared, 'sentinel'), 'Do not mutate another checkout.\n')
-  for (const dependencyDirectory of [
-    join(directory, 'node_modules'),
-    join(directory, 'packages/dsh-project-steward/node_modules'),
-  ]) {
-    await symlink(shared, dependencyDirectory, 'dir')
-    assert.equal((await lstat(dependencyDirectory)).isSymbolicLink(), true)
-    assert.equal(await realpath(dependencyDirectory), shared)
-  }
-  const skill = await text(skillPath)
-  assert.match(skill, /symlinked, shared with another checkout[\s\S]*?\*\*do not install there\*\*/)
-  assert.match(skill, /Do not unlink, delete, relink, or mutate another checkout/)
-  assert.equal(await text(join(shared, 'sentinel')), 'Do not mutate another checkout.\n')
-  assert.deepEqual(await readdir(shared), ['sentinel'])
-})
-
 test('repo guidance tracks source pins, script prerequisites, CI distinction, and setup stops', async () => {
   const skill = await text(skillPath)
   const manifest = JSON.parse(await text(join(repo, 'package.json')))
+  // These are guidance contracts, not executable install-safety enforcement.
+  assert.match(skill, /symlinked, shared with another checkout[^.]*?\*\*do not install there\*\*/)
+  assert.match(skill, /Do not unlink, delete, relink, or mutate another checkout/)
   assert.ok(skill.includes(manifest.packageManager))
   assert.ok(skill.includes(manifest.engines.node))
   assert.equal(manifest.scripts.pretest, 'pnpm run build')

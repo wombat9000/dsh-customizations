@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "test-audit": {
+      "source": "wombat9000/agent-tooling",
+      "sourceType": "github",
+      "skillPath": "skills/test-audit/SKILL.md",
+      "computedHash": "afa941be64b6241ea1ec3df5fbc0f3e6108bc5b6a2261584cc154facd2164422"
+    }
+  }
+}
