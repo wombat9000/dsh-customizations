@@ -4,7 +4,7 @@ import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 // The target layout owns the additive, root-scoped shell.overlay slot.
-import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
+import type { UsePanelInfo } from '@deepseek-ai/dsh-client-ui-layout/client'
 import type { UseSessions } from '@deepseek-ai/dsh-client-ui-session/client'
 import React from 'react'
 import sessionEnvironmentRemote from '@local/dsh-session-environment/remote'
@@ -49,6 +49,7 @@ type SessionListState = Parameters<Parameters<UseSessions>[0]>[0]
 
 interface EnvironmentCardProps {
   useSessions: UseSessions
+  usePanelInfo: UsePanelInfo
 }
 
 // Target DSH selects the main conversation through its mainView retain owner.
@@ -351,6 +352,7 @@ export function createEnvironmentCard(
   const environmentCache = new Map<string, CachedEnvironment>()
 
   return function EnvironmentCard(props: EnvironmentCardProps): React.ReactElement | null {
+    const isConversation = props.usePanelInfo((info) => info.activePanelId === null)
     const sessionId = props.useSessions(selectedEnvironmentSession)
     const cwd = props.useSessions((state) => {
       const selected = selectedEnvironmentSession(state)
@@ -454,7 +456,19 @@ export function createEnvironmentCard(
       }
     }, [sessionId, cwd])
 
-    if (sessionId === undefined) return null
+    if (!isConversation || sessionId === undefined) return null
+
+    // Pinned DSH 0.1.7-rc.2 markup: AppFrame owns the overlay; foreground
+    // push/fullscreen panels have no hidden ancestor. Match the panel's session,
+    // not the frame's track width (fullscreen may have no track) or slot depth.
+    // React owns this stylesheet, so session changes/unmount remove the rule.
+    const sidebarVisibility = `
+      :has(> [data-shell-overlay]):has(
+        [data-sidebar-right-panel][data-sidebar-right-session="${CSS.escape(sessionId)}"][data-sidebar-right-open]:not([hidden] *)
+      ) > [data-shell-overlay] [data-session-environment] {
+        display: none;
+      }
+    `
 
     const cached = cwd === null ? undefined : environmentCache.get(cwd)
     const displayInfo =
@@ -547,7 +561,8 @@ export function createEnvironmentCard(
 
     return React.createElement(
       'section',
-      { style: styles.card, 'aria-label': 'Session environment' },
+      { style: styles.card, 'aria-label': 'Session environment', 'data-session-environment': true },
+      React.createElement('style', null, sidebarVisibility),
       React.createElement('h2', { style: styles.title }, 'Environment'),
       React.createElement(
         'div',
