@@ -53,7 +53,10 @@ test('global bundle adds tools without declaring or modifying any preset', async
     recipe.filter((row) => row.name === '@local/dsh-file-intuition'),
     rows,
   )
-  assert.equal(recipe.some((row) => row.config?.id === 'file-intuition'), false)
+  assert.equal(
+    recipe.some((row) => row.config?.id === 'file-intuition'),
+    false,
+  )
   for (const preset of recipe.filter((row) => row.name === '@deepseek-ai/dsh-agent-preset')) {
     assert.equal(
       preset.config.plugins.some((row) => row.name === '@local/dsh-file-intuition'),
@@ -140,7 +143,8 @@ test('global tools and skill reach different presets and disappear on disposal',
     assert.equal(skill.source, 'bundled')
     assert.match(skill.content, /^# File intuition/m)
   }
-  registration.dispose()
+  // Cordis disposal can be asynchronous; assert visibility after cleanup completes.
+  await registration.dispose()
   for (const scope of scopes) {
     for (const name of names) assert.equal(tools.view(scope.key).visible.has(name), false)
     assert.equal(
