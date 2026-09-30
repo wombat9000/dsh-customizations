@@ -101,8 +101,7 @@ test('foreground Files hides the floating card, including session switches and r
       .getByRole('treeitem', { name: new RegExp(`^${githubFieldWorkspaceName}\\s`) })
       .click()
     await closeSidebar(app)
-    // The previous open panel remains mounted, but its wrapper is background.
-    await expect(firstPanel).toHaveAttribute('data-sidebar-right-open', 'true')
+    // The previous Files panel is no longer foreground; DSH may unmount it.
     await expect(firstPanel).toBeHidden()
     await expect(card).toBeVisible()
     await expect(
