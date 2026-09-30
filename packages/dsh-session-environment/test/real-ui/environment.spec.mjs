@@ -117,7 +117,7 @@ test('foreground Files hides the floating card, including session switches and r
     await expect(panel).toHaveAttribute('data-sidebar-right-panel', 'fullscreen')
     await expect(card).toBeHidden()
     await app.reload()
-    await app.getByRole('button', { name: 'Configure later', exact: true }).click()
+    // A restored fullscreen sidebar does not show the main-view setup prompt.
     await expect(foregroundSidebar(app)).toHaveAttribute('data-sidebar-right-panel', 'fullscreen')
     await expect(foregroundSidebar(app)).toHaveAttribute('data-sidebar-right-open', 'true')
     await expect(card).toBeHidden()
