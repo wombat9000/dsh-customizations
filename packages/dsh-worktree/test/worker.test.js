@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { mkdtemp, mkdir, rm, symlink } from 'node:fs/promises'
+import { registerHooks } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
@@ -18,6 +19,28 @@ import { startRegisteredWorker, startWorker } from '../src/worker.js'
 import WorktreeService from '../src/index.js'
 import * as LegacyTools from '../src/tools.js'
 import { hasWorktreeCapability } from '../src/capability.js'
+
+// A URL query evaluates the real scope library again, including its private
+// Symbol. Only this worker's direct scope import uses that copy; the factory,
+// tools, and composition keep the runtime graph. No library code is mocked.
+async function splitScopeWorker() {
+  const workerUrl = new URL('../src/worker.js?split-scope', import.meta.url).href
+  const scopeUrl = `${import.meta.resolve('@deepseek-ai/dsh-scope')}?split-scope`
+  const scope = await import(scopeUrl)
+  const hooks = registerHooks({
+    resolve(specifier, context, nextResolve) {
+      if (specifier === '@deepseek-ai/dsh-scope' && context.parentURL === workerUrl) {
+        return { url: scopeUrl, shortCircuit: true }
+      }
+      return nextResolve(specifier, context)
+    },
+  })
+  try {
+    return { startWorker: (await import(workerUrl)).startWorker, scopeOf: scope.scopeOf }
+  } finally {
+    hooks.deregister()
+  }
+}
 
 function deferred() {
   let resolve
@@ -278,21 +301,74 @@ test('host worktree tools reach ordinary agents but not restricted workers', asy
   assert.equal(hasWorktreeCapability(f.ctx, f.parent), false, 'host removal revokes tab capability')
 })
 
-test('parent-local tool restrictions are intersected rather than lost on child composition', async (t) => {
-  const f = await runtime(t)
-  f.parent.ctx.get('tools').restrict({ allow: ['read'] })
-  const run = await startWorker(f.ctx, f.args)
-  await run.result
-  assert.deepEqual(
-    run.localAgent.ctx
-      .get('tools')
-      .schemas(scopeOf(run.localAgent.ctx))
-      .map((tool) => tool.name),
-    ['read'],
-  )
-  assert.equal((await execute(f.ctx, run.localAgent, 'write')).isError, true)
-  await run.dispose()
-})
+for (const graph of ['shared scope module', 'split scope modules']) {
+  test(`parent restrictions and exact tool definitions constrain workers with ${graph}`, async (t) => {
+    const worker =
+      graph === 'split scope modules' ? await splitScopeWorker() : { startWorker, scopeOf }
+    const f = await runtime(t)
+    assert.equal(scopeOf(f.parent.ctx), f.parent)
+    assert.equal(
+      worker.scopeOf(f.parent.ctx),
+      graph === 'split scope modules' ? undefined : f.parent,
+    )
+    f.parent.ctx.get('tools').restrict({ allow: ['read'] })
+    const run = await worker.startWorker(f.ctx, f.args)
+    assert.equal((await run.result).stopReason, 'completed')
+    const child = run.localAgent
+    assert.equal(f.ctx.get('agents').isOwnedBy(run.id, f.parent), true)
+    assert.equal(scopeOf(child.ctx), child)
+    assert.equal(worker.scopeOf(child.ctx), graph === 'split scope modules' ? undefined : child)
+    assert.deepEqual(
+      child.ctx
+        .get('tools')
+        .schemas(child)
+        .map((tool) => tool.name),
+      ['read'],
+    )
+    assert.equal((await execute(f.ctx, child, 'read')).isError, false)
+    assert.equal((await execute(f.ctx, child, 'write')).isError, true)
+
+    const shadowCalls = []
+    function shadow(owner) {
+      return {
+        name: 'read',
+        description: `${owner} shadow`,
+        parameters: {},
+        output: { schema: { type: 'string' }, render: () => [] },
+        async execute() {
+          shadowCalls.push(owner)
+          return `${owner} output`
+        },
+      }
+    }
+    const childShadow = shadow('child')
+    child.ctx.get('tools').register(childShadow)
+    assert.equal(f.ctx.get('tools').get('read', child), childShadow)
+    const shadowed = await execute(f.ctx, child, 'read')
+    assert.equal(shadowed.isError, true)
+    assert.equal(shadowed.error.message, 'Worktree tool definition changed after dispatch')
+    assert.deepEqual(shadowCalls, [])
+    assert.deepEqual(f.executed, ['read'])
+    assert.equal((await settleRun(run)).status, 'completed')
+    assert.equal(f.ctx.get('agents').get(run.id), undefined)
+
+    // A parent-local shadow is the authority, not the same-named global tool.
+    // This fixture has no preset join, so the child sees the global definition
+    // and must refuse it rather than substituting it for the parent's shadow.
+    const parentShadow = shadow('parent')
+    f.parent.ctx.get('tools').register(parentShadow)
+    assert.equal((await execute(f.ctx, f.parent, 'read')).value, 'parent output')
+    const shadowRun = await worker.startWorker(f.ctx, f.args)
+    assert.equal((await shadowRun.result).stopReason, 'completed')
+    const substituted = await execute(f.ctx, shadowRun.localAgent, 'read')
+    assert.equal(substituted.isError, true)
+    assert.equal(substituted.error.message, 'Worktree tool definition changed after dispatch')
+    assert.deepEqual(shadowCalls, ['parent'])
+    assert.deepEqual(f.executed, ['read'])
+    assert.equal((await settleRun(shadowRun)).status, 'completed')
+    assert.equal(f.ctx.get('agents').get(shadowRun.id), undefined)
+  })
+}
 
 test('write dispatch cannot widen read-only mode or escape a workspace-write parent', async (t) => {
   const f = await runtime(t, { policyMode: 'read-only' })

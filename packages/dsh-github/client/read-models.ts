@@ -46,6 +46,7 @@ export function readWarnings(envelope: unknown, toolName: string): string[] {
     if (
       supplied(pageInfo, 'hasNextPage') === true &&
       !id(nextCursor) &&
+      !Number.isSafeInteger(supplied(pageInfo, 'nextPage')) &&
       !id(supplied(pageInfo, 'endCursor'))
     )
       warnings.add(`${path}: continuation cursor is unavailable; inspect raw details.`)
@@ -55,7 +56,7 @@ export function readWarnings(envelope: unknown, toolName: string): string[] {
       (typeof nextCursor === 'string' && nextCursor.length > 0)
     )
       warnings.add(
-        `${path}: more data or truncated output. Continue this exact target with its matching cursor where supplied; this view is not complete.`,
+        `${path}: more data or truncated output. Continue this exact target with its matching ${toolName.includes('pull_request') ? 'cursor or page' : 'cursor'} where supplied; this view is not complete.`,
       )
     if (Array.isArray(value)) {
       if (value.length > 50)

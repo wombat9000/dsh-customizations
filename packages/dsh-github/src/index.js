@@ -1,4 +1,5 @@
 import { createGitHubRuntime } from './runtime.js'
+import { createGitHubPullRequestRuntime } from './pull-request-runtime.js'
 import { mountGitHubReads } from './reads.js'
 export * from './reads.js'
 import { createGitHubTools } from './tools.js'
@@ -24,7 +25,8 @@ export function apply(ctx) {
     onAccount: (actor) => grants.observeAccount(actor),
   })
   mountGitHubReads(ctx, runtime)
-  for (const tool of createGitHubTools(runtime)) ctx.tools.register(tool)
+  const pullRequests = createGitHubPullRequestRuntime(ctx.subprocess)
+  for (const tool of createGitHubTools({ ...runtime, ...pullRequests })) ctx.tools.register(tool)
   const grantCaller = createGrantCaller(ctx)
   const agents = {
     get: (id) => ctx.get('agents')?.get(id),

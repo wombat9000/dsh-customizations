@@ -104,6 +104,10 @@ export async function startDisposableHost({ additionalPlugins = [], profilePatch
       join(root, 'packages/dsh-github/test/project-items-fixture.js'),
       join(fixture, 'project-items-fixture.js'),
     )
+    await copyFile(
+      join(root, 'packages/dsh-github/test/pull-request-card-fixtures.js'),
+      join(fixture, 'pull-request-card-fixtures.js'),
+    )
     await writeFile(
       join(fixture, 'package.json'),
       JSON.stringify({

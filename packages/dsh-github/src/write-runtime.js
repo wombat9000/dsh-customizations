@@ -1,6 +1,13 @@
 import { GitHubError, runCollected, sanitize, isGitHubBackendFenced } from './runtime.js'
 import { WRITE_READS, MUTATIONS, GRANT_READS } from './write-queries.js'
 import { validateGrantArguments, resolveGrantIdentities } from './grants.js'
+import {
+  PR_WRITE_OPERATIONS,
+  validatePRArguments,
+  preflightPullRequest,
+  confirmPullRequest,
+} from './pull-requests.js'
+import { parseGitHubAPIResponse } from './api-transport.js'
 
 const str = (description) => ({ type: 'string', description })
 const num = (description) => ({ type: 'integer', description })
@@ -13,6 +20,7 @@ const existingIssue = {
   issueNumber: num('Positive issue number.'),
 }
 export const WRITE_OPERATIONS = Object.freeze({
+  ...PR_WRITE_OPERATIONS,
   createProject: {
     name: 'github_create_project',
     required: ['owner', 'title'],
@@ -224,6 +232,8 @@ function id(value) {
   return typeof value === 'string' && /^[A-Za-z0-9_=-]{1,256}$/.test(value)
 }
 export function validateWriteArguments(operation, input) {
+  if (Object.hasOwn(PR_WRITE_OPERATIONS, operation))
+    return clean(validatePRArguments(operation, input))
   const spec = WRITE_OPERATIONS[operation]
   if (
     !spec ||
@@ -543,6 +553,20 @@ function raceSignal(promise, signal) {
   })
 }
 function confirmed(operation, prepared, data) {
+  if (Object.hasOwn(PR_WRITE_OPERATIONS, operation)) {
+    const resource = confirmPullRequest(operation, prepared, data)
+    clean(resource)
+    return {
+      host: 'github.com',
+      untrusted: true,
+      operation,
+      outcome: 'confirmed',
+      resource,
+      change: prepared.change,
+      targets: prepared.targets,
+      atomicConcurrencyGuarantee: false,
+    }
+  }
   record(data)
   const roots = {
     createProject: 'createProjectV2',
@@ -619,6 +643,38 @@ function confirmed(operation, prepared, data) {
 }
 export function uncertainWriteResult(prepared, data) {
   const observedResources = []
+  if (
+    Object.hasOwn(PR_WRITE_OPERATIONS, prepared.operation) &&
+    data &&
+    typeof data === 'object' &&
+    !Array.isArray(data)
+  ) {
+    // Retain safe identities from an unconfirmed REST/GraphQL response, not its content.
+    const candidates = [
+      data,
+      data.convertPullRequestToDraft?.pullRequest,
+      data.markPullRequestReadyForReview?.pullRequest,
+    ]
+    for (const value of candidates) {
+      const identity = {
+        kind: 'unconfirmed-pr-resource',
+        id: value?.node_id ?? value?.id,
+        url: value?.html_url ?? value?.url,
+      }
+      if (
+        !id(identity.id) ||
+        typeof identity.url !== 'string' ||
+        !/^https:\/\/github\.com\//.test(identity.url)
+      )
+        continue
+      try {
+        clean(identity)
+        observedResources.push(identity)
+      } catch {
+        /* Unsafe partial identities remain hidden. */
+      }
+    }
+  }
   if (data && typeof data === 'object' && !Array.isArray(data)) {
     for (const root of Object.values(data)) {
       if (!root || typeof root !== 'object') continue
@@ -699,19 +755,27 @@ export function createGitHubWriteRuntime(subprocess, config = {}) {
     }
     if (typeof executable !== 'string' || !executable) fail('CLI_UNAVAILABLE')
     checkSignal(exec.signal)
+    const request = typeof document === 'string' ? { document, variables } : document
+    const graphql = typeof request.document === 'string'
+    const body = graphql
+      ? { query: request.document, variables: request.variables ?? {} }
+      : request.body
     return runCollected(subprocess, {
       argv: [
         executable,
         'api',
-        'graphql',
+        graphql ? 'graphql' : request.path,
         '--hostname',
         'github.com',
         '--method',
-        'POST',
-        '--input',
-        '-',
+        graphql ? 'POST' : request.method,
+        '--header',
+        'Accept: application/vnd.github+json',
+        '--header',
+        'X-GitHub-Api-Version: 2026-03-10',
+        ...(body === undefined ? [] : ['--input', '-']),
       ],
-      stdinData: JSON.stringify({ query: document, variables }),
+      ...(body === undefined ? {} : { stdinData: JSON.stringify(body) }),
       cwd: exec.cwd,
       signal: exec.signal,
       timeoutMs,
@@ -720,6 +784,20 @@ export function createGitHubWriteRuntime(subprocess, config = {}) {
     })
   }
   async function preflight(operation, args, exec, onAccount) {
+    if (Object.hasOwn(PR_WRITE_OPERATIONS, operation)) {
+      const resolved = await preflightPullRequest(operation, args, async (request) => {
+        const data = parseGitHubAPIResponse(await transport(request, undefined, exec), request)
+        // A valid account observation invalidates old issue grants even when
+        // later PR permission or state validation rejects this preparation.
+        if (request.document && data.viewer) {
+          clean(data.viewer)
+          onAccount?.(actor(data))
+        }
+        return data
+      })
+      clean(resolved)
+      return resolved
+    }
     const read =
       operation === 'createProject' && args.templateNumber !== undefined ? 'copyProject' : operation
     const response = await transport(WRITE_READS[read], readVariables(operation, args), exec)
@@ -744,7 +822,13 @@ export function createGitHubWriteRuntime(subprocess, config = {}) {
       const knownTargets = Object.fromEntries(
         Object.entries(resolved.targets).map(([key, value]) => [
           key,
-          { id: value.id, ...(value.url ? { url: value.url } : {}) },
+          Array.isArray(value)
+            ? value.map((entry) => ({
+                id: entry.id,
+                number: entry.number,
+                ...(entry.url ? { url: entry.url } : {}),
+              }))
+            : { id: value.id, ...(value.url ? { url: value.url } : {}) },
         ]),
       )
       const preview = renderWritePreview({
@@ -834,6 +918,7 @@ export function createGitHubWriteRuntime(subprocess, config = {}) {
         if (
           canonical(fresh.snapshot) !== canonical(prepared.snapshot) ||
           canonical(fresh.payload) !== canonical(prepared.payload) ||
+          canonical(fresh.request) !== canonical(prepared.request) ||
           canonical(fresh.actor) !== canonical(prepared.actor)
         )
           fail('CONFLICT')
@@ -841,7 +926,7 @@ export function createGitHubWriteRuntime(subprocess, config = {}) {
         let observedData
         try {
           const response = await transport(
-            MUTATIONS[prepared.mutation],
+            prepared.request ?? MUTATIONS[prepared.mutation],
             { input: prepared.payload },
             current,
             () => {
@@ -858,7 +943,10 @@ export function createGitHubWriteRuntime(subprocess, config = {}) {
           } catch {
             return uncertainWriteResult(prepared)
           }
-          observedData = parsed?.data
+          observedData =
+            prepared.request && typeof prepared.request.document !== 'string'
+              ? parsed
+              : parsed?.data
           if (response.exitCode !== 0 || parsed?.errors?.length)
             return uncertainWriteResult(prepared, observedData)
           return confirmed(prepared.operation, prepared, observedData)

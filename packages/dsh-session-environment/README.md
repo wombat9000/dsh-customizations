@@ -4,6 +4,7 @@ A local DSH Web bundle that shows the selected session's working directory and c
 
 ## Behavior
 
+- Shows the floating, multi-row card only in Conversation with a unique selected session. Opening that session's right sidebar hides the card in normal, fullscreen, and narrow layouts; closing the sidebar restores it. Retained background sidebars do not hide it.
 - Polls the unique session retained by `mainView` every 3 seconds. No selection or multiple main-view selections suspend polling.
 - Caches results by working directory, delays the initial “Checking…” label by 300 ms, and ignores stale responses to avoid flicker during session switches and checkouts.
 - Displays the home-relative, middle-truncated CWD with the full native path in a tooltip.
@@ -18,6 +19,8 @@ The host reads `session.header.cwd` for the requested session. Sessions sharing 
 ## Architecture
 
 The host plugin extends `TypertRemoteService` and publishes a strict `sessionEnvironment/read` Typert descriptor. The browser bundle self-mounts the matching Remote contribution and registers the card in `shell.overlay`. Timers, calls, Remote contributions, and Slot registrations follow their owning Cordis/React lifecycle.
+
+The card uses the injected `usePanelInfo` hook to distinguish Conversation from global pages. Its React-owned visibility stylesheet depends on DSH `0.1.7-rc.2`'s overlay and foreground-session sidebar data markers, not compiled CSS classes or a sidebar-width API. Recheck this markup contract when upgrading DSH.
 
 The wire artifacts are explicit TypeScript modules rather than generator output because the published Typert generator expects the protocol package to be registered from the full DSH source workspace. Both host and client share protocol-typed descriptors with lazy `create()` codec factories and strict Zod validation. The build bundles the client codec. The host awaits `shell.execute(spec)` and then the execution handle's `result()`.
 
@@ -36,7 +39,7 @@ Both commands build first. Host and browser checks use `tsc -b --force` so stale
 
 The build type-checks both faces and generates host JavaScript, browser JavaScript, declarations, and maps under `lib/`. The bundler config uses `.mjs` with an explicit native loader. Only its original three TypeScript parameter annotations were removed. This avoids tsdown's optional `unrun` loader and supports Node builds without built-in TypeScript stripping; the plugin source remains TypeScript. Generated output and dependencies are not committed. Root `pnpm test` builds the package explicitly before running its tests alongside the existing suites; installation scripts are not required.
 
-The integration tests check the local recipe, bundle metadata, generated entrypoints, Remote descriptor identity, and apply dry run. They replace the original standalone Web boot smoke test. They do not install a profile or start a DSH server. The existing browser and real-UI suites do not yet cover this card.
+The integration tests check the local recipe, bundle metadata, generated entrypoints, Remote descriptor identity, and apply dry run. They replace the original standalone Web boot smoke test. They do not install a profile or start a DSH server. Browser tests cover copy feedback, selection and global-page guards, sidebar visibility, and cleanup with real React and mocked RPC. Real-UI tests use the existing disposable host to cover Remote reads, session switching, global pages, and normal, restored fullscreen, and narrow Files sidebars. These suites require built artifacts and the repository's browser prerequisites.
 
 ## Install
 

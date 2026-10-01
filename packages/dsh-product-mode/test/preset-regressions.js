@@ -149,7 +149,7 @@ export function presetRegressions({ id, name, skill, marker, resource }) {
       assert.ok(names(own.key).includes('ralph'))
       assert.ok(names(own.key).length > 38)
       const globalNames = names()
-      assert.equal(globalNames.length, 19)
+      assert.equal(globalNames.length, 31)
       for (const name of globalNames) {
         assert.ok(name.startsWith('github_'))
         assert.equal(ctx.get('tools').get(name, own.key), ctx.get('tools').get(name))

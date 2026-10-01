@@ -3,7 +3,6 @@ import { realpath, stat } from 'node:fs/promises'
 import { isAbsolute, relative, sep } from 'node:path'
 import { foldConsumedWork } from '@deepseek-ai/dsh-agent'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
-import { scopeOf } from '@deepseek-ai/dsh-scope'
 import { SessionId, SessionLogOffset } from '@deepseek-ai/dsh-session'
 import {
   appendDelegatedPolicyOverrides,
@@ -105,8 +104,8 @@ export async function startWorker(
   // The caller context owns the factory transaction and child lifetime. The
   // parent's scoped service, not the Host service, gives the child its owner.
   const agents = required(parent.ctx, 'agents')
-  const parentScope = scopeOf(parent.ctx)
-  if (parentScope === undefined) throw new Error('worktree worker requires a scoped parent')
+  // Tools' public viewing scope is the exact Agent. Package-local scope tags
+  // cannot identify contexts minted by a separately evaluated dsh-scope copy.
   const policy = required(parent.ctx, 'sandboxPolicy')
   const parentPolicy = policy.resolve({ session: parent.session })
   if (!MODES.has(parentPolicy.mode)) throw new Error('unrecognized parent sandbox policy')
@@ -118,14 +117,14 @@ export async function startWorker(
   const options = resolveChildAgentOptions(parent, undefined, depth)
   const meta = childSessionMeta(parent, depth, false)
   const parentTools = required(parent.ctx, 'tools')
-  const visible = new Set(parentTools.schemas(parentScope).map((schema) => schema.name))
+  const visible = new Set(parentTools.schemas(parent).map((schema) => schema.name))
   const allowed = (mode === 'write' ? WRITE_TOOLS : READ_TOOLS).filter((name) => visible.has(name))
   if (!allowed.length) throw new Error('no supported native tools are visible to the parent')
   requireEnforcement(parent.ctx, allowed)
   const allowedSet = new Set(allowed)
   // Capture actual definitions as well as names: a child-local shadow must not
   // acquire authority merely by adopting the name of an allowed tool.
-  const definitions = new Map(allowed.map((name) => [name, parentTools.get(name, parentScope)]))
+  const definitions = new Map(allowed.map((name) => [name, parentTools.get(name, parent)]))
   const validateAuthority = () => {
     signal.throwIfAborted()
     if (agents.get(parent.id) !== parent)
@@ -138,7 +137,7 @@ export async function startWorker(
       throw new Error('parent sandbox policy changed during worker startup')
     }
     for (const name of allowed) {
-      if (parentTools.get(name, parentScope) !== definitions.get(name))
+      if (parentTools.get(name, parent) !== definitions.get(name))
         throw new Error('parent tool access changed during worker startup')
     }
     requireEnforcement(parent.ctx, allowed)
@@ -185,7 +184,7 @@ export async function startWorker(
         throw new Error('child sandbox policy does not match assigned worktree')
       childTools.guard((exec) => {
         if (!allowedSet.has(exec.name)) return 'Worktree workers cannot use this capability'
-        if (childTools.get(exec.name, scopeOf(childCtx)) !== definitions.get(exec.name))
+        if (childTools.get(exec.name, child) !== definitions.get(exec.name))
           return 'Worktree tool definition changed after dispatch'
         const current = childPolicy.resolve({ session: child.session })
         if (current.mode !== childMode || current.workspaceRoot !== root)

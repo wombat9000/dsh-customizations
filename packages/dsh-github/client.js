@@ -802,8 +802,8 @@ function readWarnings(envelope, toolName) {
 		const nodes = supplied(value, "nodes"), pageInfo = supplied(value, "pageInfo");
 		const nextCursor = supplied(value, "nextCursor");
 		if (Object.hasOwn(value, "nodes") && (!Array.isArray(nodes) || !object(pageInfo) || typeof pageInfo.hasNextPage !== "boolean")) warnings.add(`${path}: pagination metadata is missing or malformed; completeness is unknown.`);
-		if (supplied(pageInfo, "hasNextPage") === true && !id(nextCursor) && !id(supplied(pageInfo, "endCursor"))) warnings.add(`${path}: continuation cursor is unavailable; inspect raw details.`);
-		if (supplied(value, "truncated") === true || supplied(pageInfo, "hasNextPage") === true || typeof nextCursor === "string" && nextCursor.length > 0) warnings.add(`${path}: more data or truncated output. Continue this exact target with its matching cursor where supplied; this view is not complete.`);
+		if (supplied(pageInfo, "hasNextPage") === true && !id(nextCursor) && !Number.isSafeInteger(supplied(pageInfo, "nextPage")) && !id(supplied(pageInfo, "endCursor"))) warnings.add(`${path}: continuation cursor is unavailable; inspect raw details.`);
+		if (supplied(value, "truncated") === true || supplied(pageInfo, "hasNextPage") === true || typeof nextCursor === "string" && nextCursor.length > 0) warnings.add(`${path}: more data or truncated output. Continue this exact target with its matching ${toolName.includes("pull_request") ? "cursor or page" : "cursor"} where supplied; this view is not complete.`);
 		if (Array.isArray(value)) {
 			if (value.length > 50) warnings.add(`${path}: nested sections display at most 50 entries; inspect raw details for additional entries.`);
 			if (value.length > 100) warnings.add(`${path}: only the first 100 entries are inspected by this card.`);
@@ -1130,6 +1130,193 @@ function ReadCard({ toolName, block, inspect }) {
 }
 
 //#endregion
+//#region client/pull-request-model.ts
+const PR_TOOL_TITLES = {
+	github_list_pull_requests: "Pull requests",
+	github_get_pull_request: "Pull request details",
+	github_get_pull_request_files: "Changed files",
+	github_get_pull_request_reviews: "Reviews",
+	github_get_pull_request_threads: "Review threads",
+	github_get_pull_request_checks: "Checks",
+	github_get_pull_request_stack: "Stack details",
+	github_create_pull_request: "Create draft pull request",
+	github_update_pull_request: "Update pull request",
+	github_submit_pull_request_review: "Submit review",
+	github_create_pull_request_stack: "Create stack",
+	github_add_pull_request_to_stack: "Append to stack"
+};
+const PR_TOOLS = Object.keys(PR_TOOL_TITLES);
+const knownTool = (name) => Object.hasOwn(PR_TOOL_TITLES, name);
+const writeTool = (name) => /^github_(create|update|submit|add)_/.test(name);
+function pullRequestCardModel(toolName, block) {
+	const base = {
+		title: knownTool(toolName) ? PR_TOOL_TITLES[toolName] : "Pull request interaction",
+		status: "Result unavailable",
+		warnings: [],
+		entries: [],
+		target: ""
+	};
+	if (!knownTool(toolName)) return base;
+	try {
+		const raw = block?.call?.argsRaw ?? block?.argsRaw;
+		if (raw && raw.length <= 65536) {
+			const args = JSON.parse(raw);
+			if (object(args) && typeof args.owner === "string" && typeof args.repo === "string") base.target = `${args.owner}/${args.repo}${Number.isSafeInteger(args.pullNumber) ? ` #${args.pullNumber}` : ""}`;
+		}
+	} catch {}
+	if (block?.kind !== "tool-result") return {
+		...base,
+		status: writeTool(toolName) ? "Pending or running · approval required" : "Reading…"
+	};
+	try {
+		const parts = block.content?.filter((part) => part.type === "text");
+		if (parts?.length !== 1 || typeof parts[0]?.text !== "string" || parts[0].text.length > 524288) throw new Error();
+		const envelope = JSON.parse(parts[0].text);
+		if (!object(envelope) || envelope.host !== "github.com") throw new Error();
+		if (object(envelope.error)) return {
+			...base,
+			status: "Failed",
+			error: text(envelope.error.message) || "Inspect raw tool details."
+		};
+		if (envelope.untrusted !== true) throw new Error();
+		if (envelope.outcome === "uncertain") return {
+			...base,
+			status: "Outcome uncertain",
+			warnings: ["The request may have succeeded. Inspect GitHub before requesting fresh approval; do not retry automatically.", ...envelope.backendFenced === true ? ["GitHub backend fenced after unconfirmed process cleanup."] : []]
+		};
+		if (block.isError === true) return {
+			...base,
+			status: "Failed",
+			error: "The tool reported an error. Inspect raw tool details; success is not inferred."
+		};
+		if (writeTool(toolName)) {
+			if (envelope.outcome !== "confirmed" || !object(envelope.resource)) throw new Error();
+			const resource = envelope.resource;
+			if (typeof resource.id !== "string" || !resource.id) throw new Error();
+			if (toolName.includes("stack")) {
+				if (!Number.isSafeInteger(resource.number) || !object(resource.pullRequests) || !Array.isArray(resource.pullRequests.nodes) || resource.pullRequests.nodes.length < 2 || !resource.pullRequests.nodes.every((member) => object(member) && Number.isSafeInteger(member.number))) throw new Error();
+			} else if (toolName === "github_submit_pull_request_review") {
+				if (![
+					"COMMENTED",
+					"APPROVED",
+					"CHANGES_REQUESTED"
+				].includes(text(resource.state)) || !/^[a-f0-9]{40}$/.test(text(resource.commitSha))) throw new Error();
+			} else if (!Number.isSafeInteger(resource.number) || typeof resource.title !== "string" || typeof resource.isDraft !== "boolean") throw new Error();
+			return {
+				...base,
+				status: "Confirmed",
+				entries: [envelope.resource],
+				...object(envelope.change) ? { change: envelope.change } : {},
+				warnings: []
+			};
+		}
+		if (!object(envelope.data)) throw new Error();
+		const data = envelope.data;
+		const key = {
+			github_list_pull_requests: "pullRequests",
+			github_get_pull_request_files: "files",
+			github_get_pull_request_reviews: "reviews",
+			github_get_pull_request_threads: "threads",
+			github_get_pull_request_stack: "stacks"
+		}[toolName];
+		let collection;
+		let total;
+		if (toolName === "github_get_pull_request") collection = [data.pullRequest];
+		else if (toolName === "github_get_pull_request_checks") {
+			const runs = supplied(data.checkRuns, "nodes"), statuses = supplied(data.statuses, "nodes");
+			if (!Array.isArray(runs) || !Array.isArray(statuses)) throw new Error();
+			collection = [...runs, ...statuses];
+		} else if (toolName === "github_get_pull_request_threads" && object(data.thread)) collection = [data.thread];
+		else {
+			const connection = key ? data[key] : void 0;
+			const nodes = supplied(connection, "nodes");
+			if (!Array.isArray(nodes)) throw new Error();
+			collection = nodes;
+			total = supplied(connection, "totalCount");
+		}
+		if (!collection.every(object)) throw new Error();
+		const warnings = readWarnings(envelope, toolName);
+		if (Array.isArray(data.warnings)) warnings.push(...data.warnings.filter((warning) => typeof warning === "string"));
+		if (collection.length > 5) warnings.push(`Showing 5 of ${collection.length} returned entries. Expand remaining entries or raw tool details.`);
+		if (collection.length > 100) warnings.push("Only the first 100 combined entries can be displayed. Additional entries are in raw tool details.");
+		return {
+			...base,
+			status: `${collection.length} ${toolName === "github_get_pull_request" ? "PR" : "entries"} returned`,
+			entries: collection.slice(0, 100),
+			warnings,
+			...toolName !== "github_get_pull_request" && object(data.pullRequest) ? { pullRequest: data.pullRequest } : {},
+			...Number.isSafeInteger(total) && Number(total) >= 0 ? { total: Number(total) } : {}
+		};
+	} catch {
+		return {
+			...base,
+			error: "Readable result unavailable. Inspect raw tool details; no success or completeness is inferred."
+		};
+	}
+}
+function pullRequestEntryLabel(entry) {
+	return (Number.isSafeInteger(entry.number) ? `#${entry.number} ` : "") + (text(entry.title) || text(entry.path) || text(entry.filename) || text(entry.name) || text(entry.context) || text(entry.state) || text(entry.body).slice(0, 120) || text(supplied(entry.head, "ref")) || "Details");
+}
+function pullRequestEntryContext(entry) {
+	const values = [];
+	if (typeof entry.isDraft === "boolean" || typeof entry.draft === "boolean") values.push((entry.isDraft ?? entry.draft) === true ? "Draft" : "Ready for review");
+	if (typeof entry.state === "string") values.push(entry.state);
+	if (typeof entry.status === "string") values.push(entry.status);
+	if (Object.hasOwn(entry, "conclusion")) values.push(entry.conclusion === null ? "Conclusion pending" : text(entry.conclusion) || "Conclusion unavailable");
+	const head = text(entry.headRefName) || text(supplied(entry.head, "ref"));
+	const base = text(entry.baseRefName) || text(supplied(entry.base, "ref"));
+	if (head && base) values.push(`${head} → ${base}`);
+	const sha = text(entry.headRefOid) || text(supplied(entry.head, "sha")) || text(entry.commitSha) || text(entry.headSha) || text(entry.commit_id);
+	if (sha) values.push(`Commit ${sha.slice(0, 12)}`);
+	if (typeof entry.isResolved === "boolean") values.push(entry.isResolved ? "Resolved" : "Unresolved");
+	if (entry.isOutdated === true) values.push("Outdated");
+	if (typeof entry.additions === "number" && typeof entry.deletions === "number") values.push(`+${entry.additions} / −${entry.deletions}`);
+	return values;
+}
+
+//#endregion
+//#region client/pull-request-card.tsx
+function Entry({ entry }) {
+	const memberConnection = entry.pullRequests ?? entry.pull_requests;
+	const members = object(memberConnection) ? memberConnection.nodes : memberConnection;
+	const position = entry.position;
+	const pr = object(entry.pullRequest) ? entry.pullRequest : entry;
+	return /* @__PURE__ */ react.default.createElement("article", { className: "gh-pr-row" }, /* @__PURE__ */ react.default.createElement("strong", null, /* @__PURE__ */ react.default.createElement(Link, { url: pr.url ?? pr.html_url ?? pr.detailsUrl ?? pr.targetUrl }, Array.isArray(members) ? `Stack #${entry.number} · ${supplied(memberConnection, "totalCount") ?? members.length} layers · trunk ${text(supplied(entry.base, "ref")) || "unavailable"}` : pullRequestEntryLabel(pr))), typeof position === "number" && /* @__PURE__ */ react.default.createElement("small", null, `Layer ${position}`), /* @__PURE__ */ react.default.createElement("p", null, pullRequestEntryContext(pr).join(" · ")), Array.isArray(members) && /* @__PURE__ */ react.default.createElement(react.default.Fragment, null, /* @__PURE__ */ react.default.createElement("ol", { "aria-label": "Stack layers, bottom to top" }, members.slice(0, 5).map((member, index) => /* @__PURE__ */ react.default.createElement("li", { key: index }, object(member) ? /* @__PURE__ */ react.default.createElement(Link, { url: member.url ?? member.html_url }, pullRequestEntryLabel(member), " · ", pullRequestEntryContext(member).join(" · ")) : "Layer unavailable"))), members.length > 5 && /* @__PURE__ */ react.default.createElement("details", null, /* @__PURE__ */ react.default.createElement("summary", null, `Remaining returned layers (${members.length - 5})`), /* @__PURE__ */ react.default.createElement("ol", { start: 6 }, members.slice(5, 50).map((member, index) => /* @__PURE__ */ react.default.createElement("li", { key: index }, object(member) ? /* @__PURE__ */ react.default.createElement(Link, { url: member.url ?? member.html_url }, pullRequestEntryLabel(member), " ·", " ", pullRequestEntryContext(member).join(" · ")) : "Layer unavailable"))))), members === void 0 && typeof entry.baseRefName === "string" && typeof entry.size === "number" && /* @__PURE__ */ react.default.createElement("p", null, `${entry.size} layers · trunk ${entry.baseRefName}`), entry.stack === null && /* @__PURE__ */ react.default.createElement("small", null, "No native stack membership"), object(entry.stack) && /* @__PURE__ */ react.default.createElement("small", null, `Stack #${text(String(entry.stack.number ?? ""))}${Number.isSafeInteger(supplied(entry.stackEntry, "position")) ? ` · layer ${supplied(entry.stackEntry, "position")}` : ""}`));
+}
+function Changes({ change }) {
+	const { before, after } = change;
+	const format = (key, value) => key === "draft" && typeof value === "boolean" ? value ? "Draft" : "Ready for review" : typeof value === "string" ? value : JSON.stringify(value, null, 2);
+	return /* @__PURE__ */ react.default.createElement("details", null, /* @__PURE__ */ react.default.createElement("summary", null, "Approved changes"), object(after) ? Object.entries(after).map(([key, value]) => /* @__PURE__ */ react.default.createElement("div", { key }, /* @__PURE__ */ react.default.createElement("strong", null, key === "draft" ? "Readiness" : key), object(before) && Object.hasOwn(before, key) && /* @__PURE__ */ react.default.createElement(react.default.Fragment, null, /* @__PURE__ */ react.default.createElement("pre", null, format(key, before[key])), /* @__PURE__ */ react.default.createElement("span", null, " → ")), /* @__PURE__ */ react.default.createElement("pre", null, format(key, value)))) : Array.isArray(after) && after.every(Number.isSafeInteger) ? /* @__PURE__ */ react.default.createElement(react.default.Fragment, null, /* @__PURE__ */ react.default.createElement("p", null, `Before: ${Array.isArray(before) ? before.map((number) => `#${number}`).join(" → ") : "No stack"}`), /* @__PURE__ */ react.default.createElement("p", null, `After: ${after.map((number) => `#${number}`).join(" → ")}`)) : /* @__PURE__ */ react.default.createElement("pre", null, JSON.stringify(change, null, 2)));
+}
+function PullRequestCard({ toolName, block, inspect }) {
+	const model = pullRequestCardModel(toolName, block);
+	return /* @__PURE__ */ react.default.createElement("section", {
+		className: "gh-grant gh-pr",
+		"aria-label": `GitHub ${model.title}`
+	}, /* @__PURE__ */ react.default.createElement("style", null, css, `
+      .gh-pr { min-width:0; overflow-wrap:anywhere; }
+      .gh-pr h3 { margin:0; font-size:inherit; }
+      .gh-pr p { margin:4px 0; }
+      .gh-pr-row { padding:6px 0; border-top:1px solid var(--border-color,#8884); }
+      .gh-pr-row small { margin-left:6px; }
+      .gh-pr pre { white-space:pre-wrap; overflow-wrap:anywhere; max-height:300px; overflow:auto; }
+      .gh-pr [role="note"] { font-size:0.9em; }
+    `), /* @__PURE__ */ react.default.createElement("h3", null, `GitHub · ${model.title}`), model.target && /* @__PURE__ */ react.default.createElement("small", null, model.target), /* @__PURE__ */ react.default.createElement("p", { role: "status" }, model.status, model.total === void 0 ? "" : ` · ${model.total} total reported`), model.error && /* @__PURE__ */ react.default.createElement("p", { role: "alert" }, model.error), model.warnings.map((warning, index) => /* @__PURE__ */ react.default.createElement("p", {
+		role: "note",
+		key: index
+	}, warning)), model.pullRequest && /* @__PURE__ */ react.default.createElement("small", null, /* @__PURE__ */ react.default.createElement(Link, { url: model.pullRequest.url }, pullRequestEntryLabel(model.pullRequest)), " ·", " ", pullRequestEntryContext(model.pullRequest).join(" · ")), model.entries.slice(0, 5).map((entry, index) => /* @__PURE__ */ react.default.createElement(Entry, {
+		key: index,
+		entry
+	})), model.entries.length > 5 && /* @__PURE__ */ react.default.createElement("details", null, /* @__PURE__ */ react.default.createElement("summary", null, `Remaining entries (${model.entries.length - 5})`), model.entries.slice(5).map((entry, index) => /* @__PURE__ */ react.default.createElement(Entry, {
+		key: index,
+		entry
+	}))), model.change && /* @__PURE__ */ react.default.createElement(Changes, { change: model.change }), /* @__PURE__ */ react.default.createElement("details", null, /* @__PURE__ */ react.default.createElement("summary", null, "Raw tool details"), /* @__PURE__ */ react.default.createElement("pre", { tabIndex: 0 }, rawDetails(block) || "No raw tool result is available yet."), inspect && /* @__PURE__ */ react.default.createElement("button", {
+		type: "button",
+		onClick: inspect
+	}, "Inspect tool call")));
+}
+
+//#endregion
 //#region client/registration.ts
 function apply(ctx) {
 	ctx.slots.inject("conversation.approval.detail", () => ctx.slots.register({
@@ -1146,6 +1333,10 @@ function apply(ctx) {
 				name: "tool.call.toolview",
 				key: FIELD_TOOL
 			}, FieldChangeCard),
+			...PR_TOOLS.map((key) => ctx.slots.register({
+				name: "tool.call.toolview",
+				key
+			}, PullRequestCard)),
 			...READ_TOOLS.map((key) => ctx.slots.register({
 				name: "tool.call.toolview",
 				key
@@ -1185,6 +1376,9 @@ var client_default = {
 	itemFieldModel,
 	projectItemModel,
 	ReadCard,
+	PR_TOOLS,
+	pullRequestCardModel,
+	PullRequestCard,
 	apply
 };
 

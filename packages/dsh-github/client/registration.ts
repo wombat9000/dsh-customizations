@@ -7,6 +7,8 @@ import { ReadCard } from './read-components.tsx'
 import { READ_TOOLS } from './read-models.ts'
 import { TOOL } from './grant-model.ts'
 import { FIELD_TOOL } from './field-model.ts'
+import { PR_TOOLS } from './pull-request-model.ts'
+import { PullRequestCard } from './pull-request-card.tsx'
 // The published RC2 composed slot declarations are incomplete; keep this adapter
 // limited to the two established seats, matching the existing registrations.
 interface GitHubSeats {
@@ -42,6 +44,12 @@ export function apply(ctx: GitHubRegistrationContext) {
       ctx.slots.register<'tool.call.toolview'>(
         { name: 'tool.call.toolview', key: FIELD_TOOL },
         FieldChangeCard,
+      ),
+      ...PR_TOOLS.map((key) =>
+        ctx.slots.register<'tool.call.toolview'>(
+          { name: 'tool.call.toolview', key },
+          PullRequestCard,
+        ),
       ),
       ...READ_TOOLS.map((key) =>
         ctx.slots.register<'tool.call.toolview'>({ name: 'tool.call.toolview', key }, ReadCard),
