@@ -15,8 +15,8 @@ export function createGitHubAPITransport(
     if (exec.signal?.aborted)
       throw new GitHubError('CANCELLED', 'The GitHub operation was cancelled before dispatch.')
     let executable
-    const resolution = Promise.resolve(subprocess.resolveExecutable('gh', undefined, exec.signal))
     try {
+      const resolution = Promise.resolve(subprocess.resolveExecutable('gh', undefined, exec.signal))
       if (!exec.signal) executable = await resolution
       else
         executable = await new Promise((resolve, reject) => {

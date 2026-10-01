@@ -580,25 +580,41 @@ test('post-dispatch errors, invalid responses, loss and timeouts are uncertain a
     })
 })
 
-test('failure before mutation dispatch remains a definite error, not an uncertain success', async () => {
-  const { runtime, subprocess } = fixture('createIssue')
-  const resolve = subprocess.resolveExecutable.bind(subprocess)
-  let resolutions = 0
-  subprocess.resolveExecutable = (...values) =>
-    ++resolutions === 3 ? undefined : resolve(...values)
-  const prepared = await runtime.prepare('createIssue', args.createIssue, exec)
-  let dispatched = false
-  await assert.rejects(
-    runtime.execute(prepared, exec, {
-      onDispatch: () => {
-        dispatched = true
+test('failure before mutation dispatch remains a definite error, not an uncertain success', async (t) => {
+  for (const [label, unavailable] of [
+    ['missing executable', () => undefined],
+    ['rejected resolution', () => Promise.reject(new Error('ghp_SYNTHETIC_SECRET'))],
+    [
+      'throwing resolution',
+      () => {
+        throw new Error('ghp_SYNTHETIC_SECRET')
       },
-    }),
-    { code: 'CLI_UNAVAILABLE' },
-  )
-  assert.equal(dispatched, false)
-  assert.equal(subprocess.specs.length, 2)
-  await assert.rejects(runtime.execute(prepared, exec), { code: 'APPROVAL_REQUIRED' })
+    ],
+  ])
+    await t.test(label, async () => {
+      const { runtime, subprocess } = fixture('createIssue')
+      const resolve = subprocess.resolveExecutable.bind(subprocess)
+      let resolutions = 0
+      subprocess.resolveExecutable = (...values) =>
+        ++resolutions === 3 ? unavailable() : resolve(...values)
+      const prepared = await runtime.prepare('createIssue', args.createIssue, exec)
+      let dispatched = false
+      await assert.rejects(
+        runtime.execute(prepared, exec, {
+          onDispatch: () => {
+            dispatched = true
+          },
+        }),
+        (error) => {
+          assert.equal(error.code, 'CLI_UNAVAILABLE')
+          assert.doesNotMatch(error.message, /SYNTHETIC_SECRET/)
+          return true
+        },
+      )
+      assert.equal(dispatched, false)
+      assert.equal(subprocess.specs.length, 2)
+      await assert.rejects(runtime.execute(prepared, exec), { code: 'APPROVAL_REQUIRED' })
+    })
 })
 
 test('cancellation before dispatch fails closed while cancellation after dispatch reports uncertainty', async () => {

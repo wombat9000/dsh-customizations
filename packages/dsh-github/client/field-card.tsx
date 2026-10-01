@@ -3,11 +3,9 @@ import type { CardProps } from '../shared/contracts.ts'
 import { object, text, id, rawDetails } from './validation.ts'
 import { Link } from './common.tsx'
 import { css } from './styles.ts'
-import { api } from './transport.ts'
+import { useGitHubCallPresentation } from './use-github-call-presentation.ts'
 import {
-  FIELD_TOOL,
   fieldValueModel,
-  validFieldStatus,
   fieldPhase,
   fieldPhaseLabel,
   fieldResult,
@@ -15,79 +13,11 @@ import {
   fieldFailureReason,
   fieldRequestedTarget,
   fieldSafeText,
-  type FieldStatus,
 } from './field-model.ts'
 
-export function FieldChangeCard({
-  sessionId,
-  callId,
-  block,
-  inspect,
-  useSessionStatus,
-  request = api,
-}: CardProps) {
-  const pending =
-    typeof useSessionStatus === 'function'
-      ? useSessionStatus((map) => {
-          const value = map.get(sessionId)?.pendingInteraction
-          return value?.kind === 'approval' &&
-            value.callId === callId &&
-            value.toolName === FIELD_TOOL
-            ? value
-            : undefined
-        })
-      : undefined
-  const [loaded, setLoaded] = React.useState<{
-      sessionId: string
-      callId: string
-      value: FieldStatus
-    } | null>(null),
-    [error, setError] = React.useState('')
-  const generation = React.useRef(0)
-  const status = loaded?.sessionId === sessionId && loaded?.callId === callId ? loaded.value : null
-  React.useEffect(() => {
-    const token = ++generation.current,
-      controller = new AbortController()
-    let timer: ReturnType<typeof setTimeout> | undefined,
-      failures = 0
-    setLoaded(null)
-    setError('')
-    async function load() {
-      if (generation.current !== token) return
-      try {
-        const value = await request('status', { sessionId, callId }, controller.signal)
-        if (generation.current !== token) return
-        if (!validFieldStatus(value, callId)) throw new Error('Invalid prepared change')
-        setLoaded({ sessionId, callId, value })
-        setError('')
-        failures = 0
-        if (
-          [
-            'preparing',
-            'prepared',
-            'approved',
-            'authorized-by-grant',
-            'running',
-            'awaiting-approval',
-          ].includes(value.phase)
-        )
-          timer = setTimeout(load, 1500)
-      } catch {
-        if (generation.current !== token || controller.signal.aborted) return
-        setLoaded(null)
-        setError(
-          'Prepared change details are unavailable. See the native approval preview and raw tool details; no previous value or outcome is inferred.',
-        )
-        if (++failures <= 3) timer = setTimeout(load, 1500)
-      }
-    }
-    void load()
-    return () => {
-      generation.current++
-      controller.abort()
-      clearTimeout(timer)
-    }
-  }, [sessionId, callId, request, pending?.key, block?.kind])
+export function FieldChangeCard(props: CardProps) {
+  const { block, inspect } = props
+  const { status, pending, error } = useGitHubCallPresentation('field', props)
   const change = status?.change,
     field = object(change?.field) ? change.field : undefined,
     project = object(status?.targets?.project) ? status.targets.project : undefined,

@@ -1,6 +1,11 @@
 import type { ToolBlock } from '../shared/contracts.ts'
 import { object, text } from './validation.ts'
-import { readWarnings, supplied } from './read-models.ts'
+import {
+  inspectCollections,
+  supplied,
+  type Completeness,
+  type BoundedInspection,
+} from './collection-completeness.ts'
 
 export const PR_TOOL_TITLES = {
   github_list_pull_requests: 'Pull requests',
@@ -22,6 +27,8 @@ export interface PRCardModel {
   title: string
   status: string
   warnings: string[]
+  completeness: Completeness
+  inspection?: BoundedInspection
   entries: Record<string, unknown>[]
   target: string
   error?: string
@@ -36,6 +43,7 @@ export function pullRequestCardModel(toolName: string, block?: ToolBlock): PRCar
     title: knownTool(toolName) ? PR_TOOL_TITLES[toolName] : 'Pull request interaction',
     status: 'Result unavailable',
     warnings: [],
+    completeness: 'unknown',
     entries: [],
     target: '',
   }
@@ -148,7 +156,8 @@ export function pullRequestCardModel(toolName: string, block?: ToolBlock): PRCar
       total = supplied(connection, 'totalCount')
     }
     if (!collection.every(object)) throw new Error()
-    const warnings = readWarnings(envelope, toolName)
+    const inspection = inspectCollections(envelope, toolName)
+    const warnings = inspection.notices.map((notice) => notice.message)
     if (Array.isArray(data.warnings))
       warnings.push(
         ...data.warnings.filter((warning): warning is string => typeof warning === 'string'),
@@ -166,6 +175,8 @@ export function pullRequestCardModel(toolName: string, block?: ToolBlock): PRCar
       status: `${collection.length} ${toolName === 'github_get_pull_request' ? 'PR' : 'entries'} returned`,
       entries: collection.slice(0, 100),
       warnings,
+      inspection,
+      completeness: inspection.completeness,
       ...(toolName !== 'github_get_pull_request' && object(data.pullRequest)
         ? { pullRequest: data.pullRequest }
         : {}),

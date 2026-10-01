@@ -38,6 +38,40 @@ test('PR cards never infer success from malformed, error-normalized or uncertain
   assert.equal(uncertain.entries.length, 0)
   assert.match(uncertain.warnings.join(' '), /do not retry automatically/)
 })
+test('thread comments must be supplied before a PR card can establish completeness', () => {
+  const comments = { nodes: [], totalCount: 0, pageInfo: { hasNextPage: false, endCursor: null } }
+  const thread = { id: 'THREAD', comments }
+  const complete = pullRequestCardModel(
+    'github_get_pull_request_threads',
+    cardBlock(cardEnvelope({ thread })),
+  )
+  assert.equal(complete.completeness, 'complete')
+  for (const data of [
+    { thread: { id: 'THREAD' } },
+    {
+      thread: { id: 'THREAD', comments: { nodes: [], pageInfo: { page: 1, hasNextPage: false } } },
+    },
+    {
+      threads: {
+        nodes: [{ id: 'THREAD' }],
+        totalCount: 1,
+        pageInfo: { hasNextPage: false, endCursor: null },
+      },
+    },
+  ]) {
+    const model = pullRequestCardModel(
+      'github_get_pull_request_threads',
+      cardBlock(cardEnvelope(data)),
+    )
+    assert.equal(model.completeness, 'unknown')
+    assert.ok(
+      model.inspection.notices.some(
+        (notice) => notice.kind === 'metadata' && notice.path.endsWith('.comments'),
+      ),
+    )
+  }
+})
+
 test('REST page continuation and nested thread cursors remain visible outside details', () => {
   const model = pullRequestCardModel(
     'github_list_pull_requests',
@@ -59,4 +93,18 @@ test('REST page continuation and nested thread cursors remain visible outside de
   )
   assert.equal(malformed.entries.length, 0)
   assert.equal(malformed.status, 'Result unavailable')
+  const missingPage = pullRequestCardModel(
+    'github_list_pull_requests',
+    cardBlock(
+      cardEnvelope({
+        pullRequests: { nodes: [], totalCount: 0, pageInfo: { hasNextPage: false } },
+      }),
+    ),
+  )
+  assert.equal(missingPage.completeness, 'unknown')
+  assert.ok(
+    missingPage.inspection.notices.some(
+      (notice) => notice.kind === 'metadata' && notice.path === 'data.pullRequests',
+    ),
+  )
 })

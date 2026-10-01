@@ -1,4 +1,4 @@
-import { GitHubError, runCollected, sanitize, isGitHubBackendFenced } from './runtime.js'
+import { GitHubError, sanitize, isGitHubBackendFenced } from './runtime.js'
 import { WRITE_READS, MUTATIONS, GRANT_READS } from './write-queries.js'
 import { validateGrantArguments, resolveGrantIdentities } from './grants.js'
 import {
@@ -7,7 +7,7 @@ import {
   preflightPullRequest,
   confirmPullRequest,
 } from './pull-requests.js'
-import { parseGitHubAPIResponse } from './api-transport.js'
+import { createGitHubAPITransport, parseGitHubAPIResponse } from './api-transport.js'
 
 const str = (description) => ({ type: 'string', description })
 const num = (description) => ({ type: 'integer', description })
@@ -543,15 +543,6 @@ function readError(response) {
 function checkSignal(signal) {
   if (signal?.aborted) fail('CANCELLED')
 }
-function raceSignal(promise, signal) {
-  checkSignal(signal)
-  if (!signal) return promise
-  return new Promise((resolve, reject) => {
-    const abort = () => reject(new GitHubError('CANCELLED', messages.CANCELLED))
-    signal.addEventListener('abort', abort, { once: true })
-    promise.then(resolve, reject).finally(() => signal.removeEventListener('abort', abort))
-  })
-}
 function confirmed(operation, prepared, data) {
   if (Object.hasOwn(PR_WRITE_OPERATIONS, operation)) {
     const resource = confirmPullRequest(operation, prepared, data)
@@ -736,57 +727,23 @@ export function createGitHubWriteRuntime(subprocess, config = {}) {
       exec.signal?.removeEventListener('abort', abort)
     }
   }
-  async function transport(document, variables, exec, onDispatch) {
-    if (isGitHubBackendFenced(subprocess))
-      throw new GitHubError(
-        'CLEANUP_FAILED',
-        'This GitHub backend is fenced because a prior process range could not be confirmed stopped. Verify and replace or restart the backend before proceeding.',
-      )
-    checkSignal(exec.signal)
-    let executable
+  const transport = createGitHubAPITransport(subprocess, { timeoutMs, maxOutputBytes })
+  async function readGraphQL(document, variables, exec) {
+    const response = await transport({ document, variables }, exec)
+    if (response.exitCode !== 0) readError(response)
+    let parsed
     try {
-      executable = await raceSignal(
-        Promise.resolve(subprocess.resolveExecutable('gh', undefined, exec.signal)),
-        exec.signal,
-      )
-    } catch (error) {
-      if (exec.signal?.aborted) fail('CANCELLED')
-      fail('CLI_UNAVAILABLE')
+      parsed = JSON.parse(response.stdout)
+    } catch {
+      fail('INVALID_RESPONSE')
     }
-    if (typeof executable !== 'string' || !executable) fail('CLI_UNAVAILABLE')
-    checkSignal(exec.signal)
-    const request = typeof document === 'string' ? { document, variables } : document
-    const graphql = typeof request.document === 'string'
-    const body = graphql
-      ? { query: request.document, variables: request.variables ?? {} }
-      : request.body
-    return runCollected(subprocess, {
-      argv: [
-        executable,
-        'api',
-        graphql ? 'graphql' : request.path,
-        '--hostname',
-        'github.com',
-        '--method',
-        graphql ? 'POST' : request.method,
-        '--header',
-        'Accept: application/vnd.github+json',
-        '--header',
-        'X-GitHub-Api-Version: 2026-03-10',
-        ...(body === undefined ? [] : ['--input', '-']),
-      ],
-      ...(body === undefined ? {} : { stdinData: JSON.stringify(body) }),
-      cwd: exec.cwd,
-      signal: exec.signal,
-      timeoutMs,
-      maxOutputBytes,
-      onDispatch,
-    })
+    if (parsed?.errors?.length) readError(response)
+    return record(parsed?.data)
   }
   async function preflight(operation, args, exec, onAccount) {
     if (Object.hasOwn(PR_WRITE_OPERATIONS, operation)) {
       const resolved = await preflightPullRequest(operation, args, async (request) => {
-        const data = parseGitHubAPIResponse(await transport(request, undefined, exec), request)
+        const data = parseGitHubAPIResponse(await transport(request, exec), request)
         // A valid account observation invalidates old issue grants even when
         // later PR permission or state validation rejects this preparation.
         if (request.document && data.viewer) {
@@ -800,19 +757,10 @@ export function createGitHubWriteRuntime(subprocess, config = {}) {
     }
     const read =
       operation === 'createProject' && args.templateNumber !== undefined ? 'copyProject' : operation
-    const response = await transport(WRITE_READS[read], readVariables(operation, args), exec)
-    if (response.exitCode !== 0) readError(response)
-    let parsed
-    try {
-      parsed = JSON.parse(response.stdout)
-    } catch {
-      fail('INVALID_RESPONSE')
-    }
-    if (parsed?.errors?.length) readError(response)
-    record(parsed?.data)
-    onAccount?.(actor(parsed.data))
-    const resolved = resolve(operation, args, parsed.data)
-    return { ...resolved, snapshot: parsed.data }
+    const data = await readGraphQL(WRITE_READS[read], readVariables(operation, args), exec)
+    onAccount?.(actor(data))
+    const resolved = resolve(operation, args, data)
+    return { ...resolved, snapshot: data }
   }
   async function prepare(operation, input, exec = {}, { onAccount } = {}) {
     const args = validateWriteArguments(operation, input)
@@ -857,19 +805,10 @@ export function createGitHubWriteRuntime(subprocess, config = {}) {
         ['project', args.projects, projects],
       ]) {
         for (const target of targets) {
-          const response = await transport(GRANT_READS[kind], target, current)
-          if (response.exitCode !== 0) readError(response)
-          let parsed
-          try {
-            parsed = JSON.parse(response.stdout)
-          } catch {
-            fail('INVALID_RESPONSE')
-          }
-          if (parsed?.errors?.length) readError(response)
-          record(parsed?.data)
-          clean(parsed.data)
-          onAccount?.(actor(parsed.data))
-          results.push(parsed.data)
+          const data = await readGraphQL(GRANT_READS[kind], target, current)
+          clean(data)
+          onAccount?.(actor(data))
+          results.push(data)
         }
       }
       return freeze(resolveGrantIdentities(args, issues, projects))
@@ -926,8 +865,10 @@ export function createGitHubWriteRuntime(subprocess, config = {}) {
         let observedData
         try {
           const response = await transport(
-            prepared.request ?? MUTATIONS[prepared.mutation],
-            { input: prepared.payload },
+            prepared.request ?? {
+              document: MUTATIONS[prepared.mutation],
+              variables: { input: prepared.payload },
+            },
             current,
             () => {
               // runCollected invokes this synchronously immediately before spawn, after

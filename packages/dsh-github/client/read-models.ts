@@ -1,4 +1,14 @@
 import { object, text, id } from './validation.ts'
+import {
+  inspectCollections,
+  collectionModel,
+  combineCompleteness,
+  supplied,
+  type BoundedInspection,
+  type CollectionModel,
+  type Completeness,
+} from './collection-completeness.ts'
+export { supplied } from './collection-completeness.ts'
 
 export const READ_TOOLS = [
   'github_list_projects',
@@ -17,88 +27,18 @@ export const readTitles: Readonly<Record<string, string>> = {
   github_get_issue: 'Issue details',
 }
 
-/** Read a property only after narrowing untrusted supplied data. */
-export function supplied(value: unknown, key: string): unknown {
-  return object(value) ? value[key] : undefined
+// Retain the existing warning API while structured evidence owns completeness.
+export function readWarnings(envelope: unknown, toolName: string): string[] {
+  return inspectCollections(envelope, toolName).notices.map((notice) => notice.message)
 }
 
-export function readWarnings(envelope: unknown, toolName: string): string[] {
-  const warnings = new Set<string>(),
-    seen = new Set<object>()
-  let budget = 10000
-  function visit(value: unknown, path: string, depth: number): void {
-    if (--budget < 0 || depth > 20) {
-      warnings.add(
-        'Additional nested data exceeds the card inspection bound; inspect raw details. Completeness is unknown.',
-      )
-      return
-    }
-    if (!value || typeof value !== 'object' || seen.has(value)) return
-    seen.add(value)
-    const nodes = supplied(value, 'nodes'),
-      pageInfo = supplied(value, 'pageInfo')
-    const nextCursor = supplied(value, 'nextCursor')
-    if (
-      Object.hasOwn(value, 'nodes') &&
-      (!Array.isArray(nodes) || !object(pageInfo) || typeof pageInfo.hasNextPage !== 'boolean')
-    )
-      warnings.add(`${path}: pagination metadata is missing or malformed; completeness is unknown.`)
-    if (
-      supplied(pageInfo, 'hasNextPage') === true &&
-      !id(nextCursor) &&
-      !Number.isSafeInteger(supplied(pageInfo, 'nextPage')) &&
-      !id(supplied(pageInfo, 'endCursor'))
-    )
-      warnings.add(`${path}: continuation cursor is unavailable; inspect raw details.`)
-    if (
-      supplied(value, 'truncated') === true ||
-      supplied(pageInfo, 'hasNextPage') === true ||
-      (typeof nextCursor === 'string' && nextCursor.length > 0)
-    )
-      warnings.add(
-        `${path}: more data or truncated output. Continue this exact target with its matching ${toolName.includes('pull_request') ? 'cursor or page' : 'cursor'} where supplied; this view is not complete.`,
-      )
-    if (Array.isArray(value)) {
-      if (value.length > 50)
-        warnings.add(
-          `${path}: nested sections display at most 50 entries; inspect raw details for additional entries.`,
-        )
-      if (value.length > 100)
-        warnings.add(`${path}: only the first 100 entries are inspected by this card.`)
-      value
-        .slice(0, 100)
-        .forEach((entry: unknown, index: number) => visit(entry, `${path}[${index}]`, depth + 1))
-    } else {
-      const entries = Object.entries(value)
-      if (entries.length > 100)
-        warnings.add(`${path}: additional properties exceed the card inspection bound.`)
-      for (const [key, entry] of entries.slice(0, 100)) visit(entry, `${path}.${key}`, depth + 1)
-    }
-  }
-  visit(supplied(envelope, 'data'), 'data', 0)
-  if (supplied(envelope, 'truncated') === true)
-    warnings.add(
-      'GitHub returned bounded or incomplete output. See all continuation notices and raw details.',
-    )
-  const truncations = supplied(envelope, 'truncations')
-  if (Array.isArray(truncations)) {
-    for (const notice of truncations.slice(0, 100)) {
-      if (object(notice))
-        warnings.add(
-          `${text(notice.path) || 'Output'}: ${text(notice.reason) || text(notice.kind) || 'truncated'}. ${text(notice.continuation)}`,
-        )
-    }
-  }
-  if ((Array.isArray(truncations) || typeof truncations === 'string') && truncations.length > 100)
-    warnings.add('Additional truncation notices are available in raw details.')
-  if (toolName === 'github_search_issues')
-    warnings.add(
-      'GitHub search exposes at most 1,000 matches. Narrow the query for exhaustive results.',
-    )
-  if (supplied(supplied(envelope, 'data'), 'exhaustive') === false)
-    warnings.add('This search result is not exhaustive.')
-  return [...warnings]
-}
+export const issueCollections = [
+  { title: 'Labels', key: 'labels', compact: true },
+  { title: 'Assignees', key: 'assignees', compact: true },
+  { title: 'Sub-issues', key: 'subIssues', compact: false },
+  { title: 'Blocked by', key: 'blockedBy', compact: false },
+  { title: 'Blocking', key: 'blocking', compact: false },
+] as const
 
 export interface ReadCardModel {
   title: string
@@ -107,8 +47,10 @@ export interface ReadCardModel {
   kind: 'unknown' | 'items' | 'projects' | 'issues'
   state?: 'running' | 'unknown' | 'failed' | 'returned'
   error?: string
-  truncationPaths?: string[]
-  unlocalizedTruncation?: boolean
+  inspection?: BoundedInspection
+  completeness: Completeness
+  collections?: Record<string, CollectionModel>
+  collection?: CollectionModel
   returnedCount?: number
   total?: number | undefined
   totalMeaning?: string
@@ -124,6 +66,7 @@ export function readCardModel(toolName: string, block: unknown): ReadCardModel {
     warnings: [],
     entries: [],
     kind: 'unknown',
+    completeness: 'unknown',
   }
   if (!READ_TOOLS.includes(toolName))
     return { ...base, error: 'Unsupported card. Use raw tool details.' }
@@ -150,7 +93,8 @@ export function readCardModel(toolName: string, block: unknown): ReadCardModel {
         'Readable result unavailable. Inspect raw tool details; no success or completeness is inferred.',
     }
   }
-  const warnings = readWarnings(envelope, toolName),
+  const inspection = inspectCollections(envelope, toolName),
+    warnings = inspection.notices.map((notice) => notice.message),
     data = envelope.data
   if (!object(data))
     return {
@@ -202,19 +146,27 @@ export function readCardModel(toolName: string, block: unknown): ReadCardModel {
   const count = toolName === 'github_search_issues' ? data.issueCount : data.totalCount
   const total =
     typeof count === 'number' && Number.isSafeInteger(count) && count >= 0 ? count : undefined
+  const collection = singular ? undefined : collectionModel(data, 'data', inspection)
+  const collections =
+    toolName === 'github_get_issue'
+      ? Object.fromEntries(
+          issueCollections.map(({ key }) => [
+            key,
+            collectionModel(data[key], `data.${key}`, inspection),
+          ]),
+        )
+      : undefined
   return {
     ...base,
     warnings,
-    truncationPaths: Array.isArray(envelope.truncations)
-      ? envelope.truncations.map((notice: unknown) => text(supplied(notice, 'path')))
-      : [],
-    unlocalizedTruncation:
-      envelope.truncated === true &&
-      (!Array.isArray(envelope.truncations) ||
-        !envelope.truncations.length ||
-        envelope.truncations.some(
-          (notice: unknown) => !text(supplied(notice, 'path')).startsWith('data.'),
-        )),
+    inspection,
+    completeness: combineCompleteness([
+      inspection.completeness,
+      ...(collection ? [collection.completeness] : []),
+      ...Object.values(collections ?? {}).map((value) => value.completeness),
+    ]),
+    ...(collection ? { collection } : {}),
+    ...(collections ? { collections } : {}),
     state: 'returned',
     kind,
     entries: entries.slice(0, 50),

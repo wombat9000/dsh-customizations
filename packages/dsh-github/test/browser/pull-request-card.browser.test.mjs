@@ -42,15 +42,18 @@ test.each(prReadSnapshots)(
     expect(container.querySelector('[role="status"]').textContent).toContain('returned')
     expect(container.textContent).toContain('Small agent change')
     expect(container.querySelector('details').open).toBe(false)
+    const notes = Array.from(container.querySelectorAll('[role="note"]'))
+      .map((note) => note.textContent)
+      .join('\n')
     if (name.endsWith('_threads')) {
       expect(container.textContent).toContain('Unresolved')
       expect(container.textContent).toContain('Outdated')
-      expect(container.querySelector('[role="note"]').textContent).toContain('comments')
+      expect(notes).toContain('comments')
     }
     if (name.endsWith('_checks')) {
       expect(container.textContent).toContain('Tests')
       expect(container.textContent).toContain('pending')
-      expect(container.querySelector('[role="note"]').textContent).toContain('not a merge decision')
+      expect(notes).toContain('not a merge decision')
     }
   },
 )

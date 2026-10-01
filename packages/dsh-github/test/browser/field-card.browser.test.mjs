@@ -1,6 +1,6 @@
 import React, { act } from 'react'
 import { createRoot } from 'react-dom/client'
-import { afterEach, expect, test } from 'vitest'
+import { afterEach, expect, test, vi } from 'vitest'
 import { page, userEvent } from 'vitest/browser'
 import { FieldChangeCard } from '../../client/field-card.tsx'
 let root, container
@@ -10,6 +10,7 @@ globalThis.IS_REACT_ACT_ENVIRONMENT = true
 afterEach(async () => {
   await act(async () => root?.unmount())
   container?.remove()
+  vi.useRealTimers()
 })
 const prepared = {
   version: 1,
@@ -256,6 +257,47 @@ test('session changes abort requests and discard late prepared names', async () 
   expect(fixture.calls[0].signal.aborted).toBe(true)
   expect(container.textContent).not.toContain('Roadmap')
 })
+test('field observation retries three times, resets after recovery, and stops on a terminal phase', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+  let attempts = 0
+  const fixture = await mount(() => {
+    attempts++
+    if (attempts <= 3 || attempts === 5) throw new Error('temporary status loss')
+    return { ...prepared, phase: attempts === 4 ? 'running' : 'confirmed' }
+  })
+  expect(container.textContent).not.toContain('Roadmap')
+  await act(async () => vi.advanceTimersByTimeAsync(4500))
+  expect(container.textContent).toContain('Roadmap')
+  await act(async () => vi.advanceTimersByTimeAsync(1500))
+  expect(container.textContent).not.toContain('Roadmap')
+  await act(async () => vi.advanceTimersByTimeAsync(1500))
+  expect(container.textContent).toContain('Roadmap')
+  expect(fixture.calls).toHaveLength(6)
+  await act(async () => vi.advanceTimersByTimeAsync(12000))
+  expect(fixture.calls).toHaveLength(6)
+  await fixture.render({ callId: 'new-call' })
+  expect(container.textContent).not.toContain('Roadmap')
+  await act(async () => vi.advanceTimersByTimeAsync(12000))
+  // Mismatched old-call status cannot validate. Initial request plus three retries, then stop.
+  expect(fixture.calls.filter((call) => call.body.callId === 'new-call')).toHaveLength(4)
+})
+
+test('field call changes fence late status independently of session identity', async () => {
+  let resolveOld
+  const fixture = await mount((_action, body) =>
+    body.callId === 'call'
+      ? new Promise((resolve) => {
+          resolveOld = resolve
+        })
+      : { version: 1, phase: 'expired' },
+  )
+  await fixture.render({ callId: 'new-call' })
+  await act(async () => resolveOld(prepared))
+  expect(fixture.calls[0].signal.aborted).toBe(true)
+  expect(container.textContent).not.toContain('Roadmap')
+  expect(container.textContent).not.toContain('In Progress')
+})
+
 test('keyboard disclosure, hostile text and long exact values fit narrow layout', async () => {
   await mount(() => ({
     ...prepared,
