@@ -21,7 +21,7 @@
     "src/**/*.d.ts"
   ],
   "scripts": {
-    "test": "node --test test/index.test.js test/client.test.js test/project-writes.test.js",
+    "test": "node --test test/*.test.js",
     "test:integration": "node --test test/profile.integration.test.js"
   },
   "engines": {

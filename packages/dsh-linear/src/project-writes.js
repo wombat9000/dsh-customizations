@@ -1,5 +1,6 @@
-import { publicProject, publicUser, text } from './projections.js'
-import { resolveProject, resolveProjectStatus, resolveTeam, resolveUser } from './resolvers.js'
+import { publicUser, text } from './projections.js'
+import { resolveProjectStatus, resolveTeam, resolveUser } from './resolvers.js'
+import { LinearProjectObservations } from './project-observations.js'
 
 const CLEARABLE_FIELDS = new Set(['description', 'content', 'lead', 'startDate', 'targetDate'])
 
@@ -74,50 +75,6 @@ async function optional(promise) {
   }
 }
 
-async function allProjectTeams(project) {
-  const connection = await project.teams({ first: 50 })
-  while (connection.pageInfo?.hasNextPage === true && connection.nodes.length < 250) {
-    if (typeof connection.fetchNext !== 'function')
-      throw new Error('Linear project team pagination is unavailable')
-    await connection.fetchNext()
-  }
-  if (connection.pageInfo?.hasNextPage === true) {
-    throw new Error(
-      'Linear project has more than 250 team associations; refusing an incomplete write preview',
-    )
-  }
-  return connection.nodes
-}
-
-async function publicDetailedProject(project, maximum) {
-  const [lead, status, teams] = await Promise.all([
-    optional(project.lead),
-    optional(project.status),
-    allProjectTeams(project),
-  ])
-  return publicProject(project, {
-    maxDescriptionChars: maximum,
-    includeContent: true,
-    lead,
-    status,
-    teams,
-  })
-}
-
-async function exactDuplicates(client, name) {
-  const result = await client.projects({
-    first: 20,
-    includeArchived: true,
-    filter: { name: { eqIgnoreCase: name } },
-  })
-  return result.nodes.map((project) => ({
-    id: project.id,
-    name: project.name,
-    url: project.url,
-    archived: project.archivedAt != null,
-  }))
-}
-
 function projectResultId(payload, operation) {
   if (payload?.success === true && typeof payload.projectId === 'string') return payload.projectId
   throw new Error(`Linear ${operation} did not return a project`)
@@ -147,6 +104,7 @@ export class LinearProjectWrites {
   constructor(runtime) {
     this.runtime = runtime
     this.maxContentChars = runtime.maxDescriptionChars
+    this.projects = new LinearProjectObservations(runtime)
   }
 
   async prepareCreate(args, signal) {
@@ -176,7 +134,7 @@ export class LinearProjectWrites {
       text(args.lead) === undefined
         ? undefined
         : this.runtime.request('resolve project lead', () => resolveUser(client, args.lead)),
-      this.runtime.request('check duplicate projects', () => exactDuplicates(client, name)),
+      this.projects.duplicates(client, name),
     ])
     assertWritableSelectors(status, lead)
     const input = {
@@ -219,36 +177,21 @@ export class LinearProjectWrites {
   }
 
   async executeCreate(prepared, signal) {
-    const { client, organization } = await this.runtime.client(signal)
-    if (organization.id !== prepared.workspaceId)
-      throw new Error('Linear workspace changed after approval; request approval again.')
-    const duplicates = await this.runtime.request('recheck duplicate projects', () =>
-      exactDuplicates(client, prepared.input.name),
-    )
-    const newDuplicate = duplicates.find(
-      (project) => !prepared.approvedDuplicateIds.includes(project.id),
-    )
-    if (newDuplicate !== undefined) {
-      throw new Error(
-        `A matching Linear project appeared after approval: ${newDuplicate.name}. Review and approve again.`,
-      )
-    }
+    const { client } = await this.projects.approved(prepared, signal)
     const payload = await this.runtime.request('create project', () =>
       client.createProject(prepared.input),
     )
     const project = await this.runtime.request('load created project', () =>
       client.project(projectResultId(payload, 'project creation')),
     )
-    return publicDetailedProject(project, this.maxContentChars)
+    return this.projects.snapshot(project, { completeTeams: true })
   }
 
   async prepareUpdate(args, signal) {
     const { client, organization } = await this.runtime.client(signal)
-    const project = await this.runtime.request('resolve project', () =>
-      resolveProject(client, args.project, { organizationUrlKey: organization.urlKey }),
-    )
+    const project = await this.projects.resolve(client, organization, args.project)
     const before = await this.runtime.request('load project snapshot', () =>
-      publicDetailedProject(project, this.maxContentChars),
+      this.projects.snapshot(project, { completeTeams: true }),
     )
     const expectedUpdatedAt =
       args.expectedUpdatedAt === undefined
@@ -366,11 +309,7 @@ export class LinearProjectWrites {
     const duplicates =
       input.name === undefined
         ? []
-        : (
-            await this.runtime.request('check duplicate projects', () =>
-              exactDuplicates(client, input.name),
-            )
-          ).filter((candidate) => candidate.id !== project.id)
+        : await this.projects.duplicates(client, input.name, { excludeId: project.id })
     const removedTeams =
       teams === undefined
         ? []
@@ -412,46 +351,19 @@ export class LinearProjectWrites {
   }
 
   async executeUpdate(prepared, signal) {
-    const { client, organization } = await this.runtime.client(signal)
-    if (organization.id !== prepared.workspaceId)
-      throw new Error('Linear workspace changed after approval; request approval again.')
-    const project = await this.runtime.request('reload project', () =>
-      client.project(prepared.projectId),
-    )
-    if (iso(project.updatedAt) !== prepared.expectedUpdatedAt) {
-      throw new Error(
-        'Linear project changed while approval was pending; fetch the latest project and approve a new update.',
-      )
-    }
-    if (prepared.input.name !== undefined) {
-      const duplicates = (
-        await this.runtime.request('recheck duplicate projects', () =>
-          exactDuplicates(client, prepared.input.name),
-        )
-      ).filter((candidate) => candidate.id !== prepared.projectId)
-      const newDuplicate = duplicates.find(
-        (candidate) => !prepared.approvedDuplicateIds.includes(candidate.id),
-      )
-      if (newDuplicate !== undefined) {
-        throw new Error(
-          `A matching Linear project appeared after approval: ${newDuplicate.name}. Review and approve again.`,
-        )
-      }
-    }
+    const { client, project } = await this.projects.approved(prepared, signal)
     const payload = await this.runtime.request('update project', () =>
       project.update(prepared.input),
     )
     const updated = await this.runtime.request('load updated project', () =>
       client.project(projectResultId(payload, 'project update')),
     )
-    return publicDetailedProject(updated, this.maxContentChars)
+    return this.projects.snapshot(updated, { completeTeams: true })
   }
 
   async prepareProjectUpdate(args, signal) {
     const { client, organization } = await this.runtime.client(signal)
-    const project = await this.runtime.request('resolve project', () =>
-      resolveProject(client, args.project, { organizationUrlKey: organization.urlKey }),
-    )
+    const project = await this.projects.resolve(client, organization, args.project)
     const body = bounded(args.body, 'body', this.maxContentChars, true)
     if (!['onTrack', 'atRisk', 'offTrack'].includes(args.health)) {
       throw new Error('health must be onTrack, atRisk, or offTrack')
@@ -467,17 +379,7 @@ export class LinearProjectWrites {
   }
 
   async executeProjectUpdate(prepared, signal) {
-    const { client, organization } = await this.runtime.client(signal)
-    if (organization.id !== prepared.workspaceId)
-      throw new Error('Linear workspace changed after approval; request approval again.')
-    const project = await this.runtime.request('reload project', () =>
-      client.project(prepared.projectId),
-    )
-    if (iso(project.updatedAt) !== prepared.expectedUpdatedAt) {
-      throw new Error(
-        'Linear project changed while approval was pending; review it and approve the status report again.',
-      )
-    }
+    const { client } = await this.projects.approved(prepared, signal)
     const payload = await this.runtime.request('create project update', () =>
       client.createProjectUpdate(prepared.input),
     )

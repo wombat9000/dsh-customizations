@@ -1,23 +1,8 @@
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { PROJECT_SCHEMA, PROJECT_UPDATE_SCHEMA } from './schemas.js'
 
-export const PROJECT_WRITE_TOOL_NAMES = Object.freeze([
-  'linear_create_project',
-  'linear_update_project',
-  'linear_create_project_update',
-])
-
-const PREPARE_METHODS = Object.freeze({
-  linear_create_project: 'prepareCreate',
-  linear_update_project: 'prepareUpdate',
-  linear_create_project_update: 'prepareProjectUpdate',
-})
-
-const EXECUTE_METHODS = Object.freeze({
-  linear_create_project: 'executeCreate',
-  linear_update_project: 'executeUpdate',
-  linear_create_project_update: 'executeProjectUpdate',
-})
+import { createLinearWriteApproval } from '../write-approval.js'
+export { PROJECT_WRITE_TOOL_NAMES } from '../write-approval.js'
 
 function projectText(project, verb) {
   return [
@@ -29,38 +14,11 @@ function projectText(project, verb) {
 }
 
 export function registerProjectWriteTools(ctx, writes, config) {
-  const prepared = new Map()
-
-  ctx.on('tools/pre-execute', async (exec, next) => {
-    const method = PREPARE_METHODS[exec.name]
-    if (method === undefined) return next()
-    const value = await writes[method](exec.arguments, exec.signal)
-    prepared.set(exec.token, value)
-    const downstream = await next()
-    if (downstream.kind !== 'allow') return downstream
-    return { kind: 'ask', reason: value.reason }
-  })
-
-  ctx.on('tools/result', (exec) => {
-    prepared.delete(exec.token)
-  })
-
-  const execute = (name) => async (_args, exec) => {
-    const value = prepared.get(exec.token)
-    prepared.delete(exec.token)
-    if (
-      value === undefined ||
-      value.kind !==
-        {
-          linear_create_project: 'create-project',
-          linear_update_project: 'update-project',
-          linear_create_project_update: 'create-project-update',
-        }[name]
-    ) {
-      throw new Error('Linear write approval was not prepared for this exact tool call.')
-    }
-    return writes[EXECUTE_METHODS[name]](value, exec.signal)
-  }
+  const approval = createLinearWriteApproval(writes)
+  ctx.effect?.(() => () => approval.dispose())
+  ctx.on('tools/pre-execute', (exec, next) => approval.prepare(exec, next))
+  ctx.on('tools/result', (exec) => approval.release(exec))
+  const execute = (name) => async (_args, exec) => approval.execute(name, exec)
 
   ctx.tools.register(
     defineTool({

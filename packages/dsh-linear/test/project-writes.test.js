@@ -160,17 +160,28 @@ test('project creation rechecks duplicates and returns the created project', asy
   assert.equal(result.teams[0].key, 'ENG')
 })
 
-test('project creation fails if a new duplicate appears after approval', async () => {
+test('project creation fails if a new duplicate appears on a later page after approval', async () => {
   let reads = 0
   let created = false
   const client = selectors({
     async projects() {
       reads += 1
-      return page(reads === 1 ? [] : [project({ id: 'late-id', name: 'New Platform' })])
+      const connection = page([])
+      if (reads > 1) {
+        connection.pageInfo = { hasNextPage: true, endCursor: 'more' }
+        connection.fetchNext = async () => {
+          connection.nodes.push(project({ id: 'late-id', name: 'New Platform' }))
+          connection.pageInfo.hasNextPage = false
+        }
+      }
+      return connection
     },
     async createProject() {
       created = true
       return { success: true, projectId: 'created-id' }
+    },
+    async project() {
+      return project({ id: 'created-id', name: 'New Platform' })
     },
   })
   const writes = new LinearProjectWrites(runtime(client))
@@ -343,6 +354,79 @@ test('project status report is concurrency-checked and returns its author', asyn
     body: 'Migration is on schedule.',
   })
   assert.equal(result.author.name, 'Ada Lovelace')
+})
+
+test('write previews refuse unknown, unavailable, stalled, or oversized team catalogs', async (t) => {
+  for (const mode of ['unknown', 'unavailable', 'stalled', 'oversized']) {
+    await t.test(mode, async () => {
+      let fetches = 0
+      const connection = page(mode === 'oversized' ? Array(251).fill(team) : [team])
+      if (mode === 'unknown') connection.pageInfo = {}
+      else if (mode !== 'oversized') connection.pageInfo = { hasNextPage: true, endCursor: 'same' }
+      if (mode === 'stalled')
+        connection.fetchNext = async () => {
+          fetches += 1
+          // Terminate after two calls so the old implementation fails without hanging.
+          if (fetches > 1) connection.pageInfo.hasNextPage = false
+        }
+      const existing = project({ teams: async () => connection })
+      const client = selectors({ projects: async () => page([existing]) })
+      const writes = new LinearProjectWrites(runtime(client))
+      await assert.rejects(
+        writes.prepareUpdate({ project: 'Platform', priority: 1 }),
+        /incomplete write preview|pagination is unavailable/,
+      )
+      if (mode === 'stalled') assert.equal(fetches, 1)
+    })
+  }
+})
+
+test('creation refuses an incomplete duplicate catalog before any mutation', async (t) => {
+  for (const info of [{ hasNextPage: true, endCursor: 'more' }, {}]) {
+    await t.test(JSON.stringify(info), async () => {
+      let mutations = 0
+      const client = selectors({
+        projects: async () => ({ nodes: [], pageInfo: info }),
+        createProject: async () => {
+          mutations += 1
+          return { success: true, projectId: 'created' }
+        },
+      })
+      const writes = new LinearProjectWrites(runtime(client))
+      await assert.rejects(
+        writes.prepareCreate({ name: 'Platform', teams: ['ENG'] }),
+        /pagination is unavailable|incomplete write preview/,
+      )
+      assert.equal(mutations, 0)
+    })
+  }
+})
+
+test('cancellation during approval revalidation blocks a client that ignores abort', async () => {
+  const controller = new AbortController()
+  let reads = 0
+  let mutations = 0
+  const client = selectors({
+    projects: async () => {
+      reads += 1
+      if (reads > 1) controller.abort()
+      return page([])
+    },
+    createProject: async () => {
+      mutations += 1
+      return { success: true, projectId: 'created' }
+    },
+  })
+  const writes = new LinearProjectWrites(runtime(client))
+  const prepared = await writes.prepareCreate({ name: 'Platform', teams: ['ENG'] })
+  let failure
+  try {
+    await writes.executeCreate(prepared, controller.signal)
+  } catch (error) {
+    failure = error
+  }
+  assert.equal(mutations, 0)
+  assert.equal(failure?.name, 'AbortError')
 })
 
 test('write tools ask once with prepared preview and cannot execute after rejection', async () => {
