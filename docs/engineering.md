@@ -16,6 +16,11 @@ Follow the [repository setup procedure](../.agents/skills/repository-setup/SKILL
 
 ## Module boundaries
 
+For substantial implementations, refactors, and architecture reviews, use the [deep-module design skill](../.agents/skills/deep-module-design/SKILL.md). It supplies the design and review process; the standards below remain the defaults.
+
+- Prefer deep modules: useful behavior behind interfaces that require relatively little caller knowledge. Judge depth by the complexity callers no longer need to understand or coordinate, not by file size or method count.
+- Keep related invariants, state transitions, and lifecycle rules with their production owner. Preserve explicit cancellation, authorization, completeness, and uncertain-outcome information where callers need it.
+- Introduce an abstraction for a concrete responsibility or demonstrated need, not hypothetical reuse. A pass-through wrapper or relocated fragment is not an improvement unless it reduces caller knowledge or isolates a meaningful responsibility.
 - Organize modules around cohesive responsibilities: pure transformations, lifecycle and state, external integration, and presentation. Use explicit imports and exports.
 - Keep pure logic independent of React and host services when those dependencies are not needed. Pass clocks, storage, transports, and other effects through narrow interfaces where that makes behavior testable.
 - Splitting a file into fragments that share a concatenated lexical scope is not module decomposition. A loader's single-file requirement belongs in the build, not in the source architecture.
