@@ -3,8 +3,10 @@ import type { ToolBlock } from '../shared/contracts.ts'
 import { object, text, rawDetails } from './validation.ts'
 import { Link } from './common.tsx'
 import { css, itemCss, issueCss } from './styles.ts'
+import type { CollectionModel } from './collection-completeness.ts'
 import {
   connectionTitles,
+  issueCollections,
   itemFieldModel,
   projectItemModel,
   readCardModel,
@@ -158,24 +160,17 @@ export function IssueRow({
 
 export function IssueCollection({
   title,
-  connection,
+  model,
   compact,
-  incomplete,
 }: {
   title: string
-  connection: unknown
+  model: CollectionModel | undefined
   compact?: boolean
-  incomplete?: boolean
 }) {
-  if (!object(connection) || !Array.isArray(connection.nodes))
+  if (!model || model.malformed)
     return <p role="note">{`${title}: details missing or malformed; completeness unknown.`}</p>
-  const complete =
-    !incomplete &&
-    supplied(connection.pageInfo, 'hasNextPage') === false &&
-    !connection.nextCursor &&
-    connection.truncated !== true &&
-    connection.totalCount === connection.nodes.length
-  if (!connection.nodes.length)
+  const complete = model.completeness === 'complete'
+  if (!model.returnedCount)
     return complete ? null : (
       <p role="note">{`${title}: no entries returned; completeness unknown.`}</p>
     )
@@ -183,7 +178,7 @@ export function IssueCollection({
     <div className="gh-issue-collection">
       <strong>{`${title}: `}</strong>
       <span className={compact ? 'gh-issue-chips' : ''}>
-        {connection.nodes.slice(0, 50).map((entry: unknown, index: number) => (
+        {model.entries.map((entry: unknown, index: number) => (
           <span key={index} className={compact ? 'gh-issue-chip' : 'gh-issue-related'}>
             {object(entry) ? (
               <Link
@@ -202,14 +197,6 @@ export function IssueCollection({
   )
 }
 
-const issueCollections: readonly { title: string; key: string; compact: boolean }[] = [
-  { title: 'Labels', key: 'labels', compact: true },
-  { title: 'Assignees', key: 'assignees', compact: true },
-  { title: 'Sub-issues', key: 'subIssues', compact: false },
-  { title: 'Blocked by', key: 'blockedBy', compact: false },
-  { title: 'Blocking', key: 'blocking', compact: false },
-]
-
 export function IssueDetail({
   entry,
   model,
@@ -217,20 +204,6 @@ export function IssueDetail({
   entry: Record<string, unknown>
   model: ReadCardModel
 }) {
-  // Localized truncation does not invalidate other explicitly complete collections.
-  const incomplete = (key: string): boolean =>
-    Boolean(
-      model.unlocalizedTruncation ||
-      model.truncationPaths?.some(
-        (path) => path === 'data' || path === `data.${key}` || path.startsWith(`data.${key}.`),
-      ) ||
-      model.warnings.some(
-        (warning) =>
-          warning.startsWith(`data.${key}:`) ||
-          warning.startsWith(`data.${key}.`) ||
-          warning.includes('inspection bound'),
-      ),
-    )
   const body = entry.body,
     long = typeof body === 'string' && body.length > 400
   return (
@@ -265,9 +238,8 @@ export function IssueDetail({
         <IssueCollection
           key={key}
           title={title}
-          connection={entry[key]}
+          model={model.collections?.[key]}
           compact={compact}
-          incomplete={incomplete(key)}
         />
       ))}
     </>

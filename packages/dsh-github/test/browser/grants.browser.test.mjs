@@ -297,6 +297,46 @@ test('late in-flight poll cannot revive revoked access and disposal aborts the c
   expect(statusRequests).toBe(4)
   expect(container.textContent).toBe('')
 })
+test('confirmed grant requests continue observing active authority until an external account change', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+  let changed = false
+  const fixture = await mount(() => ({
+    ...active,
+    phase: changed ? 'account-changed' : 'confirmed',
+    grants: [{ ...active.grants[0], state: changed ? 'account-changed' : 'active' }],
+  }))
+  expect(container.querySelector('[aria-label^="Revoke access"]')).not.toBeNull()
+  changed = true
+  await act(async () => vi.advanceTimersByTimeAsync(1500))
+  expect(container.querySelector('[aria-label^="Revoke access"]')).toBeNull()
+  expect(container.querySelector('[role="status"]').textContent).toContain('Account changed')
+  await act(async () => vi.advanceTimersByTimeAsync(6000))
+  expect(fixture.calls).toHaveLength(2)
+})
+
+test('call switches abort revocation and ignore its late response without refreshing the new call', async () => {
+  let resolveRevoke
+  const fixture = await mount((action, body) => {
+    if (action === 'revoke')
+      return new Promise((resolve) => {
+        resolveRevoke = resolve
+      })
+    return body.callId === 'call'
+      ? active
+      : { version: 1, phase: 'expired', grants: [], history: [] }
+  })
+  await click(page.getByRole('button', { name: 'Revoke access grant-one' }))
+  const revocation = fixture.calls.at(-1)
+  await fixture.render({ callId: 'other-call' })
+  expect(revocation.signal.aborted).toBe(true)
+  await act(async () => resolveRevoke({ state: 'revoked' }))
+  expect(
+    fixture.calls.filter((call) => call.action === 'status' && call.body.callId === 'other-call'),
+  ).toHaveLength(1)
+  expect(container.textContent).toContain('Expired')
+  expect(container.querySelector('[aria-label^="Revoke access"]')).toBeNull()
+})
+
 test('long scope remains bounded and keyboard accessible in narrow layout', async () => {
   const longScope = {
     ...scope,

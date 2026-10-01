@@ -571,63 +571,87 @@ function GrantPresentation({ status, pending, phase, error, busy, block, inspect
 }
 
 //#endregion
-//#region client/grant-card.tsx
-function GrantCard({ sessionId, callId, block, inspect, useSessionStatus, request = api }) {
+//#region client/use-github-call-presentation.ts
+function useGitHubCallPresentation(domain, { sessionId, callId, block, useSessionStatus, request = api }) {
+	const toolName = domain === "field" ? FIELD_TOOL : TOOL;
 	const pending = typeof useSessionStatus === "function" ? useSessionStatus((map) => {
 		const value = map.get(sessionId)?.pendingInteraction;
-		return value?.kind === "approval" && value.callId === callId && value.toolName === "github_request_issue_management" ? value : void 0;
+		return value?.kind === "approval" && value.callId === callId && value.toolName === toolName ? value : void 0;
 	}) : void 0;
-	const [loaded, setLoaded] = react.default.useState(null);
-	const [error, setError] = react.default.useState(""), [busy, setBusy] = react.default.useState(false);
-	const [revision, refresh] = react.default.useReducer((n) => n + 1, 0);
-	const generation = react.default.useRef(0), action = react.default.useRef(null);
-	const status = loaded?.sessionId === sessionId && loaded?.callId === callId ? loaded.value : null;
-	react.default.useEffect(() => {
-		const token = ++generation.current, controller = new AbortController();
-		let timer, failures = 0;
-		setLoaded(null);
-		setError("");
-		setBusy(false);
+	const [loaded, setLoaded] = react.useState(null);
+	const [revision, refresh] = react.useReducer((n) => n + 1, 0);
+	const generation = react.useRef(0);
+	const action = react.useRef(null);
+	const polling = react.useRef(null);
+	const current = loaded?.sessionId === sessionId && loaded.callId === callId && loaded.domain === domain ? loaded : null;
+	const status = current?.status ?? null;
+	react.useEffect(() => {
+		const token = ++generation.current;
+		const observation = { controller: new AbortController() };
+		polling.current = observation;
+		let failures = 0;
+		const update = (status, error = "") => setLoaded({
+			sessionId,
+			callId,
+			domain,
+			status,
+			error,
+			busy: false
+		});
+		update(null);
 		async function load() {
 			if (generation.current !== token) return;
 			try {
 				const value = await request("status", {
 					sessionId,
 					callId
-				}, controller.signal);
+				}, observation.controller.signal);
 				if (generation.current !== token) return;
-				if (!validStatus(value, callId)) throw new Error("Invalid GitHub grant status. Access is not confirmed.");
-				setLoaded({
-					sessionId,
-					callId,
-					value
-				});
-				setError("");
+				let validated;
+				let continueObserving;
+				if (domain === "field") {
+					if (!validFieldStatus(value, callId)) throw new Error("Invalid prepared change");
+					validated = value;
+					continueObserving = [
+						"preparing",
+						"prepared",
+						"approved",
+						"authorized-by-grant",
+						"running",
+						"awaiting-approval"
+					].includes(value.phase);
+				} else {
+					if (!validStatus(value, callId)) throw new Error("Invalid GitHub grant status. Access is not confirmed.");
+					validated = value;
+					continueObserving = [
+						"preparing",
+						"prepared",
+						"approved",
+						"pending",
+						"awaiting-approval",
+						"running"
+					].includes(value.phase) || value.grants.some((grant) => grant.state === "active");
+				}
+				update(validated);
 				failures = 0;
-				if ([
-					"preparing",
-					"prepared",
-					"approved",
-					"pending",
-					"awaiting-approval",
-					"running"
-				].includes(value.phase) || value.grants.some((grant) => grant.state === "active")) timer = setTimeout(load, 1500);
+				if (continueObserving) observation.timer = setTimeout(load, 1500);
 			} catch (failure) {
-				if (generation.current !== token || controller.signal.aborted) return;
-				setLoaded(null);
-				setError(object(failure) && typeof failure.message === "string" && failure.message ? failure.message : "GitHub status is unavailable. Access is not confirmed.");
-				if (++failures <= 3) timer = setTimeout(load, 1500);
+				if (generation.current !== token || observation.controller.signal.aborted) return;
+				update(null, domain === "field" ? "Prepared change details are unavailable. See the native approval preview and raw tool details; no previous value or outcome is inferred." : object(failure) && typeof failure.message === "string" && failure.message ? failure.message : "GitHub status is unavailable. Access is not confirmed.");
+				if (++failures <= 3) observation.timer = setTimeout(load, 1500);
 			}
 		}
 		load();
 		return () => {
 			generation.current++;
-			controller.abort();
+			observation.controller.abort();
+			clearTimeout(observation.timer);
 			action.current?.abort();
 			action.current = null;
-			clearTimeout(timer);
+			if (polling.current === observation) polling.current = null;
 		};
 	}, [
+		domain,
 		sessionId,
 		callId,
 		request,
@@ -636,11 +660,19 @@ function GrantCard({ sessionId, callId, block, inspect, useSessionStatus, reques
 		block?.kind
 	]);
 	async function revoke(grantId) {
-		if (action.current || !status?.grants.some((grant) => grant.id === grantId && grant.state === "active")) return;
-		const controller = new AbortController(), token = ++generation.current;
+		if (domain !== "grant" || action.current || !status || !("grants" in status) || !status.grants.some((grant) => grant.id === grantId && grant.state === "active")) return;
+		const token = ++generation.current, controller = new AbortController();
+		polling.current?.controller.abort();
+		clearTimeout(polling.current?.timer);
 		action.current = controller;
-		setBusy(true);
-		setError("");
+		setLoaded({
+			sessionId,
+			callId,
+			domain,
+			status,
+			error: "",
+			busy: true
+		});
 		try {
 			await request("revoke", {
 				sessionId,
@@ -650,16 +682,40 @@ function GrantCard({ sessionId, callId, block, inspect, useSessionStatus, reques
 			if (generation.current !== token) return;
 			refresh();
 		} catch {
-			if (generation.current !== token) return;
-			setLoaded(null);
-			setError("Revocation could not be confirmed. Refresh status before relying on it. This action did not request a GitHub write.");
+			if (generation.current !== token || controller.signal.aborted) return;
+			setLoaded({
+				sessionId,
+				callId,
+				domain,
+				status: null,
+				busy: false,
+				error: "Revocation could not be confirmed. Refresh status before relying on it. This action did not request a GitHub write."
+			});
 		} finally {
 			if (generation.current === token) {
 				action.current = null;
-				setBusy(false);
+				setLoaded((value) => value ? {
+					...value,
+					busy: false
+				} : value);
 			}
 		}
 	}
+	return {
+		status,
+		pending,
+		error: current?.error ?? "",
+		busy: current?.busy ?? false,
+		refresh,
+		revoke
+	};
+}
+
+//#endregion
+//#region client/grant-card.tsx
+function GrantCard(props) {
+	const { block, inspect } = props;
+	const { status, pending, error, busy, refresh, revoke } = useGitHubCallPresentation("grant", props);
 	let phase = pending ? "awaiting-approval" : status?.phase;
 	if (!pending && phase !== void 0 && [
 		"active",
@@ -684,63 +740,9 @@ function GrantCard({ sessionId, callId, block, inspect, useSessionStatus, reques
 
 //#endregion
 //#region client/field-card.tsx
-function FieldChangeCard({ sessionId, callId, block, inspect, useSessionStatus, request = api }) {
-	const pending = typeof useSessionStatus === "function" ? useSessionStatus((map) => {
-		const value = map.get(sessionId)?.pendingInteraction;
-		return value?.kind === "approval" && value.callId === callId && value.toolName === "github_set_project_item_field" ? value : void 0;
-	}) : void 0;
-	const [loaded, setLoaded] = react.useState(null), [error, setError] = react.useState("");
-	const generation = react.useRef(0);
-	const status = loaded?.sessionId === sessionId && loaded?.callId === callId ? loaded.value : null;
-	react.useEffect(() => {
-		const token = ++generation.current, controller = new AbortController();
-		let timer, failures = 0;
-		setLoaded(null);
-		setError("");
-		async function load() {
-			if (generation.current !== token) return;
-			try {
-				const value = await request("status", {
-					sessionId,
-					callId
-				}, controller.signal);
-				if (generation.current !== token) return;
-				if (!validFieldStatus(value, callId)) throw new Error("Invalid prepared change");
-				setLoaded({
-					sessionId,
-					callId,
-					value
-				});
-				setError("");
-				failures = 0;
-				if ([
-					"preparing",
-					"prepared",
-					"approved",
-					"authorized-by-grant",
-					"running",
-					"awaiting-approval"
-				].includes(value.phase)) timer = setTimeout(load, 1500);
-			} catch {
-				if (generation.current !== token || controller.signal.aborted) return;
-				setLoaded(null);
-				setError("Prepared change details are unavailable. See the native approval preview and raw tool details; no previous value or outcome is inferred.");
-				if (++failures <= 3) timer = setTimeout(load, 1500);
-			}
-		}
-		load();
-		return () => {
-			generation.current++;
-			controller.abort();
-			clearTimeout(timer);
-		};
-	}, [
-		sessionId,
-		callId,
-		request,
-		pending?.key,
-		block?.kind
-	]);
+function FieldChangeCard(props) {
+	const { block, inspect } = props;
+	const { status, pending, error } = useGitHubCallPresentation("field", props);
 	const change = status?.change, field = object(change?.field) ? change.field : void 0, project = object(status?.targets?.project) ? status.targets.project : void 0, item = object(status?.targets?.item) ? status.targets.item : void 0;
 	const content = object(item?.content) ? item.content : void 0, before = fieldValueModel(change, "before"), after = fieldValueModel(change, "after");
 	const phase = fieldPhase(status, block, pending), result = fieldResult(block) ?? validatedFieldResult(status?.result);
@@ -768,6 +770,155 @@ function FieldChangeCard({ sessionId, callId, block, inspect, useSessionStatus, 
 }
 
 //#endregion
+//#region client/collection-completeness.ts
+/** Read a property only after narrowing untrusted supplied data. */
+function supplied(value, key) {
+	return object(value) ? value[key] : void 0;
+}
+function combineCompleteness(states) {
+	return states.includes("unknown") ? "unknown" : states.includes("partial") ? "partial" : "complete";
+}
+function relatedPath(notice, path) {
+	return notice === path || notice.startsWith(`${path}.`) || notice.startsWith(`${path}[`) || path.startsWith(`${notice}.`) || path.startsWith(`${notice}[`);
+}
+const restCollectionTools = /* @__PURE__ */ new Set([
+	"github_list_pull_requests",
+	"github_get_pull_request_files",
+	"github_get_pull_request_reviews",
+	"github_get_pull_request_checks",
+	"github_get_pull_request_stack"
+]);
+function collectionProtocol(toolName) {
+	return restCollectionTools.has(toolName) ? "rest" : "graphql";
+}
+function positiveInteger(value) {
+	return typeof value === "number" && Number.isSafeInteger(value) && value > 0;
+}
+function optionalCursor(value) {
+	return value == null || typeof value === "string" && value.length <= 4096;
+}
+function paginationEvidence(value, protocol) {
+	const nodes = supplied(value, "nodes"), pageInfo = supplied(value, "pageInfo");
+	const nextCursor = supplied(value, "nextCursor"), endCursor = supplied(pageInfo, "endCursor");
+	const count = supplied(value, "totalCount"), page = supplied(pageInfo, "page"), nextPage = supplied(pageInfo, "nextPage");
+	const hasNextPage = supplied(pageInfo, "hasNextPage");
+	let valid = Array.isArray(nodes) && object(pageInfo) && typeof hasNextPage === "boolean" && optionalCursor(nextCursor) && optionalCursor(endCursor) && (count == null || typeof count === "number" && Number.isSafeInteger(count) && count >= nodes.length);
+	if (protocol === "rest") valid = valid && positiveInteger(page) && (hasNextPage === true ? positiveInteger(nextPage) && nextPage === page + 1 : nextPage == null);
+	else valid = valid && !Object.hasOwn(object(pageInfo) ? pageInfo : {}, "page") && (hasNextPage !== true || id(nextCursor) || id(endCursor));
+	const cursor = id(nextCursor) ? nextCursor : hasNextPage === true && id(endCursor) ? endCursor : void 0;
+	return {
+		valid,
+		more: hasNextPage === true || id(nextCursor) || supplied(value, "truncated") === true,
+		continuation: valid ? {
+			...protocol === "graphql" && cursor ? { cursor } : {},
+			...protocol === "rest" && positiveInteger(nextPage) ? { page: nextPage } : {}
+		} : {}
+	};
+}
+/** Inspect supplied data once, with explicit bounds and localized evidence, never warning-prose parsing. */
+function inspectCollections(envelope, toolName) {
+	const notices = [], messages = /* @__PURE__ */ new Set(), seen = /* @__PURE__ */ new Set(), connections = [];
+	let budget = 1e4;
+	const add = (kind, path, completeness, message) => {
+		if (messages.has(message)) return;
+		messages.add(message);
+		notices.push({
+			kind,
+			path,
+			completeness,
+			message
+		});
+	};
+	function visit(value, path, depth) {
+		if (--budget < 0 || depth > 20) {
+			add("inspection-limit", null, "unknown", "Additional nested data exceeds the card inspection bound; inspect raw details. Completeness is unknown.");
+			return;
+		}
+		if (!value || typeof value !== "object" || seen.has(value)) return;
+		seen.add(value);
+		const pageInfo = supplied(value, "pageInfo"), nextCursor = supplied(value, "nextCursor");
+		if (Object.hasOwn(value, "nodes")) connections.push({
+			value,
+			path
+		});
+		if (Object.hasOwn(value, "nodes") && !paginationEvidence(value, collectionProtocol(toolName)).valid) add("metadata", path, "unknown", `${path}: pagination metadata is missing or malformed; completeness is unknown.`);
+		if (supplied(pageInfo, "hasNextPage") === true && !id(nextCursor) && !Number.isSafeInteger(supplied(pageInfo, "nextPage")) && !id(supplied(pageInfo, "endCursor"))) add("continuation", path, "partial", `${path}: continuation cursor is unavailable; inspect raw details.`);
+		if (supplied(value, "truncated") === true || supplied(pageInfo, "hasNextPage") === true || typeof nextCursor === "string" && nextCursor.length > 0) add("continuation", path, "partial", `${path}: more data or truncated output. Continue this exact target with its matching ${toolName.includes("pull_request") ? "cursor or page" : "cursor"} where supplied; this view is not complete.`);
+		if (Array.isArray(value)) {
+			if (value.length > 50) add("display-limit", path, "partial", `${path}: nested sections display at most 50 entries; inspect raw details for additional entries.`);
+			if (value.length > 100) add("inspection-limit", path, "unknown", `${path}: only the first 100 entries are inspected by this card.`);
+			value.slice(0, 100).forEach((entry, index) => visit(entry, `${path}[${index}]`, depth + 1));
+		} else {
+			const entries = Object.entries(value);
+			if (entries.length > 100) add("inspection-limit", null, "unknown", `${path}: additional properties exceed the card inspection bound.`);
+			for (const [key, entry] of entries.slice(0, 100)) visit(entry, `${path}.${key}`, depth + 1);
+		}
+	}
+	const data = supplied(envelope, "data");
+	visit(data, "data", 0);
+	function requireCollection(value, path) {
+		if (object(value) && Object.hasOwn(value, "nodes")) return;
+		connections.push({
+			value,
+			path
+		});
+		add("metadata", path, "unknown", `${path}: pagination metadata is missing or malformed; completeness is unknown.`);
+	}
+	function requireNested(connection, path, key) {
+		const nodes = supplied(connection, "nodes");
+		if (Array.isArray(nodes)) nodes.slice(0, 100).forEach((node, index) => requireCollection(supplied(node, key), `${path}.nodes[${index}].${key}`));
+	}
+	if (toolName === "github_get_project") for (const key of ["fields", "repositories"]) requireCollection(supplied(data, key), `data.${key}`);
+	else if (toolName === "github_list_project_items") if (supplied(data, "nodes") === void 0 && id(supplied(data, "id"))) requireCollection(supplied(data, "fieldValues"), "data.fieldValues");
+	else requireNested(data, "data", "fieldValues");
+	else if (toolName === "github_get_pull_request_threads") if (object(supplied(data, "thread"))) requireCollection(supplied(supplied(data, "thread"), "comments"), "data.thread.comments");
+	else requireNested(supplied(data, "threads"), "data.threads", "comments");
+	const truncated = supplied(envelope, "truncated") === true, truncations = supplied(envelope, "truncations");
+	const localized = Array.isArray(truncations) && truncations.length > 0 && truncations.length <= 100 && truncations.every((notice) => text(supplied(notice, "path")).startsWith("data."));
+	if (truncated) add("truncation", null, localized ? "complete" : "partial", "GitHub returned bounded or incomplete output. See all continuation notices and raw details.");
+	if (Array.isArray(truncations)) {
+		for (const notice of truncations.slice(0, 100)) if (object(notice)) {
+			const path = text(notice.path);
+			add("truncation", path === "data" || path.startsWith("data.") ? path : null, "partial", `${path || "Output"}: ${text(notice.reason) || text(notice.kind) || "truncated"}. ${text(notice.continuation)}`);
+		}
+	}
+	if ((Array.isArray(truncations) || typeof truncations === "string") && truncations.length > 100) add("inspection-limit", null, "unknown", "Additional truncation notices are available in raw details.");
+	if (toolName === "github_search_issues") add("search-limit", null, "complete", "GitHub search exposes at most 1,000 matches. Narrow the query for exhaustive results.");
+	if (supplied(supplied(envelope, "data"), "exhaustive") === false) add("search-limit", null, "partial", "This search result is not exhaustive.");
+	const inspection = {
+		notices,
+		completeness: combineCompleteness(notices.map((notice) => notice.completeness))
+	};
+	inspection.completeness = combineCompleteness([inspection.completeness, ...connections.map(({ value, path }) => collectionModel(value, path, inspection, collectionProtocol(toolName)).completeness)]);
+	return inspection;
+}
+/** Pagination, counts and display bounds belong to the model, not the renderer. */
+function collectionModel(value, path, inspection, protocol = "graphql") {
+	const nodes = supplied(value, "nodes");
+	const count = supplied(value, "totalCount");
+	const total = typeof count === "number" && Number.isSafeInteger(count) && count >= 0 ? count : void 0;
+	const pagination = paginationEvidence(value, protocol);
+	const malformed = !object(value) || !Array.isArray(nodes);
+	const returnedCount = Array.isArray(nodes) ? nodes.length : 0;
+	let own = "complete";
+	if (!pagination.valid) own = "unknown";
+	else if (pagination.more) own = "partial";
+	else if (protocol === "graphql" && (total === void 0 || total !== returnedCount)) own = "unknown";
+	else if (total !== void 0 && total > returnedCount) own = "partial";
+	if (own === "complete" && returnedCount > 50) own = "partial";
+	const evidence = inspection.notices.filter((notice) => notice.path === null || relatedPath(notice.path, path));
+	return {
+		entries: Array.isArray(nodes) ? nodes.slice(0, 50) : [],
+		malformed,
+		completeness: combineCompleteness([own, ...evidence.map((notice) => notice.completeness)]),
+		returnedCount,
+		total,
+		continuation: pagination.continuation,
+		displayLimit: 50
+	};
+}
+
+//#endregion
 //#region client/read-models.ts
 const READ_TOOLS = [
 	"github_list_projects",
@@ -785,52 +936,43 @@ const readTitles = {
 	github_search_issues: "Issue search",
 	github_get_issue: "Issue details"
 };
-/** Read a property only after narrowing untrusted supplied data. */
-function supplied(value, key) {
-	return object(value) ? value[key] : void 0;
-}
 function readWarnings(envelope, toolName) {
-	const warnings = /* @__PURE__ */ new Set(), seen = /* @__PURE__ */ new Set();
-	let budget = 1e4;
-	function visit(value, path, depth) {
-		if (--budget < 0 || depth > 20) {
-			warnings.add("Additional nested data exceeds the card inspection bound; inspect raw details. Completeness is unknown.");
-			return;
-		}
-		if (!value || typeof value !== "object" || seen.has(value)) return;
-		seen.add(value);
-		const nodes = supplied(value, "nodes"), pageInfo = supplied(value, "pageInfo");
-		const nextCursor = supplied(value, "nextCursor");
-		if (Object.hasOwn(value, "nodes") && (!Array.isArray(nodes) || !object(pageInfo) || typeof pageInfo.hasNextPage !== "boolean")) warnings.add(`${path}: pagination metadata is missing or malformed; completeness is unknown.`);
-		if (supplied(pageInfo, "hasNextPage") === true && !id(nextCursor) && !Number.isSafeInteger(supplied(pageInfo, "nextPage")) && !id(supplied(pageInfo, "endCursor"))) warnings.add(`${path}: continuation cursor is unavailable; inspect raw details.`);
-		if (supplied(value, "truncated") === true || supplied(pageInfo, "hasNextPage") === true || typeof nextCursor === "string" && nextCursor.length > 0) warnings.add(`${path}: more data or truncated output. Continue this exact target with its matching ${toolName.includes("pull_request") ? "cursor or page" : "cursor"} where supplied; this view is not complete.`);
-		if (Array.isArray(value)) {
-			if (value.length > 50) warnings.add(`${path}: nested sections display at most 50 entries; inspect raw details for additional entries.`);
-			if (value.length > 100) warnings.add(`${path}: only the first 100 entries are inspected by this card.`);
-			value.slice(0, 100).forEach((entry, index) => visit(entry, `${path}[${index}]`, depth + 1));
-		} else {
-			const entries = Object.entries(value);
-			if (entries.length > 100) warnings.add(`${path}: additional properties exceed the card inspection bound.`);
-			for (const [key, entry] of entries.slice(0, 100)) visit(entry, `${path}.${key}`, depth + 1);
-		}
-	}
-	visit(supplied(envelope, "data"), "data", 0);
-	if (supplied(envelope, "truncated") === true) warnings.add("GitHub returned bounded or incomplete output. See all continuation notices and raw details.");
-	const truncations = supplied(envelope, "truncations");
-	if (Array.isArray(truncations)) {
-		for (const notice of truncations.slice(0, 100)) if (object(notice)) warnings.add(`${text(notice.path) || "Output"}: ${text(notice.reason) || text(notice.kind) || "truncated"}. ${text(notice.continuation)}`);
-	}
-	if ((Array.isArray(truncations) || typeof truncations === "string") && truncations.length > 100) warnings.add("Additional truncation notices are available in raw details.");
-	if (toolName === "github_search_issues") warnings.add("GitHub search exposes at most 1,000 matches. Narrow the query for exhaustive results.");
-	if (supplied(supplied(envelope, "data"), "exhaustive") === false) warnings.add("This search result is not exhaustive.");
-	return [...warnings];
+	return inspectCollections(envelope, toolName).notices.map((notice) => notice.message);
 }
+const issueCollections = [
+	{
+		title: "Labels",
+		key: "labels",
+		compact: true
+	},
+	{
+		title: "Assignees",
+		key: "assignees",
+		compact: true
+	},
+	{
+		title: "Sub-issues",
+		key: "subIssues",
+		compact: false
+	},
+	{
+		title: "Blocked by",
+		key: "blockedBy",
+		compact: false
+	},
+	{
+		title: "Blocking",
+		key: "blocking",
+		compact: false
+	}
+];
 function readCardModel(toolName, block) {
 	const base = {
 		title: readTitles[toolName] ?? "GitHub read",
 		warnings: [],
 		entries: [],
-		kind: "unknown"
+		kind: "unknown",
+		completeness: "unknown"
 	};
 	if (!READ_TOOLS.includes(toolName)) return {
 		...base,
@@ -855,7 +997,7 @@ function readCardModel(toolName, block) {
 			error: "Readable result unavailable. Inspect raw tool details; no success or completeness is inferred."
 		};
 	}
-	const warnings = readWarnings(envelope, toolName), data = envelope.data;
+	const inspection = inspectCollections(envelope, toolName), warnings = inspection.notices.map((notice) => notice.message), data = envelope.data;
 	if (!object(data)) return {
 		...base,
 		warnings,
@@ -881,11 +1023,19 @@ function readCardModel(toolName, block) {
 	if (entries.length > 50) warnings.push("Only the first 50 returned entries are displayed by this card. Remaining entries are in raw details.");
 	const count = toolName === "github_search_issues" ? data.issueCount : data.totalCount;
 	const total = typeof count === "number" && Number.isSafeInteger(count) && count >= 0 ? count : void 0;
+	const collection = singular ? void 0 : collectionModel(data, "data", inspection);
+	const collections = toolName === "github_get_issue" ? Object.fromEntries(issueCollections.map(({ key }) => [key, collectionModel(data[key], `data.${key}`, inspection)])) : void 0;
 	return {
 		...base,
 		warnings,
-		truncationPaths: Array.isArray(envelope.truncations) ? envelope.truncations.map((notice) => text(supplied(notice, "path"))) : [],
-		unlocalizedTruncation: envelope.truncated === true && (!Array.isArray(envelope.truncations) || !envelope.truncations.length || envelope.truncations.some((notice) => !text(supplied(notice, "path")).startsWith("data."))),
+		inspection,
+		completeness: combineCompleteness([
+			inspection.completeness,
+			...collection ? [collection.completeness] : [],
+			...Object.values(collections ?? {}).map((value) => value.completeness)
+		]),
+		...collection ? { collection } : {},
+		...collections ? { collections } : {},
 		state: "returned",
 		kind,
 		entries: entries.slice(0, 50),
@@ -1029,51 +1179,22 @@ function IssueRow({ entry, sharedRepository }) {
 		"aria-label": `Issue state: ${state}`
 	}, `Issue: ${state}`)), !sharedRepository && /* @__PURE__ */ react.default.createElement("small", null, text(supplied(entry.repository, "nameWithOwner")) || "Repository unavailable"));
 }
-function IssueCollection({ title, connection, compact, incomplete }) {
-	if (!object(connection) || !Array.isArray(connection.nodes)) return /* @__PURE__ */ react.default.createElement("p", { role: "note" }, `${title}: details missing or malformed; completeness unknown.`);
-	const complete = !incomplete && supplied(connection.pageInfo, "hasNextPage") === false && !connection.nextCursor && connection.truncated !== true && connection.totalCount === connection.nodes.length;
-	if (!connection.nodes.length) return complete ? null : /* @__PURE__ */ react.default.createElement("p", { role: "note" }, `${title}: no entries returned; completeness unknown.`);
-	return /* @__PURE__ */ react.default.createElement("div", { className: "gh-issue-collection" }, /* @__PURE__ */ react.default.createElement("strong", null, `${title}: `), /* @__PURE__ */ react.default.createElement("span", { className: compact ? "gh-issue-chips" : "" }, connection.nodes.slice(0, 50).map((entry, index) => /* @__PURE__ */ react.default.createElement("span", {
+function IssueCollection({ title, model, compact }) {
+	if (!model || model.malformed) return /* @__PURE__ */ react.default.createElement("p", { role: "note" }, `${title}: details missing or malformed; completeness unknown.`);
+	const complete = model.completeness === "complete";
+	if (!model.returnedCount) return complete ? null : /* @__PURE__ */ react.default.createElement("p", { role: "note" }, `${title}: no entries returned; completeness unknown.`);
+	return /* @__PURE__ */ react.default.createElement("div", { className: "gh-issue-collection" }, /* @__PURE__ */ react.default.createElement("strong", null, `${title}: `), /* @__PURE__ */ react.default.createElement("span", { className: compact ? "gh-issue-chips" : "" }, model.entries.map((entry, index) => /* @__PURE__ */ react.default.createElement("span", {
 		key: index,
 		className: compact ? "gh-issue-chip" : "gh-issue-related"
 	}, object(entry) ? /* @__PURE__ */ react.default.createElement(Link, { url: entry.url }, `${text(supplied(entry.repository, "nameWithOwner")) ? `${supplied(entry.repository, "nameWithOwner")} ` : ""}${Number.isSafeInteger(entry.number) ? `#${entry.number} — ` : ""}${text(entry.name) || text(entry.login) || text(entry.title) || "Name unavailable"}`) : "Malformed entry — see raw details"))), !complete && /* @__PURE__ */ react.default.createElement("small", null, `${title}: completeness unknown; inspect pagination and raw details.`));
 }
-const issueCollections = [
-	{
-		title: "Labels",
-		key: "labels",
-		compact: true
-	},
-	{
-		title: "Assignees",
-		key: "assignees",
-		compact: true
-	},
-	{
-		title: "Sub-issues",
-		key: "subIssues",
-		compact: false
-	},
-	{
-		title: "Blocked by",
-		key: "blockedBy",
-		compact: false
-	},
-	{
-		title: "Blocking",
-		key: "blocking",
-		compact: false
-	}
-];
 function IssueDetail({ entry, model }) {
-	const incomplete = (key) => Boolean(model.unlocalizedTruncation || model.truncationPaths?.some((path) => path === "data" || path === `data.${key}` || path.startsWith(`data.${key}.`)) || model.warnings.some((warning) => warning.startsWith(`data.${key}:`) || warning.startsWith(`data.${key}.`) || warning.includes("inspection bound")));
 	const body = entry.body, long = typeof body === "string" && body.length > 400;
 	return /* @__PURE__ */ react.default.createElement(react.default.Fragment, null, /* @__PURE__ */ react.default.createElement(IssueRow, { entry }), typeof body !== "string" ? /* @__PURE__ */ react.default.createElement("p", { role: "note" }, "Description unavailable.") : body === "" ? /* @__PURE__ */ react.default.createElement("p", { className: "gh-note" }, "No description.") : /* @__PURE__ */ react.default.createElement("div", { className: "gh-issue-description" }, /* @__PURE__ */ react.default.createElement("p", { style: { whiteSpace: "pre-wrap" } }, long ? `${body.slice(0, 400)}…` : body), long && /* @__PURE__ */ react.default.createElement("details", null, /* @__PURE__ */ react.default.createElement("summary", null, "Full description — preview shortened"), /* @__PURE__ */ react.default.createElement("div", { style: { whiteSpace: "pre-wrap" } }, body))), entry.parent === null ? null : object(entry.parent) ? /* @__PURE__ */ react.default.createElement("p", null, "Parent: ", /* @__PURE__ */ react.default.createElement(Link, { url: entry.parent.url }, `${text(supplied(entry.parent.repository, "nameWithOwner")) ? `${supplied(entry.parent.repository, "nameWithOwner")} ` : ""}${Number.isSafeInteger(entry.parent.number) ? `#${entry.parent.number} — ` : ""}${text(entry.parent.title) || "Title unavailable"}`)) : /* @__PURE__ */ react.default.createElement("p", { role: "note" }, "Parent: details missing or malformed."), issueCollections.map(({ title, key, compact }) => /* @__PURE__ */ react.default.createElement(IssueCollection, {
 		key,
 		title,
-		connection: entry[key],
-		compact,
-		incomplete: incomplete(key)
+		model: model.collections?.[key],
+		compact
 	})));
 }
 function FieldDefinition({ field }) {
@@ -1153,6 +1274,7 @@ function pullRequestCardModel(toolName, block) {
 		title: knownTool(toolName) ? PR_TOOL_TITLES[toolName] : "Pull request interaction",
 		status: "Result unavailable",
 		warnings: [],
+		completeness: "unknown",
 		entries: [],
 		target: ""
 	};
@@ -1235,7 +1357,8 @@ function pullRequestCardModel(toolName, block) {
 			total = supplied(connection, "totalCount");
 		}
 		if (!collection.every(object)) throw new Error();
-		const warnings = readWarnings(envelope, toolName);
+		const inspection = inspectCollections(envelope, toolName);
+		const warnings = inspection.notices.map((notice) => notice.message);
 		if (Array.isArray(data.warnings)) warnings.push(...data.warnings.filter((warning) => typeof warning === "string"));
 		if (collection.length > 5) warnings.push(`Showing 5 of ${collection.length} returned entries. Expand remaining entries or raw tool details.`);
 		if (collection.length > 100) warnings.push("Only the first 100 combined entries can be displayed. Additional entries are in raw tool details.");
@@ -1244,6 +1367,8 @@ function pullRequestCardModel(toolName, block) {
 			status: `${collection.length} ${toolName === "github_get_pull_request" ? "PR" : "entries"} returned`,
 			entries: collection.slice(0, 100),
 			warnings,
+			inspection,
+			completeness: inspection.completeness,
 			...toolName !== "github_get_pull_request" && object(data.pullRequest) ? { pullRequest: data.pullRequest } : {},
 			...Number.isSafeInteger(total) && Number(total) >= 0 ? { total: Number(total) } : {}
 		};

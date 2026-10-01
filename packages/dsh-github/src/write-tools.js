@@ -1,20 +1,10 @@
 import { GitHubError } from './runtime.js'
-import { WRITE_OPERATIONS, canonical, uncertainWriteResult } from './write-runtime.js'
+import { WRITE_OPERATIONS, canonical } from './write-runtime.js'
+import { createGitHubWriteAttempts, failedWriteResult } from './write-attempts.js'
 
 export const GITHUB_WRITE_TOOL_NAMES = Object.freeze(
   Object.values(WRITE_OPERATIONS).map((value) => value.name),
 )
-const safeError = (error) => ({
-  host: 'github.com',
-  outcome: 'failed',
-  error: {
-    code: error instanceof GitHubError ? error.code : 'READ_FAILED',
-    message:
-      error instanceof GitHubError
-        ? error.message
-        : 'The GitHub write failed before dispatch. No raw diagnostic is exposed.',
-  },
-})
 function caller(exec, lifecycle) {
   return {
     agentId: exec.agent?.session?.id,
@@ -25,6 +15,7 @@ function caller(exec, lifecycle) {
 export function registerGitHubWriteTools(ctx, runtime, { grants, grantCaller, presentation } = {}) {
   const preparations = new Map()
   const outcomes = new Map()
+  const attempts = createGitHubWriteAttempts(runtime, { grants })
   const operations = new Map(
     Object.entries(WRITE_OPERATIONS).map(([operation, spec]) => [spec.name, operation]),
   )
@@ -47,48 +38,29 @@ export function registerGitHubWriteTools(ctx, runtime, { grants, grantCaller, pr
       outcomes.has(exec.token)
     )
       return { kind: 'deny', reason: 'GitHub write approval is unavailable or already consumed.' }
-    const owner = grantCaller?.(exec, lifecycle.signal)
-    const eligible = grants && owner?.isSubagent === false
-    let value
+    let preparation
     try {
-      value = await runtime.prepare(operation, exec.arguments, caller(exec, lifecycle), {
-        onAccount: (actor) => {
-          grants?.observeAccount(actor)
-          if (eligible) grants.observe(actor, owner)
-        },
-      })
+      preparation = await attempts.prepareAttempt(
+        operation,
+        exec.arguments,
+        caller(exec, lifecycle),
+        () => grantCaller?.(exec, lifecycle.signal),
+      )
     } catch (error) {
-      if (eligible) {
-        // A rejected preflight has no verified targets; never copy raw arguments
-        // or diagnostics into history. Cancellation cannot confer authority.
-        try {
-          const history = grants.attempt(
-            { operation, knownTargets: {} },
-            { ...owner, signal: undefined },
-          )
-          grants.outcome(history, 'failed')
-        } catch {
-          /* A disposed session cannot retain new history. */
-        }
-      }
-      presentation?.settled(exec, safeError(error))
+      presentation?.settled(exec, failedWriteResult(error))
       throw error
     }
-    if (!active || exec.signal?.aborted)
+    if (!active || exec.signal?.aborted || !preparation)
       return { kind: 'deny', reason: 'GitHub write preparation was cancelled or unloaded.' }
-    const noChange = operation === 'setProjectItemField' && value.change?.noChange === true
-    const permit = eligible && !noChange ? grants.check(value, owner) : null
-    const history = eligible && !noChange ? grants.attempt(value, owner) : null
+    const { attempt, prepared: value, authorizedByGrant, noChange } = preparation
     const entry = {
-      value,
+      attempt,
       agent: exec.agent,
       session: exec.agent.session,
       args: canonical(exec.arguments),
       operation,
-      permit,
-      history,
     }
-    presentation?.prepared(exec, value, permit ? 'authorized-by-grant' : 'prepared')
+    presentation?.prepared(exec, value, authorizedByGrant ? 'authorized-by-grant' : 'prepared')
     preparations.set(exec.token, entry)
     try {
       const downstream = await next()
@@ -103,7 +75,7 @@ export function registerGitHubWriteTools(ctx, runtime, { grants, grantCaller, pr
         return { kind: 'deny', reason: 'GitHub write tools were unloaded.' }
       }
       // A live grant or verified no-op skips only this plugin's ask, never another guard.
-      if ((permit || noChange) && downstream.kind !== 'ask') return downstream
+      if ((authorizedByGrant || noChange) && downstream.kind !== 'ask') return downstream
       // Preserve the complete exact preview when this or another policy asks.
       presentation?.phase(exec, 'prepared')
       return {
@@ -153,7 +125,7 @@ export function registerGitHubWriteTools(ctx, runtime, { grants, grantCaller, pr
         entry.args !== canonical(exec.arguments)
       ) {
         return JSON.stringify(
-          safeError(
+          failedWriteResult(
             new GitHubError(
               'APPROVAL_REQUIRED',
               'No unused approval preparation matches this exact GitHub write call, arguments and caller.',
@@ -161,56 +133,23 @@ export function registerGitHubWriteTools(ctx, runtime, { grants, grantCaller, pr
           ),
         )
       }
-      const record = { prepared: entry.value, dispatched: false }
-      outcomes.set(exec.token, record)
-      try {
-        const owner = grantCaller?.(exec, lifecycle.signal)
-        record.history = entry.history
-        record.result = await runtime.execute(entry.value, caller(exec, lifecycle), {
-          onAccount: (actor) => {
-            grants?.observeAccount(actor)
-            if (owner?.isSubagent === false) grants?.observe(actor, owner)
-          },
-          beforeDispatch: () => {
-            if (entry.permit)
-              grants.assert(entry.permit, entry.value, grantCaller(exec, lifecycle.signal))
-          },
-          onDispatch: () => {
-            record.dispatched = true
-            if (entry.history) grants.outcome(entry.history, 'running')
-            presentation?.phase(exec, 'running')
-          },
-        })
-        if (entry.history) grants.outcome(entry.history, record.result.outcome)
-        presentation?.settled(exec, record.result)
-        return JSON.stringify(record.result)
-      } catch (error) {
-        record.result = record.dispatched ? uncertainWriteResult(entry.value) : safeError(error)
-        if (entry.history) grants.outcome(entry.history, record.result.outcome)
-        presentation?.settled(exec, record.result)
-        return JSON.stringify(record.result)
-      }
+      outcomes.set(exec.token, entry.attempt)
+      const result = await attempts.executeAttempt(
+        entry.attempt,
+        caller(exec, lifecycle),
+        () => grantCaller?.(exec, lifecycle.signal),
+        { onDispatch: () => presentation?.phase(exec, 'running') },
+      )
+      presentation?.settled(exec, result)
+      return JSON.stringify(result)
     },
     // The pinned Tools pipeline calls this after cancellation normalization and before tools/result cleanup.
     finalizeContent(exec, result) {
-      const record = outcomes.get(exec.token)
-      if (!record?.dispatched) return undefined
-      let value = record.result ?? uncertainWriteResult(record.prepared)
-      if (exec.signal?.aborted || result.isError) {
-        value = {
-          ...uncertainWriteResult(record.prepared),
-          ...(record.result?.outcome === 'confirmed'
-            ? { observedConfirmedResource: record.result.resource }
-            : {}),
-          ...(record.result?.observedResources
-            ? { observedResources: record.result.observedResources }
-            : {}),
-          ...(record.result?.backendFenced
-            ? { backendFenced: true, cleanupWarning: record.result.cleanupWarning }
-            : {}),
-        }
-      }
-      if (record.history) grants.outcome(record.history, value.outcome)
+      const value = attempts.finalizeAttempt(outcomes.get(exec.token), {
+        cancelled: exec.signal?.aborted,
+        isError: result.isError,
+      })
+      if (!value) return undefined
       presentation?.settled(exec, value)
       return [{ type: 'text', text: JSON.stringify(value) }]
     },
