@@ -1,4 +1,6 @@
 import { LinearClient } from '@linear/sdk'
+import { resolveIssueQuery } from './issue-query.js'
+import { LinearProjectObservations } from './project-observations.js'
 import { pageArgs, paged } from './pagination.js'
 import {
   publicComment,
@@ -13,13 +15,8 @@ import {
 import {
   issueCatalogs,
   projectCatalogs,
-  resolveCycle,
-  resolveLabels,
-  resolveProject,
   resolveProjectStatuses,
-  resolveStates,
   resolveTeam,
-  resolveUser,
   userCatalog,
 } from './resolvers.js'
 
@@ -62,29 +59,6 @@ export function publicLinearError(error, operation = 'request') {
   return new Error(`Linear ${operation} failed: ${messageOf(error)}`)
 }
 
-function isoDate(value, name) {
-  if (value === undefined) return undefined
-  if (typeof value !== 'string' || value.trim().length === 0)
-    throw new Error(`${name} must be an ISO date or timestamp`)
-  const date = new Date(value)
-  if (Number.isNaN(date.valueOf())) throw new Error(`${name} must be an ISO date or timestamp`)
-  return date.toISOString()
-}
-
-function nullableSelector(value) {
-  const wanted = text(value)
-  return wanted === undefined ? undefined : wanted.toLocaleLowerCase('en-US')
-}
-
-async function optional(promise) {
-  if (promise === undefined) return undefined
-  try {
-    return await promise
-  } catch {
-    return undefined
-  }
-}
-
 export class LinearRuntime {
   constructor(options) {
     this.resolveApiKey = options.resolveApiKey
@@ -93,6 +67,7 @@ export class LinearRuntime {
       options.createClient ?? ((apiKey, signal) => new LinearClient({ apiKey, signal }))
     this.maxDescriptionChars = options.maxDescriptionChars ?? 12_000
     this.maxCommentChars = options.maxCommentChars ?? 8_000
+    this.projects = new LinearProjectObservations(this)
   }
 
   configuration() {
@@ -178,72 +153,11 @@ export class LinearRuntime {
 
   async listIssues(args, signal) {
     const { client, organization } = await this.client(signal)
-    const team =
-      text(args.team) === undefined
-        ? undefined
-        : await this.request('resolve team', () => resolveTeam(client, args.team))
-    if (Array.isArray(args.states) && args.states.length > 0 && team === undefined) {
-      throw new Error('Linear team is required when filtering issues by state name or type.')
-    }
-    const assigneeMode = nullableSelector(args.assignee)
-    const projectMode = nullableSelector(args.project)
-    const cycleMode = nullableSelector(args.cycle)
-    const [states, assignee, project, cycle, labels] = await Promise.all([
-      !Array.isArray(args.states) || args.states.length === 0
-        ? []
-        : this.request('resolve states', () => resolveStates(client, args.states, team)),
-      assigneeMode === undefined || assigneeMode === 'unassigned'
-        ? undefined
-        : this.request('resolve assignee', () => resolveUser(client, args.assignee)),
-      projectMode === undefined || projectMode === 'none'
-        ? undefined
-        : this.request('resolve project', () =>
-            resolveProject(client, args.project, { organizationUrlKey: organization.urlKey }),
-          ),
-      cycleMode === undefined || cycleMode === 'none'
-        ? undefined
-        : this.request('resolve cycle', () => resolveCycle(client, args.cycle, team)),
-      this.request('resolve labels', () => resolveLabels(client, args.labels)),
-    ])
-    const filter = {
-      ...(team === undefined ? {} : { team: { id: { eq: team.id } } }),
-      ...(states.length === 0 ? {} : { state: { id: { in: states.map((state) => state.id) } } }),
-      ...(assigneeMode === undefined
-        ? {}
-        : {
-            assignee: assigneeMode === 'unassigned' ? { null: true } : { id: { eq: assignee.id } },
-          }),
-      ...(Array.isArray(args.priorities) && args.priorities.length > 0
-        ? { priority: { in: args.priorities } }
-        : {}),
-      ...(projectMode === undefined
-        ? {}
-        : {
-            project: projectMode === 'none' ? { null: true } : { id: { eq: project.id } },
-          }),
-      ...(cycleMode === undefined
-        ? {}
-        : {
-            cycle: cycleMode === 'none' ? { null: true } : { id: { eq: cycle.id } },
-          }),
-      ...(labels.length === 0
-        ? {}
-        : { labels: { some: { id: { in: labels.map((label) => label.id) } } } }),
-      ...(args.updatedAfter === undefined
-        ? {}
-        : { updatedAt: { gte: isoDate(args.updatedAfter, 'updatedAfter') } }),
-      ...(args.createdAfter === undefined
-        ? {}
-        : { createdAt: { gte: isoDate(args.createdAfter, 'createdAfter') } }),
-    }
-    const connection = await this.request('list issues', () =>
-      client.issues({
-        ...pageArgs(args),
-        filter,
-        includeArchived: args.includeArchived === true,
-        orderBy: args.orderBy ?? 'updatedAt',
-      }),
-    )
+    const query = await resolveIssueQuery(client, args, {
+      organizationUrlKey: organization.urlKey,
+      request: (operation, task) => this.request(operation, task),
+    })
+    const connection = await this.request('list issues', () => client.issues(query))
     const catalogs = await this.request('load issue metadata', () =>
       issueCatalogs(client, connection.nodes),
     )
@@ -322,23 +236,8 @@ export class LinearRuntime {
 
   async getProject(args, signal) {
     const { client, organization } = await this.client(signal)
-    const project = await this.request('resolve project', () =>
-      resolveProject(client, args.project, { organizationUrlKey: organization.urlKey }),
-    )
-    const [lead, status, teams] = await this.request('load project metadata', () =>
-      Promise.all([
-        optional(project.lead),
-        optional(project.status),
-        project.teams({ first: 50 }).then((connection) => connection.nodes),
-      ]),
-    )
-    return publicProject(project, {
-      maxDescriptionChars: this.maxDescriptionChars,
-      includeContent: true,
-      lead,
-      status,
-      teams,
-    })
+    const project = await this.projects.resolve(client, organization, args.project)
+    return this.request('load project metadata', () => this.projects.snapshot(project))
   }
 
   async listCycles(args, signal) {
