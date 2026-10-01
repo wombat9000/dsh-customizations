@@ -219,7 +219,7 @@ The disposable fixture explicitly uses `DSH_PERMISSION_MODE=danger-full-access` 
 
 Every test gets a fresh browser context. Each settings test explicitly selects its theme through the real General settings UI. Settings persist on the shared host, so new tests that change other settings must restore them. Traces and video are disabled to avoid recording authentication state. Browser requests outside the disposable host are blocked.
 
-The PNG baselines use **Linux ARM64**, the digest-pinned Playwright 1.62.0 Ubuntu Noble image below, and its Chromium/fonts. Viewport, scale, locale, time zone, and fixture content are fixed. Comparisons use zero allowed pixel differences and zero color threshold. DSH uses system fonts, so these are Linux baselines, not pixel-identical copies of a Mac UI. Use the same container and architecture; Docker needs ARM64 emulation on another architecture.
+The PNG baselines use **Linux ARM64**, the digest-pinned Playwright 1.62.0 Ubuntu Noble image below, and its Chromium/fonts. Viewport, scale, locale, time zone, and fixture content are fixed. Comparisons use a global per-pixel color threshold of `0.1` to ignore small rendering variations, with zero allowed mismatching pixels beyond that threshold. DSH uses system fonts, so these are Linux baselines, not pixel-identical copies of a Mac UI. Use the same container and architecture; Docker needs ARM64 emulation on another architecture.
 
 From the repository root, after installing dependencies for Linux ARM64, run:
 

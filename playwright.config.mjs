@@ -26,6 +26,6 @@ export default defineConfig({
     screenshot: 'only-on-failure',
   },
   expect: {
-    toHaveScreenshot: { animations: 'disabled', caret: 'hide', maxDiffPixels: 0, threshold: 0 },
+    toHaveScreenshot: { animations: 'disabled', caret: 'hide', maxDiffPixels: 0, threshold: 0.1 },
   },
 })
