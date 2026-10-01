@@ -26,9 +26,7 @@ async function openFiles(app) {
   return panel
 }
 
-test('environment reads the target Remote and follows the retained main-view session', async ({
-  app,
-}) => {
+async function followSessionEnvironment(app) {
   await openSeededSession(app)
   await closeSidebar(app)
   const card = app.getByRole('region', { name: 'Session environment', exact: true })
@@ -48,11 +46,9 @@ test('environment reads the target Remote and follows the retained main-view ses
   ).toBeVisible()
   await expect(card.getByText('Not a Git repository', { exact: true })).toBeVisible()
   await expect(card.getByRole('button', { name: /^Copy CWD: .*\/workspace$/ })).toHaveCount(0)
-})
+}
 
-test('environment stays in Conversation when global pages retain the selected session', async ({
-  app,
-}) => {
+async function visitGlobalPages(app) {
   await openSeededSession(app)
   await closeSidebar(app)
   const card = environmentCard(app)
@@ -72,11 +68,9 @@ test('environment stays in Conversation when global pages retain the selected se
     if (await chat.isVisible()) await chat.click()
     await openSeededSession(app)
   }
-})
+}
 
-test('foreground Files hides the floating card, including session switches and restored fullscreen', async ({
-  app,
-}) => {
+async function browseFilesAndRestoreFullscreen(app) {
   await openSeededSession(app)
   await closeSidebar(app)
   const card = environmentCard(app)
@@ -128,11 +122,9 @@ test('foreground Files hides the floating card, including session switches and r
     await openSeededSession(app)
     await closeSidebar(app)
   }
-})
+}
 
-test('narrow foreground Files hides the card without a reserved right track and closing restores it', async ({
-  app,
-}) => {
+async function browseNarrowFiles(app) {
   await openSeededSession(app)
   await closeSidebar(app)
   await app.setViewportSize({ width: 640, height: 850 })
@@ -151,5 +143,27 @@ test('narrow foreground Files hides the card without a reserved right track and 
   } finally {
     await closeSidebar(app)
     await app.setViewportSize({ width: 1100, height: 850 })
+  }
+}
+
+test('follow native session environment through global pages, Files and restored fullscreen', async ({
+  app,
+}) => {
+  try {
+    await test.step('Real Remote and Shell follow the retained session CWD', () =>
+      followSessionEnvironment(app))
+    await test.step('Global pages hide the card; Conversation tabs retain it', () =>
+      visitGlobalPages(app))
+    await test.step('Foreground Files, session switching and fullscreen reload', () =>
+      browseFilesAndRestoreFullscreen(app))
+    await test.step('Narrow Files has no reserved right track and closing restores the card', () =>
+      browseNarrowFiles(app))
+  } finally {
+    await closeSidebar(app)
+    await app.setViewportSize({ width: 1100, height: 850 })
+    await openSeededSession(app)
+    const chat = app.getByRole('tab', { name: 'Chat', exact: true })
+    if (await chat.isVisible()) await chat.click()
+    await closeSidebar(app)
   }
 })

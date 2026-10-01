@@ -43,7 +43,7 @@ For substantial implementations, refactors, and architecture reviews, use the [d
 
 ## Testing layers
 
-Choose tests according to the responsibility and risk of the change. Do not require every layer for every edit.
+Choose tests according to the responsibility and risk of the change. Do not require every layer for every edit. Follow [test ownership and real-shell journeys](testing.md) when adding or reorganizing coverage.
 
 | Responsibility                                      | Preferred evidence                                               |
 | --------------------------------------------------- | ---------------------------------------------------------------- |

@@ -33,9 +33,31 @@ export async function expandTurnProcesses(page) {
 export async function setTheme(page, scheme, unfoldedWork = false) {
   await page.getByRole('button', { name: 'Settings', exact: true }).click()
   await page.getByRole('button', { name: 'General', exact: true }).click()
-  await page
-    .getByRole('button', { name: scheme === 'dark' ? 'Dark' : 'Light', exact: true })
-    .click()
+  const choice = page.getByRole('button', {
+    name: scheme === 'dark' ? 'Dark' : 'Light',
+    exact: true,
+  })
+  if ((await choice.getAttribute('aria-pressed')) !== 'true') {
+    // DSH applies Appearance optimistically. Await the real Settings acceptance
+    // so a previous host snapshot cannot revert a later journey checkpoint.
+    const accepted = page.waitForResponse(async (response) => {
+      if (response.request().method() !== 'POST') return false
+      try {
+        const { result } = await response.json()
+        return (
+          result?.ok === true &&
+          result.value?.ns === 'ui-theme' &&
+          result.value.value?.preference === scheme
+        )
+      } catch {
+        return false
+      }
+    })
+    await Promise.all([accepted, choice.click()])
+  } else {
+    await choice.click()
+  }
+  await expect(choice).toHaveAttribute('aria-pressed', 'true')
   await expect(page.locator('html')).toHaveCSS('color-scheme', scheme)
   if (unfoldedWork) {
     // Full-card evidence uses the native Verbose presentation. Standard mode

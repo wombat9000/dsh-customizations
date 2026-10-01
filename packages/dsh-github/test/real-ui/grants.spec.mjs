@@ -70,7 +70,7 @@ const history = ['confirmed', 'failed', 'uncertain', 'unattempted'].map((outcome
 async function mockProjection(page, initial) {
   let value = initial
   const requests = []
-  await page.route('**/api/plugins/github/*', async (route) => {
+  const handler = async (route) => {
     const request = route.request(),
       action = new URL(request.url()).pathname.split('/').at(-1)
     const body = request.postDataJSON()
@@ -95,9 +95,11 @@ async function mockProjection(page, initial) {
       expect(body).toEqual({ sessionId: githubSessionId, callId: githubCallId })
     }
     await route.fulfill({ json: { ok: true, value } })
-  })
+  }
+  await page.route('**/api/plugins/github/*', handler)
   return {
     requests,
+    dispose: () => page.unroute('**/api/plugins/github/*', handler),
     set(valueNext) {
       value = valueNext
     },
@@ -152,9 +154,7 @@ async function artifact(card, testInfo, name) {
   await testInfo.attach(name, { path, contentType: 'image/png' })
 }
 
-test('shared host mounts the real GitHub projection route without granting access', async ({
-  app,
-}) => {
+async function checkHostProjection(app) {
   // APIRequestContext bypasses browser route mocks. An unexecuted fixture call
   // must be expired; this checks host bundle wiring, not the grant pipeline.
   const response = await app.request.post(new URL('/api/plugins/github/status', app.url()).href, {
@@ -170,61 +170,47 @@ test('shared host mounts the real GitHub projection route without granting acces
     ok: true,
     value: { version: 1, phase: 'expired', grants: [], history: [] },
   })
-})
-
-for (const [theme, narrow] of [
-  ['light', false],
-  ['dark', false],
-  ['light', true],
-]) {
-  test(`GitHub grant review in real shell (${theme}${narrow ? ', narrow' : ''})`, async ({
-    app,
-  }, testInfo) => {
-    const mock = await mockProjection(app, projection())
-    const card = await openGrant(app, theme, narrow)
-    await expect(card.getByRole('status')).toHaveText('Awaiting approval')
-    await expect(card.getByText('fixture-maintainer', { exact: false }).first()).toBeVisible()
-    await expect(card.getByRole('heading', { name: 'Selected issues (2)' })).toBeVisible()
-    await expect(card.getByRole('link', { name: /fixture-org\/demo #43/ })).toHaveAttribute(
-      'href',
-      scope.issues[0].url,
-    )
-    await expect(card.getByRole('link', { name: /fixture-org project #7/ })).toBeVisible()
-    await expect(
-      card.getByText('Update supported board fields for granted issue memberships', {
-        exact: false,
-      }),
-    ).toBeVisible()
-    await expect(
-      card.getByText('Add a dependency between two granted issues', { exact: false }),
-    ).toBeVisible()
-    await expect(card.getByText(/No deletion, transfer, new issues/)).toBeVisible()
-    await expect(card.getByText(/does not transfer to other sessions or subagents/)).toBeVisible()
-    await keyboardOpen(
-      card.locator('summary').filter({ hasText: 'Exact existing project memberships (2)' }),
-    )
-    await expect(
-      card.getByText('Item ID: PVTI_43; Issue ID: I_43; Project ID: P_fixture'),
-    ).toBeVisible()
-    await keyboardOpen(
-      card.locator('summary').filter({ hasText: 'Complete exact approval preview' }),
-    )
-    await expect(card.locator('pre').filter({ hasText: 'SYNTHETIC REVIEW ONLY' })).toHaveText(
-      exactPreview,
-    )
-    await expect(card.getByRole('button', { name: /Revoke access/ })).toHaveCount(0)
-    expect(await card.evaluate((element) => element.scrollWidth <= element.clientWidth + 1)).toBe(
-      true,
-    )
-    expect(mock.requests.length).toBeGreaterThan(0)
-    await artifact(card, testInfo, `grant-review-${theme}${narrow ? '-narrow' : ''}`)
-  })
 }
 
-test('active grants, history, keyboard revoke, expired and renewal states', async ({
-  app,
-}, testInfo) => {
-  const mock = await mockProjection(app, projection('active', [activeGrant], history))
+async function reviewGrant(app, testInfo, mock, theme, narrow) {
+  const card = await openGrant(app, theme, narrow)
+  await expect(card.getByRole('status')).toHaveText('Awaiting approval')
+  await expect(card.getByText('fixture-maintainer', { exact: false }).first()).toBeVisible()
+  await expect(card.getByRole('heading', { name: 'Selected issues (2)' })).toBeVisible()
+  await expect(card.getByRole('link', { name: /fixture-org\/demo #43/ })).toHaveAttribute(
+    'href',
+    scope.issues[0].url,
+  )
+  await expect(card.getByRole('link', { name: /fixture-org project #7/ })).toBeVisible()
+  await expect(
+    card.getByText('Update supported board fields for granted issue memberships', {
+      exact: false,
+    }),
+  ).toBeVisible()
+  await expect(
+    card.getByText('Add a dependency between two granted issues', { exact: false }),
+  ).toBeVisible()
+  await expect(card.getByText(/No deletion, transfer, new issues/)).toBeVisible()
+  await expect(card.getByText(/does not transfer to other sessions or subagents/)).toBeVisible()
+  await keyboardOpen(
+    card.locator('summary').filter({ hasText: 'Exact existing project memberships (2)' }),
+  )
+  await expect(
+    card.getByText('Item ID: PVTI_43; Issue ID: I_43; Project ID: P_fixture'),
+  ).toBeVisible()
+  await keyboardOpen(card.locator('summary').filter({ hasText: 'Complete exact approval preview' }))
+  await expect(card.locator('pre').filter({ hasText: 'SYNTHETIC REVIEW ONLY' })).toHaveText(
+    exactPreview,
+  )
+  await expect(card.getByRole('button', { name: /Revoke access/ })).toHaveCount(0)
+  expect(await card.evaluate((element) => element.scrollWidth <= element.clientWidth + 1)).toBe(
+    true,
+  )
+  expect(mock.requests.length).toBeGreaterThan(0)
+  await artifact(card, testInfo, `grant-review-${theme}${narrow ? '-narrow' : ''}`)
+}
+
+async function manageGrant(app, testInfo, mock) {
   const card = await openGrant(app, 'dark')
   await expect(card.getByRole('status')).toHaveText('Active access')
   const grants = card.getByRole('region', { name: 'Session grants', exact: true })
@@ -266,4 +252,36 @@ test('active grants, history, keyboard revoke, expired and renewal states', asyn
   // A separate workspace must not make the original recap selector ambiguous.
   await openSeededSession(app)
   await expect(app.getByRole('region', { name: 'GitHub issue management grant' })).toHaveCount(0)
+}
+
+test('review session grant scope, history, revocation and renewal in the native shell', async ({
+  app,
+}, testInfo) => {
+  await test.step('Real shared host route has no authority for the unexecuted fixture', () =>
+    checkHostProjection(app))
+  const mock = await mockProjection(app, projection())
+  try {
+    for (const [theme, narrow] of [
+      ['light', false],
+      ['dark', false],
+      ['light', true],
+    ]) {
+      await test.step(`Review ${theme}${narrow ? ' narrow' : ''}`, async () => {
+        await app.setViewportSize({ width: 1100, height: 850 })
+        // Reenter through native navigation: reset disclosures and scoped theme.
+        await app.getByRole('button', { name: 'Plugins', exact: true }).click()
+        await reviewGrant(app, testInfo, mock, theme, narrow)
+      })
+    }
+    await test.step('Active scope, uncertain history, keyboard revoke and fresh approval states', async () => {
+      await app.setViewportSize({ width: 1100, height: 850 })
+      await app.getByRole('button', { name: 'Plugins', exact: true }).click()
+      mock.set(projection('active', [activeGrant], history))
+      await manageGrant(app, testInfo, mock)
+    })
+  } finally {
+    // Unmount the polling card before removing its page-local display fixture.
+    await app.getByRole('button', { name: 'Plugins', exact: true }).click()
+    await mock.dispose()
+  }
 })
