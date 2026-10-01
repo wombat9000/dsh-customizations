@@ -182,12 +182,35 @@ test('repo guidance tracks source pins, script prerequisites, CI distinction, an
 
 test('release-age configuration and guidance retain review and approval boundaries', async () => {
   const workspace = await text(join(repo, 'pnpm-workspace.yaml'))
-  assert.match(workspace, /^minimumReleaseAge: 10080(?:\s+#.*)?$/m)
-  assert.doesNotMatch(workspace, /^minimumReleaseAgeExclude:/m)
+  assert.match(workspace, /^minimumReleaseAge: 5760(?:\s+#.*)?$/m)
+  assert.match(workspace, /^minimumReleaseAgeExclude:/m)
+  const exclusions = workspace
+    .split('minimumReleaseAgeExclude:\n')[1]
+    .split('\nminimumReleaseAge:')[0]
+    .split('\n')
+    .filter((line) => line.trim())
+  assert.ok(exclusions.length > 0)
+  for (const exclusion of exclusions) {
+    assert.match(exclusion, /^  - '@deepseek-ai\/dsh[^']*@0\.1\.7-rc\.2'$/)
+  }
+  assert.match(workspace, /^patchedDependencies:/m)
+  assert.ok(workspace.includes('patches/dsh-client-connection-0.1.7-rc.2-rpc-owner.patch'))
+  const skill = await text(skillPath)
+  assert.ok(skill.includes('minimumReleaseAge: 5760'))
+  assert.ok(skill.includes('4 days in minutes'))
+  assert.ok(skill.includes('exact package-and-version release-age exceptions'))
+  assert.ok(!skill.includes('minimumReleaseAge: 10080'))
   const steward = join(templates, '../../SKILL.md')
-  for (const path of [skillPath, steward, join(templates, 'repository-setup.SKILL.md.template')]) {
+  const genericPaths = [steward, join(templates, 'repository-setup.SKILL.md.template')]
+  for (const path of genericPaths) {
     const guidance = await text(path)
-    for (const phrase of ['minimumReleaseAge: 10080', '7 days in minutes', 'pinned pnpm', 'urgent security fix', 'package-and-version', 'approval', 'not a safety guarantee']) {
+    for (const phrase of ['minimumReleaseAge: 10080', '7 days in minutes', 'default', 'deliberate policy']) {
+      assert.ok(guidance.includes(phrase), `${path}: missing ${phrase}`)
+    }
+  }
+  for (const path of [skillPath, ...genericPaths]) {
+    const guidance = await text(path)
+    for (const phrase of ['pinned pnpm', 'urgent security fix', 'package-and-version', 'approval', 'not a safety guarantee']) {
       assert.ok(guidance.includes(phrase), `${path}: missing ${phrase}`)
     }
   }

@@ -277,4 +277,4 @@ minimumReleaseAgeExclude:
   - '@deepseek-ai/dsh-util-workspace-path@0.1.7-rc.2'
   - '@deepseek-ai/dsh-workflow@0.1.7-rc.2'
 
-minimumReleaseAge: 10080 # 7 days in minutes
+minimumReleaseAge: 5760 # 4 days in minutes
