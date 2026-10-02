@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { QUERIES, ISSUE } from '../src/queries.js'
-import { createGitHubRuntime } from '../src/runtime.js'
+import { QUERIES, ISSUE } from '../dist/src/queries.js'
+import { createGitHubRuntime } from '../dist/src/runtime.js'
 import { fakeSubprocess, json, connection } from './fixtures.js'
 
 test('repository issue listing reads bounded assignees without broadening shared issue selections', async () => {

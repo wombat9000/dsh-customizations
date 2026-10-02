@@ -7,8 +7,8 @@ import {
   readPullRequest,
   preflightPullRequest,
   confirmPullRequest,
-} from '../src/pull-requests.js'
-import { GitHubError } from '../src/runtime.js'
+} from '../dist/src/pull-requests.js'
+import { GitHubError } from '../dist/src/runtime.js'
 import { connection } from './fixtures.js'
 
 import {

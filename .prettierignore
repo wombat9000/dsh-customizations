@@ -29,6 +29,7 @@ artifacts/
 /packages/dsh-session-recap/dist/
 /packages/dsh-file-intuition/dist/
 /packages/dsh-github/client.js
+/packages/dsh-github/dist/
 /packages/dsh-projects/client.js
 /packages/dsh-projects/dist/
 /packages/dsh-tool-youtube/client.js

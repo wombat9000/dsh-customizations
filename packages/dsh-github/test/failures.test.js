@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { boundedResult, createGitHubRuntime, GitHubError } from '../src/runtime.js'
-import { createGitHubTools } from '../src/tools.js'
+import { boundedResult, createGitHubRuntime, GitHubError } from '../dist/src/runtime.js'
+import { createGitHubTools } from '../dist/src/tools.js'
 import { fakeSubprocess, json, connection, exec } from './fixtures.js'
 import { repository, detailedIssue, detailedProject } from './payloads.js'
 

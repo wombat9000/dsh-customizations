@@ -4,9 +4,9 @@ import {
   createGitHubPresentation,
   fieldPresentation,
   FIELD_TOOL_NAME,
-} from '../src/presentation.js'
-import { createGitHubWriteRuntime } from '../src/write-runtime.js'
-import { registerGitHubWriteTools } from '../src/write-tools.js'
+} from '../dist/src/presentation.js'
+import { createGitHubWriteRuntime } from '../dist/src/write-runtime.js'
+import { registerGitHubWriteTools } from '../dist/src/write-tools.js'
 import { fakeSubprocess, json } from './fixtures.js'
 import { args, snapshot, mutationResult } from './write-payloads.js'
 import { approvalHost } from './approval-fixture.js'

@@ -14,7 +14,7 @@ import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import * as GitHub from '../../dsh-github/src/index.js'
+import * as GitHub from '../../dsh-github/dist/src/index.js'
 
 // Shared Product/Steward fixture; deliberately independent of Worktree tests.
 // Real dormant registries and Loader; subprocess/PTC execution is forbidden.

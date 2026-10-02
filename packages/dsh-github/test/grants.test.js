@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { createGitHubGrantRuntime, validateGrantArguments } from '../src/grants.js'
-import { createGitHubWriteRuntime } from '../src/write-runtime.js'
-import { createGitHubRuntime } from '../src/runtime.js'
-import { GRANT_READS, WRITE_READS } from '../src/write-queries.js'
+import { createGitHubGrantRuntime, validateGrantArguments } from '../dist/src/grants.js'
+import { createGitHubWriteRuntime } from '../dist/src/write-runtime.js'
+import { createGitHubRuntime } from '../dist/src/runtime.js'
+import { GRANT_READS, WRITE_READS } from '../dist/src/write-queries.js'
 import { fakeSubprocess, json, connection } from './fixtures.js'
 import {
   actor,

@@ -2,8 +2,8 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { createRequire } from 'node:module'
 import { pathToFileURL } from 'node:url'
-import { createGitHubReads, mountGitHubReads } from '../src/reads.js'
-import { createGitHubRuntime } from '../src/runtime.js'
+import { createGitHubReads, mountGitHubReads } from '../dist/src/reads.js'
+import { createGitHubRuntime } from '../dist/src/runtime.js'
 import { fakeSubprocess, json, connection } from './fixtures.js'
 
 const require = createRequire(import.meta.url)

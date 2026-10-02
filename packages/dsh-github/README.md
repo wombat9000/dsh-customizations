@@ -12,7 +12,7 @@ All subprocesses run through DSH’s managed backend. Do not assume a host proce
 
 ## Host read service
 
-Host plugins can look up `ctx.get('localGitHubReads')` at call time. If the bundle is absent or disposed, the lookup returns `undefined`. The service exposes only `listIssues`, `getIssue`, `listProjectItems`, and `getProject`; it exposes no discovery, writes, or grant authority. The [typed contract](src/reads.d.ts) is also available through `@local/dsh-github/reads`.
+Host plugins can look up `ctx.get('localGitHubReads')` at call time. If the bundle is absent or disposed, the lookup returns `undefined`. The service exposes only `listIssues`, `getIssue`, `listProjectItems`, and `getProject`; it exposes no discovery, writes, or grant authority. The [typed implementation and contract](src/reads.ts) is also available through `@local/dsh-github/reads`.
 
 Each method takes the matching read tool's arguments and optional `{ signal, cwd }`. Explicit API reads default to `/` in the managed subprocess execution world. Only trusted host code should override `cwd`; no session is required. Calls reuse the tool runtime, CLI authentication, argument validation, output bounds, and 30-second deadline. Disposal aborts service calls. Errors carry sanitized `GitHubError` codes and messages.
 
@@ -198,6 +198,22 @@ git diff --check
 ```
 
 Follow the repository setup skill before validation or dependency work. Unit/registration tests are not evidence of a deployed GUI or a live GitHub acceptance test.
+
+### Host development
+
+Edit the maintained TypeScript modules in `src/`, not the generated ESM modules in `dist/`. The host configuration enables strict checking, unchecked-index checks, and exact optional properties. Provider JSON and errors remain unknown until validation narrows the consumed fields. The read service exports its contract from the implementation through `@local/dsh-github/reads`; there is no separate handwritten declaration.
+
+From the repository root, with the pinned development dependencies available:
+
+```sh
+env -u NODE_PATH node packages/dsh-github/scripts/typecheck.mjs
+node packages/dsh-github/scripts/build-host.mjs
+node packages/dsh-github/scripts/build-host.mjs --check
+node packages/dsh-github/scripts/build-client.mjs --check
+env -u NODE_PATH node --test packages/dsh-github/test/*.test.js
+```
+
+The package build emits checked host modules, declarations generated from those implementations, and the existing client bundle. Public exports resolve to generated artifacts. The normal Node suite checks both configurations, compile-time negative service contracts, a separate-root public type consumer, and host/client artifact freshness. Include maintained sources and regenerated artifacts together when committing is authorized. Installed plugins load generated host modules without a compiler. Validation with borrowed read-only dependencies does not prove a fresh installed-package dependency graph.
 
 ### Client development
 

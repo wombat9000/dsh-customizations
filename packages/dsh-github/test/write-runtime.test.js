@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { createGitHubWriteRuntime } from '../src/write-runtime.js'
-import { WRITE_READS, MUTATIONS } from '../src/write-queries.js'
+import { createGitHubWriteRuntime } from '../dist/src/write-runtime.js'
+import { WRITE_READS, MUTATIONS } from '../dist/src/write-queries.js'
 import { fakeSubprocess, json } from './fixtures.js'
 import {
   args,
@@ -468,6 +468,14 @@ test('unknown permission, invalid authentication and unavailable CLI fail before
       'linkProjectRepository',
       'PERMISSION_DENIED',
     ],
+    ...['WRITE', 'MAINTAIN', 'ADMIN'].map((permission) => [
+      {
+        ...snapshot('linkProjectRepository'),
+        repository: { ...repository, viewerPermission: [permission] },
+      },
+      'linkProjectRepository',
+      'PERMISSION_DENIED',
+    ]),
   ]) {
     const { runtime, subprocess } = fixture(name, { before })
     await assert.rejects(runtime.prepare(name, args[name], exec), { code })
@@ -540,6 +548,14 @@ test('post-dispatch errors, invalid responses, loss and timeouts are uncertain a
     [
       'GraphQL errors',
       json({ data: mutationResult('createIssue'), errors: [{ message: 'may have failed' }] }),
+    ],
+    [
+      'malformed GraphQL error string',
+      json({ data: mutationResult('createIssue'), errors: 'failed' }),
+    ],
+    [
+      'malformed GraphQL error object',
+      json({ data: mutationResult('createIssue'), errors: { message: 'failed' } }),
     ],
     ['malformed JSON', { stdout: 'not JSON' }],
     [

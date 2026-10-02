@@ -14,7 +14,7 @@ function fail(diagnostics) {
 
 // Compile checked ESM modules rather than bundle copies of shared classes/services.
 // Return bytes first, so freshness tests never rewrite the artifact they inspect.
-export function buildHost(projectUrl) {
+export function buildHost(projectUrl, { declaration = false } = {}) {
   const project = fileURLToPath(projectUrl)
   const config = ts.readConfigFile(project, ts.sys.readFile)
   if (config.error) fail([config.error])
@@ -26,7 +26,8 @@ export function buildHost(projectUrl) {
       noEmit: false,
       noEmitOnError: true,
       sourceMap: false,
-      declaration: false,
+      declaration,
+      declarationMap: false,
     },
     project,
   )
@@ -39,7 +40,10 @@ export function buildHost(projectUrl) {
   const emitted = program.emit(undefined, (path, content) => {
     const name = relative(outDir, path).replaceAll('\\', '/')
     if (name.startsWith('test/')) return // compile-time assertions are never deployed.
-    if (name.startsWith('../') || !name.endsWith('.js'))
+    if (
+      name.startsWith('../') ||
+      !(name.endsWith('.js') || (declaration && name.endsWith('.d.ts')))
+    )
       throw new Error(`Unexpected host output: ${name}`)
     output.set(
       name,

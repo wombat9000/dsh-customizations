@@ -1,4 +1,4 @@
-import type { GitHubReads } from '../../dsh-github/src/reads.js'
+import type { GitHubReads } from '../../dsh-github/dist/src/reads.js'
 import type { LinearReads } from '../../dsh-linear/src/reads.js'
 import type {
   Catalog,
