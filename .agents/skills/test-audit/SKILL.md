@@ -9,7 +9,7 @@ Use three modes with one value bar:
 
 - **Authoring:** evaluate every new or changed test before adding it.
 - **Audit:** review a focused set of tests for weak assertions, duplicate coverage, implementation coupling, and unnecessary test-only production seams.
-- **Campaign:** review a subsystem's complete test surface. Read [the campaign procedure](<skills/test-audit/CAMPAIGN.md>) before starting.
+- **Campaign:** review a subsystem's complete test surface. Read [the campaign procedure](skills/test-audit/CAMPAIGN.md) before starting.
 
 Optimize for confidence, not deletion count. Keep broad audits in coherent, separately reviewable changes.
 
@@ -122,4 +122,4 @@ Report:
 
 ## Attribution
 
-Adapted from [OpenClaw's test-audit skill](<https://github.com/openclaw/openclaw/tree/main/.agents/skills/test-audit>) under the [MIT license](<skills/test-audit/LICENSE>).
+Adapted from [OpenClaw's test-audit skill](https://github.com/openclaw/openclaw/tree/main/.agents/skills/test-audit) under the [MIT license](skills/test-audit/LICENSE).

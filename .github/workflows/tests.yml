@@ -33,6 +33,7 @@ jobs:
           node-version: 24.20.0
           cache: pnpm
       - run: pnpm install --frozen-lockfile --ignore-scripts
+      - run: pnpm run format:check
       - run: pnpm run check
       - run: pnpm test
       - run: pnpm run test:browser

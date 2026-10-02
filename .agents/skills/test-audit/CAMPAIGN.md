@@ -1,6 +1,6 @@
 # Subsystem test-audit campaign
 
-Use campaign mode to audit a subsystem's complete test surface as one coherent review unit. Split delivery if repository limits or risk require smaller changes. The value bar, retention bar, candidate evidence, and validation in [the test-audit skill](<skills/test-audit/SKILL.md>) apply throughout.
+Use campaign mode to audit a subsystem's complete test surface as one coherent review unit. Split delivery if repository limits or risk require smaller changes. The value bar, retention bar, candidate evidence, and validation in [the test-audit skill](skills/test-audit/SKILL.md) apply throughout.
 
 Each step has a completion criterion. If prerequisites prevent completion, record the blocker rather than silently skipping the step.
 

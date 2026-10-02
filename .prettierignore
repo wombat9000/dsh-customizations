@@ -46,6 +46,3 @@ artifacts/
 **/LICENSE.matt-pocock
 **/*-snapshots/**
 **/*.png
-
-# CI changes require separate approval; this formatter rollout leaves them alone.
-/.github/workflows/
