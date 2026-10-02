@@ -1,5 +1,58 @@
+import type { Context } from '@deepseek-ai/cordis'
+import type {} from '@deepseek-ai/dsh-settings'
+import type {} from '@deepseek-ai/dsh-client-connection'
+import type {
+  JsonValue,
+  JevQuestion,
+  JevAnswer,
+  JevRequest,
+  JevResult,
+  JevStatus,
+  JevService,
+  JevErrorCode,
+  RpcResult,
+} from '../shared/contracts.js'
+export { CHANNEL } from '../shared/contracts.js'
+import { CHANNEL } from '../shared/contracts.js'
+
+// Only these two operations are consumed from the sibling OpenRouter service;
+// credential metadata and resolved credentials remain untrusted until narrowed.
+export interface OpenRouterService {
+  status(): Promise<unknown>
+  resolveApiKey(): Promise<unknown>
+}
+export interface RuntimeOptions {
+  openrouter: OpenRouterService
+  getModel(): unknown
+  saveModel(model: string): Promise<unknown>
+  fetch?: typeof globalThis.fetch
+  timeoutMs?: number
+}
+interface QueueEntry {
+  controller: AbortController
+  resolve(): void
+  running: boolean
+}
+export type JevContext = Context & {
+  openrouter: OpenRouterService
+  fiber: Context['fiber'] & { entry: { options: { id: string } } }
+  // Loader emits this event for live volatile Config changes. Its published
+  // declaration does not include this event in the borrowed RC2 graph.
+  on(event: 'loader/volatile-update', callback: () => void): () => void
+}
+interface Connection {
+  rpc: {
+    handle(
+      channel: string,
+      handler: (endpoint: string, payload: unknown) => Promise<RpcResult<JevStatus>>,
+      // RC2 admits operator requests natively; retain the existing registration
+      // metadata even though the published declaration omits this legacy option.
+      options: { authority: 'trusted-host' },
+    ): () => Promise<void>
+  }
+}
+
 export const DEFAULT_MODEL = 'typesafe/jev-1.13'
-export const CHANNEL = '/jev-integration'
 export const ENDPOINT = 'https://openrouter.ai/api/alpha/decisions'
 const MAX_ACTIVE = 8
 const MAX_WAITING = 32
@@ -22,18 +75,20 @@ const messages = {
   settings: 'Jev settings are unavailable.',
 }
 export class JevError extends Error {
-  constructor(code) {
+  code: JevErrorCode
+  details: Record<string, never>
+  constructor(code: JevErrorCode) {
     super(messages[code] ?? messages.network)
     this.name = 'JevError'
     this.code = code
     this.details = {}
   }
 }
-const fail = (code) => {
+function fail(code: JevErrorCode): never {
   throw new JevError(code)
 }
-const safe = (error) => (error instanceof JevError ? error : new JevError('network'))
-export function validModel(model) {
+const safe = (error: unknown) => (error instanceof JevError ? error : new JevError('network'))
+export function validModel(model: unknown): model is string {
   return (
     typeof model === 'string' &&
     model.length <= 128 &&
@@ -41,24 +96,28 @@ export function validModel(model) {
       /^typesafe\/jev-[a-zA-Z0-9][a-zA-Z0-9._-]{0,95}$/u.test(model))
   )
 }
-const plain = (value) =>
-  value !== null &&
-  typeof value === 'object' &&
-  !Array.isArray(value) &&
-  [Object.prototype, null].includes(Object.getPrototypeOf(value))
-const text = (value) => typeof value === 'string' && value.length > 0 && value.length <= 8192
-const unit = (value) =>
+function plain(value: unknown): value is Record<string, unknown> {
+  return (
+    value !== null &&
+    typeof value === 'object' &&
+    !Array.isArray(value) &&
+    [Object.prototype, null].includes(Object.getPrototypeOf(value))
+  )
+}
+const text = (value: unknown): value is string =>
+  typeof value === 'string' && value.length > 0 && value.length <= 8192
+const unit = (value: unknown): value is number =>
   typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1
-const exact = (value, keys) =>
+const exact = (value: unknown, keys: string[]): value is Record<string, unknown> =>
   plain(value) &&
   Object.keys(value).length === keys.length &&
   keys.every((k) => Object.hasOwn(value, k))
 // Copy JSON without invoking toJSON/getters, and bound traversal before encoding.
-function snapshot(value) {
+function snapshot(value: unknown): JsonValue {
   let budget = MAX_SNAPSHOT_BYTES,
     nodes = 0
-  const seen = new Set()
-  function copy(v, depth) {
+  const seen = new Set<object>()
+  function copy(v: unknown, depth: number): JsonValue {
     if (++nodes > MAX_TRAVERSAL_NODES || depth > 64) fail('invalid')
     if (v === null || typeof v === 'boolean') {
       budget -= 5
@@ -76,7 +135,7 @@ function snapshot(value) {
     }
     if ((!plain(v) && !Array.isArray(v)) || seen.has(v)) fail('invalid')
     seen.add(v)
-    const out = Array.isArray(v) ? [] : Object.create(null)
+    const out: JsonValue[] | Record<string, JsonValue> = Array.isArray(v) ? [] : Object.create(null)
     const descriptors = Object.getOwnPropertyDescriptors(v)
     if (Reflect.ownKeys(descriptors).some((k) => typeof k !== 'string')) fail('invalid')
     for (const [key, descriptor] of Object.entries(descriptors)) {
@@ -86,7 +145,9 @@ function snapshot(value) {
         fail('invalid')
       budget -= Buffer.byteLength(key) + 4
       if (budget < 0) fail('invalid')
-      out[key] = copy(descriptor.value, depth + 1)
+      const value: unknown = descriptor.value
+      if (Array.isArray(out)) out[Number(key)] = copy(value, depth + 1)
+      else out[key] = copy(value, depth + 1)
     }
     if (Array.isArray(v) && Object.keys(out).length !== v.length) fail('invalid')
     seen.delete(v)
@@ -94,17 +155,20 @@ function snapshot(value) {
   }
   return copy(value, 0)
 }
-function prepare(input, model) {
+function prepare(input: JevRequest, model: string) {
   const data = snapshot({ state: input?.state, questions: input?.questions })
+  if (!plain(data)) fail('invalid')
   if (!(typeof data.state === 'string' || plain(data.state) || Array.isArray(data.state)))
     fail('invalid')
-  if (
-    !plain(data.questions) ||
-    Object.keys(data.questions).length < 1 ||
-    Object.keys(data.questions).length > 32
-  )
+  validateQuestions(data.questions)
+  const body = JSON.stringify({ model, state: data.state, questions: data.questions })
+  if (Buffer.byteLength(body) > MAX_REQUEST_BYTES) fail('invalid')
+  return { body, questions: data.questions }
+}
+function validateQuestions(questions: unknown): asserts questions is Record<string, JevQuestion> {
+  if (!plain(questions) || Object.keys(questions).length < 1 || Object.keys(questions).length > 32)
     fail('invalid')
-  for (const [key, q] of Object.entries(data.questions)) {
+  for (const [key, q] of Object.entries(questions)) {
     if (
       !key.length ||
       key.length > 128 ||
@@ -137,16 +201,30 @@ function prepare(input, model) {
         fail('invalid')
     } else fail('invalid')
   }
-  const body = JSON.stringify({ model, state: data.state, questions: data.questions })
-  if (Buffer.byteLength(body) > MAX_REQUEST_BYTES) fail('invalid')
-  return { body, questions: data.questions }
 }
-function probabilities(value, keys) {
-  if (!exact(value, keys) || !Object.values(value).every(unit)) fail('response')
-  if (Math.abs(Object.values(value).reduce((a, b) => a + b, 0) - 1) > 0.02) fail('response')
-  return Object.fromEntries(keys.map((k) => [k, value[k]]))
+function probabilities(value: unknown, keys: string[]): Record<string, number> {
+  if (!exact(value, keys)) fail('response')
+  const probabilities: Record<string, number> = {}
+  let sum = 0
+  for (const key of keys) {
+    const probability = value[key]
+    if (!unit(probability)) fail('response')
+    Object.defineProperty(probabilities, key, {
+      value: probability,
+      enumerable: true,
+      writable: true,
+      configurable: true,
+    })
+    sum += probability
+  }
+  if (Math.abs(sum - 1) > 0.02) fail('response')
+  return probabilities
 }
-function validateResponse(raw, questions, model) {
+function validateResponse(
+  raw: unknown,
+  questions: Record<string, JevQuestion>,
+  model: string,
+): JevResult {
   if (
     !plain(raw) ||
     !validModel(raw.model) ||
@@ -157,9 +235,12 @@ function validateResponse(raw, questions, model) {
     !exact(raw.answers, Object.keys(questions))
   )
     fail('response')
-  const answers = Object.create(null)
+  const answers: Record<string, JevAnswer> = Object.create(null)
+  // The exact-key check above narrows this response dictionary.
+  const rawAnswers = raw.answers
+  if (!plain(rawAnswers)) fail('response')
   for (const [key, q] of Object.entries(questions)) {
-    const a = raw.answers[key]
+    const a = rawAnswers[key]
     if (!plain(a) || a.type !== q.type) fail('response')
     if (q.type === 'noul') {
       if (!unit(a.noul)) fail('response')
@@ -183,7 +264,7 @@ function validateResponse(raw, questions, model) {
           a.score < 0 ||
           a.score > keys.length - 1 ||
           !exact(a.legend, keys) ||
-          !keys.every((k) => a.legend[k] === q.criteria[k])
+          !keys.every((k) => plain(a.legend) && a.legend[k] === q.criteria[Number(k)])
         )
           fail('response')
         answers[key] = {
@@ -191,16 +272,18 @@ function validateResponse(raw, questions, model) {
           score: a.score,
           confidence: a.confidence,
           probabilities: p,
-          legend: Object.fromEntries(keys.map((k) => [k, a.legend[k]])),
+          legend: Object.fromEntries(
+            q.criteria.map((description, index) => [String(index), description]),
+          ),
         }
       }
     }
   }
-  const result = { model: raw.model, answers }
+  const result: JevResult = { model: raw.model, answers }
   if (raw.usage !== undefined) {
     if (!plain(raw.usage)) fail('response')
     result.usage = {}
-    for (const key of ['input_tokens', 'output_tokens', 'cost']) {
+    for (const key of ['input_tokens', 'output_tokens', 'cost'] as const) {
       const value = raw.usage[key]
       if (value !== undefined) {
         if (
@@ -222,15 +305,16 @@ export function createJevRuntime({
   saveModel,
   fetch: fetcher = globalThis.fetch,
   timeoutMs = 15000,
-}) {
+}: RuntimeOptions) {
   let active = true,
     revision = 0
-  const pending = new Set()
-  const waiting = []
+  const pending = new Set<AbortController>()
+  const waiting: QueueEntry[] = []
   let running = 0
   function drain() {
     while (active && running < MAX_ACTIVE && waiting.length) {
       const entry = waiting.shift()
+      if (!entry) break
       if (entry.controller.signal.aborted) continue
       entry.running = true
       running++
@@ -249,18 +333,24 @@ export function createJevRuntime({
   function guard() {
     if (!active) fail('stopped')
   }
-  async function status() {
+  async function status(): Promise<JevStatus> {
     const { model } = current()
-    let credential = { configured: false, writable: false, source: 'unavailable', target: null }
+    let credential: JevStatus['credential'] = {
+      configured: false,
+      writable: false,
+      source: 'unavailable',
+      target: null,
+    }
     try {
-      const info = await openrouter.status()
+      const raw = await openrouter.status()
+      const info = plain(raw) ? raw : undefined
       credential = {
         configured: info?.configured === true,
         writable: info?.writable === true,
         source: ['env', 'file', 'project-env', 'user-env', 'reference', 'none', 'record'].includes(
-          info?.source,
+          typeof info?.source === 'string' ? info.source : '',
         )
-          ? info.source
+          ? String(info?.source)
           : 'unavailable',
       }
       if (info?.error) credential.error = messages.credential
@@ -269,8 +359,14 @@ export function createJevRuntime({
     }
     return { model, available: active && credential.configured && !credential.error, credential }
   }
-  async function evaluate(input) {
-    let controller, timer, listener, reader, signal, response, entry
+  async function evaluate(input: JevRequest): Promise<JevResult> {
+    let controller: AbortController | undefined
+    let timer: ReturnType<typeof setTimeout> | undefined
+    let listener: (() => void) | undefined
+    let reader: ReadableStreamDefaultReader<Uint8Array> | undefined
+    let signal: AbortSignal | undefined
+    let response: Response | undefined
+    let entry: QueueEntry | undefined
     try {
       guard()
       signal = input?.signal
@@ -279,24 +375,29 @@ export function createJevRuntime({
       const { model } = current(),
         startRevision = revision
       const request = prepare(input, model)
-      controller = new AbortController()
+      const requestController = new AbortController()
+      controller = requestController
       pending.add(controller)
       const check = () => {
-        if (controller.signal.aborted) throw controller.signal.reason
+        if (requestController.signal.aborted) throw requestController.signal.reason
         guard()
         if (revision !== startRevision || current().model !== model) fail('changed')
       }
-      const cancelled = new Promise((_, reject) => {
-        controller.signal.addEventListener('abort', () => reject(controller.signal.reason), {
-          once: true,
-        })
+      const cancelled = new Promise<never>((_, reject) => {
+        requestController.signal.addEventListener(
+          'abort',
+          () => reject(requestController.signal.reason),
+          {
+            once: true,
+          },
+        )
       })
-      listener = () => controller.abort(new JevError('cancelled'))
+      listener = () => requestController.abort(new JevError('cancelled'))
       signal?.addEventListener('abort', listener, { once: true })
       if (signal?.aborted) listener()
-      timer = setTimeout(() => controller.abort(new JevError('timeout')), timeoutMs)
-      const admitted = new Promise((resolve) => {
-        entry = { controller, resolve, running: false }
+      timer = setTimeout(() => requestController.abort(new JevError('timeout')), timeoutMs)
+      const admitted = new Promise<void>((resolve) => {
+        entry = { controller: requestController, resolve, running: false }
         waiting.push(entry)
         drain()
       })
@@ -318,11 +419,11 @@ export function createJevRuntime({
           redirect: 'error',
           headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
           body: request.body,
-          signal: controller.signal,
+          signal: requestController.signal,
         })
         key = undefined
         response = await fetching
-        if (controller.signal.aborted) {
+        if (requestController.signal.aborted) {
           try {
             Promise.resolve(response?.body?.cancel()).catch(() => {})
           } catch {}
@@ -334,7 +435,7 @@ export function createJevRuntime({
         if (size && Number(size) > MAX_RESPONSE_BYTES) fail('response')
         if (!response.body?.getReader) fail('response')
         reader = response.body.getReader()
-        const chunks = []
+        const chunks: Uint8Array[] = []
         let bytes = 0
         while (true) {
           const chunk = await reader.read()
@@ -345,7 +446,7 @@ export function createJevRuntime({
           if (bytes > MAX_RESPONSE_BYTES) fail('response')
           chunks.push(chunk.value)
         }
-        let raw
+        let raw: unknown
         try {
           raw = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks)))
         } catch {
@@ -360,7 +461,7 @@ export function createJevRuntime({
     } finally {
       clearTimeout(timer)
       try {
-        signal?.removeEventListener?.('abort', listener)
+        if (listener) signal?.removeEventListener?.('abort', listener)
       } catch {}
       if (controller) {
         pending.delete(controller)
@@ -381,7 +482,7 @@ export function createJevRuntime({
     }
   }
   return {
-    service: Object.freeze({ evaluate, settings: current, status }),
+    service: Object.freeze({ evaluate, settings: current, status }) satisfies JevService,
     changed() {
       revision++
       for (const controller of pending) controller.abort(new JevError('changed'))
@@ -390,7 +491,7 @@ export function createJevRuntime({
       active = false
       for (const controller of pending) controller.abort(new JevError('stopped'))
     },
-    async rpc(endpoint, payload) {
+    async rpc(endpoint: string, payload?: unknown): Promise<RpcResult<JevStatus>> {
       try {
         guard()
         if (endpoint === 'status') return { ok: true, value: await status() }
@@ -412,11 +513,15 @@ export function createJevRuntime({
     },
   }
 }
-export function mountJev(ctx, config) {
+export function mountJev(ctx: JevContext, config: { model: { get(): unknown } }) {
   const runtime = createJevRuntime({
     openrouter: ctx.openrouter,
     getModel: () => config.model.get(),
-    saveModel: (model) => ctx.get('settings').update(ctx.fiber.entry.options.id, { model }),
+    saveModel: (model) => {
+      const settings = ctx.get('settings')
+      if (!settings) fail('settings')
+      return settings.update(ctx.fiber.entry.options.id, { model })
+    },
   })
   ctx.on('loader/volatile-update', () => runtime.changed())
   ctx.inject(['settings'], (child) =>
@@ -424,6 +529,7 @@ export function mountJev(ctx, config) {
   )
   ctx.provide('jev', runtime.service)
   ctx.effect(() => () => runtime.dispose())
-  ctx.effect(() => ctx.connection.rpc.handle(CHANNEL, runtime.rpc, { authority: 'trusted-host' }))
+  const connection: Connection = ctx.connection
+  ctx.effect(() => connection.rpc.handle(CHANNEL, runtime.rpc, { authority: 'trusted-host' }))
   return runtime
 }

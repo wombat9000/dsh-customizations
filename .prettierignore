@@ -13,6 +13,8 @@ artifacts/
 /pnpm-lock.yaml
 /packages/dsh-openrouter/client.js
 /packages/dsh-openrouter/dist/
+/packages/dsh-jev/client.js
+/packages/dsh-jev/dist/
 /packages/dsh-session-recap/client.js
 /packages/dsh-session-recap/dist/
 /packages/dsh-file-intuition/dist/

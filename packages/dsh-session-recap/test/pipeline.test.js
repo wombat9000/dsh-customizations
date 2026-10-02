@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { Context } from '@deepseek-ai/cordis'
 import * as openrouter from '../../dsh-openrouter/dist/src/index.js'
-import * as jev from '../../dsh-jev/src/index.js'
+import * as jev from '../../dsh-jev/dist/src/index.js'
 import * as recap from '../dist/src/index.js'
 
 // Real Cordis service binding across all three packages. Only credentials, HTTP,

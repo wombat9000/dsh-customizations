@@ -54,6 +54,21 @@ Supported question types are `noul` (yes/no probability), `choice` (one defined 
 
 ## Development
 
-The package ships plain JavaScript and uses native HTTP facilities, not a new SDK. Its dependencies use the repository's existing pinned DSH/schema packages. Unit tests inject HTTP/credential fixtures. Host integration tests use real Settings, ConfigEditor, and Loader services to verify persistence, live references, cancellation, and optional Settings-service replacement. Browser and real-shell tests save model settings without making paid calls. Live endpoint compatibility and model judgment quality require a separately approved live test.
+The maintained host and client implementations use strict TypeScript and TSX, including checked indexed access and exact optional properties. The package ships generated ESM host modules under [dist](dist/) and a generated lazy [client bundle](client.js). It uses native HTTP facilities, not a new SDK. Shared [contracts](shared/contracts.ts) describe evaluations, sanitized results, and settings RPC. The browser exposes only status and model configuration.
+
+After preparing dependencies through the repository setup procedure, run these commands from the repository root with `NODE_PATH` unset:
+
+```sh
+env -u NODE_PATH node packages/dsh-jev/scripts/typecheck.mjs
+env -u NODE_PATH node packages/dsh-jev/scripts/build-host.mjs
+env -u NODE_PATH node packages/dsh-jev/scripts/build-client.mjs
+env -u NODE_PATH node packages/dsh-jev/scripts/build-host.mjs --check
+env -u NODE_PATH node packages/dsh-jev/scripts/build-client.mjs --check
+env -u NODE_PATH node --test packages/dsh-jev/test/*.test.js
+```
+
+Builds reuse the repository's pinned compiler and shared host/client helpers. Regenerate both artifacts after source changes; do not edit generated JavaScript. Normal Node tests enforce type checking, negative contract cases, artifact freshness, and lazy settings registration. Package exports and the Cordis row load the generated host entrypoint. The legacy `@local/dsh-jev/src/runtime.js` subpath resolves to its generated module.
+
+Unit tests inject HTTP/credential fixtures. Host integration tests use real Settings, ConfigEditor, and Loader services to verify persistence, live references, cancellation, and optional Settings-service replacement. Browser tests import the TSX settings component; real-shell tests load the generated bundle. Both save model settings without making paid calls. Live endpoint compatibility and model judgment quality require a separately approved live test.
 
 The `personal-web` recipe orders OpenRouter before Jev. Source changes and commits do not apply the recipe or restart a live profile.

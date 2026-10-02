@@ -2,14 +2,7 @@ import React, { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, expect, test, vi } from 'vitest'
 import { page } from 'vitest/browser'
-let plugin
-window.__ModuleLoader__ = {
-  load({ factory }) {
-    plugin = factory(() => React)
-  },
-}
-await import('../../client.js')
-delete window.__ModuleLoader__
+import { SettingsCard } from '../../client/settings.tsx'
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 let root, container
 afterEach(async () => {
@@ -30,7 +23,7 @@ async function mount() {
   container = document.createElement('div')
   document.body.append(container)
   root = createRoot(container)
-  await act(async () => root.render(React.createElement(plugin.SettingsCard, { rpc })))
+  await act(async () => root.render(React.createElement(SettingsCard, { rpc })))
   await act(async () => page.getByText('Jev', { exact: true }).click())
   return rpc
 }

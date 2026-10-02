@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { createJevRuntime, DEFAULT_MODEL, CHANNEL } from '../src/runtime.js'
-import * as plugin from '../src/index.js'
+import { createJevRuntime, DEFAULT_MODEL, CHANNEL } from '../dist/src/runtime.js'
+import * as plugin from '../dist/src/index.js'
 import { profileFixture } from '../../dsh-google-auth/test/profile-fixture.js'
 
 const input = () => ({

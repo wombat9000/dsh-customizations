@@ -4,7 +4,7 @@ import test from 'node:test'
 import { parseRequest, prepareScan, evaluateScan } from '../dist/src/engine.js'
 import { LIMITS } from '../dist/src/contracts.js'
 import { readFile } from 'node:fs/promises'
-import { createJevRuntime } from '../../dsh-jev/src/runtime.js'
+import { createJevRuntime } from '../../dsh-jev/dist/src/runtime.js'
 
 const model = 'typesafe/jev-1.13'
 const bool = (questions = [{ id: 'q', question: 'Does this file validate input?' }]) =>
