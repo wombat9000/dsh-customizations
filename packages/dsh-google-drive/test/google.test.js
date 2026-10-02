@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import * as metadata from '../src/google.js'
+import * as metadata from '../dist/src/google.js'
 const { GoogleDriveClient } = metadata
 const deferred = () => {
   let resolve

@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { GoogleDriveClient } from '../src/google.js'
+import { GoogleDriveClient } from '../dist/src/google.js'
 
 const secret = 'https://private.invalid/?access_token=private-token'
 const failure = (status, reason) =>

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import * as host from '../src/index.js'
-import { createListTool, createReadTool, createRequestTool, apply } from '../src/tools.js'
+import * as host from '../dist/src/index.js'
+import { createListTool, createReadTool, createRequestTool, apply } from '../dist/src/tools.js'
 
 test('host declares read scope and browser routes without authenticating on mount', async () => {
   const registrations = [],

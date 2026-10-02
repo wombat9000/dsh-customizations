@@ -2,7 +2,7 @@
 // Synthetic data only. The real client prepares this fixture without network or writes.
 import assert from 'node:assert/strict'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
-import { GoogleSheetsClient } from '../src/sheets.js'
+import { GoogleSheetsClient } from '../dist/src/sheets.js'
 
 const cell = (value, format = {}, formattedValue = '') => ({
   ...(value === null

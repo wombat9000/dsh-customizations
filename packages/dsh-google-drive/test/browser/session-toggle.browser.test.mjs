@@ -2,22 +2,9 @@ import React, { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, expect, test, vi } from 'vitest'
 import { page } from 'vitest/browser'
-import source from '../../client.js?raw'
+import plugin from '../../client/index.ts'
 const h = React.createElement
 let root, container
-let record
-const previous = window.__ModuleLoader__
-window.__ModuleLoader__ = {
-  load: (value) => {
-    record = value
-  },
-}
-try {
-  new Function(source)()
-} finally {
-  window.__ModuleLoader__ = previous
-}
-const plugin = record.factory(() => React)
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 const status = (enabled = false, revision = 0, ownerId = 'owner') => ({
   available: true,

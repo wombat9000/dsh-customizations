@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { DriveAccessRuntime } from '../src/runtime.js'
-import { GoogleDriveService } from '../src/index.js'
+import { DriveAccessRuntime } from '../dist/src/runtime.js'
+import { GoogleDriveService } from '../dist/src/index.js'
 
 const deferred = () => {
   let resolve

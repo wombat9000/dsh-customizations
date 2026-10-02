@@ -2,7 +2,7 @@ import React, { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, expect, test } from 'vitest'
 import { page } from 'vitest/browser'
-import source from '../../client.js?raw'
+import plugin from '../../client/index.ts'
 let root, container
 const h = React.createElement
 const click = (locator) => act(async () => locator.click())
@@ -23,20 +23,7 @@ const mine = {
 }
 const shared = { id: 'shared', name: 'Team budget', mimeType: mine.mimeType }
 async function mount(mode, handler) {
-  let record
-  const previous = window.__ModuleLoader__
-  window.__ModuleLoader__ = {
-    load: (value) => {
-      record = value
-    },
-  }
-  try {
-    new Function(source)()
-  } finally {
-    window.__ModuleLoader__ = previous
-  }
-  const plugin = record.factory(() => React),
-    calls = []
+  const calls = []
   const request = async (method, body, signal) => {
     calls.push({ method, body, signal })
     return handler(method, body, signal)

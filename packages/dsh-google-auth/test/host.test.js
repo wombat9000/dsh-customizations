@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { GoogleDriveClient } from '../../dsh-google-drive/src/google.js'
+import { GoogleDriveClient } from '../../dsh-google-drive/dist/src/google.js'
 import {
   GoogleAuthService,
   CLIENT_KEY,

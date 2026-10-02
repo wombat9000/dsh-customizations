@@ -1,13 +1,13 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { GoogleDriveService } from '../src/index.js'
+import { GoogleDriveService } from '../dist/src/index.js'
 import {
   createSheetsDescribeTool,
   createSheetsReadTool,
   createSheetsProposeTool,
   createSheetsRequestTool,
-} from '../src/sheets-tools.js'
-import { SHEETS_MIME } from '../src/sheets.js'
+} from '../dist/src/sheets-tools.js'
+import { SHEETS_MIME } from '../dist/src/sheets.js'
 
 const sheet = {
   properties: { title: 'Book' },

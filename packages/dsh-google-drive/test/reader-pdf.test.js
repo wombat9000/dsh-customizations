@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { DriveDocumentReader } from '../src/document-reader.js'
-import { GoogleTransport } from '../src/transport.js'
+import { DriveDocumentReader } from '../dist/src/document-reader.js'
+import { GoogleTransport } from '../dist/src/transport.js'
 
 const file = {
   id: 'pdf',
