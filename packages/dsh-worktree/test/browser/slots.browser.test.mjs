@@ -2,14 +2,7 @@ import React, { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { test, expect, vi } from 'vitest'
 import { page } from 'vitest/browser'
-let plugin
-window.__ModuleLoader__ = {
-  load: ({ factory }) => {
-    plugin = factory(() => React)
-  },
-}
-await import('../../client.js')
-delete window.__ModuleLoader__
+import plugin from '../../client/index.ts'
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 
 test('themed layout is responsive and keeps details keyboard accessible', async () => {

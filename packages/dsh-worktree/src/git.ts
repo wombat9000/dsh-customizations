@@ -1,3 +1,4 @@
+import type { Changes, GitWorktree, SignalOptions } from '../shared/contracts.js'
 import { spawn } from 'node:child_process'
 import { lstat, mkdir, mkdtemp, realpath, rmdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -7,14 +8,16 @@ const NAME = /^[a-z0-9][a-z0-9-]{0,47}$/
 const TIMEOUT_MS = 30_000
 const OUTPUT_LIMIT = 2 * 1024 * 1024
 
-function abortError(signal) {
-  const error = new Error('Git operation aborted', { cause: signal?.reason })
+function abortError(signal: AbortSignal | undefined) {
+  const error: Error & { code?: string } = new Error('Git operation aborted', {
+    cause: signal?.reason,
+  })
   error.name = 'AbortError'
   error.code = 'ABORT_ERR'
   return error
 }
 
-function checkAbort(signal) {
+function checkAbort(signal: AbortSignal | undefined) {
   if (signal?.aborted) throw abortError(signal)
 }
 
@@ -27,7 +30,11 @@ function gitEnvironment() {
   return { ...env, GIT_TERMINAL_PROMPT: '0', GIT_OPTIONAL_LOCKS: '0', LC_ALL: 'C' }
 }
 
-function git(cwd, args, { signal, accept = [0] } = {}) {
+function git(
+  cwd: string,
+  args: string[],
+  { signal, accept = [0] }: SignalOptions & { accept?: number[] } = {},
+): Promise<{ stdout: string; code: number | null }> {
   checkAbort(signal)
   return new Promise((resolveResult, reject) => {
     const grouped = process.platform !== 'win32'
@@ -36,20 +43,20 @@ function git(cwd, args, { signal, accept = [0] } = {}) {
       stdio: ['ignore', 'pipe', 'pipe'],
       detached: grouped,
     })
-    let failure
+    let failure: unknown
     let bytes = 0
-    const stdout = []
-    const stderr = []
-    let forceTimer
-    const kill = (signalName) => {
+    const stdout: Buffer[] = []
+    const stderr: Buffer[] = []
+    let forceTimer: ReturnType<typeof setTimeout> | undefined
+    const kill = (signalName: NodeJS.Signals) => {
       try {
         if (grouped && child.pid) process.kill(-child.pid, signalName)
         else child.kill(signalName)
       } catch (error) {
-        if (error.code !== 'ESRCH') failure ??= error
+        if (errorCode(error) !== 'ESRCH') failure ??= error
       }
     }
-    const stop = (error) => {
+    const stop = (error: unknown) => {
       if (failure) return
       failure = error
       kill('SIGTERM')
@@ -63,7 +70,7 @@ function git(cwd, args, { signal, accept = [0] } = {}) {
     const onAbort = () => stop(abortError(signal))
     signal?.addEventListener('abort', onAbort, { once: true })
     if (signal?.aborted) onAbort()
-    const collect = (parts) => (chunk) => {
+    const collect = (parts: Buffer[]) => (chunk: Buffer) => {
       bytes += chunk.length
       if (bytes > OUTPUT_LIMIT) {
         stop(new Error(`Git output exceeded ${OUTPUT_LIMIT} bytes`))
@@ -83,7 +90,7 @@ function git(cwd, args, { signal, accept = [0] } = {}) {
       if (failure) return reject(failure)
       const out = Buffer.concat(stdout).toString('utf8')
       const err = Buffer.concat(stderr).toString('utf8')
-      if (!accept.includes(code)) {
+      if (code === null || !accept.includes(code)) {
         return reject(new Error(`Git exited with code ${code}: ${err.slice(0, 2048).trim()}`))
       }
       resolveResult({ stdout: out, code })
@@ -91,14 +98,14 @@ function git(cwd, args, { signal, accept = [0] } = {}) {
   })
 }
 
-function singleLine(value) {
+function singleLine(value: string) {
   // Git terminates path/ref output with exactly one LF. Do not trim path whitespace.
   return value.endsWith('\n') ? value.slice(0, -1) : value
 }
 
-function parseWorktrees(output) {
-  const rows = []
-  let current
+function parseWorktrees(output: string) {
+  const rows: GitWorktree[] = []
+  let current: GitWorktree | undefined
   for (const token of output.split('\0')) {
     if (token === '') {
       if (current) rows.push(current)
@@ -132,14 +139,14 @@ function parseWorktrees(output) {
   return rows
 }
 
-async function canonical(path) {
+async function canonical(path: string) {
   const result = await realpath(path)
   const stat = await lstat(result)
   if (!stat.isDirectory()) throw new Error(`Not a directory: ${path}`)
   return result
 }
 
-async function context(cwd, signal) {
+async function context(cwd: string, signal: AbortSignal | undefined) {
   checkAbort(signal)
   const directory = await canonical(cwd)
   const common = singleLine(
@@ -158,23 +165,23 @@ async function context(cwd, signal) {
     (await git(directory, ['worktree', 'list', '--porcelain', '-z'], { signal })).stdout,
   )
   // Git lists the original checkout first, including for a linked-worktree caller.
-  const repository = await canonical(rows[0].path)
+  const repository = await canonical(rows[0]!.path)
   const worktrees = []
   for (let index = 0; index < rows.length; index++) {
-    const row = rows[index]
+    const row = rows[index]!
     let path = resolve(row.path)
     try {
       path = await canonical(path)
     } catch (error) {
       // Deleted worktrees remain registered and must remain visible for diagnosis.
-      if (error.code !== 'ENOENT' && error.code !== 'ENOTDIR') throw error
+      if (errorCode(error) !== 'ENOENT' && errorCode(error) !== 'ENOTDIR') throw error
     }
     worktrees.push({ ...row, path, isCurrent: path === current, isOriginal: index === 0 })
   }
   return { repository, commonDir, worktrees, registeredPaths: rows.map((row) => resolve(row.path)) }
 }
 
-export function parseStatus(output) {
+export function parseStatus(output: string) {
   const tokens = output.split('\0')
   const files = []
   let count = 0
@@ -191,20 +198,20 @@ export function parseStatus(output) {
 }
 
 /** Bounded read-only UI inspection. Paths come exclusively from Git membership. */
-export async function inspectWorktrees(cwd, { signal } = {}) {
+export async function inspectWorktrees(cwd: string, { signal }: SignalOptions = {}) {
   const info = await context(cwd, signal)
   const rows = info.worktrees.slice(0, 100)
   let next = 0
-  const worktrees = new Array(rows.length)
+  const worktrees = new Array<GitWorktree & { changes: Changes }>(rows.length)
   await Promise.all(
     Array.from({ length: Math.min(4, rows.length) }, async () => {
       while (next < rows.length) {
         const index = next++
-        const row = rows[index]
-        let changes
+        const row = rows[index]!
+        let changes: Changes
         try {
           if (row.bare || row.prunable) throw new Error('Checkout unavailable')
-          const registered = info.registeredPaths[index]
+          const registered = info.registeredPaths[index]!
           if ((await lstat(registered)).isSymbolicLink()) throw new Error('Symlink checkout')
           const path = await canonical(registered)
           if (path !== row.path) throw new Error('Checkout moved')
@@ -256,17 +263,17 @@ export async function inspectWorktrees(cwd, { signal } = {}) {
 }
 
 /** List registered Git checkouts. Detached branches use null; flags are booleans. */
-export async function listWorktrees(cwd, { signal } = {}) {
+export async function listWorktrees(cwd: string, { signal }: SignalOptions = {}) {
   const { repository, commonDir, worktrees } = await context(cwd, signal)
   return { repository, commonDir, worktrees }
 }
 
-async function ensureDirectory(path, signal) {
+async function ensureDirectory(path: string, signal: AbortSignal | undefined) {
   checkAbort(signal)
   try {
     await mkdir(path, { mode: 0o700 })
   } catch (error) {
-    if (error.code !== 'EEXIST') throw error
+    if (errorCode(error) !== 'EEXIST') throw error
   }
   const stat = await lstat(path)
   if (stat.isSymbolicLink() || !stat.isDirectory() || (await realpath(path)) !== path) {
@@ -274,7 +281,7 @@ async function ensureDirectory(path, signal) {
   }
 }
 
-async function validateManagedRoot(repository, root) {
+async function validateManagedRoot(repository: string, root: string) {
   for (const path of [join(repository, '.dsh'), root]) {
     const stat = await lstat(path)
     if (stat.isSymbolicLink() || !stat.isDirectory() || (await realpath(path)) !== path) {
@@ -283,7 +290,7 @@ async function validateManagedRoot(repository, root) {
   }
 }
 
-async function refuseCheckoutFilters(cwd, signal) {
+async function refuseCheckoutFilters(cwd: string, signal: AbortSignal | undefined) {
   const result = await git(
     cwd,
     ['config', '--null', '--get-regexp', '^filter\\..*\\.(smudge|process)$'],
@@ -304,7 +311,7 @@ async function refuseCheckoutFilters(cwd, signal) {
  * Starts from the caller's HEAD; dirty files are never copied. No branch/checkout
  * rollback is attempted after Git failure, so potentially useful work is retained.
  */
-export async function createWorktree(cwd, name, { signal } = {}) {
+export async function createWorktree(cwd: string, name: unknown, { signal }: SignalOptions = {}) {
   if (typeof name !== 'string' || !NAME.test(name))
     throw new Error('Worktree name must match /^[a-z0-9][a-z0-9-]{0,47}$/')
   checkAbort(signal)
@@ -335,7 +342,7 @@ export async function createWorktree(cwd, name, { signal } = {}) {
   // Atomic reservation refuses all existing files/directories/symlinks, even empty ones.
   await mkdir(target, { mode: 0o700 })
   const reserved = await lstat(target)
-  let hooks
+  let hooks: string | undefined
   try {
     await validateManagedRoot(info.repository, root)
     if ((await realpath(target)) !== target)
@@ -385,7 +392,7 @@ export async function createWorktree(cwd, name, { signal } = {}) {
 }
 
 /** Resolve a registered, usable linked checkout. Relative paths use cwd as base. */
-export async function resolveWorktree(cwd, path, { signal } = {}) {
+export async function resolveWorktree(cwd: string, path: string, { signal }: SignalOptions = {}) {
   if (typeof path !== 'string' || path.length === 0) throw new Error('A worktree path is required')
   const info = await context(cwd, signal)
   const selected = await canonical(isAbsolute(path) ? path : resolve(cwd, path))
@@ -398,7 +405,7 @@ export async function resolveWorktree(cwd, path, { signal } = {}) {
     )
   if (worktree.bare || worktree.locked || worktree.prunable)
     throw new Error('Selected worktree is bare, locked, or prunable')
-  const registeredPath = info.registeredPaths[info.worktrees.indexOf(worktree)]
+  const registeredPath = info.registeredPaths[info.worktrees.indexOf(worktree)]!
   if ((await lstat(registeredPath)).isSymbolicLink())
     throw new Error('Registered worktree root must not be a symlink')
   const managedRoot = join(info.repository, '.dsh', 'worktrees')
@@ -416,4 +423,8 @@ export async function resolveWorktree(cwd, path, { signal } = {}) {
     throw new Error('Selected path is not the root of its registered worktree')
   checkAbort(signal)
   return { repository: info.repository, commonDir: info.commonDir, worktree }
+}
+
+function errorCode(error: unknown): unknown {
+  return typeof error === 'object' && error !== null && 'code' in error ? error.code : undefined
 }

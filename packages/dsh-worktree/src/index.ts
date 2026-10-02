@@ -1,4 +1,9 @@
-import { Service } from '@deepseek-ai/cordis'
+import type { Agent } from '@deepseek-ai/dsh-agent'
+import type {} from '@deepseek-ai/dsh-jobs-local'
+import type {} from '@deepseek-ai/dsh-sandbox-policy'
+import type {} from '@deepseek-ai/dsh-client-connection'
+import type { DispatchArgs, WorkerMode } from '../shared/contracts.js'
+import { Service, type Context } from '@deepseek-ai/cordis'
 import { settleRun } from '@deepseek-ai/dsh-subagent'
 import * as git from './git.js'
 import { startRegisteredWorker } from './worker.js'
@@ -8,15 +13,15 @@ import { registerWorktreeTools } from './tools.js'
 export const name = 'worktree-workers'
 const MAX_REPORTS = 100
 const MAX_TEXT = 32000
-const JOB_KIND = 'worktree-worker'
+const JOB_KIND = 'worktree-worker' as Parameters<Context['jobs']['start']>[0]['kind']
 const CLEANUP_FAILED = 'Worktree cleanup is uncertain; checkout remains fenced.'
 
-function bounded(value, max) {
+function bounded(value: string, max: number) {
   const marker = '\n[truncated]'
   return value.length <= max ? value : value.slice(0, max - marker.length) + marker
 }
 
-function requiredText(value, label, max = MAX_TEXT) {
+function requiredText(value: unknown, label: string, max = MAX_TEXT) {
   if (typeof value !== 'string' || !value.trim() || value.length > max) {
     throw new Error(`${label} must be nonempty text of at most ${max} characters`)
   }
@@ -24,8 +29,41 @@ function requiredText(value, label, max = MAX_TEXT) {
 }
 
 /** Process-local coordination only; Git and DSH jobs remain the authorities. */
+type Outcome = Awaited<ReturnType<typeof settleRun>>
+export interface RunRecord {
+  owner: Agent
+  path: string
+  mode: WorkerMode
+  task: string
+  status: 'running' | Outcome['status']
+  report: string
+  jobId: string | undefined
+  cleanupUncertain?: boolean
+}
+interface ActiveRun {
+  owner: Agent
+  jobId: string | undefined
+  cleanupUncertain?: boolean
+}
+interface Dependencies {
+  git?: typeof git
+  startWorker?: typeof startRegisteredWorker
+  settleRun?: typeof settleRun
+}
+declare module '@deepseek-ai/cordis' {
+  interface Context {
+    worktreeWorkers: WorktreeService
+  }
+}
 export class WorktreeManager {
-  constructor(ctx, dependencies = {}) {
+  ctx: Context
+  git: typeof git
+  startWorker: typeof startRegisteredWorker
+  settleRun: typeof settleRun
+  active: Map<string, ActiveRun>
+  creating: Set<string>
+  history: WeakMap<Agent, Map<string, RunRecord>>
+  constructor(ctx: Context, dependencies: Dependencies = {}) {
     this.ctx = ctx
     this.git = dependencies.git ?? git
     this.startWorker = dependencies.startWorker ?? startRegisteredWorker
@@ -35,7 +73,7 @@ export class WorktreeManager {
     this.history = new WeakMap()
   }
 
-  cwd(parent) {
+  cwd(parent: Agent) {
     if (!parent || this.ctx.agents.get(parent.session.id) !== parent) {
       throw new Error('Worktree tools require their exact live calling agent')
     }
@@ -43,7 +81,7 @@ export class WorktreeManager {
   }
 
   activeWorktrees() {
-    const active = new Map(this.active)
+    const active = new Map<string, ActiveRun>(this.active)
     // Jobs outlive their producer registration. Reconstruct fences from the
     // public registry rather than assuming this service instance owns all runs.
     // Only exact live owners are used; never read private registry state.
@@ -59,7 +97,7 @@ export class WorktreeManager {
     return active
   }
 
-  async create(parent, name, signal) {
+  async create(parent: Agent, name: unknown, signal?: AbortSignal) {
     const cwd = this.cwd(parent)
     signal?.throwIfAborted()
     // Git worktree creation writes protected shared Git metadata. Do not bypass
@@ -90,7 +128,7 @@ export class WorktreeManager {
     }
   }
 
-  async list(parent, signal) {
+  async list(parent: Agent, signal?: AbortSignal) {
     const result = await this.git.listWorktrees(this.cwd(parent), { signal })
     const history = this.history.get(parent)
     const activeWorktrees = this.activeWorktrees()
@@ -113,7 +151,7 @@ export class WorktreeManager {
     }
   }
 
-  async dispatch(parent, args, signal) {
+  async dispatch(parent: Agent, args: DispatchArgs, signal?: AbortSignal) {
     const cwd = this.cwd(parent)
     const task = requiredText(args.task, 'task')
     const mode = args.mode ?? 'read-only'
@@ -131,7 +169,7 @@ export class WorktreeManager {
       )
     let history = this.history.get(parent)
     if (!history) this.history.set(parent, (history = new Map()))
-    let handoff
+    let handoff: string | undefined
     if (args.context_from !== undefined) {
       const previous = history.get(requiredText(args.context_from, 'context_from', 200))
       if (!previous || previous.path !== worktree.path)
@@ -147,7 +185,7 @@ export class WorktreeManager {
     ) {
       throw new Error('Recorded run limit reached; wait for an assignment to finish')
     }
-    const record = {
+    const record: RunRecord = {
       owner: parent,
       path: worktree.path,
       mode,
@@ -170,7 +208,7 @@ export class WorktreeManager {
           return {
             cancel: (reason) => controller.abort(reason ?? 'Worktree assignment cancelled'),
             done: (async () => {
-              let outcome
+              let outcome: Outcome
               try {
                 const run = await this.startWorker(this.ctx, {
                   parent,
@@ -242,8 +280,9 @@ export class WorktreeManager {
 }
 
 export default class WorktreeService extends Service {
+  manager: WorktreeManager
   static inject = ['agents', 'sessions', 'jobs', 'sandboxPolicy', 'tools', 'subagents']
-  constructor(ctx) {
+  constructor(ctx: Context) {
     super(ctx, 'worktreeWorkers')
     this.manager = new WorktreeManager(ctx)
     // Preset-neutral inherited contributions, owned by this service's Fiber.
@@ -255,13 +294,13 @@ export default class WorktreeService extends Service {
       )
     })
   }
-  create(parent, name, signal) {
+  create(parent: Agent, name: unknown, signal?: AbortSignal) {
     return this.manager.create(parent, name, signal)
   }
-  list(parent, signal) {
+  list(parent: Agent, signal?: AbortSignal) {
     return this.manager.list(parent, signal)
   }
-  dispatch(parent, args, signal) {
+  dispatch(parent: Agent, args: DispatchArgs, signal?: AbortSignal) {
     return this.manager.dispatch(parent, args, signal)
   }
 }

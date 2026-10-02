@@ -21,7 +21,7 @@ import {
   resolveWorktree,
   inspectWorktrees,
   parseStatus,
-} from '../src/git.js'
+} from '../dist/src/git.js'
 
 // Production intentionally ignores GIT_CONFIG_* environment overrides. Isolate
 // normal user-config discovery instead, within this test file's own process.

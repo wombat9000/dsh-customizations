@@ -1,4 +1,7 @@
-import { defineTool } from '@deepseek-ai/dsh-tools'
+import type { Context } from '@deepseek-ai/cordis'
+import type { Agent } from '@deepseek-ai/dsh-agent'
+import type WorktreeService from './index.js'
+import { defineTool, type ParameterSchemaSpec, type InferArgs } from '@deepseek-ai/dsh-tools'
 import { markIntegrationTool } from './capability.js'
 
 export const name = 'worktree-tools'
@@ -9,14 +12,22 @@ export const inject = ['tools', 'worktreeWorkers']
 // shadow them or bypass inherited restrictions on delegated workers.
 export function apply() {}
 
-export function registerWorktreeTools(ctx, service) {
+export function registerWorktreeTools(
+  ctx: Pick<Context, 'tools'>,
+  service: Pick<WorktreeService, 'create' | 'list' | 'dispatch'>,
+) {
   const output = {
-    schema: { type: 'string' },
-    render(_args, value) {
-      return [{ type: 'text', text: value }]
+    schema: { type: 'string' as const },
+    render(_args: unknown, value: string) {
+      return [{ type: 'text' as const, text: value }]
     },
   }
-  const register = (name, description, parameters, execute) =>
+  const register = <const P extends ParameterSchemaSpec>(
+    name: string,
+    description: string,
+    parameters: P,
+    execute: (args: InferArgs<P>, parent: Agent, signal: AbortSignal) => Promise<unknown>,
+  ) =>
     ctx.tools.register(
       markIntegrationTool(
         defineTool({
@@ -28,7 +39,7 @@ export function registerWorktreeTools(ctx, service) {
             if (!exec.agent) throw new Error('Worktree tools require a calling agent')
             // Service results are explicitly owned result objects, never live Agents,
             // Sessions, job snapshots, or other registry references.
-            return JSON.stringify(await execute(args, exec), null, 2)
+            return JSON.stringify(await execute(args, exec.agent, exec.signal), null, 2)
           },
         }),
       ),
@@ -44,13 +55,13 @@ export function registerWorktreeTools(ctx, service) {
           'Unique lowercase slug: 1–48 letters, digits, or hyphens; starts with a letter or digit.',
       },
     },
-    (args, exec) => service.create(exec.agent, args.name, exec.signal),
+    (args, parent, signal) => service.create(parent, args.name, signal),
   )
   register(
     'worktree_list',
     'List this repository’s Git worktrees, checkout paths, branches, busy status, and this agent’s latest assignments. Read-only. Background job state is process-local; worktrees persist independently.',
     {},
-    (_args, exec) => service.list(exec.agent, exec.signal),
+    (_args, parent, signal) => service.list(parent, signal),
   )
   register(
     'worktree_dispatch',
@@ -80,6 +91,6 @@ export function registerWorktreeTools(ctx, service) {
           'Optional completed job ID from this parent and worktree. Includes its assignment and bounded report as reference material. Available only while retained in this process.',
       },
     },
-    (args, exec) => service.dispatch(exec.agent, args, exec.signal),
+    (args, parent, signal) => service.dispatch(parent, args, signal),
   )
 }

@@ -15,16 +15,16 @@ import { scopeOf } from '@deepseek-ai/dsh-scope'
 import SubagentRuntime, { foldSubagentDescriptor, settleRun } from '@deepseek-ai/dsh-subagent'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import Tools from '@deepseek-ai/dsh-tools'
-import { startRegisteredWorker, startWorker } from '../src/worker.js'
-import WorktreeService from '../src/index.js'
-import * as LegacyTools from '../src/tools.js'
-import { hasWorktreeCapability } from '../src/capability.js'
+import { startRegisteredWorker, startWorker } from '../dist/src/worker.js'
+import WorktreeService from '../dist/src/index.js'
+import * as LegacyTools from '../dist/src/tools.js'
+import { hasWorktreeCapability } from '../dist/src/capability.js'
 
 // A URL query evaluates the real scope library again, including its private
 // Symbol. Only this worker's direct scope import uses that copy; the factory,
 // tools, and composition keep the runtime graph. No library code is mocked.
 async function splitScopeWorker() {
-  const workerUrl = new URL('../src/worker.js?split-scope', import.meta.url).href
+  const workerUrl = new URL('../dist/src/worker.js?split-scope', import.meta.url).href
   const scopeUrl = `${import.meta.resolve('@deepseek-ai/dsh-scope')}?split-scope`
   const scope = await import(scopeUrl)
   const hooks = registerHooks({

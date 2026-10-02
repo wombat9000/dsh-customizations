@@ -1,16 +1,28 @@
+import type { Context } from '@deepseek-ai/cordis'
+import type { Agent } from '@deepseek-ai/dsh-agent'
+import { SessionId } from '@deepseek-ai/dsh-session'
+import type { WorktreeManager } from './index.js'
+import type { SnapshotValue, SnapshotResult } from '../shared/contracts.js'
 import { hasWorktreeCapability } from './capability.js'
-export const CHANNEL = '/local-worktrees'
+export { CHANNEL } from '../shared/contracts.js'
 
 // Connection passes handler results through verbatim; it does not wrap values.
-export function createSnapshotRpcHandler(ctx, manager) {
+export function createSnapshotRpcHandler(
+  ctx: Pick<Context, 'agents' | 'tools'>,
+  manager: WorktreeManager,
+) {
   const snapshot = createSnapshotHandler(ctx, manager)
-  return async (method, args) => {
+  return async (method: string, args: unknown): Promise<SnapshotResult> => {
     try {
       const value = await snapshot(method, args)
       if (value.state === 'error')
         return {
           ok: false,
-          error: { code: 'worktrees/read-failed', message: value.message, details: {} },
+          error: {
+            code: 'worktrees/read-failed',
+            message: value.message ?? 'Worktrees could not complete this request. Try again.',
+            details: {},
+          },
         }
       return { ok: true, value }
     } catch {
@@ -28,9 +40,17 @@ export function createSnapshotRpcHandler(ctx, manager) {
   }
 }
 
-export function createSnapshotHandler(ctx, manager) {
-  const pending = new WeakMap()
-  return async (method, args) => {
+export function createSnapshotHandler(
+  ctx: Pick<Context, 'agents' | 'tools'>,
+  manager: WorktreeManager,
+) {
+  const pending = new WeakMap<Agent, ReturnType<WorktreeManager['git']['inspectWorktrees']>>()
+  return async (
+    method: string,
+    input: unknown,
+  ): Promise<SnapshotValue | { sessionId: unknown; state: 'error'; message: string }> => {
+    const args =
+      typeof input === 'object' && input !== null ? (input as Record<string, unknown>) : undefined
     if (
       !['capability', 'snapshot'].includes(method) ||
       !args ||
@@ -40,10 +60,14 @@ export function createSnapshotHandler(ctx, manager) {
       (args.path !== undefined && (typeof args.path !== 'string' || args.path.length > 8192)) ||
       (args.runId !== undefined && (typeof args.runId !== 'string' || args.runId.length > 200))
     ) {
-      return { sessionId: args?.sessionId, state: 'error', message: 'Invalid Worktrees request.' }
+      return {
+        sessionId: args?.sessionId,
+        state: 'error',
+        message: 'Invalid Worktrees request.',
+      }
     }
     const sessionId = args.sessionId
-    const agent = ctx.agents.get(sessionId)
+    const agent = ctx.agents.get(SessionId(sessionId))
     const capable = () => hasWorktreeCapability(ctx, agent)
     if (!agent) return { sessionId, state: 'unavailable' }
     if (!capable()) return { sessionId, state: 'disabled' }
@@ -90,9 +114,10 @@ export function createSnapshotHandler(ctx, manager) {
             busy: Boolean(busy),
             cleanupUncertain: Boolean(busy?.cleanupUncertain),
             workerStatus: busy ? 'busy' : (latest?.status ?? 'idle'),
-            changes: row.changes.error
-              ? { error: row.changes.error }
-              : { count: row.changes.count },
+            changes:
+              row.changes.error !== undefined
+                ? { error: row.changes.error }
+                : { count: row.changes.count },
             latestAssignment: latest ? latest.task.slice(0, 240) : null,
           }
         }),
@@ -100,8 +125,8 @@ export function createSnapshotHandler(ctx, manager) {
           ? {
               path: selected.path,
               changes: selected.changes,
-              runs: runs.map((run) => ({ id: run.jobId, mode: run.mode, status: run.status })),
-              run: run ? { id: run.jobId, task: run.task, report: run.report || null } : null,
+              runs: runs.map((run) => ({ id: run.jobId!, mode: run.mode, status: run.status })),
+              run: run ? { id: run.jobId!, task: run.task, report: run.report || null } : null,
             }
           : null,
       }

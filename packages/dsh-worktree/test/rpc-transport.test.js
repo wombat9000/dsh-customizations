@@ -7,9 +7,9 @@ import { Readable, Writable } from 'node:stream'
 import { webcrypto } from 'node:crypto'
 import vm from 'node:vm'
 import { Context } from '@deepseek-ai/cordis'
-import WorktreeService from '../src/index.js'
-import { CHANNEL, createSnapshotHandler, createSnapshotRpcHandler } from '../src/snapshot.js'
-import { markIntegrationTool } from '../src/capability.js'
+import WorktreeService from '../dist/src/index.js'
+import { CHANNEL, createSnapshotHandler, createSnapshotRpcHandler } from '../dist/src/snapshot.js'
+import { markIntegrationTool } from '../dist/src/capability.js'
 
 const require = createRequire(import.meta.url)
 const cli = createRequire(require.resolve('@deepseek-ai/dsh/package.json'))
