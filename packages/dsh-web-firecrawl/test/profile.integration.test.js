@@ -3,7 +3,7 @@ import { spawnSync } from 'node:child_process'
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import test from 'node:test'
-import { apply, FIRECRAWL_CREDENTIAL_REF } from '../src/index.js'
+import { apply, FIRECRAWL_CREDENTIAL_REF } from '../dist/src/index.js'
 
 const ROOT = fileURLToPath(new URL('../../../', import.meta.url))
 const json = async (relative) =>

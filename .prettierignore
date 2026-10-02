@@ -15,6 +15,8 @@ artifacts/
 /packages/dsh-openrouter/dist/
 /packages/dsh-jev/client.js
 /packages/dsh-jev/dist/
+/packages/dsh-web-firecrawl/client.js
+/packages/dsh-web-firecrawl/dist/
 /packages/dsh-session-recap/client.js
 /packages/dsh-session-recap/dist/
 /packages/dsh-file-intuition/dist/

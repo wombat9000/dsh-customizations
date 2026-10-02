@@ -1,3 +1,14 @@
+import type { Context } from '@deepseek-ai/cordis'
+import type {
+  WebSearchRequest,
+  WebSearchResult,
+  WebSearchSource,
+  WebSearchProvider,
+  WebFetchRequest,
+  WebFetchResult,
+  WebFetchProvider,
+} from '@deepseek-ai/dsh-web'
+import { CREDENTIAL_REF } from '../shared/contracts.js'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import { launchEnvironmentOf } from '@deepseek-ai/dsh-launch-environment'
 import z from '@deepseek-ai/schemastery'
@@ -6,7 +17,7 @@ import { WebError } from '@deepseek-ai/dsh-web'
 export const name = 'web-firecrawl'
 export const inject = ['web']
 export const FIRECRAWL_PROVIDER_ID = 'firecrawl'
-export const FIRECRAWL_API_KEY_ENV = 'FIRECRAWL_API_KEY'
+export const FIRECRAWL_API_KEY_ENV = CREDENTIAL_REF
 export const FIRECRAWL_CREDENTIAL_REF = credentialRef(FIRECRAWL_API_KEY_ENV)
 export const FIRECRAWL_DEFAULT_BASE_URL = 'https://api.firecrawl.dev/v2'
 export const FIRECRAWL_DEFAULT_MAX_BODY_CHARS = 100_000
@@ -14,7 +25,31 @@ export const FIRECRAWL_DEFAULT_MAX_BODY_CHARS = 100_000
 const FIRECRAWL_MAX_SEARCH_RESULTS = 100
 const USER_AGENT = '@local/dsh-web-firecrawl/0.1.0'
 
-export const Config = z.object({
+export interface FirecrawlConfig {
+  apiKey?: string
+  baseURL?: string
+  maxBodyChars?: number
+  search?: boolean
+  fetch?: boolean
+}
+
+export interface FirecrawlProviderOptions {
+  apiKey?: string
+  apiKeyEnv?: string
+  resolveApiKey?: () => Promise<unknown>
+  baseURL: string
+  maxBodyChars: number
+  fetchImpl?: (
+    url: string,
+    init: RequestInit,
+  ) => Promise<{
+    ok: boolean
+    status: number
+    json(): Promise<unknown>
+  }>
+}
+
+export const Config: z<FirecrawlConfig> = z.object({
   apiKey: z.string().role('secret'),
   baseURL: z.string(),
   maxBodyChars: z.number().step(1).min(1),
@@ -22,33 +57,37 @@ export const Config = z.object({
   fetch: z.boolean().default(true),
 })
 
-function isRecord(value) {
+function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-function optionalText(value) {
+function optionalText(value: unknown) {
   return typeof value === 'string' && value.length > 0 ? value : undefined
 }
 
-function validBaseURL(value) {
+function validBaseURL(value: string) {
   if (!URL.canParse(value)) return false
   return new URL(value).protocol === 'https:'
 }
 
-function isAbortError(error, signal) {
+function isAbortError(error: unknown, signal: AbortSignal | undefined) {
   return signal?.aborted === true || (error instanceof DOMException && error.name === 'AbortError')
 }
 
-function aborted(operation, signal, cause) {
+function aborted(operation: string, signal: AbortSignal | undefined, cause?: unknown) {
   return new WebError(`Firecrawl ${operation} aborted`, 'WEB_ABORTED', {
     cause: signal?.aborted === true ? signal.reason : cause,
   })
 }
 
-function abortable(operation, signal, operationName) {
+function abortable<T>(
+  operation: Promise<T>,
+  signal: AbortSignal | undefined,
+  operationName: string,
+): Promise<T> {
   if (signal === undefined) return operation
   if (signal.aborted) return Promise.reject(aborted(operationName, signal))
-  return new Promise((resolve, reject) => {
+  return new Promise<T>((resolve, reject) => {
     const onAbort = () => reject(aborted(operationName, signal))
     signal.addEventListener('abort', onAbort, { once: true })
     operation.then(
@@ -64,7 +103,7 @@ function abortable(operation, signal, operationName) {
   })
 }
 
-function apiErrorMessage(payload, status) {
+function apiErrorMessage(payload: unknown, status: number) {
   if (isRecord(payload)) {
     const detail = optionalText(payload.error) ?? optionalText(payload.message)
     if (detail !== undefined) return detail
@@ -72,7 +111,7 @@ function apiErrorMessage(payload, status) {
   return `Firecrawl API error (HTTP ${status})`
 }
 
-function mapSearchSource(value) {
+function mapSearchSource(value: unknown): WebSearchSource | undefined {
   if (!isRecord(value) || typeof value.url !== 'string' || value.url.length === 0) return undefined
   const title = optionalText(value.title)
   const snippet = optionalText(value.description) ?? optionalText(value.snippet)
@@ -85,7 +124,10 @@ function mapSearchSource(value) {
   }
 }
 
-export function mapFirecrawlSearchResponse(data, requestedLimit) {
+export function mapFirecrawlSearchResponse(
+  data: unknown,
+  requestedLimit: number | undefined,
+): WebSearchResult {
   if (!isRecord(data)) {
     throw new WebError('Firecrawl returned an unprocessable search response', 'WEB_PROVIDER_ERROR')
   }
@@ -102,7 +144,11 @@ export function mapFirecrawlSearchResponse(data, requestedLimit) {
   }
 }
 
-export function mapFirecrawlScrapeResponse(data, requestedURL, maxBodyChars) {
+export function mapFirecrawlScrapeResponse(
+  data: unknown,
+  requestedURL: string,
+  maxBodyChars: number,
+): WebFetchResult {
   if (!isRecord(data)) {
     throw new WebError('Firecrawl returned an unprocessable scrape response', 'WEB_PROVIDER_ERROR')
   }
@@ -118,10 +164,15 @@ export function mapFirecrawlScrapeResponse(data, requestedURL, maxBodyChars) {
   }
 
   const finalURL = optionalText(metadata.url) ?? optionalText(metadata.sourceURL) ?? requestedURL
-  const statusCode = Number.isInteger(metadata.statusCode) ? metadata.statusCode : 200
+  const statusCode =
+    typeof metadata.statusCode === 'number' && Number.isInteger(metadata.statusCode)
+      ? metadata.statusCode
+      : 200
   const bodyTruncated = markdown.length > maxBodyChars
   const documentTruncated =
+    typeof metadata.totalPages === 'number' &&
     Number.isInteger(metadata.totalPages) &&
+    typeof metadata.numPages === 'number' &&
     Number.isInteger(metadata.numPages) &&
     metadata.totalPages > metadata.numPages
 
@@ -136,10 +187,13 @@ export function mapFirecrawlScrapeResponse(data, requestedURL, maxBodyChars) {
   }
 }
 
-export class FirecrawlWebProvider {
+export class FirecrawlWebProvider implements WebSearchProvider, WebFetchProvider {
+  options: Omit<FirecrawlProviderOptions, 'fetchImpl'> & {
+    fetchImpl: NonNullable<FirecrawlProviderOptions['fetchImpl']>
+  }
   id = FIRECRAWL_PROVIDER_ID
 
-  constructor(options) {
+  constructor(options: FirecrawlProviderOptions) {
     this.options = {
       ...options,
       baseURL: options.baseURL.replace(/\/+$/u, ''),
@@ -156,11 +210,12 @@ export class FirecrawlWebProvider {
     )
   }
 
-  async apiKey(signal, operation) {
+  async apiKey(signal: AbortSignal | undefined, operation: string): Promise<string> {
     if (signal?.aborted) throw aborted(operation, signal)
-    if ((this.options.apiKey?.length ?? 0) > 0) return this.options.apiKey
+    if (this.options.apiKey !== undefined && this.options.apiKey.length > 0)
+      return this.options.apiKey
 
-    let resolved
+    let resolved: unknown
     try {
       resolved = await abortable(
         this.options.resolveApiKey?.() ?? Promise.resolve(undefined),
@@ -184,7 +239,12 @@ export class FirecrawlWebProvider {
     )
   }
 
-  async request(path, body, signal, operation) {
+  async request(
+    path: string,
+    body: unknown,
+    signal: AbortSignal | undefined,
+    operation: string,
+  ): Promise<unknown> {
     if (!validBaseURL(this.options.baseURL)) {
       throw new WebError('Firecrawl baseURL must use HTTPS', 'WEB_PROVIDER_ERROR')
     }
@@ -216,7 +276,7 @@ export class FirecrawlWebProvider {
       )
     }
 
-    let payload
+    let payload: unknown
     try {
       payload = await abortable(response.json(), signal, operation)
     } catch (error) {
@@ -242,7 +302,7 @@ export class FirecrawlWebProvider {
     return payload.data
   }
 
-  async search(request, signal) {
+  async search(request: WebSearchRequest, signal?: AbortSignal): Promise<WebSearchResult> {
     const requestedLimit = request.maxResults
     const limit =
       requestedLimit === undefined
@@ -261,7 +321,7 @@ export class FirecrawlWebProvider {
     return mapFirecrawlSearchResponse(data, requestedLimit)
   }
 
-  async fetch(request, signal) {
+  async fetch(request: WebFetchRequest, signal?: AbortSignal): Promise<WebFetchResult> {
     const data = await this.request(
       '/scrape',
       {
@@ -275,7 +335,7 @@ export class FirecrawlWebProvider {
   }
 }
 
-export function apply(ctx, config = {}) {
+export function apply(ctx: Context, config: FirecrawlConfig = {}) {
   const apiKeyEnv = FIRECRAWL_CREDENTIAL_REF
   const literalApiKey =
     config.apiKey !== undefined && config.apiKey.length > 0 ? config.apiKey : undefined

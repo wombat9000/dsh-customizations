@@ -4,6 +4,8 @@ import { setImmediate } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import vm from 'node:vm'
 import test from 'node:test'
+import { buildClient } from '../scripts/build-client.mjs'
+import { typecheck } from '../scripts/typecheck.mjs'
 
 const CLIENT_PATH = fileURLToPath(new URL('../client.js', import.meta.url))
 const REF = 'FIRECRAWL_API_KEY'
@@ -463,4 +465,9 @@ test('client-side key validation rejects blank and shell-style pastes', async ()
   assert.match(exports.apiKeyFailure('"fc-key"'), /Paste only the API key/)
   assert.match(exports.apiKeyFailure("'fc-key'"), /Paste only the API key/)
   assert.match(exports.apiKeyFailure('fc-\nkey'), /printable characters only/)
+})
+
+test('strict client contracts and generated client remain current', async () => {
+  await typecheck()
+  assert.equal(await readFile(CLIENT_PATH, 'utf8'), await buildClient())
 })
