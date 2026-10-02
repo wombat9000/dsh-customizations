@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { LinearProjectWrites } from '../src/project-writes.js'
-import { registerProjectWriteTools } from '../src/tools/project-writes.js'
+import { LinearProjectWrites } from '../dist/src/project-writes.js'
+import { registerProjectWriteTools } from '../dist/src/tools/project-writes.js'
 
 function page(nodes) {
   return { nodes, pageInfo: { hasNextPage: false, hasPreviousPage: false } }
@@ -220,9 +220,8 @@ test('project update executes only when updatedAt remains unchanged', async () =
   let updateInput
   let projectReads = 0
   const current = project({
-    async update(input) {
-      updateInput = input
-      return { success: true, projectId: 'project-id' }
+    async update() {
+      assert.fail('Project.update is an SDK status-report read, not a project mutation')
     },
   })
   const updated = project({
@@ -231,6 +230,11 @@ test('project update executes only when updatedAt remains unchanged', async () =
     updatedAt: new Date('2026-03-20T15:01:00Z'),
   })
   const client = selectors({
+    async updateProject(id, input) {
+      assert.equal(id, 'project-id')
+      updateInput = input
+      return { success: true, projectId: id }
+    },
     async projects() {
       return page([current])
     },
@@ -249,13 +253,13 @@ test('project update executes only when updatedAt remains unchanged', async () =
 test('project rename rejects a duplicate that appears after approval', async () => {
   let duplicateChecks = 0
   let mutated = false
-  const existing = project({
-    async update() {
-      mutated = true
-      return { success: true, projectId: 'project-id' }
-    },
-  })
+  const existing = project()
   const client = selectors({
+    async updateProject(id) {
+      assert.equal(id, 'project-id')
+      mutated = true
+      return { success: true, projectId: id }
+    },
     async projects(variables) {
       if (variables.filter?.or !== undefined) return page([existing])
       duplicateChecks += 1
@@ -276,12 +280,13 @@ test('project update rejects stale approval before mutation', async () => {
   const existing = project()
   const changed = project({
     updatedAt: new Date('2026-03-20T16:00:00Z'),
-    async update() {
-      mutated = true
-      return { success: true, projectId: 'project-id' }
-    },
   })
   const client = selectors({
+    async updateProject(id) {
+      assert.equal(id, 'project-id')
+      mutated = true
+      return { success: true, projectId: id }
+    },
     async projects() {
       return page([existing])
     },

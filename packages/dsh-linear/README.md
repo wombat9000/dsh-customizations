@@ -36,7 +36,7 @@ All Linear content is treated as untrusted external data in the agent prompt.
 
 ## Host read service
 
-Host plugins can look up `ctx.get('localLinearReads')` at call time. If the bundle is absent or disposed, the lookup returns `undefined`. The service exposes only `listIssues`, `getIssue`, and `getProject`. The [typed contract](src/reads.d.ts) is also available through `@local/dsh-linear/reads`.
+Host plugins can look up `ctx.get('localLinearReads')` at call time. If the bundle is absent or disposed, the lookup returns `undefined`. The service exposes only `listIssues`, `getIssue`, and `getProject`. The [typed contract](src/reads.ts) is also available through `@local/dsh-linear/reads`.
 
 Each method takes the matching read tool's arguments and optional `{ signal }`. Calls reuse the same runtime, host credentials, and workspace binding as the tools; they need no session and expose no credential or write method. The service validates bounded arguments and enforces the configured timeout, clamped to 1–120,000 milliseconds (default 30,000). Disposal aborts service calls. Errors have static sanitized messages and codes `INVALID_ARGUMENT`, `CANCELLED`, `TIMEOUT`, or `READ_FAILED`.
 
@@ -85,6 +85,15 @@ The three workspace identity fields use `.volatile()` in `Config`; runtime reads
 After the repository's dependency setup, run these commands from the repository root. Tests use fixture SDK clients, real Schemastery volatile references, and dormant host contexts. The integration suite checks recipe wiring, live reference reads, presentation-policy cleanup, and RPC cleanup; it does not install a profile, start DSH, or verify the live GUI.
 
 ```bash
-pnpm --filter @local/dsh-linear test
+node packages/dsh-linear/scripts/typecheck.mjs
+node packages/dsh-linear/scripts/build-host.mjs
+node packages/dsh-linear/scripts/build-client.mjs
+node packages/dsh-linear/scripts/build-host.mjs --check
+node packages/dsh-linear/scripts/build-client.mjs --check
+env -u NODE_PATH node --test packages/dsh-linear/test/*.test.js
 pnpm --filter @local/dsh-linear test:integration
 ```
+
+Maintained host modules live in [src](src/index.ts). The strict compiler emits checked ESM modules into [dist](dist/src/index.js); the package entrypoint and read-service export load that output. The read-service types come from generated declarations of the implementation, not a hand-authored stub. Public type consumers use those declarations without importing the host source into their own compilation root. [Client modules](client/index.ts) and [shared RPC contracts](shared/rpc.ts) produce the committed lazy-loader bundle with the same package ID and named exports. Builds reuse the repository's pinned compiler and bundler. Regenerate both artifacts after source changes; normal Node tests check strict contracts and artifact freshness without rewriting outputs.
+
+The pinned Linear SDK's `Project.update()` reads a status report. Approved project changes use `client.updateProject(project.id, input)` after the same workspace, timestamp, duplicate, and cancellation checks. Fixture tests enforce this SDK boundary; no live mutation is needed for validation.

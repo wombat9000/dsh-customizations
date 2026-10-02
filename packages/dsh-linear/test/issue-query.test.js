@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { LinearRuntime } from '../src/runtime.js'
+import { LinearRuntime } from '../dist/src/runtime.js'
 
 function listing(clientOverrides = {}) {
   const queries = []

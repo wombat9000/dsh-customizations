@@ -1,0 +1,16 @@
+export function apiKeyFailure(value: unknown) {
+  if (typeof value !== 'string' || value.length === 0 || value.trim().length === 0) {
+    return 'Enter a Linear API key.'
+  }
+  const trimmed = value.trim()
+  if (!/^[\x21-\x7e]+$/u.test(trimmed)) {
+    return 'Use an unquoted API key containing printable characters only.'
+  }
+  if (
+    /^[A-Za-z_][A-Za-z0-9_]*=/u.test(trimmed) ||
+    (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+    (trimmed.startsWith("'") && trimmed.endsWith("'"))
+  ) {
+    return 'Paste only the API key, without LINEAR_API_KEY= or surrounding quotes.'
+  }
+}

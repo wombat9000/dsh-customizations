@@ -2,8 +2,8 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { createRequire } from 'node:module'
 import { pathToFileURL } from 'node:url'
-import { LinearProjectWrites } from '../src/project-writes.js'
-import { registerProjectWriteTools } from '../src/tools/project-writes.js'
+import { LinearProjectWrites } from '../dist/src/project-writes.js'
+import { registerProjectWriteTools } from '../dist/src/tools/project-writes.js'
 import { approvalHost } from '../../dsh-github/test/approval-fixture.js'
 
 // Reuse the real pinned Tools, UserApproval, Cordis and detached Session fixture.

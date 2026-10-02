@@ -9,9 +9,9 @@ import {
   resolveStates,
   resolveTeam,
   resolveUser,
-} from '../src/linear.js'
-import { apiKeyFailure, registerLinearSettingsRpc } from '../src/settings.js'
-import { registerLinearTools } from '../src/index.js'
+} from '../dist/src/linear.js'
+import { apiKeyFailure, registerLinearSettingsRpc } from '../dist/src/settings.js'
+import { registerLinearTools } from '../dist/src/index.js'
 
 function page(nodes, options = {}) {
   return {

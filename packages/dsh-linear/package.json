@@ -4,25 +4,35 @@
   "private": true,
   "description": "Workspace-scoped Linear read tools and approval-gated project writes for DSH",
   "type": "module",
-  "main": "src/index.js",
+  "main": "dist/src/index.js",
   "exports": {
-    ".": "./src/index.js",
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "default": "./dist/src/index.js"
+    },
     "./client": "./client.js",
     "./reads": {
-      "types": "./src/reads.d.ts",
-      "default": "./src/reads.js"
+      "types": "./dist/src/reads.d.ts",
+      "default": "./dist/src/reads.js"
     },
     "./package.json": "./package.json"
   },
   "files": [
     "client.js",
     "cordis.patch.yml",
-    "src/**/*.js",
-    "src/**/*.d.ts"
+    "dist/**/*.js",
+    "dist/**/*.d.ts",
+    "src/**/*.ts",
+    "shared/**/*.ts"
   ],
   "scripts": {
     "test": "node --test test/*.test.js",
-    "test:integration": "node --test test/profile.integration.test.js"
+    "test:integration": "node --test test/profile.integration.test.js",
+    "build": "node scripts/build-host.mjs && node scripts/build-client.mjs",
+    "build:host": "node scripts/build-host.mjs",
+    "build:client": "node scripts/build-client.mjs",
+    "typecheck": "node scripts/typecheck.mjs",
+    "check:artifacts": "node scripts/build-host.mjs --check && node scripts/build-client.mjs --check"
   },
   "engines": {
     "node": "^22.19.0 || >=24.0.0"
@@ -55,5 +65,6 @@
     "@deepseek-ai/dsh-system-prompt": "0.1.7-rc.2",
     "react": "18.3.1"
   },
-  "license": "UNLICENSED"
+  "license": "UNLICENSED",
+  "types": "src/index.ts"
 }

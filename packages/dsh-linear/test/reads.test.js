@@ -2,8 +2,8 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { createRequire } from 'node:module'
 import { pathToFileURL } from 'node:url'
-import { createLinearReads, mountLinearReads } from '../src/reads.js'
-import { LinearRuntime } from '../src/runtime.js'
+import { createLinearReads, mountLinearReads } from '../dist/src/reads.js'
+import { LinearRuntime } from '../dist/src/runtime.js'
 
 const require = createRequire(import.meta.url)
 const cli = createRequire(require.resolve('@deepseek-ai/dsh/package.json'))
