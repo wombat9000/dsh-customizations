@@ -13,11 +13,15 @@ import {
   snapshot,
   mutationResult,
 } from './write-payloads.js'
-import { createGitHubWriteRuntime } from '../src/write-runtime.js'
-import { createGitHubGrantRuntime } from '../src/grants.js'
-import { createGrantCaller, registerGitHubGrantTools, GRANT_TOOL_NAME } from '../src/grant-tools.js'
-import { registerGitHubWriteTools } from '../src/write-tools.js'
-import { GRANT_READS, WRITE_READS } from '../src/write-queries.js'
+import { createGitHubWriteRuntime } from '../dist/src/write-runtime.js'
+import { createGitHubGrantRuntime } from '../dist/src/grants.js'
+import {
+  createGrantCaller,
+  registerGitHubGrantTools,
+  GRANT_TOOL_NAME,
+} from '../dist/src/grant-tools.js'
+import { registerGitHubWriteTools } from '../dist/src/write-tools.js'
+import { GRANT_READS, WRITE_READS } from '../dist/src/write-queries.js'
 
 const scope = {
   operations: ['setProjectItemField', 'addIssueDependency'],

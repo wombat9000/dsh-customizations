@@ -2,9 +2,9 @@ import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
 import { EventEmitter, once } from 'node:events'
 import test from 'node:test'
-import { createHandler } from '../src/routes.js'
-import { GoogleDriveService } from '../src/index.js'
-import { SHEETS_MIME } from '../src/sheets.js'
+import { createHandler } from '../dist/src/routes.js'
+import { GoogleDriveService } from '../dist/src/index.js'
+import { SHEETS_MIME } from '../dist/src/sheets.js'
 
 const actions = [
   'edit-status',

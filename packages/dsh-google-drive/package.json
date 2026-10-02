@@ -4,15 +4,15 @@
   "private": true,
   "description": "Session-scoped Drive reading and Google Sheets previews with approved edits for DSH 0.1.7-rc.2",
   "type": "module",
-  "main": "src/index.js",
+  "main": "dist/src/index.js",
   "exports": {
-    ".": "./src/index.js",
-    "./tools": "./src/tools.js",
+    ".": "./dist/src/index.js",
+    "./tools": "./dist/src/tools.js",
     "./client": "./client.js",
     "./package.json": "./package.json"
   },
   "files": [
-    "src",
+    "dist",
     "client.js",
     "cordis.patch.yml",
     "README.md",
@@ -20,6 +20,12 @@
     "docs/sheets.md"
   ],
   "scripts": {
+    "build": "node scripts/build-host.mjs && node scripts/build-client.mjs",
+    "build:host": "node scripts/build-host.mjs",
+    "build:client": "node scripts/build-client.mjs",
+    "typecheck": "node ../../node_modules/typescript/bin/tsc -p tsconfig.host.json && node scripts/typecheck-client.mjs",
+    "typecheck:host": "node ../../node_modules/typescript/bin/tsc -p tsconfig.host.json",
+    "typecheck:client": "node scripts/typecheck-client.mjs",
     "test": "node --test test/*.test.js"
   },
   "engines": {

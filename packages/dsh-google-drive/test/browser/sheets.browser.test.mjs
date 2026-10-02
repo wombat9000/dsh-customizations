@@ -2,7 +2,7 @@ import React, { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, expect, test } from 'vitest'
 import { page } from 'vitest/browser'
-import source from '../../client.js?raw'
+import plugin from '../../client/index.ts'
 import preparedFixture from '../fixtures/sheets-preview.json'
 let root, container
 const h = React.createElement
@@ -54,20 +54,7 @@ const pending = {
   preview: { fileId: 'sheet', range: before.range, tab, before, after },
 }
 async function mount(component, handler) {
-  let record
-  const previous = window.__ModuleLoader__
-  window.__ModuleLoader__ = {
-    load: (value) => {
-      record = value
-    },
-  }
-  try {
-    new Function(source)()
-  } finally {
-    window.__ModuleLoader__ = previous
-  }
-  const plugin = record.factory(() => React),
-    picker = plugin.createPickerStore(),
+  const picker = plugin.createPickerStore(),
     calls = []
   const request = async (method, body, signal) => {
     calls.push({ method, body, signal })

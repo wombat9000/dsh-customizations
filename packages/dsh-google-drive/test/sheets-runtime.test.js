@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { setImmediate as turn } from 'node:timers/promises'
-import { DriveAccessRuntime } from '../src/runtime.js'
-import { SheetsRuntime } from '../src/sheets-runtime.js'
+import { DriveAccessRuntime } from '../dist/src/runtime.js'
+import { SheetsRuntime } from '../dist/src/sheets-runtime.js'
 
 const SHEET = 'application/vnd.google-apps.spreadsheet'
 const FOLDER = 'application/vnd.google-apps.folder'

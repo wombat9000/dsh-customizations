@@ -1,536 +1,377 @@
-window.__ModuleLoader__.load({
-  id: '@local/dsh-google-auth',
-  factory: (require) => {
-    const React = require('react')
-    const h = React.createElement
-    const styles = {
-      card: {
-        display: 'block',
-        padding: '18px',
-        border: '1px solid color-mix(in srgb, currentColor 16%, transparent)',
-        borderRadius: '12px',
-        background: 'color-mix(in srgb, currentColor 3%, transparent)',
-      },
-      section: {
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '16px',
-        marginTop: '16px',
-        width: 'min(720px, 100%)',
-      },
-      title: { margin: 0, fontSize: '16px', fontWeight: 650 },
-      hint: { margin: 0, fontSize: '13px', opacity: 0.75, lineHeight: 1.45 },
-      actions: { display: 'flex', gap: '10px', flexWrap: 'wrap' },
-      button: {
-        border: '1px solid color-mix(in srgb, currentColor 22%, transparent)',
-        borderRadius: '8px',
-        background: 'color-mix(in srgb, currentColor 8%, transparent)',
-        color: 'inherit',
-        font: 'inherit',
-        padding: '8px 13px',
-        cursor: 'pointer',
-      },
-    }
-    const external = { target: '_blank', rel: 'noopener noreferrer' }
-    function authorizationUrl(value) {
-      let url
-      try {
-        if (typeof value === 'string') url = new URL(value)
-      } catch {
-        /* Reject malformed links. */
-      }
-      if (
-        !url ||
-        url.protocol !== 'https:' ||
-        url.hostname !== 'accounts.google.com' ||
-        url.port ||
-        url.username ||
-        url.password ||
-        url.pathname !== '/o/oauth2/v2/auth' ||
-        url.hash
-      ) {
-        throw new Error(
-          'Google returned an invalid authorization link. Cancel and try connecting again.',
-        )
-      }
-      return url.href
-    }
-    async function api(method, body = {}) {
-      let response
-      try {
-        response = await window.fetch(`/api/plugins/google-auth/${method}`, {
-          method: 'POST',
-          credentials: 'same-origin',
-          headers: { 'Content-Type': 'application/json', 'X-DSH-Google-Auth': '1' },
-          body: JSON.stringify(body),
-        })
-      } catch {
-        throw new Error(
-          'Cannot reach DSH. Check your connection and open the local DSH GUI, then retry.',
-        )
-      }
-      let result
-      try {
-        result = await response.json()
-      } catch {
-        throw new Error(
-          'DSH returned an unreadable response. Check that the Google auth plugin is enabled.',
-        )
-      }
-      if (result?.ok === false && typeof result.error?.message === 'string')
-        throw new Error(result.error.message)
-      if (!response.ok || result?.ok !== true)
-        throw new Error('Google accounts are unavailable. Open the local DSH GUI and retry.')
-      return result.value
-    }
-    function validStatus(value) {
-      return (
-        value &&
-        ['configured', 'connected', 'pending'].every((key) => typeof value[key] === 'boolean') &&
-        ['useSandbox', 'sandboxAvailable'].every(
-          (key) => value[key] === undefined || typeof value[key] === 'boolean',
-        ) &&
-        ['requiredScopes', 'missingScopes'].every(
-          (key) =>
-            Array.isArray(value[key]) && value[key].every((scope) => typeof scope === 'string'),
-        ) &&
-        Array.isArray(value.integrations) &&
-        value.integrations.every(
-          (item) =>
-            item &&
-            typeof item.id === 'string' &&
-            typeof item.label === 'string' &&
-            typeof item.authorized === 'boolean' &&
-            ['scopes', 'missingScopes'].every(
-              (key) =>
-                Array.isArray(item[key]) && item[key].every((scope) => typeof scope === 'string'),
-            ),
-        )
-      )
-    }
-    function GoogleAuthSettingsSection(props) {
-      return props.view === 'summary'
-        ? h('p', null, 'Shared Google account and integration permissions.')
-        : h(GoogleAuthSettingsForm, props)
-    }
-    function GoogleAuthSettingsForm({ api: request, subscribe, view }) {
-      const [draft, setDraft] = React.useState('')
-      const [status, setStatus] = React.useState(undefined)
-      const [link, setLink] = React.useState(undefined)
-      const [busy, setBusy] = React.useState(false)
-      const [failure, setFailure] = React.useState(undefined)
-      const [revision, setRevision] = React.useState(0)
-      const generation = React.useRef(0)
-      const acting = React.useRef(false)
-      React.useEffect(() => {
-        const dispose = subscribe(() => {
-          generation.current++
-          acting.current = false
-          setDraft('')
-          setLink(undefined)
-          setStatus(undefined)
-          setFailure(undefined)
-          setBusy(false)
-          setRevision((value) => value + 1)
-        })
-        return () => {
-          generation.current++
-          dispose?.()
-        }
-      }, [subscribe])
-      React.useEffect(() => {
-        if (busy) return
-        let active = true,
-          timer
-        const current = generation.current
-        const refresh = async () => {
-          try {
-            const value = await request('status')
-            if (!active || current !== generation.current) return
-            if (!validStatus(value))
-              throw new Error(
-                'DSH returned an invalid Google accounts status. Retry or restart the local DSH GUI.',
-              )
-            setStatus(value)
-            if (!value.pending) setLink(undefined)
-            if (value.pending) timer = window.setTimeout(refresh, 1000)
-          } catch (error) {
-            if (!active || current !== generation.current) return
-            setStatus(null)
-            setLink(undefined)
-            setFailure(
-              error instanceof Error ? error.message : 'Could not check Google accounts status.',
-            )
-          }
-        }
-        void refresh()
-        return () => {
-          active = false
-          window.clearTimeout(timer)
-        }
-      }, [request, revision, busy])
-      const act = async (method) => {
-        if (acting.current || (status?.pending && method !== 'cancel')) return
-        if (method === 'configure') {
-          if (!draft.trim() || draft.length > 32768) {
-            setFailure(
-              'Paste the downloaded Desktop OAuth client JSON (at most 32,768 characters).',
-            )
-            return
-          }
-          try {
-            const value = JSON.parse(draft)
-            if (
-              typeof value?.installed?.client_id !== 'string' ||
-              !value.installed.client_id ||
-              typeof value.installed.client_secret !== 'string' ||
-              !value.installed.client_secret
-            )
-              throw new Error()
-          } catch {
-            setFailure(
-              'Use the JSON downloaded for a Google OAuth client of type Desktop app, including client_id and client_secret.',
-            )
-            return
-          }
-          if (
-            status?.configured &&
-            !window.confirm(
-              'Replace the Google client configuration? ALL integrations lose local access. This clears local tokens and any pending connection.',
-            )
-          )
-            return
-        }
-        if (
-          method === 'clear-config' &&
-          !window.confirm(
-            'Remove the Google client configuration, local tokens, and any pending connection? ALL integrations lose local access. This does not revoke Google account grants.',
-          )
-        )
-          return
-        if (method === 'cancel' && !window.confirm('Cancel the pending Google connection?')) return
-        if (
-          method === 'disconnect' &&
-          !window.confirm(
-            'Disconnect this Google account? ALL integrations lose local access. This does not revoke access in your Google account.',
-          )
-        )
-          return
-        const current = ++generation.current
-        acting.current = true
-        setBusy(true)
-        setFailure(undefined)
-        setLink(undefined)
-        try {
-          const value = await request(method, method === 'configure' ? { clientJson: draft } : {})
-          if (current !== generation.current) return
-          if (method === 'configure' || method === 'clear-config') setDraft('')
-          if (method === 'connect') setLink(authorizationUrl(value?.authorizationUrl))
-        } catch (error) {
-          if (current !== generation.current) return
-          setFailure(
-            method === 'configure' || method === 'clear-config'
-              ? 'Could not save or remove the client configuration. Check the Desktop OAuth JSON and retry from the local DSH GUI.'
-              : error instanceof Error
-                ? error.message
-                : 'Google accounts request failed. Retry from the local DSH GUI.',
-          )
-        } finally {
-          if (current === generation.current) {
-            acting.current = false
-            setBusy(false)
-            setRevision((value) => value + 1)
-          }
-        }
-      }
-      const setCallbackMode = async (useSandbox) => {
-        if (acting.current || !status) return
-        if (
-          status.pending &&
-          !window.confirm('Change callback mode? The pending Google connection will be canceled.')
-        )
-          return
-        const current = ++generation.current
-        acting.current = true
-        setBusy(true)
-        setFailure(undefined)
-        let failed = false
-        try {
-          await request('callback-mode', { useSandbox })
-          if (current !== generation.current) return
-          setLink(undefined)
-        } catch {
-          if (current !== generation.current) return
-          failed = true
-          setFailure('Could not save callback mode. Check the local DSH GUI and retry.')
-        } finally {
-          if (current === generation.current) {
-            try {
-              const value = await request('status')
-              if (current === generation.current) {
-                if (!validStatus(value)) throw new Error()
-                setStatus(value)
-                if (!value.pending) setLink(undefined)
-              }
-            } catch {
-              if (current === generation.current && !failed)
-                setFailure(
-                  'Could not refresh callback mode status. Refresh status before connecting.',
-                )
-            } finally {
-              if (current === generation.current) {
-                acting.current = false
-                setBusy(false)
-                setRevision((value) => value + 1)
-              }
-            }
-          }
-        }
-      }
-      const sandboxUnavailable = status?.useSandbox === true && status?.sandboxAvailable !== true
-      const label =
-        status === undefined
-          ? 'Checking…'
-          : status === null
-            ? 'Unavailable'
-            : status.pending
-              ? 'Waiting for Google authorization'
-              : status.connected
-                ? 'Connected'
-                : status.configured
-                  ? 'Not connected'
-                  : 'Not configured'
-      const button = (label, method, disabled = false) =>
-        h(
-          'button',
-          {
-            type: 'button',
-            style: styles.button,
-            disabled: busy || disabled || (status?.pending && method !== 'cancel'),
-            onClick: () => {
-              void act(method)
-            },
-          },
-          label,
-        )
-      const account = status?.account
-      const accountLabel =
-        typeof account?.email === 'string' && account.email
-          ? account.email
-          : typeof account?.id === 'string'
-            ? account.id
-            : 'Google account'
-      return h(
-        'details',
-        { style: styles.card, open: view === 'page' },
-        h(
-          'summary',
-          { style: { cursor: 'pointer' } },
-          h('span', { style: styles.title }, 'Google accounts'),
-          h('p', { style: styles.hint }, 'Shared account and integration permissions.'),
-        ),
-        h(
-          'div',
-          { style: styles.section, role: 'group', 'aria-labelledby': 'google-auth-card-title' },
-          h('h3', { id: 'google-auth-card-title', style: styles.title }, 'Google accounts'),
-          h('p', { role: 'status', style: styles.hint }, label),
-          status?.connected ? h('p', { style: styles.hint }, 'Account: ', accountLabel) : null,
-          h(
-            'p',
-            { style: styles.hint },
-            'This version supports one Google account per credential store, shared by all enabled integrations.',
-          ),
-          h(
-            'p',
-            { style: styles.hint },
-            'Google sign-in also requests openid and email identity access to bind permissions to your account. Additional consent retains existing granted scopes.',
-          ),
-          h(
-            'p',
-            { style: styles.hint },
-            'In Google Cloud Console, create an OAuth client of type Desktop app. Download its JSON and paste it below. DSH stores it on this host and never returns it to this page. Keep credentials out of Git. ',
-            h(
-              'a',
-              {
-                ...external,
-                href: 'https://developers.google.com/identity/protocols/oauth2/native-app',
-              },
-              'Google OAuth setup documentation',
-            ),
-          ),
-          h(
-            'label',
-            { style: styles.hint },
-            h('input', {
-              type: 'checkbox',
-              checked: status?.useSandbox === true,
-              disabled: busy || !status,
-              onChange: (event) => {
-                void setCallbackMode(event.target.checked)
-              },
-            }),
-            'Use sandbox callback forwarding',
-          ),
-          h(
-            'p',
-            { style: styles.hint },
-            'Off: receive the Google callback directly on the DSH host. On: forward the callback from Docker through the sandbox bridge.',
-          ),
-          sandboxUnavailable
-            ? h(
-                'p',
-                { role: 'alert', style: { ...styles.hint, color: '#ef4444' } },
-                'Sandbox callback bridge unavailable. Restore the Docker sandbox bridge or turn off sandbox callback forwarding before connecting. DSH will not fall back to a direct host callback.',
-              )
-            : null,
-          h(
-            'label',
-            { style: styles.hint, htmlFor: 'google-auth-client-json' },
-            'Desktop OAuth client JSON',
-          ),
-          h('textarea', {
-            id: 'google-auth-client-json',
-            value: draft,
-            disabled: busy || status?.pending,
-            maxLength: 32768,
-            rows: 5,
-            autoComplete: 'off',
-            spellCheck: false,
-            placeholder: status?.configured
-              ? 'Paste new JSON to replace the stored configuration'
-              : 'Paste downloaded Desktop OAuth client JSON',
-            style: { ...styles.button, width: '100%', boxSizing: 'border-box', cursor: 'text' },
-            onChange: (event) => setDraft(event.target.value),
-          }),
-          h(
-            'div',
-            { style: styles.actions },
-            button('Save client configuration', 'configure', !status || !draft.trim()),
-            status?.configured ? button('Remove client configuration', 'clear-config') : null,
-          ),
-          status?.integrations.length
-            ? h(
-                'section',
-                { 'aria-label': 'Account permissions' },
-                h('h4', { style: styles.title }, 'Permissions for all enabled integrations'),
-                h(
-                  'p',
-                  { style: styles.hint },
-                  'One Google login requests all required scopes below, plus identity access. Enabling an integration later may require additional consent. Existing granted scopes are retained.',
-                ),
-                h(
-                  'ul',
-                  null,
-                  ...status.requiredScopes.map((scope) => h('li', { key: scope }, scope)),
-                ),
-                status.requiredScopes.includes('https://www.googleapis.com/auth/spreadsheets')
-                  ? h(
-                      'p',
-                      { style: styles.hint },
-                      'Warning: Google Sheets edit permission is account-wide. Google can authorize editing all your spreadsheets, not only files selected in DSH. DSH still requires separate session read/edit grants and approval for each write.',
-                    )
-                  : null,
-                status.pending || (status.connected && !status.missingScopes.length)
-                  ? null
-                  : button(
-                      status.connected ? 'Grant additional permissions' : 'Connect Google account',
-                      'connect',
-                      !status.configured || sandboxUnavailable,
-                    ),
-              )
-            : null,
-          ...(status?.integrations ?? []).map((item) =>
-            h(
-              'section',
-              { key: item.id, 'aria-label': item.label },
-              h('h4', { style: styles.title }, item.label),
-              h('p', { style: styles.hint }, 'Required scopes:'),
-              h('ul', null, ...item.scopes.map((scope) => h('li', { key: scope }, scope))),
-              item.authorized
-                ? h('p', { style: styles.hint }, 'Granted / Ready')
-                : h(
-                    'div',
-                    null,
-                    h('p', { style: styles.hint }, 'Missing permissions:'),
-                    h(
-                      'ul',
-                      null,
-                      ...item.missingScopes.map((scope) => h('li', { key: scope }, scope)),
-                    ),
-                  ),
-            ),
-          ),
-          status && !status.integrations.length
-            ? h(
-                'p',
-                { style: styles.hint },
-                'Install and enable a Google integration first. No integrations are registered.',
-              )
-            : null,
-          status?.pending && !link
-            ? h(
-                'p',
-                { style: styles.hint },
-                'Complete authorization in the Google tab you already opened, or cancel and connect again to get a new link.',
-              )
-            : null,
-          link && status?.pending
-            ? h('a', { ...external, href: link }, 'Continue with Google')
-            : null,
-          h(
-            'div',
-            { style: styles.actions },
-            status?.pending ? button('Cancel', 'cancel') : null,
-            status?.connected ? button('Disconnect', 'disconnect') : null,
-            h(
-              'button',
-              {
-                type: 'button',
-                style: styles.button,
-                disabled: busy || status?.pending,
-                onClick: () => {
-                  setFailure(undefined)
-                  setRevision((value) => value + 1)
-                },
-              },
-              'Refresh status',
-            ),
-          ),
-          h(
-            'p',
-            { style: styles.hint },
-            'Disconnect removes only local DSH credentials for ALL integrations. It does not revoke Google access. ',
-            h(
-              'a',
-              { ...external, href: 'https://myaccount.google.com/connections' },
-              'Manage Google account permissions',
-            ),
-          ),
-          (failure ?? status?.error) === undefined
-            ? null
-            : h(
-                'p',
-                { role: 'alert', style: { ...styles.hint, color: '#ef4444' } },
-                failure ?? status.error,
-              ),
-        ),
-      )
-    }
-    function apply(ctx) {
-      const subscribe = (listener) =>
-        typeof ctx.on === 'function' ? ctx.on('connection/reset', listener) : () => {}
-      ctx.slots.inject('plugins.row.config', () =>
-        ctx.slots.register(
-          {
-            name: 'plugins.row.config',
-            key: '@local/dsh-google-auth#local-google-auth',
-            order: 25,
-            inject: () => ({ api, subscribe }),
-          },
-          GoogleAuthSettingsSection,
-        ),
-      )
-    }
-    return { apply, inject: ['slots'], GoogleAuthSettingsSection, authorizationUrl }
-  },
-})
+// GENERATED by scripts/build-client.mjs. Edit client/ source modules, not this file.
+window.__ModuleLoader__.load({ id: "@local/dsh-google-auth", factory: (require) => {
+var module = { exports: {} }; var exports = module.exports;
+Object.defineProperties(exports, { __esModule: { value: true }, [Symbol.toStringTag]: { value: 'Module' } });
+//#region \0rolldown/runtime.js
+var __create = Object.create;
+var __defProp = Object.defineProperty;
+var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
+var __getOwnPropNames = Object.getOwnPropertyNames;
+var __getProtoOf = Object.getPrototypeOf;
+var __hasOwnProp = Object.prototype.hasOwnProperty;
+var __copyProps = (to, from, except, desc) => {
+	if (from && typeof from === "object" || typeof from === "function") {
+		for (var keys = __getOwnPropNames(from), i = 0, n = keys.length, key; i < n; i++) {
+			key = keys[i];
+			if (!__hasOwnProp.call(to, key) && key !== except) {
+				__defProp(to, key, {
+					get: ((k) => from[k]).bind(null, key),
+					enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable
+				});
+			}
+		}
+	}
+	return to;
+};
+var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__getProtoOf(mod)) : {}, __copyProps(isNodeMode || !mod || !mod.__esModule ? __defProp(target, "default", {
+	value: mod,
+	enumerable: true
+}) : target, mod));
+
+//#endregion
+let react = require("react");
+react = __toESM(react, 1);
+
+//#region client/styles.ts
+const styles = {
+	card: {
+		display: "block",
+		padding: "18px",
+		border: "1px solid color-mix(in srgb, currentColor 16%, transparent)",
+		borderRadius: "12px",
+		background: "color-mix(in srgb, currentColor 3%, transparent)"
+	},
+	section: {
+		display: "flex",
+		flexDirection: "column",
+		gap: "16px",
+		marginTop: "16px",
+		width: "min(720px, 100%)"
+	},
+	title: {
+		margin: 0,
+		fontSize: "16px",
+		fontWeight: 650
+	},
+	hint: {
+		margin: 0,
+		fontSize: "13px",
+		opacity: .75,
+		lineHeight: 1.45
+	},
+	actions: {
+		display: "flex",
+		gap: "10px",
+		flexWrap: "wrap"
+	},
+	button: {
+		border: "1px solid color-mix(in srgb, currentColor 22%, transparent)",
+		borderRadius: "8px",
+		background: "color-mix(in srgb, currentColor 8%, transparent)",
+		color: "inherit",
+		font: "inherit",
+		padding: "8px 13px",
+		cursor: "pointer"
+	}
+};
+const external = {
+	target: "_blank",
+	rel: "noopener noreferrer"
+};
+
+//#endregion
+//#region shared/contracts.ts
+function isRecord(value) {
+	return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+//#endregion
+//#region client/transport.ts
+function authorizationUrl(value) {
+	let url;
+	try {
+		if (typeof value === "string") url = new URL(value);
+	} catch {}
+	if (!url || url.protocol !== "https:" || url.hostname !== "accounts.google.com" || url.port || url.username || url.password || url.pathname !== "/o/oauth2/v2/auth" || url.hash) throw new Error("Google returned an invalid authorization link. Cancel and try connecting again.");
+	return url.href;
+}
+const api = async (method, ...[body]) => {
+	let response;
+	try {
+		response = await window.fetch(`/api/plugins/google-auth/${method}`, {
+			method: "POST",
+			credentials: "same-origin",
+			headers: {
+				"Content-Type": "application/json",
+				"X-DSH-Google-Auth": "1"
+			},
+			body: JSON.stringify(body ?? {})
+		});
+	} catch {
+		throw new Error("Cannot reach DSH. Check your connection and open the local DSH GUI, then retry.");
+	}
+	let result;
+	try {
+		result = await response.json();
+	} catch {
+		throw new Error("DSH returned an unreadable response. Check that the Google auth plugin is enabled.");
+	}
+	if (isRecord(result) && result.ok === false && isRecord(result.error) && typeof result.error.message === "string") throw new Error(result.error.message);
+	if (!response.ok || !isRecord(result) || result.ok !== true) throw new Error("Google accounts are unavailable. Open the local DSH GUI and retry.");
+	return result.value;
+};
+const strings = (value) => Array.isArray(value) && value.every((scope) => typeof scope === "string");
+function validStatus(value) {
+	return isRecord(value) && [
+		"configured",
+		"connected",
+		"pending"
+	].every((key) => typeof value[key] === "boolean") && ["useSandbox", "sandboxAvailable"].every((key) => value[key] === void 0 || typeof value[key] === "boolean") && ["requiredScopes", "missingScopes"].every((key) => strings(value[key])) && Array.isArray(value.integrations) && value.integrations.every((item) => isRecord(item) && typeof item.id === "string" && typeof item.label === "string" && typeof item.authorized === "boolean" && strings(item.scopes) && strings(item.missingScopes));
+}
+
+//#endregion
+//#region client/settings.tsx
+function GoogleAuthSettingsSection(props) {
+	return props.view === "summary" ? /* @__PURE__ */ react.default.createElement("p", null, "Shared Google account and integration permissions.") : /* @__PURE__ */ react.default.createElement(GoogleAuthSettingsForm, props);
+}
+function GoogleAuthSettingsForm({ api: request, subscribe, view }) {
+	const [draft, setDraft] = react.default.useState("");
+	const [status, setStatus] = react.default.useState(void 0);
+	const [link, setLink] = react.default.useState(void 0);
+	const [busy, setBusy] = react.default.useState(false);
+	const [failure, setFailure] = react.default.useState(void 0);
+	const [revision, setRevision] = react.default.useState(0);
+	const generation = react.default.useRef(0);
+	const acting = react.default.useRef(false);
+	react.default.useEffect(() => {
+		const dispose = subscribe(() => {
+			generation.current++;
+			acting.current = false;
+			setDraft("");
+			setLink(void 0);
+			setStatus(void 0);
+			setFailure(void 0);
+			setBusy(false);
+			setRevision((value) => value + 1);
+		});
+		return () => {
+			generation.current++;
+			dispose?.();
+		};
+	}, [subscribe]);
+	react.default.useEffect(() => {
+		if (busy) return;
+		let active = true, timer;
+		const current = generation.current;
+		const refresh = async () => {
+			try {
+				const value = await request("status");
+				if (!active || current !== generation.current) return;
+				if (!validStatus(value)) throw new Error("DSH returned an invalid Google accounts status. Retry or restart the local DSH GUI.");
+				setStatus(value);
+				if (!value.pending) setLink(void 0);
+				if (value.pending) timer = window.setTimeout(refresh, 1e3);
+			} catch (error) {
+				if (!active || current !== generation.current) return;
+				setStatus(null);
+				setLink(void 0);
+				setFailure(error instanceof Error ? error.message : "Could not check Google accounts status.");
+			}
+		};
+		refresh();
+		return () => {
+			active = false;
+			window.clearTimeout(timer);
+		};
+	}, [
+		request,
+		revision,
+		busy
+	]);
+	const act = async (method) => {
+		if (acting.current || status?.pending && method !== "cancel") return;
+		if (method === "configure") {
+			if (!draft.trim() || draft.length > 32768) {
+				setFailure("Paste the downloaded Desktop OAuth client JSON (at most 32,768 characters).");
+				return;
+			}
+			try {
+				const raw = JSON.parse(draft);
+				const value = isRecord(raw) && isRecord(raw.installed) ? raw.installed : void 0;
+				if (typeof value?.client_id !== "string" || !value.client_id || typeof value.client_secret !== "string" || !value.client_secret) throw new Error();
+			} catch {
+				setFailure("Use the JSON downloaded for a Google OAuth client of type Desktop app, including client_id and client_secret.");
+				return;
+			}
+			if (status?.configured && !window.confirm("Replace the Google client configuration? ALL integrations lose local access. This clears local tokens and any pending connection.")) return;
+		}
+		if (method === "clear-config" && !window.confirm("Remove the Google client configuration, local tokens, and any pending connection? ALL integrations lose local access. This does not revoke Google account grants.")) return;
+		if (method === "cancel" && !window.confirm("Cancel the pending Google connection?")) return;
+		if (method === "disconnect" && !window.confirm("Disconnect this Google account? ALL integrations lose local access. This does not revoke access in your Google account.")) return;
+		const current = ++generation.current;
+		acting.current = true;
+		setBusy(true);
+		setFailure(void 0);
+		setLink(void 0);
+		try {
+			const value = method === "configure" ? await request("configure", { clientJson: draft }) : await request(method, {});
+			if (current !== generation.current) return;
+			if (method === "configure" || method === "clear-config") setDraft("");
+			if (method === "connect") setLink(authorizationUrl(isRecord(value) ? value.authorizationUrl : void 0));
+		} catch (error) {
+			if (current !== generation.current) return;
+			setFailure(method === "configure" || method === "clear-config" ? "Could not save or remove the client configuration. Check the Desktop OAuth JSON and retry from the local DSH GUI." : error instanceof Error ? error.message : "Google accounts request failed. Retry from the local DSH GUI.");
+		} finally {
+			if (current === generation.current) {
+				acting.current = false;
+				setBusy(false);
+				setRevision((value) => value + 1);
+			}
+		}
+	};
+	const setCallbackMode = async (useSandbox) => {
+		if (acting.current || !status) return;
+		if (status.pending && !window.confirm("Change callback mode? The pending Google connection will be canceled.")) return;
+		const current = ++generation.current;
+		acting.current = true;
+		setBusy(true);
+		setFailure(void 0);
+		let failed = false;
+		try {
+			await request("callback-mode", { useSandbox });
+			if (current !== generation.current) return;
+			setLink(void 0);
+		} catch {
+			if (current !== generation.current) return;
+			failed = true;
+			setFailure("Could not save callback mode. Check the local DSH GUI and retry.");
+		} finally {
+			if (current === generation.current) try {
+				const value = await request("status");
+				if (current === generation.current) {
+					if (!validStatus(value)) throw new Error();
+					setStatus(value);
+					if (!value.pending) setLink(void 0);
+				}
+			} catch {
+				if (current === generation.current && !failed) setFailure("Could not refresh callback mode status. Refresh status before connecting.");
+			} finally {
+				if (current === generation.current) {
+					acting.current = false;
+					setBusy(false);
+					setRevision((value) => value + 1);
+				}
+			}
+		}
+	};
+	const sandboxUnavailable = status?.useSandbox === true && status?.sandboxAvailable !== true;
+	const label = status === void 0 ? "Checking…" : status === null ? "Unavailable" : status.pending ? "Waiting for Google authorization" : status.connected ? "Connected" : status.configured ? "Not connected" : "Not configured";
+	const button = (label, method, disabled = false) => /* @__PURE__ */ react.default.createElement("button", {
+		type: "button",
+		style: styles.button,
+		disabled: busy || disabled || status?.pending && method !== "cancel",
+		onClick: () => {
+			act(method);
+		}
+	}, label);
+	const account = isRecord(status?.account) ? status.account : void 0;
+	const message = failure ?? (typeof status?.error === "string" ? status.error : void 0);
+	const accountLabel = typeof account?.email === "string" && account.email ? account.email : typeof account?.id === "string" ? account.id : "Google account";
+	return /* @__PURE__ */ react.default.createElement("details", {
+		style: styles.card,
+		open: view === "page"
+	}, /* @__PURE__ */ react.default.createElement("summary", { style: { cursor: "pointer" } }, /* @__PURE__ */ react.default.createElement("span", { style: styles.title }, "Google accounts"), /* @__PURE__ */ react.default.createElement("p", { style: styles.hint }, "Shared account and integration permissions.")), /* @__PURE__ */ react.default.createElement("div", {
+		style: styles.section,
+		role: "group",
+		"aria-labelledby": "google-auth-card-title"
+	}, /* @__PURE__ */ react.default.createElement("h3", {
+		id: "google-auth-card-title",
+		style: styles.title
+	}, "Google accounts"), /* @__PURE__ */ react.default.createElement("p", {
+		role: "status",
+		style: styles.hint
+	}, label), status?.connected ? /* @__PURE__ */ react.default.createElement("p", { style: styles.hint }, "Account: ", accountLabel) : null, /* @__PURE__ */ react.default.createElement("p", { style: styles.hint }, "This version supports one Google account per credential store, shared by all enabled integrations."), /* @__PURE__ */ react.default.createElement("p", { style: styles.hint }, "Google sign-in also requests openid and email identity access to bind permissions to your account. Additional consent retains existing granted scopes."), /* @__PURE__ */ react.default.createElement("p", { style: styles.hint }, "In Google Cloud Console, create an OAuth client of type Desktop app. Download its JSON and paste it below. DSH stores it on this host and never returns it to this page. Keep credentials out of Git. ", /* @__PURE__ */ react.default.createElement("a", {
+		...external,
+		href: "https://developers.google.com/identity/protocols/oauth2/native-app"
+	}, "Google OAuth setup documentation")), /* @__PURE__ */ react.default.createElement("label", { style: styles.hint }, /* @__PURE__ */ react.default.createElement("input", {
+		type: "checkbox",
+		checked: status?.useSandbox === true,
+		disabled: busy || !status,
+		onChange: (event) => {
+			setCallbackMode(event.target.checked);
+		}
+	}), "Use sandbox callback forwarding"), /* @__PURE__ */ react.default.createElement("p", { style: styles.hint }, "Off: receive the Google callback directly on the DSH host. On: forward the callback from Docker through the sandbox bridge."), sandboxUnavailable ? /* @__PURE__ */ react.default.createElement("p", {
+		role: "alert",
+		style: {
+			...styles.hint,
+			color: "#ef4444"
+		}
+	}, "Sandbox callback bridge unavailable. Restore the Docker sandbox bridge or turn off sandbox callback forwarding before connecting. DSH will not fall back to a direct host callback.") : null, /* @__PURE__ */ react.default.createElement("label", {
+		style: styles.hint,
+		htmlFor: "google-auth-client-json"
+	}, "Desktop OAuth client JSON"), /* @__PURE__ */ react.default.createElement("textarea", {
+		id: "google-auth-client-json",
+		value: draft,
+		disabled: busy || status?.pending,
+		maxLength: 32768,
+		rows: 5,
+		autoComplete: "off",
+		spellCheck: false,
+		placeholder: status?.configured ? "Paste new JSON to replace the stored configuration" : "Paste downloaded Desktop OAuth client JSON",
+		style: {
+			...styles.button,
+			width: "100%",
+			boxSizing: "border-box",
+			cursor: "text"
+		},
+		onChange: (event) => setDraft(event.target.value)
+	}), /* @__PURE__ */ react.default.createElement("div", { style: styles.actions }, button("Save client configuration", "configure", !status || !draft.trim()), status?.configured ? button("Remove client configuration", "clear-config") : null), status?.integrations.length ? /* @__PURE__ */ react.default.createElement("section", { "aria-label": "Account permissions" }, /* @__PURE__ */ react.default.createElement("h4", { style: styles.title }, "Permissions for all enabled integrations"), /* @__PURE__ */ react.default.createElement("p", { style: styles.hint }, "One Google login requests all required scopes below, plus identity access. Enabling an integration later may require additional consent. Existing granted scopes are retained."), /* @__PURE__ */ react.default.createElement("ul", null, status.requiredScopes.map((scope) => /* @__PURE__ */ react.default.createElement("li", { key: scope }, scope))), status.requiredScopes.includes("https://www.googleapis.com/auth/spreadsheets") ? /* @__PURE__ */ react.default.createElement("p", { style: styles.hint }, "Warning: Google Sheets edit permission is account-wide. Google can authorize editing all your spreadsheets, not only files selected in DSH. DSH still requires separate session read/edit grants and approval for each write.") : null, status.pending || status.connected && !status.missingScopes.length ? null : button(status.connected ? "Grant additional permissions" : "Connect Google account", "connect", !status.configured || sandboxUnavailable)) : null, (status?.integrations ?? []).map((item) => /* @__PURE__ */ react.default.createElement("section", {
+		key: item.id,
+		"aria-label": item.label
+	}, /* @__PURE__ */ react.default.createElement("h4", { style: styles.title }, item.label), /* @__PURE__ */ react.default.createElement("p", { style: styles.hint }, "Required scopes:"), /* @__PURE__ */ react.default.createElement("ul", null, item.scopes.map((scope) => /* @__PURE__ */ react.default.createElement("li", { key: scope }, scope))), item.authorized ? /* @__PURE__ */ react.default.createElement("p", { style: styles.hint }, "Granted / Ready") : /* @__PURE__ */ react.default.createElement("div", null, /* @__PURE__ */ react.default.createElement("p", { style: styles.hint }, "Missing permissions:"), /* @__PURE__ */ react.default.createElement("ul", null, item.missingScopes.map((scope) => /* @__PURE__ */ react.default.createElement("li", { key: scope }, scope)))))), status && !status.integrations.length ? /* @__PURE__ */ react.default.createElement("p", { style: styles.hint }, "Install and enable a Google integration first. No integrations are registered.") : null, status?.pending && !link ? /* @__PURE__ */ react.default.createElement("p", { style: styles.hint }, "Complete authorization in the Google tab you already opened, or cancel and connect again to get a new link.") : null, link && status?.pending ? /* @__PURE__ */ react.default.createElement("a", {
+		...external,
+		href: link
+	}, "Continue with Google") : null, /* @__PURE__ */ react.default.createElement("div", { style: styles.actions }, status?.pending ? button("Cancel", "cancel") : null, status?.connected ? button("Disconnect", "disconnect") : null, /* @__PURE__ */ react.default.createElement("button", {
+		type: "button",
+		style: styles.button,
+		disabled: busy || status?.pending,
+		onClick: () => {
+			setFailure(void 0);
+			setRevision((value) => value + 1);
+		}
+	}, "Refresh status")), /* @__PURE__ */ react.default.createElement("p", { style: styles.hint }, "Disconnect removes only local DSH credentials for ALL integrations. It does not revoke Google access. ", /* @__PURE__ */ react.default.createElement("a", {
+		...external,
+		href: "https://myaccount.google.com/connections"
+	}, "Manage Google account permissions")), message === void 0 ? null : /* @__PURE__ */ react.default.createElement("p", {
+		role: "alert",
+		style: {
+			...styles.hint,
+			color: "#ef4444"
+		}
+	}, message)));
+}
+
+//#endregion
+//#region client/index.ts
+function apply(ctx) {
+	const subscribe = (listener) => typeof ctx.on === "function" ? ctx.on("connection/reset", listener) : () => {};
+	ctx.slots.inject("plugins.row.config", () => ctx.slots.register({
+		name: "plugins.row.config",
+		key: "@local/dsh-google-auth#local-google-auth",
+		order: 25,
+		inject: () => ({
+			api,
+			subscribe
+		})
+	}, GoogleAuthSettingsSection));
+}
+var client_default = {
+	apply,
+	inject: ["slots"],
+	GoogleAuthSettingsSection,
+	authorizationUrl
+};
+
+//#endregion
+exports.default = client_default;
+return module.exports.default; } });

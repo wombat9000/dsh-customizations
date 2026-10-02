@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { createSnapshotHandler, createSnapshotRpcHandler } from '../src/snapshot.js'
-import { hasWorktreeCapability, markIntegrationTool } from '../src/capability.js'
+import { createSnapshotHandler, createSnapshotRpcHandler } from '../dist/src/snapshot.js'
+import { hasWorktreeCapability, markIntegrationTool } from '../dist/src/capability.js'
 
 function fixture() {
   const a = { session: { id: 'a', header: { agentPreset: 'copied-coordinator' } } }

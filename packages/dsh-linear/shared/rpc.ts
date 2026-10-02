@@ -1,0 +1,44 @@
+export const CREDENTIAL_REF = 'LINEAR_API_KEY'
+export const SETTINGS_NAMESPACE = 'local-linear'
+export const CHANNEL = '/linear-integration'
+export interface Workspace {
+  id: string
+  name: string
+  urlKey: string
+}
+export interface Viewer {
+  id: string
+  name: string
+  displayName?: string
+  email?: string
+  active?: boolean
+  isMe?: boolean
+  url?: string
+}
+export interface CredentialStatus {
+  configured: boolean
+  writable: boolean
+  source?: string
+}
+export interface ConnectionStatus {
+  credential: CredentialStatus
+  workspace: Workspace | null
+  viewer: Viewer | null
+  live: boolean
+}
+export type RpcResult<T> =
+  | { ok: true; value: T }
+  | { ok: false; error: { code: string; message: string; details: Record<string, unknown> } }
+export interface RpcEndpoints {
+  status: Record<string, never>
+  test: Record<string, never>
+  connect: { apiKey: string }
+  disconnect: Record<string, never>
+}
+export interface SettingsRpc {
+  call<E extends keyof RpcEndpoints>(
+    channel: typeof CHANNEL,
+    endpoint: E,
+    payload: RpcEndpoints[E],
+  ): Promise<RpcResult<ConnectionStatus>>
+}

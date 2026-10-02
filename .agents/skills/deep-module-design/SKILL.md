@@ -65,6 +65,6 @@ Give a brief rationale in the existing plan or change summary: the owner, the re
 
 ## Repository example
 
-Linear's [project observations](../../../packages/dsh-linear/src/project-observations.js) encapsulate workspace, timestamp, and duplicate revalidation in `approved(prepared, signal)`. The [write operations](../../../packages/dsh-linear/src/project-writes.js) request that outcome rather than each assembling the checks. The shared snapshot operation retains the distinction between a bounded read and a complete write preview.
+Linear's [project observations](../../../packages/dsh-linear/src/project-observations.ts) encapsulate workspace, timestamp, and duplicate revalidation in `approved(prepared, signal)`. The [write operations](../../../packages/dsh-linear/src/project-writes.ts) request that outcome rather than each assembling the checks. The shared snapshot operation retains the distinction between a bounded read and a complete write preview.
 
 The benefit is less duplicated knowledge and coordination, not merely a shorter write module. Use the example to evaluate a boundary, not as a mandatory architecture for other packages.

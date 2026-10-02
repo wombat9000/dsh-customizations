@@ -4,34 +4,42 @@
   "private": true,
   "description": "Preset-neutral GitHub tools with exact approvals and session-scoped issue grants",
   "type": "module",
-  "main": "src/index.js",
+  "main": "dist/src/index.js",
   "exports": {
-    ".": "./src/index.js",
-    "./runtime": "./src/runtime.js",
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "default": "./dist/src/index.js"
+    },
+    "./runtime": {
+      "types": "./dist/src/runtime.d.ts",
+      "default": "./dist/src/runtime.js"
+    },
     "./reads": {
-      "types": "./src/reads.d.ts",
-      "default": "./src/reads.js"
+      "types": "./dist/src/reads.d.ts",
+      "default": "./dist/src/reads.js"
     },
     "./client": "./client.js",
     "./package.json": "./package.json"
   },
   "files": [
-    "src/**/*.js",
-    "src/**/*.d.ts",
     "client.js",
     "client/**/*.ts",
     "client/**/*.tsx",
     "shared/**/*.ts",
     "scripts/*.mjs",
-    "tsconfig.json",
     "cordis.patch.yml",
-    "README.md"
+    "README.md",
+    "dist/**/*.js",
+    "dist/**/*.d.ts",
+    "src/**/*.ts",
+    "tsconfig*.json"
   ],
   "scripts": {
     "typecheck": "node scripts/typecheck.mjs",
-    "build": "node scripts/build-client.mjs",
+    "build": "node scripts/build-host.mjs && node scripts/build-client.mjs",
     "build:client": "node scripts/build-client.mjs",
-    "test": "node --test test/*.test.js"
+    "test": "node --test test/*.test.js",
+    "build:host": "node scripts/build-host.mjs"
   },
   "engines": {
     "node": "^22.19.0 || >=24.0.0"

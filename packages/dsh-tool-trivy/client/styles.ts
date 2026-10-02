@@ -1,0 +1,53 @@
+import type { CSSProperties } from 'react'
+
+export const styles = {
+  section: { display: 'flex', flexDirection: 'column', gap: '16px', width: 'min(720px, 100%)' },
+  heading: { margin: 0, fontSize: '20px', fontWeight: 650 },
+  intro: { margin: 0, opacity: 0.72, lineHeight: 1.5 },
+  card: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '14px',
+    padding: '18px',
+    border: '1px solid color-mix(in srgb, currentColor 16%, transparent)',
+    borderRadius: '12px',
+    background: 'color-mix(in srgb, currentColor 3%, transparent)',
+  },
+  row: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' },
+  title: { margin: 0, fontSize: '16px', fontWeight: 650 },
+  badge: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '7px',
+    fontSize: '13px',
+    opacity: 0.84,
+  },
+  dot: (color: string): CSSProperties => ({
+    width: '8px',
+    height: '8px',
+    borderRadius: '999px',
+    background: color,
+  }),
+  details: {
+    display: 'grid',
+    gridTemplateColumns: 'max-content minmax(0, 1fr)',
+    gap: '7px 12px',
+    fontSize: '13px',
+  },
+  key: { opacity: 0.62 },
+  value: { overflowWrap: 'anywhere' },
+  hint: { margin: 0, fontSize: '13px', opacity: 0.72, lineHeight: 1.5 },
+  actions: { display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' },
+  button: {
+    border: '1px solid color-mix(in srgb, currentColor 22%, transparent)',
+    borderRadius: '8px',
+    background: 'color-mix(in srgb, currentColor 8%, transparent)',
+    color: 'inherit',
+    font: 'inherit',
+    fontWeight: 600,
+    padding: '8px 13px',
+    cursor: 'pointer',
+  },
+  link: { color: 'inherit', fontSize: '13px', fontWeight: 600 },
+  error: { margin: 0, color: '#ef4444', fontSize: '13px' },
+} satisfies Record<string, CSSProperties | ((color: string) => CSSProperties)>

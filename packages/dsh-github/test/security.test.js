@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { createGitHubRuntime, GitHubError, normalizeRemoteUrl, sanitize } from '../src/runtime.js'
+import {
+  createGitHubRuntime,
+  GitHubError,
+  normalizeRemoteUrl,
+  sanitize,
+} from '../dist/src/runtime.js'
 import { fakeSubprocess, json, connection, exec } from './fixtures.js'
 
 const noCalls = () =>

@@ -118,10 +118,14 @@ The inline declaration derives from `@deepseek-ai/dsh-web-app` Standard at [tag 
 From the repository root, with the exact target dependencies already installed through the approved repository setup procedure:
 
 ```sh
+env -u NODE_PATH node packages/dsh-worktree/scripts/build-host.mjs
+env -u NODE_PATH node packages/dsh-worktree/scripts/build-client.mjs
 env -u NODE_PATH node --test packages/dsh-worktree/test/*.test.js
 node scripts/check.mjs
 git diff --check
 ```
+
+Maintained host modules use strict TypeScript in [`src/`](src/); the client uses modular TypeScript and TSX in [`client/`](client/). The package exports checked ESM from [`dist/`](dist/) and the generated lazy browser bundle [`client.js`](client.js). Package builds use the pinned root compiler and shared build helpers. Run either build command with `--check` to verify committed artifact freshness without writing. The normal Node test suite checks both artifacts and strict contracts. Regenerate artifacts after source changes before packaging.
 
 These validation commands do not install dependencies or apply a profile.
 

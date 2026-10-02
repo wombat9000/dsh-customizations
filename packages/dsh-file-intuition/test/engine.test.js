@@ -4,7 +4,7 @@ import test from 'node:test'
 import { parseRequest, prepareScan, evaluateScan } from '../dist/src/engine.js'
 import { LIMITS } from '../dist/src/contracts.js'
 import { readFile } from 'node:fs/promises'
-import { createJevRuntime } from '../../dsh-jev/src/runtime.js'
+import { createJevRuntime } from '../../dsh-jev/dist/src/runtime.js'
 
 const model = 'typesafe/jev-1.13'
 const bool = (questions = [{ id: 'q', question: 'Does this file validate input?' }]) =>
@@ -449,7 +449,7 @@ test('full serialized UTF8 request cap includes escaping, model, state, question
 })
 
 test('larger files pass through the real Jev service without truncation (mocked HTTP)', async (t) => {
-  const github = await readFile(new URL('../../dsh-github/src/runtime.js', import.meta.url), 'utf8')
+  const github = await readFile(new URL('../../dsh-github/src/runtime.ts', import.meta.url), 'utf8')
   const samples = [
     ['GitHub runtime previously excluded by the 16 KiB cap', github],
     ['96 KiB ASCII boundary', 'x'.repeat(LIMITS.fileBytes)],

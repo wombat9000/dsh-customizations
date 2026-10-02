@@ -1,8 +1,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { getEventListeners } from 'node:events'
-import { GoogleSheetsClient, SHEETS_SCOPE, SHEETS_MIME } from '../src/sheets.js'
-import { SheetsTransport } from '../src/sheets-transport.js'
+import { GoogleSheetsClient, SHEETS_SCOPE, SHEETS_MIME } from '../dist/src/sheets.js'
+import { SheetsTransport } from '../dist/src/sheets-transport.js'
 
 const fileId = 'sheet_123'
 const range = "'Tab'!A1:B2"

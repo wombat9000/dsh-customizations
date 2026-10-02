@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { DrivePermissions } from '../src/permissions.js'
+import { DrivePermissions } from '../dist/src/permissions.js'
 
 const folder = (id, parents = []) => ({
   id,

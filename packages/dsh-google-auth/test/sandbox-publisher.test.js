@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { SandboxCallbackPublisher, apply, name } from '../src/sandbox-publisher.js'
+import { SandboxCallbackPublisher, apply, name } from '../dist/src/sandbox-publisher.js'
 
 function fixture(overrides = {}, options = {}) {
   const clients = []

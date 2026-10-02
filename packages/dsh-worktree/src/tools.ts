@@ -1,0 +1,96 @@
+import type { Context } from '@deepseek-ai/cordis'
+import type { Agent } from '@deepseek-ai/dsh-agent'
+import type WorktreeService from './index.js'
+import { defineTool, type ParameterSchemaSpec, type InferArgs } from '@deepseek-ai/dsh-tools'
+import { markIntegrationTool } from './capability.js'
+
+export const name = 'worktree-tools'
+export const inject = ['tools', 'worktreeWorkers']
+
+// Compatibility entrypoint for installed coordinator presets and user copies.
+// The shared host service now owns the definitions; mounting this row must not
+// shadow them or bypass inherited restrictions on delegated workers.
+export function apply() {}
+
+export function registerWorktreeTools(
+  ctx: Pick<Context, 'tools'>,
+  service: Pick<WorktreeService, 'create' | 'list' | 'dispatch'>,
+) {
+  const output = {
+    schema: { type: 'string' as const },
+    render(_args: unknown, value: string) {
+      return [{ type: 'text' as const, text: value }]
+    },
+  }
+  const register = <const P extends ParameterSchemaSpec>(
+    name: string,
+    description: string,
+    parameters: P,
+    execute: (args: InferArgs<P>, parent: Agent, signal: AbortSignal) => Promise<unknown>,
+  ) =>
+    ctx.tools.register(
+      markIntegrationTool(
+        defineTool({
+          name,
+          description,
+          parameters,
+          output,
+          async execute(args, exec) {
+            if (!exec.agent) throw new Error('Worktree tools require a calling agent')
+            // Service results are explicitly owned result objects, never live Agents,
+            // Sessions, job snapshots, or other registry references.
+            return JSON.stringify(await execute(args, exec.agent, exec.signal), null, 2)
+          },
+        }),
+      ),
+    )
+  register(
+    'worktree_create',
+    'Create a retained Git worktree on a new worktree/<name> branch from this checkout HEAD. Does not switch this session or copy uncommitted changes. Requires Full access for shared Git metadata; never automatically escalates, merges, or deletes. Worktrees are stored under the original checkout .dsh/worktrees/.',
+    {
+      name: {
+        type: 'string',
+        required: true,
+        description:
+          'Unique lowercase slug: 1–48 letters, digits, or hyphens; starts with a letter or digit.',
+      },
+    },
+    (args, parent, signal) => service.create(parent, args.name, signal),
+  )
+  register(
+    'worktree_list',
+    'List this repository’s Git worktrees, checkout paths, branches, busy status, and this agent’s latest assignments. Read-only. Background job state is process-local; worktrees persist independently.',
+    {},
+    (_args, parent, signal) => service.list(parent, signal),
+  )
+  register(
+    'worktree_dispatch',
+    'Start a fresh one-shot worker in a linked worktree and immediately return a background job ID. Multiple worktrees may run concurrently; only one assignment per worktree is allowed in this host. Use job_output, job_list, and job_kill; DSH sends completion notices. The worker may use many steps but cannot be continued with send_message. Dispatch a fresh worker for review or fixes. Optional context_from supplies a previous report as reference input, not forked conversation history. No automatic commits, merges, or cleanup.',
+    {
+      worktree: {
+        type: 'string',
+        required: true,
+        description:
+          'Checkout path returned by worktree_create/list; must be a registered linked worktree in this repository, not the parent or original checkout.',
+      },
+      task: {
+        type: 'string',
+        required: true,
+        description:
+          'Standalone assignment, acceptance criteria, and relevant context. Maximum 32,000 characters.',
+      },
+      mode: {
+        type: 'string',
+        enum: ['write', 'read-only'],
+        description:
+          'Defaults to read-only. Write permits implementation within the worktree; read-only is for review. Worker permissions never exceed the caller’s authority.',
+      },
+      context_from: {
+        type: 'string',
+        description:
+          'Optional completed job ID from this parent and worktree. Includes its assignment and bounded report as reference material. Available only while retained in this process.',
+      },
+    },
+    (args, parent, signal) => service.dispatch(parent, args, signal),
+  )
+}

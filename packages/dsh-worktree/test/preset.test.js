@@ -94,7 +94,7 @@ async function host(t, fixture) {
     const { default: Plugin } = await installed(`@deepseek-ai/dsh-${suffix}`)
     await ctx.plugin(Plugin, {}).await()
   }
-  const { default: Worktree } = await import('../src/index.js')
+  const { default: Worktree } = await import('../dist/src/index.js')
   await ctx.plugin(Worktree, {}).await()
   await mount(ctx, {
     id: 'agent-preset-registry',

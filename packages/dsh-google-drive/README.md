@@ -110,6 +110,25 @@ Permission transition diagnostics stay in memory on each request record: at most
 
 The plugin does not append custom `google-drive/access` events to session history. DSH `0.1.2-rc.1` rejects unknown events without an `ignorable` envelope marker, but its public append API cannot write that marker. Earlier versions wrote incompatible records; this fix prevents new ones and does not repair or delete existing histories. After an approved plugin update and Host restart, use a new session if an older history already fails to load.
 
+## Development and generated artifacts
+
+Maintain host runtime code in [src](src/index.ts) and browser components in [client](client/index.ts). Both compiler configurations enable strict checking, checked indexed access, and exact optional properties. Browser requests reuse the host's public input contracts; token access uses narrow consumed Google auth interfaces because authentication is a separate bundle.
+
+After the repository's approved dependency setup, run these commands from the repository root with `NODE_PATH` unset:
+
+```sh
+env -u NODE_PATH node packages/dsh-google-drive/scripts/build-host.mjs
+env -u NODE_PATH node packages/dsh-google-drive/scripts/build-client.mjs
+env -u NODE_PATH node packages/dsh-google-drive/scripts/build-host.mjs --check
+env -u NODE_PATH node packages/dsh-google-drive/scripts/build-client.mjs --check
+env -u NODE_PATH node --test packages/dsh-google-drive/test/*.test.js
+env -u NODE_PATH node node_modules/vitest/vitest.mjs run --config packages/dsh-google-drive/test/browser.config.mjs
+```
+
+The builds reuse the repository's pinned TypeScript and bundler. The host build emits checked ESM modules into [dist](dist/src/index.js), without bundling copies of shared services. The browser build produces the generated [client.js](client.js) lazy-loader with the existing package ID and default plugin export. Do not edit generated outputs. Normal Node tests check strict contracts, reproducibility, and host/client artifact freshness. Browser interaction tests import maintained TSX components; Node packaging tests retain generated-loader and registration coverage. Browser tests require an already available Chromium installation.
+
+The package publishes generated host modules, the browser bundle, and its existing documentation. Build changes before packaging or applying a profile. Builds and tests do not install dependencies, start Google authentication, deploy a profile, or change a running GUI.
+
 ## Verification boundary
 
 Tests use synthetic Google responses, real dormant DSH preset/scoped-registry fixtures, actual compressed JSONL session flush/reopen checks, loopback HTTP integration, and Chromium component interactions. No credentials or real Drive contents enter tests. These checks do not imply live profile deployment, real Google consent, or a real Drive read. After an approved deployment, verify selection, reading, cross-session denial, and revocation in the existing GUI.

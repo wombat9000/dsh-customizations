@@ -3,9 +3,11 @@ import { readFile } from 'node:fs/promises'
 import vm from 'node:vm'
 import test from 'node:test'
 import { buildClient, clientPath } from '../scripts/build-client.mjs'
+import { buildHost } from '../scripts/build-host.mjs'
+import { checkHost } from '../../../scripts/build-host.mjs'
 import { typecheck } from '../scripts/typecheck.mjs'
 
-test('GitHub client and compile-only contract regressions pass strict typechecking', async () => {
+test('GitHub host, client and compile-only contract regressions pass strict typechecking', async () => {
   await typecheck()
 })
 
@@ -17,6 +19,10 @@ test('committed GitHub client matches reproducible source assembly', async () =>
     first,
     'Run node packages/dsh-github/scripts/build-client.mjs',
   )
+})
+
+test('committed GitHub host matches checked TypeScript modules', () => {
+  checkHost(buildHost())
 })
 
 test('GitHub assembly registers one lazy factory with the loader contract and React external', async () => {

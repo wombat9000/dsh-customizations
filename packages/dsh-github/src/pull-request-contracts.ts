@@ -1,0 +1,510 @@
+import { property } from './contracts.js'
+import type { OperationSpec, Schema } from './contracts.js'
+import { includesPR } from './pull-request-types.js'
+import type { PRArguments } from './pull-request-types.js'
+import { GitHubError, sanitize } from './runtime.js'
+
+const string = (description: string, extra: Partial<Schema> = {}) => ({
+  type: 'string',
+  description,
+  ...extra,
+})
+const integer = (description: string, maximum = 2147483647) => ({
+  type: 'integer',
+  minimum: 1,
+  maximum,
+  description,
+})
+const repository = {
+  owner: string('Explicit github.com repository owner login.'),
+  repo: string('Explicit repository name, not a URL or owner/repo shorthand.'),
+}
+const pull = {
+  ...repository,
+  pullNumber: integer('Existing pull request number in this repository.'),
+}
+const page = {
+  limit: integer('Page size 1–50; default 20.', 50),
+  page: integer('REST page number; default 1. A full page may require an empty next page.'),
+}
+const spec = (
+  name: string,
+  properties: Record<string, Schema>,
+  required: string[],
+  description: string,
+) => ({
+  name,
+  properties,
+  required,
+  description,
+})
+export const PR_READ_OPERATIONS: Readonly<Record<string, OperationSpec & { name: string }>> =
+  Object.freeze({
+    listPullRequests: spec(
+      'github_list_pull_requests',
+      {
+        ...repository,
+        ...page,
+        state: string('PR state; default open.', { enum: ['open', 'closed', 'all'] }),
+      },
+      ['owner', 'repo'],
+      'List pull requests in one explicit repository. Preserve pagination warnings.',
+    ),
+    getPullRequest: spec(
+      'github_get_pull_request',
+      pull,
+      ['owner', 'repo', 'pullNumber'],
+      'Read one pull request including head/base identities, draft state and mergeability.',
+    ),
+    getPullRequestFiles: spec(
+      'github_get_pull_request_files',
+      { ...pull, ...page },
+      ['owner', 'repo', 'pullNumber'],
+      'Read changed files and available patches. GitHub caps files at 3,000; missing patches are not complete diffs.',
+    ),
+    getPullRequestReviews: spec(
+      'github_get_pull_request_reviews',
+      { ...pull, ...page },
+      ['owner', 'repo', 'pullNumber'],
+      'Read chronological review summaries, separately from review threads.',
+    ),
+    getPullRequestThreads: spec(
+      'github_get_pull_request_threads',
+      {
+        ...pull,
+        limit: page.limit,
+        cursor: string('Opaque reviewThreads cursor for this PR.'),
+        threadId: string('Exact thread node ID to continue its comments; checked against this PR.'),
+        commentsLimit: integer('Comments per thread, 1–50; default 20.', 50),
+        commentsCursor: string('Opaque comments cursor; requires threadId.'),
+      },
+      ['owner', 'repo', 'pullNumber'],
+      'Read review threads with independent comment pagination. Use threadId and commentsCursor for nested continuation.',
+    ),
+    getPullRequestChecks: spec(
+      'github_get_pull_request_checks',
+      {
+        ...pull,
+        limit: page.limit,
+        checksPage: integer('Check-runs REST page; default 1.'),
+        statusesPage: integer('Combined commit-status REST page; default 1.'),
+      },
+      ['owner', 'repo', 'pullNumber'],
+      'Read check runs and commit statuses at the current PR head SHA with separate page numbers.',
+    ),
+    getPullRequestStack: spec(
+      'github_get_pull_request_stack',
+      {
+        ...pull,
+        ...page,
+        membersPage: integer('Page of members within each native stack; default 1.'),
+      },
+      ['owner', 'repo', 'pullNumber'],
+      'Read native stacks containing this PR using REST API 2026-03-10. Member pages preserve full ordered counts. Preview support may be unavailable or inaccessible.',
+    ),
+  })
+const commentProperties = {
+  path: string('Exact relative changed-file path.'),
+  body: string('Exact inline comment text, 1–20,000 characters.'),
+  line: integer('End line in the diff on the selected side.'),
+  side: string('LEFT for old/deleted lines; RIGHT for new/context lines.', {
+    enum: ['LEFT', 'RIGHT'],
+  }),
+  startLine: integer('Optional first line of a multiline comment; requires startSide.'),
+  startSide: string('Multiline start side; must equal side.', { enum: ['LEFT', 'RIGHT'] }),
+}
+export const PR_WRITE_OPERATIONS: Readonly<Record<string, OperationSpec & { name: string }>> =
+  Object.freeze({
+    createPullRequest: spec(
+      'github_create_pull_request',
+      {
+        ...repository,
+        title: string('Exact title, 1–256 characters.'),
+        body: string('Exact body, up to 20,000 characters; empty is allowed.'),
+        head: string('Existing pushed branch in this repository, not owner:branch.'),
+        base: string('Existing base branch in this repository.'),
+      },
+      ['owner', 'repo', 'title', 'body', 'head', 'base'],
+      'Create exactly one DRAFT pull request from existing pushed same-repository branches. Never pushes or creates branches.',
+    ),
+    updatePullRequest: spec(
+      'github_update_pull_request',
+      {
+        ...pull,
+        title: string('Exact replacement title, 1–256 characters.'),
+        body: string('Exact replacement body, up to 20,000 characters; empty clears it.'),
+        draft: {
+          type: 'boolean',
+          description:
+            'True converts to draft; false marks ready. Use a draft-only call; cannot combine with title/body.',
+        },
+      },
+      ['owner', 'repo', 'pullNumber'],
+      'Update selected title/body OR change draft/readiness in a separate exact approved mutation. No base/state/merge edits.',
+    ),
+    submitPullRequestReview: spec(
+      'github_submit_pull_request_review',
+      {
+        ...pull,
+        event: string('Explicit submitted review event; no pending reviews.', {
+          enum: ['COMMENT', 'APPROVE', 'REQUEST_CHANGES'],
+        }),
+        body: string(
+          'Exact review text, up to 20,000 characters. Nonempty for COMMENT/REQUEST_CHANGES.',
+        ),
+        expectedHeadSha: string(
+          'Required exact 40-hex PR head SHA. Stale reviews fail before dispatch.',
+        ),
+        comments: {
+          type: 'array',
+          minItems: 1,
+          maxItems: 20,
+          description: 'Up to 20 inline comments validated against complete files and patches.',
+          items: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['path', 'body', 'line', 'side'],
+            properties: commentProperties,
+          },
+        },
+      },
+      ['owner', 'repo', 'pullNumber', 'event', 'body', 'expectedHeadSha'],
+      'Submit one COMMENT, APPROVE or REQUEST_CHANGES review at expectedHeadSha. Inline comments require complete nontruncated diff patches.',
+    ),
+    createPullRequestStack: spec(
+      'github_create_pull_request_stack',
+      {
+        ...repository,
+        pullNumbers: {
+          type: 'array',
+          minItems: 2,
+          maxItems: 50,
+          uniqueItems: true,
+          items: integer('Existing PR number.'),
+          description:
+            'Explicit ordered existing PR numbers, bottom to top. Each base must already match the previous head; no base edits.',
+        },
+      },
+      ['owner', 'repo', 'pullNumbers'],
+      'Create a native stack from existing ordered PRs. Refuse incomplete memberships or state; never edits branch bases.',
+    ),
+    addPullRequestToStack: spec(
+      'github_add_pull_request_to_stack',
+      {
+        ...pull,
+        stackPullNumber: integer('Existing PR anchoring the explicit native stack to append to.'),
+      },
+      ['owner', 'repo', 'pullNumber', 'stackPullNumber'],
+      'Append one existing PR to the top of the native stack containing stackPullNumber. No base changes or automatic stack inference.',
+    ),
+  })
+const messages = {
+  INVALID_ARGUMENT:
+    'Invalid GitHub pull request arguments. Use explicit targets and documented bounded values.',
+  UNSAFE_CONTENT:
+    'Exact GitHub content contains unsafe or credential-looking text. No mutation was dispatched.',
+  INVALID_RESPONSE:
+    'GitHub returned incomplete or malformed pull request data. No raw diagnostic is exposed.',
+  PERMISSION_DENIED: 'Known GitHub permissions do not allow this pull request operation.',
+  NOT_FOUND:
+    'The GitHub pull request resource is missing or inaccessible; these cases may be indistinguishable.',
+  CONFLICT:
+    'Relevant pull request state does not match the requested operation. Request a new preview.',
+  ALREADY_EXISTS: 'The requested pull request or stack membership already exists.',
+  BOUND_EXCEEDED:
+    'Relevant pull request state exceeds the safe completeness bound. No mutation was dispatched.',
+}
+export function failPR(code = 'INVALID_RESPONSE'): never {
+  throw new GitHubError(code, messages[code as keyof typeof messages] ?? messages.INVALID_RESPONSE)
+}
+export function recordPR(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) failPR()
+  return value as Record<string, unknown>
+}
+export function safeExactPR<T>(value: T): T {
+  const visit = (entry: unknown): void => {
+    if (
+      typeof entry === 'string' &&
+      (sanitize(entry) !== entry ||
+        /-----BEGIN [A-Z ]*PRIVATE KEY-----|Authorization\s*:\s*Basic\b|[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/i.test(
+          entry,
+        ))
+    )
+      failPR('UNSAFE_CONTENT')
+    if (entry && typeof entry === 'object')
+      for (const [key, child] of Object.entries(entry)) {
+        visit(key)
+        visit(child)
+      }
+  }
+  visit(value)
+  if (Buffer.byteLength(JSON.stringify(value)) > 262144) failPR('BOUND_EXCEEDED')
+  return value
+}
+const branchValid = (value: unknown) =>
+  typeof value === 'string' &&
+  value.length > 0 &&
+  value.length <= 255 &&
+  !/[\s~^:?*\[\\\u0000-\u001f\u007f]/.test(value) &&
+  !value.includes('..') &&
+  !value.includes('@{') &&
+  !value.startsWith('/') &&
+  !value.endsWith('/') &&
+  !value.endsWith('.') &&
+  value !== '@' &&
+  value.split('/').every((part) => part && !part.startsWith('.') && !part.endsWith('.lock'))
+export function validatePRArguments(operation: string, rawInput: unknown = {}): PRArguments {
+  const schema = PR_READ_OPERATIONS[operation] ?? PR_WRITE_OPERATIONS[operation]
+  const validate = (
+    input: unknown,
+    properties: Record<string, Schema>,
+    required: string[],
+  ): Record<string, unknown> => {
+    const value = input as Record<string, unknown> | null | undefined
+    if (
+      !value ||
+      typeof value !== 'object' ||
+      Array.isArray(value) ||
+      Object.keys(value).some((key) => !Object.hasOwn(properties, key)) ||
+      required.some((key) => !Object.hasOwn(value, key))
+    )
+      failPR('INVALID_ARGUMENT')
+    for (const [key, entry] of Object.entries(value)) {
+      const rule = properties[key]!
+      if (
+        rule.type === 'integer'
+          ? typeof entry !== 'number' ||
+            !Number.isSafeInteger(entry) ||
+            entry < 1 ||
+            entry > rule.maximum!
+          : rule.type === 'array'
+            ? !Array.isArray(entry)
+            : typeof entry !== rule.type
+      )
+        failPR('INVALID_ARGUMENT')
+      if (rule.enum && !includesPR(rule.enum, entry)) failPR('INVALID_ARGUMENT')
+      if (
+        rule.type === 'string' &&
+        typeof entry === 'string' &&
+        (entry.length > 20000 || /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(entry))
+      )
+        failPR('INVALID_ARGUMENT')
+    }
+    return value
+  }
+  if (!schema) failPR('INVALID_ARGUMENT')
+  const input = validate(rawInput, schema.properties, schema.required) as PRArguments
+  if (
+    !/^[A-Za-z0-9][A-Za-z0-9-]{0,99}$/.test(input.owner) ||
+    !/^[A-Za-z0-9_.-]{1,100}$/.test(input.repo) ||
+    ['.', '..'].includes(input.repo)
+  )
+    failPR('INVALID_ARGUMENT')
+  for (const key of ['cursor', 'commentsCursor', 'threadId'])
+    if (
+      input[key] !== undefined &&
+      (!String(input[key]).length ||
+        String(input[key]).length > 1024 ||
+        /[\s\u0000-\u001f\u007f]/.test(String(input[key])))
+    )
+      failPR('INVALID_ARGUMENT')
+  if (input.commentsCursor !== undefined && input.threadId === undefined) failPR('INVALID_ARGUMENT')
+  if (input.threadId !== undefined && input.cursor !== undefined) failPR('INVALID_ARGUMENT')
+  if (
+    input.title !== undefined &&
+    (!input.title.trim() || input.title.length > 256 || /[\r\n\t]/.test(input.title))
+  )
+    failPR('INVALID_ARGUMENT')
+  for (const key of ['head', 'base'])
+    if (input[key] !== undefined && !branchValid(input[key])) failPR('INVALID_ARGUMENT')
+  if (operation === 'createPullRequest' && input.head === input.base) failPR('INVALID_ARGUMENT')
+  if (
+    operation === 'updatePullRequest' &&
+    (!['title', 'body', 'draft'].some((key) => Object.hasOwn(input, key)) ||
+      (input.draft !== undefined && (input.title !== undefined || input.body !== undefined)))
+  )
+    failPR('INVALID_ARGUMENT')
+  if (input.expectedHeadSha !== undefined && !/^[a-f0-9]{40}$/.test(input.expectedHeadSha))
+    failPR('INVALID_ARGUMENT')
+  if (operation === 'submitPullRequestReview' && input.event !== 'APPROVE' && !input.body!.trim())
+    failPR('INVALID_ARGUMENT')
+  if (
+    input.pullNumbers !== undefined &&
+    (input.pullNumbers.length < 2 ||
+      input.pullNumbers.length > 50 ||
+      new Set(input.pullNumbers).size !== input.pullNumbers.length ||
+      input.pullNumbers.some((n) => !Number.isSafeInteger(n) || n < 1 || n > 2147483647))
+  )
+    failPR('INVALID_ARGUMENT')
+  if (input.stackPullNumber === input.pullNumber && input.stackPullNumber !== undefined)
+    failPR('INVALID_ARGUMENT')
+  if (input.comments !== undefined) {
+    if (!input.comments.length || input.comments.length > 20) failPR('INVALID_ARGUMENT')
+    const seen = new Set()
+    for (const comment of input.comments) {
+      validate(comment, commentProperties, ['path', 'body', 'line', 'side'])
+      if (
+        !comment.body.trim() ||
+        !comment.path.length ||
+        comment.path.length > 1024 ||
+        /[\u0000-\u001f\u007f\\]/.test(comment.path) ||
+        comment.path.startsWith('/') ||
+        comment.path.split('/').some((part) => !part || ['.', '..'].includes(part)) ||
+        (comment.startLine === undefined) !== (comment.startSide === undefined) ||
+        (comment.startLine !== undefined &&
+          (comment.startLine >= comment.line || comment.startSide !== comment.side))
+      )
+        failPR('INVALID_ARGUMENT')
+      const location = JSON.stringify([comment.path, comment.side, comment.startLine, comment.line])
+      if (seen.has(location)) failPR('INVALID_ARGUMENT')
+      seen.add(location)
+    }
+  }
+  const result = structuredClone(input)
+  return PR_WRITE_OPERATIONS[operation] ? safeExactPR(result) : result
+}
+export const prPath = (args: Pick<PRArguments, 'owner' | 'repo'>) =>
+  `/repos/${encodeURIComponent(args.owner)}/${encodeURIComponent(args.repo)}`
+export const getPR = (path: string) => ({ path, method: 'GET' })
+export function arrayPR(value: unknown, maximum = 50): unknown[] {
+  if (!Array.isArray(value) || value.length > maximum) failPR()
+  return value
+}
+export function shaPR(value: unknown): string {
+  if (typeof value !== 'string' || !/^[a-f0-9]{40}$/.test(value)) failPR()
+  return value
+}
+export function textPR(value: unknown): string
+export function textPR(value: unknown, nullable: false): string
+export function textPR(value: unknown, nullable: true): string | null
+export function textPR(value: unknown, nullable = false): string | null {
+  if (nullable && value === null) return null
+  if (typeof value !== 'string') failPR()
+  return value
+}
+export function numberPR(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 1 || value > 2147483647)
+    failPR()
+  return value
+}
+export function boolPR(value: unknown): boolean {
+  if (typeof value !== 'boolean') failPR()
+  return value
+}
+export function repoPR(input: unknown, args: Pick<PRArguments, 'owner' | 'repo'>) {
+  const value = recordPR(input)
+  const nameWithOwner = value.full_name ?? value.nameWithOwner
+  if (
+    (typeof value.id !== 'string' && !Number.isSafeInteger(value.id)) ||
+    !value.id ||
+    typeof nameWithOwner !== 'string' ||
+    nameWithOwner.toLowerCase() !== `${args.owner}/${args.repo}`.toLowerCase()
+  )
+    failPR()
+  return { id: value.id, nameWithOwner }
+}
+export function restPullPR(input: unknown, args: PRArguments, number = args.pullNumber) {
+  const value = recordPR(input)
+  const actualNumber = numberPR(value.number)
+  if (
+    (number !== undefined && actualNumber !== number) ||
+    typeof value.node_id !== 'string' ||
+    !value.node_id ||
+    !includesPR(['open', 'closed'], value.state) ||
+    !Object.hasOwn(value, 'merged_at') ||
+    (value.merged_at !== null && typeof value.merged_at !== 'string')
+  )
+    failPR()
+  if (
+    (value.mergeable !== undefined &&
+      value.mergeable !== null &&
+      typeof value.mergeable !== 'boolean') ||
+    (value.mergeable_state !== undefined && typeof value.mergeable_state !== 'string') ||
+    (value.changed_files !== undefined &&
+      (typeof value.changed_files !== 'number' ||
+        !Number.isSafeInteger(value.changed_files) ||
+        value.changed_files < 0))
+  )
+    failPR()
+  const repository = repoPR(recordPR(value.base).repo, args)
+  const url = `https://github.com/${repository.nameWithOwner}/pull/${actualNumber}`
+  if (typeof value.html_url !== 'string' || value.html_url.toLowerCase() !== url.toLowerCase())
+    failPR()
+  const ref = (input: unknown, base = false) => {
+    const entry = recordPR(input)
+    if (typeof entry.ref !== 'string' || !entry.ref) failPR()
+    const remote = entry.repo === null ? null : recordPR(entry.repo)
+    if (base && !remote) failPR()
+    if (remote && (typeof remote.full_name !== 'string' || !remote.id)) failPR()
+    return {
+      ref: entry.ref,
+      sha: shaPR(entry.sha),
+      repository: remote ? { id: remote.id, nameWithOwner: remote.full_name as string } : null,
+    }
+  }
+  return {
+    id: value.node_id,
+    number: actualNumber,
+    url: value.html_url,
+    repository,
+    title: textPR(value.title),
+    body: textPR(value.body, true),
+    state: value.state,
+    isDraft: boolPR(value.draft),
+    mergedAt: value.merged_at,
+    head: ref(value.head),
+    base: ref(value.base, true),
+    author:
+      value.user === null
+        ? null
+        : {
+            login: textPR(recordPR(value.user).login),
+            id: textPR(property(value.user, 'node_id')),
+          },
+    updatedAt: textPR(value.updated_at),
+    mergeable: value.mergeable === undefined ? null : value.mergeable,
+    mergeableState: value.mergeable_state ?? null,
+    changedFiles: value.changed_files ?? null,
+  }
+}
+export function restPagePR<T>(
+  items: T[],
+  args: { limit?: number; page?: number },
+  totalCount: number | null = null,
+) {
+  const limit = args.limit ?? 20
+  const page = args.page ?? 1
+  if (totalCount !== null && (!Number.isSafeInteger(totalCount) || totalCount < items.length))
+    failPR()
+  const hasNextPage = totalCount === null ? items.length === limit : page * limit < totalCount
+  return {
+    nodes: items,
+    totalCount,
+    pageInfo: {
+      page,
+      hasNextPage,
+      nextPage: hasNextPage ? page + 1 : null,
+      completeness: totalCount === null && items.length === limit ? 'unknown-full-page' : 'known',
+    },
+  }
+}
+export function connectionPR<T>(input: unknown, mapper: (node: unknown) => T, maximum = 50) {
+  const value = recordPR(input)
+  const pageInfo = recordPR(value.pageInfo)
+  const nodes = arrayPR(value.nodes, maximum).map(mapper)
+  const hasNextPage = boolPR(pageInfo.hasNextPage)
+  const endCursor = pageInfo.endCursor
+  if (
+    (endCursor !== null && typeof endCursor !== 'string') ||
+    (hasNextPage && !endCursor) ||
+    typeof value.totalCount !== 'number' ||
+    !Number.isSafeInteger(value.totalCount) ||
+    value.totalCount < nodes.length
+  )
+    failPR()
+  return {
+    nodes,
+    totalCount: value.totalCount,
+    pageInfo: { hasNextPage, endCursor, nextCursor: hasNextPage ? endCursor : null },
+  }
+}

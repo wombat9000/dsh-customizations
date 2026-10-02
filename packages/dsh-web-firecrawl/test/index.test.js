@@ -1,11 +1,13 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import { buildHost } from '../scripts/build-host.mjs'
+import { checkHost } from '../../../scripts/build-host.mjs'
 import {
   FIRECRAWL_DEFAULT_BASE_URL,
   apply,
   FirecrawlWebProvider,
   mapFirecrawlScrapeResponse,
-} from '../src/index.js'
+} from '../dist/src/index.js'
 
 function jsonResponse(payload, status = 200) {
   return new Response(JSON.stringify(payload), {
@@ -325,4 +327,8 @@ test('rejects malformed successful envelopes', async () => {
       error.code === 'WEB_PROVIDER_ERROR' &&
       error.message.includes('unprocessable search response'),
   )
+})
+
+test('strict host contracts and generated host artifacts remain current', () => {
+  checkHost(buildHost())
 })

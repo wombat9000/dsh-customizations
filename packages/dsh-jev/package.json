@@ -4,20 +4,41 @@
   "private": true,
   "description": "Host-only Jev structured decisions through shared OpenRouter credentials",
   "type": "module",
-  "main": "src/index.js",
+  "main": "dist/src/index.js",
   "exports": {
-    ".": "./src/index.js",
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./dist/src/index.js"
+    },
     "./client": "./client.js",
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./src/runtime.js": {
+      "types": "./src/runtime.ts",
+      "default": "./dist/src/runtime.js"
+    },
+    "./shared/contracts": {
+      "types": "./shared/contracts.ts",
+      "default": "./dist/shared/contracts.js"
+    }
   },
   "files": [
-    "src",
+    "dist/**/*.js",
+    "src/**/*.ts",
+    "shared/**/*.ts",
+    "client/**/*.ts",
+    "client/**/*.tsx",
     "client.js",
+    "scripts/*.mjs",
+    "tsconfig*.json",
     "cordis.patch.yml",
     "README.md"
   ],
   "scripts": {
-    "test": "node --test test/host.test.js"
+    "build": "node scripts/build-host.mjs && node scripts/build-client.mjs",
+    "build:host": "node scripts/build-host.mjs",
+    "build:client": "node scripts/build-client.mjs",
+    "typecheck": "node scripts/typecheck.mjs",
+    "test": "node --test test/*.test.js"
   },
   "engines": {
     "node": "^22.19.0 || >=24.0.0"
@@ -43,5 +64,6 @@
     "@deepseek-ai/dsh-client-ui-plugin-manager": "0.1.7-rc.2",
     "react": "18.3.1"
   },
-  "license": "UNLICENSED"
+  "license": "UNLICENSED",
+  "types": "src/index.ts"
 }

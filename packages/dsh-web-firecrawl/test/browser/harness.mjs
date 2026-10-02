@@ -2,23 +2,10 @@ import React, { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { expect, vi } from 'vitest'
 
-let plugin
-const previousLoader = window.__ModuleLoader__
-window.__ModuleLoader__ = {
-  load({ id, factory }) {
-    expect(id).toBe('@local/dsh-web-firecrawl')
-    plugin = factory((name) => {
-      expect(name).toBe('react')
-      return React
-    })
-  },
-}
-try {
-  await import('../../client.js')
-} finally {
-  if (previousLoader === undefined) delete window.__ModuleLoader__
-  else window.__ModuleLoader__ = previousLoader
-}
+import * as plugin from '../../client/index.ts'
+
+// Source components run here with real React. client.test.js owns generated
+// loader identity, external imports, and artifact freshness.
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 
 export const REF = 'FIRECRAWL_API_KEY'

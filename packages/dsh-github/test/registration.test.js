@@ -2,8 +2,8 @@ import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
 import { pathToFileURL } from 'node:url'
 import test from 'node:test'
-import * as GitHub from '../src/index.js'
-import { createGitHubTools } from '../src/tools.js'
+import * as GitHub from '../dist/src/index.js'
+import { createGitHubTools } from '../dist/src/tools.js'
 import { fakeSubprocess } from './fixtures.js'
 
 const require = createRequire(import.meta.url)

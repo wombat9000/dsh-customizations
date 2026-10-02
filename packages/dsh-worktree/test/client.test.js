@@ -2,9 +2,9 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { readFile } from 'node:fs/promises'
 import vm from 'node:vm'
-import { createSnapshotRpcHandler } from '../src/snapshot.js'
-import { markIntegrationTool } from '../src/capability.js'
-import { registerWorktreeTools } from '../src/tools.js'
+import { createSnapshotRpcHandler } from '../dist/src/snapshot.js'
+import { markIntegrationTool } from '../dist/src/capability.js'
+import { registerWorktreeTools } from '../dist/src/tools.js'
 let plugin
 vm.runInNewContext(await readFile(new URL('../client.js', import.meta.url), 'utf8'), {
   window: {

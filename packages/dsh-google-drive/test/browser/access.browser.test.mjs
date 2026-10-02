@@ -2,7 +2,7 @@ import React, { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, expect, test } from 'vitest'
 import { page } from 'vitest/browser'
-import source from '../../client.js?raw'
+import plugin from '../../client/index.ts'
 let root, container
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 const h = React.createElement
@@ -16,20 +16,7 @@ afterEach(async () => {
   root = undefined
 })
 async function mount(handler, status = pending) {
-  let record
-  const previous = window.__ModuleLoader__
-  window.__ModuleLoader__ = {
-    load: (value) => {
-      record = value
-    },
-  }
-  try {
-    new Function(source)()
-  } finally {
-    window.__ModuleLoader__ = previous
-  }
-  const plugin = record.factory(() => React),
-    picker = plugin.createPickerStore(),
+  const picker = plugin.createPickerStore(),
     calls = []
   const request = async (method, body, signal) => {
     calls.push({ method, body, signal })

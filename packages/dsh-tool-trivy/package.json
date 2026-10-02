@@ -4,9 +4,9 @@
   "private": true,
   "description": "Pre-installed Trivy vulnerability-audit tool and bundled skill for DSH",
   "type": "module",
-  "main": "src/index.js",
+  "main": "dist/src/index.js",
   "exports": {
-    ".": "./src/index.js",
+    ".": "./dist/src/index.js",
     "./client": "./client.js",
     "./package.json": "./package.json"
   },
@@ -14,11 +14,15 @@
     "assets",
     "client.js",
     "cordis.patch.yml",
-    "src/**/*.js"
+    "dist/**/*.js"
   ],
   "scripts": {
-    "test": "node --test test/index.test.js test/client.test.js",
-    "test:integration": "node --test test/profile.integration.test.js"
+    "test": "node --test test/*.test.js",
+    "test:integration": "node --test test/profile.integration.test.js",
+    "build": "node scripts/build-host.mjs && node scripts/build-client.mjs",
+    "build:host": "node scripts/build-host.mjs",
+    "build:client": "node scripts/build-client.mjs",
+    "typecheck": "node scripts/typecheck.mjs"
   },
   "engines": {
     "node": "^22.19.0 || >=24.0.0"

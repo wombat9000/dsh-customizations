@@ -5,9 +5,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { deflateSync } from 'node:zlib'
 import { createHash } from 'node:crypto'
-import { PdfProcessor } from '../src/pdf.js'
-import { GoogleDriveClient } from '../src/google.js'
-import { pdfTools, pdfProcess, pdfInvocation } from '../src/pdf-process.js'
+import { PdfProcessor } from '../dist/src/pdf.js'
+import { GoogleDriveClient } from '../dist/src/google.js'
+import { pdfTools, pdfProcess, pdfInvocation } from '../dist/src/pdf-process.js'
 
 // All fixtures are generated from synthetic strings and built-in PDF primitives.
 // Scans are local Poppler renderings of these fixtures; no downloads or checked-in binaries.
@@ -320,7 +320,7 @@ test('concurrency, cancellation, disposal and private temp cleanup', native, asy
       env: { ...process.env, TMPDIR: root, TMP: root, TEMP: root },
       workerData: {
         root,
-        module: new URL('../src/pdf.js', import.meta.url).href,
+        module: new URL('../dist/src/pdf.js', import.meta.url).href,
         fixture: textPdf('Hello'),
       },
     })

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { createGitHubRuntime, normalizeRemoteUrl } from '../src/runtime.js'
-import { QUERIES } from '../src/queries.js'
+import { createGitHubRuntime, normalizeRemoteUrl } from '../dist/src/runtime.js'
+import { QUERIES } from '../dist/src/queries.js'
 import { fakeSubprocess, json, connection, exec } from './fixtures.js'
 import {
   repository,

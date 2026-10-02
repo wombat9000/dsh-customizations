@@ -1,0 +1,91 @@
+import type { IncomingMessage, ServerResponse } from 'node:http'
+import type { GitHubReads, Schema, Subprocess } from './contracts.js'
+import type { GrantCaller } from './grant-contracts.js'
+
+// Narrow consumed DSH 0.1.7-rc.2 host surface. Tool execution arguments and
+// event payloads stay unknown; host-owned object identity is never reconstructed.
+export interface Session {
+  id: string
+  header: { cwd: string }
+  seq: number
+  eventAt(seq: number): unknown
+}
+export interface Agent {
+  session: Session
+}
+export interface Agents {
+  get(id: string): Agent | undefined
+  roots(): Agent[]
+}
+export interface Execution {
+  agent?: Agent | undefined
+  signal?: AbortSignal | undefined
+  name: string
+  arguments: unknown
+  token: unknown
+  callId: string
+}
+export type CallerFactory = (
+  exec: { agent?: Agent | undefined; signal?: AbortSignal | undefined },
+  lifecycleSignal?: AbortSignal,
+) => GrantCaller
+export type Decision = { kind: 'allow' | 'deny' | 'cancel' | 'ask'; reason?: string }
+export interface TextContent {
+  type: 'text'
+  text: string
+}
+export interface Tool {
+  name: string
+  description: string
+  parameters: Schema
+  output: { schema: Schema; render(args: unknown, value: string): TextContent[] }
+  timeoutMs: number
+  isConcurrencySafe(): boolean
+  execute(args: unknown, exec: Execution): Promise<string>
+  finalizeContent?(exec: Execution, result: { isError: boolean }): TextContent[] | undefined
+}
+export interface ToolHost {
+  tools: { register(tool: Tool): unknown }
+  effect(callback: () => () => void): unknown
+  on(
+    event: 'tools/pre-execute',
+    handler: (exec: Execution, next: () => Promise<Decision>) => Promise<Decision>,
+  ): unknown
+  on(
+    event: 'tools/result',
+    handler: (exec: Execution, result: { isError: boolean }) => void,
+  ): unknown
+}
+export interface WebScope {
+  effect(callback: () => () => void): unknown
+  webServer: {
+    port: number
+    register(route: {
+      kind: 'exact'
+      path: string
+      handler: (req: IncomingMessage, res: ServerResponse) => Promise<void>
+    }): () => void
+  }
+}
+export interface WebHost {
+  inject(names: string[], callback: (scope: WebScope) => void): unknown
+}
+export interface Host extends ToolHost, WebHost {
+  subprocess: Subprocess
+  get(name: 'agents'): Agents | undefined
+  provide(name: string, service: Readonly<GitHubReads>): unknown
+  on(
+    event: 'tools/pre-execute',
+    handler: (exec: Execution, next: () => Promise<Decision>) => Promise<Decision>,
+  ): unknown
+  on(
+    event: 'tools/result',
+    handler: (exec: Execution, result: { isError: boolean }) => void,
+  ): unknown
+  on(event: 'agent/disposed', handler: (event: { agent: Agent }) => void): unknown
+}
+export interface PresentationInput {
+  sessionId: string
+  callId: string
+  grantId?: string
+}

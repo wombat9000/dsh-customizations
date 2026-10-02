@@ -4,8 +4,8 @@ import { once } from 'node:events'
 import { readFile } from 'node:fs/promises'
 import vm from 'node:vm'
 import test from 'node:test'
-import { allowedRequest, createHandler } from '../src/routes.js'
-import { SessionDriveTools } from '../src/session-tools.js'
+import { allowedRequest, createHandler } from '../dist/src/routes.js'
+import { SessionDriveTools } from '../dist/src/session-tools.js'
 
 const source = await readFile(new URL('../client.js', import.meta.url), 'utf8')
 async function fixture(t) {

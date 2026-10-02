@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { GoogleOAuthClient } from '../src/oauth.js'
+import { GoogleOAuthClient } from '../dist/src/oauth.js'
 
 const secret = 'https://private.invalid/?access_token=private-token'
 const endpoint = 'https://oauth2.googleapis.com/token'

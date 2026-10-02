@@ -6,8 +6,8 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import test from 'node:test'
 import { createRequire } from 'node:module'
-import { apply, Config } from '../src/index.js'
-import { installLinearSettings } from '../src/settings.js'
+import { apply, Config } from '../dist/src/index.js'
+import { installLinearSettings } from '../dist/src/settings.js'
 
 // Use the same real reference writer as Loader, resolved through Schemastery.
 const require = createRequire(import.meta.url)

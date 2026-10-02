@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { WorktreeManager } from '../src/index.js'
+import { WorktreeManager } from '../dist/src/index.js'
 
 const defer = () => {
   let resolve

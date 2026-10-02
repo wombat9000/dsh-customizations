@@ -29,7 +29,18 @@ Consumers must keep the returned key on the host, send it only to their intended
 
 ## Packaging and validation
 
-The bundle targets DSH `0.1.7-rc.2` and uses its existing credentials, settings, and connection services. It adds no OpenRouter SDK or other third-party runtime dependency beyond the repository's pinned DSH/schema packages. JavaScript ships directly, with no build step.
+The bundle targets DSH `0.1.7-rc.2` and uses its existing credentials, settings, and connection services. It adds no OpenRouter SDK or other third-party runtime dependency beyond the repository's pinned DSH/schema packages. Maintained host code uses strict TypeScript; the client uses modular TypeScript/TSX with shared RPC contracts. The package exports the checked ESM host under [dist](dist/) and serves the generated lazy-loader [client bundle](client.js).
+
+With the repository's pinned development dependencies already available, run these commands from the repository root:
+
+```sh
+env -u NODE_PATH node packages/dsh-openrouter/scripts/typecheck.mjs
+env -u NODE_PATH node packages/dsh-openrouter/scripts/build-host.mjs
+env -u NODE_PATH node packages/dsh-openrouter/scripts/build-client.mjs
+env -u NODE_PATH node --test packages/dsh-openrouter/test/*.test.js
+```
+
+After changing source, regenerate both artifacts. Append `--check` to either build command to verify freshness without writing. The normal Node suite checks strict host/client types, negative RPC contracts, and exact artifact freshness. The builds reuse the repository's shared helpers and compiler/bundler pins. Do not edit generated JavaScript. Source changes do not update a running profile.
 
 The `personal-web` recipe selects the bundle. Checking out or building this repository does not install it in a running profile. Profile application and restart require separate approval.
 

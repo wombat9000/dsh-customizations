@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { registerProjectWriteTools } from '../src/tools/project-writes.js'
+import { registerProjectWriteTools } from '../dist/src/tools/project-writes.js'
 
 function deferred() {
   let resolve

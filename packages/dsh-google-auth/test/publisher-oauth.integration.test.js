@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict'
 import { createServer, connect } from 'node:net'
 import test from 'node:test'
-import { GoogleOAuthClient } from '../src/oauth.js'
-import { SandboxCallbackPublisher } from '../src/sandbox-publisher.js'
+import { GoogleOAuthClient } from '../dist/src/oauth.js'
+import { SandboxCallbackPublisher } from '../dist/src/sandbox-publisher.js'
 
 const SCOPE = 'https://www.googleapis.com/auth/drive.metadata.readonly'
 

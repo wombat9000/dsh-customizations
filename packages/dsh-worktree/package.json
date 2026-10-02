@@ -4,23 +4,30 @@
   "private": true,
   "description": "Git worktrees and background one-shot workers for DSH 0.1.7-rc.2",
   "type": "module",
-  "main": "src/index.js",
+  "main": "dist/src/index.js",
   "exports": {
-    ".": "./src/index.js",
-    "./tools": "./src/tools.js",
+    ".": "./dist/src/index.js",
+    "./tools": "./dist/src/tools.js",
     "./client": "./client.js",
     "./package.json": "./package.json"
   },
   "files": [
     "client.js",
-    "src",
+    "dist",
     "presets",
     "cordis.patch.yml",
     "agent.cordis.example.yml",
     "README.md"
   ],
   "scripts": {
-    "test": "node --test test/*.test.js"
+    "test": "node --test test/*.test.js",
+    "build": "node scripts/build-host.mjs && node scripts/build-client.mjs",
+    "build:host": "node scripts/build-host.mjs",
+    "build:client": "node scripts/build-client.mjs",
+    "typecheck:host": "node ../../node_modules/typescript/bin/tsc --project tsconfig.host.json",
+    "typecheck": "node scripts/typecheck.mjs",
+    "check:host": "node scripts/build-host.mjs --check",
+    "check:client": "node scripts/build-client.mjs --check"
   },
   "engines": {
     "node": "^22.19.0 || >=24.0.0"

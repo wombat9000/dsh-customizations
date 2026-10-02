@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { SessionDriveTools } from '../src/session-tools.js'
+import { SessionDriveTools } from '../dist/src/session-tools.js'
 
 function fixture(t, failAt = Infinity) {
   const registered = new Set(),

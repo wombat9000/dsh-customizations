@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises'
 import vm from 'node:vm'
 import test from 'node:test'
 import React from 'react'
-import { createGitHubWriteRuntime, renderWritePreview } from '../src/write-runtime.js'
+import { createGitHubWriteRuntime, renderWritePreview } from '../dist/src/write-runtime.js'
 import { args, snapshot } from './write-payloads.js'
 import { fakeSubprocess, json } from './fixtures.js'
 import {

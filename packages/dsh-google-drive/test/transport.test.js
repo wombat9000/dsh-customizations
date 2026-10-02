@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { GoogleTransport } from '../src/transport.js'
+import { GoogleTransport } from '../dist/src/transport.js'
 
 const url = 'https://www.googleapis.com/drive/v3/files/id?alt=media'
 function fixture(t, fetch, options = {}) {

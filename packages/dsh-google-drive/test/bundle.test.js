@@ -7,9 +7,9 @@ const text = (path) => readFile(new URL(path, root), 'utf8')
 
 test('Drive publishes host/client and compatibility tools but no agent preset', async () => {
   const manifest = JSON.parse(await text('package.json'))
-  assert.equal(manifest.exports['.'], './src/index.js')
+  assert.equal(manifest.exports['.'], './dist/src/index.js')
   assert.equal(manifest.exports['./client'], './client.js')
-  assert.equal(manifest.exports['./tools'], './src/tools.js')
+  assert.equal(manifest.exports['./tools'], './dist/src/tools.js')
   assert.equal(manifest.files.includes('presets'), false)
   for (const path of ['agent.cordis.yml', 'preset.yml', 'LICENSE.standard']) {
     await assert.rejects(access(new URL(`presets/google-drive/${path}`, root)), { code: 'ENOENT' })

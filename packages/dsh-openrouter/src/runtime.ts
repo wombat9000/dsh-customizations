@@ -1,0 +1,268 @@
+import type { Context } from '@deepseek-ai/cordis'
+import { credentialKey, credentialRef } from '@deepseek-ai/dsh-credentials'
+import type {
+  ApiKeyRecord,
+  CredentialInfo,
+  CredentialProvider,
+  CredentialRecord,
+  CredentialRef,
+} from '@deepseek-ai/dsh-credentials'
+import type { SettingsForms } from '@deepseek-ai/dsh-settings'
+import { CHANNEL, isObject } from '../shared/contracts.js'
+import type { OpenRouterService, OpenRouterStatus, RpcResult } from '../shared/contracts.js'
+
+export { CHANNEL }
+export const RECORD_KEY = credentialKey('llm-pi-ai', 'openrouter')
+export const DEFAULT_REFERENCE = credentialRef('OPENROUTER_API_KEY')
+
+type Credentials = Pick<
+  CredentialProvider,
+  'readRecord' | 'describeRecord' | 'describe' | 'resolve' | 'set' | 'unset' | 'modifyRecord'
+>
+type Settings = Pick<SettingsForms, 'describe'>
+interface Selected extends OpenRouterStatus {
+  target: string
+  reference?: CredentialRef
+}
+interface Connection {
+  rpc: {
+    handle(
+      channel: string,
+      handler: (endpoint: string, payload: unknown) => Promise<RpcResult<OpenRouterStatus>>,
+      options: { authority: 'trusted-host' },
+    ): () => void
+  }
+}
+
+declare module '@deepseek-ai/cordis' {
+  interface Context {
+    openrouter: OpenRouterService
+  }
+}
+const CANONICAL_URL = 'https://openrouter.ai/api/v1'
+const SOURCE_NAMES = new Set(['env', 'file', 'project-env', 'user-env'])
+const messages = {
+  unavailable: 'OpenRouter credential storage is unavailable.',
+  unsupported: 'The built-in OpenRouter route has an unsupported endpoint or credential kind.',
+  stopped: 'OpenRouter integration has stopped.',
+  changed: 'The OpenRouter credential target changed. Refresh status before trying again.',
+  readonly: 'The selected OpenRouter credential source is read-only.',
+  invalid: 'Invalid OpenRouter settings request.',
+}
+class SafeError extends Error {}
+function fail(code: keyof typeof messages): never {
+  throw new SafeError(messages[code])
+}
+function validRecord(record: unknown): asserts record is ApiKeyRecord | undefined {
+  if (
+    record !== undefined &&
+    (!isObject(record) ||
+      record.kind !== 'api-key' ||
+      (record.key !== undefined && typeof record.key !== 'string'))
+  )
+    fail('unsupported')
+}
+function publicSource(info: CredentialInfo): string {
+  return info.source !== undefined && SOURCE_NAMES.has(info.source)
+    ? info.source
+    : info.configured
+      ? 'reference'
+      : 'none'
+}
+
+// Upstream credential brands address the existing store; adapters supply only consumed services.
+export function createOpenRouterRuntime({
+  credentials,
+  settings,
+}: {
+  credentials: Credentials
+  settings: Settings
+}) {
+  let active = true
+  const guard = () => {
+    if (!active) fail('stopped')
+  }
+  const route = () => {
+    guard()
+    // Settings projects the provider's live Config; it no longer owns a value store.
+    const value = settings.describe().find((entry) => entry.ns === 'llm-pi-ai')?.value
+    const providers = isObject(value) ? value.providers : undefined
+    const profileValue = isObject(providers) ? providers.openrouter : undefined
+    const profile = isObject(profileValue) ? profileValue : undefined
+    const baseURL = profile?.baseURL
+    if (
+      baseURL !== undefined &&
+      (typeof baseURL !== 'string' || baseURL.replace(/\/+$/u, '') !== CANONICAL_URL)
+    )
+      fail('unsupported')
+    const ref = profile?.apiKeyEnv
+    if (ref !== undefined && (typeof ref !== 'string' || !/^[A-Za-z_][A-Za-z0-9_]*$/u.test(ref)))
+      fail('unsupported')
+    return ref === undefined ? undefined : credentialRef(ref)
+  }
+  async function select(recordOverride?: CredentialRecord, hasOverride = false): Promise<Selected> {
+    const initialRef = route()
+    const result = await selectCurrent(recordOverride, hasOverride)
+    if (route() !== initialRef) fail('changed')
+    return result
+  }
+  async function selectCurrent(
+    recordOverride?: CredentialRecord,
+    hasOverride = false,
+  ): Promise<Selected> {
+    const ref = route()
+    if (ref !== undefined) {
+      const info = await credentials.describe(ref)
+      guard()
+      return {
+        configured: info.configured === true,
+        writable: info.writable === true,
+        source: publicSource(info),
+        reference: ref,
+        target: `reference:explicit:${ref}`,
+      }
+    }
+    const record = hasOverride ? recordOverride : await credentials.readRecord(RECORD_KEY)
+    guard()
+    validRecord(record)
+    if (record?.key) {
+      const info = await credentials.describeRecord(RECORD_KEY)
+      guard()
+      return {
+        configured: true,
+        writable: info.writable === true,
+        source: 'record',
+        target: `record:${RECORD_KEY}`,
+      }
+    }
+    const fallback = await credentials.describe(DEFAULT_REFERENCE)
+    guard()
+    if (fallback.configured === true)
+      return {
+        configured: true,
+        writable: fallback.writable === true,
+        source: publicSource(fallback),
+        reference: DEFAULT_REFERENCE,
+        target: `reference:default:${DEFAULT_REFERENCE}`,
+      }
+    const info = await credentials.describeRecord(RECORD_KEY)
+    guard()
+    return {
+      configured: false,
+      writable: info.writable === true,
+      source: 'none',
+      target: `record:${RECORD_KEY}`,
+    }
+  }
+  async function safe<T>(operation: () => Promise<T>): Promise<T> {
+    try {
+      guard()
+      return await operation()
+    } catch (error) {
+      throw new SafeError(error instanceof SafeError ? error.message : messages.unavailable)
+    }
+  }
+  async function status(): Promise<OpenRouterStatus> {
+    try {
+      return await safe(() => select())
+    } catch (error) {
+      return {
+        configured: false,
+        writable: false,
+        source: 'unavailable',
+        target: null,
+        error: error instanceof SafeError ? error.message : messages.unavailable,
+      }
+    }
+  }
+  async function resolveApiKey() {
+    return safe(async () => {
+      const selected = await select()
+      const value =
+        selected.reference !== undefined
+          ? (await credentials.resolve(selected.reference))?.value
+          : await credentials.readRecord(RECORD_KEY)
+      guard()
+      // Refuse to return a value if settings changed during an asynchronous read.
+      const current = await select()
+      if (current.target !== selected.target) fail('changed')
+      if (selected.reference !== undefined)
+        return typeof value === 'string' && value.length ? value : undefined
+      validRecord(value)
+      return value?.key || undefined
+    })
+  }
+  async function mutate(action: 'save' | 'clear', payload: unknown) {
+    return safe(async () => {
+      if (
+        !isObject(payload) ||
+        Object.keys(payload).sort().join(',') !==
+          (action === 'save' ? 'apiKey,target' : 'target') ||
+        typeof payload.target !== 'string'
+      )
+        fail('invalid')
+      if (
+        action === 'save' &&
+        (typeof payload.apiKey !== 'string' || !/^[\x21-\x7e]{1,8192}$/u.test(payload.apiKey))
+      )
+        fail('invalid')
+      const apiKey =
+        action === 'save' && typeof payload.apiKey === 'string' ? payload.apiKey : undefined
+      const check = (selected: Selected) => {
+        guard()
+        if (selected.target !== payload.target) fail('changed')
+        if (!selected.writable) fail('readonly')
+      }
+      const selected = await select()
+      check(selected)
+      if (selected.reference !== undefined) {
+        check(await select())
+        if (apiKey !== undefined) await credentials.set(selected.reference, apiKey)
+        else await credentials.unset(selected.reference)
+      } else {
+        // Clear only the key, preserving owner environment data. modifyRecord's
+        // lock lets us reject unsupported grants and changed targets at commit.
+        await credentials.modifyRecord(RECORD_KEY, async (current) => {
+          validRecord(current)
+          check(await select(current, true))
+          return apiKey !== undefined
+            ? { ...current, kind: 'api-key', key: apiKey }
+            : { kind: 'api-key', ...(current?.env !== undefined ? { env: current.env } : {}) }
+        })
+      }
+      guard()
+      return status()
+    })
+  }
+  return {
+    service: Object.freeze({ resolveApiKey, status }),
+    dispose() {
+      active = false
+    },
+    async rpc(endpoint: string, payload?: unknown): Promise<RpcResult<OpenRouterStatus>> {
+      try {
+        guard()
+        if (endpoint === 'status') return { ok: true, value: await status() }
+        if (endpoint !== 'save' && endpoint !== 'clear') fail('invalid')
+        return { ok: true, value: await mutate(endpoint, payload) }
+      } catch (error) {
+        return {
+          ok: false,
+          error: { message: error instanceof SafeError ? error.message : messages.unavailable },
+        }
+      }
+    },
+  }
+}
+
+export function mountOpenRouter(ctx: Context) {
+  const runtime = createOpenRouterRuntime({ credentials: ctx.credentials, settings: ctx.settings })
+  ctx.effect(() => () => runtime.dispose())
+  ctx.provide('openrouter', runtime.service)
+  ctx.inject(['settings'], (child) =>
+    child.effect(() => child.settings.configure({ auto: false }, ctx.fiber)),
+  )
+  const connection: Connection = ctx.get('connection')
+  ctx.effect(() => connection.rpc.handle(CHANNEL, runtime.rpc, { authority: 'trusted-host' }))
+  return runtime
+}

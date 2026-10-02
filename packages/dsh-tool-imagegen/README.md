@@ -44,13 +44,24 @@ Supported tool values are aspect ratios `1:1`, `2:3`, `3:2`, `3:4`, `4:3`, `9:16
 
 References: [Gemini image generation](https://ai.google.dev/gemini-api/docs/image-generation) and [Google Gen AI SDK](https://github.com/googleapis/js-genai).
 
-## Test
+## Development and tests
 
-Mocked tests do not call Gemini or consume credits:
+Maintained host modules live in [src](src/index.ts). The modular Web client lives in [client](client/index.ts), with the native attachment-read contract in [shared/contracts.ts](shared/contracts.ts). Strict checking enables `noUncheckedIndexedAccess` and `exactOptionalPropertyTypes`. Package entrypoints and legacy host subpaths resolve to generated ESM under `dist/src`; the lazy Web loader retains `@local/dsh-tool-imagegen` and its named exports.
 
-    pnpm --filter @local/dsh-tool-imagegen test
-    pnpm --filter @local/dsh-tool-imagegen test:integration
+After the repository's approved dependency setup, run these commands from the repository root:
 
-The integration command checks recipe/manifest composition and apply dry-run only; it neither installs a profile nor generates images. After the approved dependency install and build, `node tests/real-ui/migration-boot.mjs` exercises all recipe bundles in a disposable real Loader/Web host without provider requests. No imagegen build step is needed (plain JavaScript).
+```sh
+node packages/dsh-tool-imagegen/scripts/typecheck.mjs
+node packages/dsh-tool-imagegen/scripts/build-host.mjs
+node packages/dsh-tool-imagegen/scripts/build-client.mjs
+node packages/dsh-tool-imagegen/scripts/build-host.mjs --check
+node packages/dsh-tool-imagegen/scripts/build-client.mjs --check
+node --test packages/dsh-tool-imagegen/test/*.test.js
+node node_modules/vitest/vitest.mjs run --config packages/dsh-tool-imagegen/vitest.config.mjs --configLoader native
+```
 
-Import validation on macOS ARM64 / Node.js 24.18.0 / pnpm 11.9.0: 15 focused tests passed; full build/unit suite passed (1,137 passed, eight existing native-PDF/platform skips); recipe check, clean peers, frozen offline reinstall and thirteen-bundle Loader/Web/authenticated shell/read-only RPC smoke passed. The first offline install lacked cached test packages; an authorized frozen scripts-disabled install fetched those, without changing any existing lock resolution. No image-generation provider request, browser/visual suite, production profile apply or deployment was performed. Runtime/client/patch bytes and original unit/client tests match the imported source; the old install-and-boot test is replaced by safe recipe checks plus the shared disposable-host smoke.
+The normal Node suite checks strict source contracts and host/client artifact freshness without rewriting outputs. The package also exposes `build`, `build:host`, `build:client`, `typecheck`, `test`, `test:integration`, and `test:browser` scripts. Regenerate and include both host and client artifacts after source changes; never edit generated JavaScript directly.
+
+Tests use fixture provider responses and attachment reads. They make no Gemini requests and consume no credits. The integration suite checks recipe/manifest composition, apply dry-run, and shared credential rotation; it neither installs a profile nor generates images. Browser tests use real React/DOM to check previews, lightbox interaction, retry, data-URL fallback, stale responses, and object-URL cleanup. The package-local Vitest configuration keeps caches and failure screenshots in `.vitest/`; native config loading avoids writes into borrowed `node_modules`.
+
+The existing `node tests/real-ui/migration-boot.mjs` checks all recipe bundles in a disposable Loader/Web host without provider requests. Source and component tests do not prove native slot election or real-shell layout. Running that shared smoke test, applying a production profile, restarting DSH, and calling the provider remain separate validation or deployment steps.

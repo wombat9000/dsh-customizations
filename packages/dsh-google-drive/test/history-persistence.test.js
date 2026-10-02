@@ -5,7 +5,7 @@ import { pathToFileURL } from 'node:url'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { DriveAccessRuntime } from '../src/runtime.js'
+import { DriveAccessRuntime } from '../dist/src/runtime.js'
 
 // Real pinned Session and compressed JSONL persistence; dormant Cordis only.
 // All logs are newly generated fixtures. No GUI, provider, credentials, or private history.

@@ -3,8 +3,8 @@ import { readFile, readdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import test from 'node:test'
 import { packageRoot, presetRoot, presetId, skillName, yaml } from './fixtures.js'
-import { TOOL_NAMES } from '../../dsh-github/src/tools.js'
-import { GITHUB_WRITE_TOOL_NAMES } from '../../dsh-github/src/write-tools.js'
+import { TOOL_NAMES } from '../../dsh-github/dist/src/tools.js'
+import { GITHUB_WRITE_TOOL_NAMES } from '../../dsh-github/dist/src/write-tools.js'
 
 const root = join(presetRoot, presetId, 'skills', skillName)
 const path = join(root, 'SKILL.md')

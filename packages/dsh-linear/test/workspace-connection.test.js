@@ -4,8 +4,8 @@ import {
   EMPTY_LINEAR_SETTINGS,
   LINEAR_CREDENTIAL_REF,
   registerLinearSettingsRpc,
-} from '../src/settings.js'
-import { createLinearWorkspaceConnection } from '../src/workspace-connection.js'
+} from '../dist/src/settings.js'
+import { createLinearWorkspaceConnection } from '../dist/src/workspace-connection.js'
 
 const bound = {
   organizationId: 'previous-org',

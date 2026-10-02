@@ -4,8 +4,8 @@ import { spawnSync } from 'node:child_process'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { createRequire } from 'node:module'
 import test from 'node:test'
-import { apply, inject, registerWorktreeTools } from '../src/tools.js'
-import { hasWorktreeCapability } from '../src/capability.js'
+import { apply, inject, registerWorktreeTools } from '../dist/src/tools.js'
+import { hasWorktreeCapability } from '../dist/src/capability.js'
 
 function fixture() {
   const tools = new Map()
@@ -74,7 +74,7 @@ test('bundle owns tools through its service and remains in the portable recipe',
   const manifest = await json('../package.json')
   const recipe = await json('../../../profiles/personal-web/recipe.json')
   assert.equal(manifest.name, '@local/dsh-worktree')
-  assert.equal(manifest.exports['./tools'], './src/tools.js')
+  assert.equal(manifest.exports['./tools'], './dist/src/tools.js')
   assert.deepEqual(manifest.dsh.bundle, { patch: './cordis.patch.yml' })
   assert.equal(manifest.dsh.client.platform, 'web')
   assert.equal(manifest.exports['./client'], './client.js')

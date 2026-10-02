@@ -21,9 +21,9 @@ pnpm run apply -- personal-web
 ```
 
 The recipe adds this bundle after DSH's base/Web bundles and Session Recap.
-No build step, separate catalog entry, or deployment service is needed: the
-workspace glob discovers the package and `dsh.bundle.patch` installs its host
-and prebuilt client. The original `@local/dsh-web-firecrawl` package identity and
+The workspace glob discovers the package and `dsh.bundle.patch` installs its generated host
+and prebuilt client. Committed artifacts need no build during installation; rebuild them
+before applying a profile if you edit the TypeScript sources. The original `@local/dsh-web-firecrawl` package identity and
 `local-web-firecrawl` row are retained so existing installations update in place.
 
 To add only this bundle to another existing Web profile instead:
@@ -103,6 +103,36 @@ Advanced Firecrawl operations such as crawl, map, structured extraction, and
 browser interaction are intentionally not exposed here. They require separate
 model-facing tools because they do not fit DSH's provider-neutral search/fetch
 contract.
+
+## Development
+
+Maintained host code lives in `src/`, shared credential contracts in `shared/`, and
+React components and registration in `client/`. Strict checks enable
+`noUncheckedIndexedAccess` and `exactOptionalPropertyTypes`. The manifest loads
+[the generated host](dist/src/index.js); [the generated client](client.js) retains the lazy-loader package ID and named exports.
+Do not edit generated files directly.
+
+With the repository's pinned development dependencies available, run these commands
+from the repository root. They use the shared compiler and bundler and make no provider calls:
+
+```sh
+node packages/dsh-web-firecrawl/scripts/typecheck.mjs
+node packages/dsh-web-firecrawl/scripts/build-host.mjs
+node packages/dsh-web-firecrawl/scripts/build-client.mjs
+node packages/dsh-web-firecrawl/scripts/build-host.mjs --check
+node packages/dsh-web-firecrawl/scripts/build-client.mjs --check
+node node_modules/vitest/vitest.mjs run --config packages/dsh-web-firecrawl/vitest.browser.config.mjs
+```
+
+The package's [browser configuration](vitest.browser.config.mjs) reuses the root setup
+but keeps runner caches and failure screenshots in the package's ignored `.cache/`
+directory. Use it when dependencies are borrowed read-only in a worktree.
+
+Both normal Node test files enforce strict contracts and artifact freshness, so the
+root's explicit test list needs no additional entry. Compile-time negative cases
+protect provider inputs and the write-only credential RPC contract. Packaged files
+include generated `dist/` and `client.js`, not development sources or build scripts.
+Profile updates and restarts still require separate approval.
 
 ## Test
 

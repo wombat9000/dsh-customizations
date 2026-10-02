@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { access, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { pdfTools, pdfProcess, trustedPdfToolMode } from '../src/pdf-process.js'
+import { pdfTools, pdfProcess, trustedPdfToolMode } from '../dist/src/pdf-process.js'
 
 let tools
 try {

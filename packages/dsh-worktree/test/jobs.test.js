@@ -5,7 +5,7 @@ import LocalJobRegistry from '@deepseek-ai/dsh-jobs-local'
 import SessionProjections from '@deepseek-ai/dsh-session-projection'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import Tools from '@deepseek-ai/dsh-tools'
-import WorktreeService, { WorktreeManager } from '../src/index.js'
+import WorktreeService, { WorktreeManager } from '../dist/src/index.js'
 
 const deferred = () => {
   let resolve

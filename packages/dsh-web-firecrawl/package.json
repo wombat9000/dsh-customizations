@@ -4,21 +4,25 @@
   "private": true,
   "description": "Firecrawl search and fetch provider bundle for DSH 0.1.7-rc.2",
   "type": "module",
-  "main": "src/index.js",
+  "main": "dist/src/index.js",
   "exports": {
-    ".": "./src/index.js",
+    ".": "./dist/src/index.js",
     "./client": "./client.js",
     "./package.json": "./package.json"
   },
   "files": [
     "client.js",
     "cordis.patch.yml",
-    "src/index.js",
+    "dist",
     "README.md"
   ],
   "scripts": {
     "test": "node --test test/index.test.js test/client.test.js",
-    "test:integration": "node --test test/profile.integration.test.js"
+    "test:integration": "node --test test/profile.integration.test.js",
+    "build": "node scripts/build-host.mjs && node scripts/build-client.mjs",
+    "build:host": "node scripts/build-host.mjs",
+    "build:client": "node scripts/build-client.mjs",
+    "typecheck": "node scripts/typecheck.mjs"
   },
   "engines": {
     "node": "^22.19.0 || >=24.0.0"

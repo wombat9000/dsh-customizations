@@ -4,8 +4,8 @@ import { once } from 'node:events'
 import { readFile } from 'node:fs/promises'
 import vm from 'node:vm'
 import test from 'node:test'
-import { createHandler } from '../src/routes.js'
-import { DriveAccessRuntime } from '../src/runtime.js'
+import { createHandler } from '../dist/src/routes.js'
+import { DriveAccessRuntime } from '../dist/src/runtime.js'
 
 const source = await readFile(new URL('../client.js', import.meta.url), 'utf8')
 const folder = {

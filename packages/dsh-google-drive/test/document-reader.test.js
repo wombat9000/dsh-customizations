@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { DriveDocumentReader } from '../src/document-reader.js'
-import { GoogleDriveClient } from '../src/google.js'
+import { DriveDocumentReader } from '../dist/src/document-reader.js'
+import { GoogleDriveClient } from '../dist/src/google.js'
 
 const file = { id: 'id', name: 'Notes', mimeType: 'text/plain', parents: [], trashed: false }
 

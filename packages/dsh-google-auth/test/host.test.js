@@ -1,13 +1,13 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { GoogleDriveClient } from '../../dsh-google-drive/src/google.js'
+import { GoogleDriveClient } from '../../dsh-google-drive/dist/src/google.js'
 import {
   GoogleAuthService,
   CLIENT_KEY,
   CREDENTIAL_KEY,
   credentialAdapter,
   parseClientJson,
-} from '../src/index.js'
+} from '../dist/src/index.js'
 
 const scope = 'https://www.googleapis.com/auth/drive.metadata.readonly'
 const otherScope = 'https://www.googleapis.com/auth/calendar.readonly'

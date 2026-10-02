@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { GoogleAuthService, CLIENT_KEY, CREDENTIAL_KEY, Config } from '../src/index.js'
+import { GoogleAuthService, CLIENT_KEY, CREDENTIAL_KEY, Config } from '../dist/src/index.js'
 
 const scope = 'https://www.googleapis.com/auth/drive.metadata.readonly'
 const deferred = () => {

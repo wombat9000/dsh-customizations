@@ -16,7 +16,7 @@ import {
   registerImageTools,
   renderImageOutput,
   resolveConfig,
-} from '../src/index.js'
+} from '../dist/src/index.js'
 
 const imageBytes = Buffer.from('fake-png-bytes').toString('base64')
 const attachment = {
@@ -236,4 +236,101 @@ test('resolves configuration defaults and rejects invalid values', () => {
   assert.deepEqual(IMAGE_MEDIA_TYPES, ['image/png', 'image/jpeg', 'image/webp', 'image/gif'])
   assert.throws(() => resolveConfig({ maxImages: 0 }), /positive integer/)
   assert.throws(() => resolveConfig({ model: ' ' }), /non-empty string/)
+  assert.throws(() => resolveConfig({ generate: 'true' }), /boolean/)
+})
+
+test('cancellation during credential resolution never constructs a provider client', async () => {
+  let finishKey
+  let started
+  const ready = new Promise((resolve) => {
+    started = resolve
+  })
+  let created = 0
+  const client = new GeminiImageClient(
+    clientOptions({
+      resolveApiKey: () => {
+        started()
+        return new Promise((resolve) => {
+          finishKey = resolve
+        })
+      },
+      clientFactory: () => {
+        created += 1
+        throw new Error('unexpected provider')
+      },
+    }),
+  )
+  const controller = new AbortController()
+  const pending = client.generate({ prompt: 'fixture' }, controller.signal)
+  await ready
+  controller.abort()
+  await assert.rejects(pending, /credential resolution was aborted/)
+  finishKey('late-key')
+  assert.equal(created, 0)
+})
+
+test('provider failures remain sanitized and never persist an image', async () => {
+  for (const [error, message] of [
+    [{ status: 403, message: 'secret-key' }, 'Gemini rejected the configured API credential'],
+    [{ statusCode: 429, message: 'secret-key' }, 'Gemini rate limit or quota exceeded'],
+    [{ status: 500, message: 'secret-key' }, 'Gemini image generation failed (HTTP 500)'],
+    [new Error('secret-key'), 'Gemini image generation failed'],
+    [{ name: 'AbortError', message: 'secret-key' }, 'Gemini image generation was aborted'],
+  ]) {
+    let saves = 0
+    const client = new GeminiImageClient(
+      clientOptions({
+        clientFactory: () => ({
+          models: {
+            generateContent: async () => {
+              throw error
+            },
+          },
+        }),
+        saveImage: async () => {
+          saves += 1
+          return attachment
+        },
+      }),
+    )
+    await assert.rejects(client.generate({ prompt: 'fixture' }), { message })
+    assert.equal(saves, 0)
+  }
+})
+
+test('durable store cancellation prevents subsequent saves and unavailable storage fails closed', async () => {
+  const inputs = []
+  const controller = new AbortController()
+  const response = fakeResponse()
+  response.candidates[0].content.parts.push({
+    inline_data: { image_bytes: imageBytes, mime_type: 'image/png' },
+  })
+  const client = new GeminiImageClient(
+    clientOptions({
+      saveImage: undefined,
+      attachmentStore: {
+        async saveImage(input) {
+          inputs.push(input)
+          controller.abort()
+          return attachment
+        },
+      },
+      clientFactory: () => ({ models: { generateContent: async () => response } }),
+    }),
+  )
+  await assert.rejects(
+    client.generate({ prompt: 'fixture' }, controller.signal),
+    /image persistence was aborted/,
+  )
+  assert.equal(inputs.length, 1)
+  assert.equal(inputs[0].name, 'gemini-image-1.png')
+  await assert.rejects(
+    new GeminiImageClient(
+      clientOptions({
+        saveImage: undefined,
+        clientFactory: () => ({ models: { generateContent: async () => fakeResponse() } }),
+      }),
+    ).generate({ prompt: 'fixture' }),
+    /durable image attachments are unavailable/,
+  )
 })

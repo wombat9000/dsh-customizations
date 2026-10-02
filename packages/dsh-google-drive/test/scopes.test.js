@@ -2,8 +2,8 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
 import { pathToFileURL } from 'node:url'
-import * as DriveTools from '../src/tools.js'
-import { SessionDriveTools } from '../src/session-tools.js'
+import * as DriveTools from '../dist/src/tools.js'
+import { SessionDriveTools } from '../dist/src/session-tools.js'
 
 // Existing pinned registries only: no active agent loop, model, OAuth or network.
 const require = createRequire(import.meta.url)

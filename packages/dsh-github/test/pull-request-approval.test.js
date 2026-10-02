@@ -6,9 +6,9 @@ import { registerTypeScript } from './source-loader.mjs'
 import { cardBlock } from './pull-request-card-fixtures.js'
 registerTypeScript()
 const { PullRequestCard } = await import('../client/pull-request-card.tsx')
-import { createGitHubWriteRuntime } from '../src/write-runtime.js'
-import { createGitHubPullRequestRuntime } from '../src/pull-request-runtime.js'
-import { registerGitHubWriteTools } from '../src/write-tools.js'
+import { createGitHubWriteRuntime } from '../dist/src/write-runtime.js'
+import { createGitHubPullRequestRuntime } from '../dist/src/pull-request-runtime.js'
+import { registerGitHubWriteTools } from '../dist/src/write-tools.js'
 import { fakeSubprocess, json } from './fixtures.js'
 import { approvalHost } from './approval-fixture.js'
 import {

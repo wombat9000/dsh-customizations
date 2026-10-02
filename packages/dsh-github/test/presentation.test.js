@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { createGitHubPresentation } from '../src/presentation.js'
-import { allowedRequest, validateInput, createHandler } from '../src/routes.js'
-import { grantPreview } from '../src/grant-tools.js'
+import { createGitHubPresentation } from '../dist/src/presentation.js'
+import { allowedRequest, validateInput, createHandler } from '../dist/src/routes.js'
+import { grantPreview } from '../dist/src/grant-tools.js'
 import { Readable } from 'node:stream'
 
 function fixture() {

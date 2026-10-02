@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { runCollected, createGitHubRuntime, isGitHubBackendFenced } from '../src/runtime.js'
-import { createGitHubWriteRuntime } from '../src/write-runtime.js'
+import { runCollected, createGitHubRuntime, isGitHubBackendFenced } from '../dist/src/runtime.js'
+import { createGitHubWriteRuntime } from '../dist/src/write-runtime.js'
 import { fakeSubprocess, json } from './fixtures.js'
 import { args, snapshot, mutationResult } from './write-payloads.js'
 

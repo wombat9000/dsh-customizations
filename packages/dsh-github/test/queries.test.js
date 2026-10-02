@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { QUERIES } from '../src/queries.js'
+import { QUERIES } from '../dist/src/queries.js'
 
 test('all fixed GraphQL documents are reads with explicit bounded collections', () => {
   const expectedConnections = {

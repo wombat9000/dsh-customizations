@@ -1,0 +1,447 @@
+import { LinearDocument } from '@linear/sdk'
+import type { ProjectStatus, User, ProjectUpdate } from '@linear/sdk'
+import type { LinearRuntime } from './runtime.js'
+import type { ProjectInput, PreparedCreate, PreparedUpdate, PreparedReport } from './contracts.js'
+import { publicUser, text } from './projections.js'
+import { resolveProjectStatus, resolveTeam, resolveUser } from './resolvers.js'
+import { LinearProjectObservations } from './project-observations.js'
+
+function objectArgs(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value))
+    throw new Error('Linear project arguments must be an object')
+  return value as Record<string, unknown>
+}
+
+const CLEARABLE_FIELDS = new Set(['description', 'content', 'lead', 'startDate', 'targetDate'])
+
+function iso(value: Date | string | number) {
+  return new Date(value).toISOString()
+}
+
+function timestamp(value: unknown, name: string) {
+  if (typeof value !== 'string' || value.trim().length === 0)
+    throw new Error(`${name} must be an ISO timestamp`)
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.valueOf())) throw new Error(`${name} must be an ISO timestamp`)
+  return parsed.toISOString()
+}
+
+function date(value: string, name: string): string
+function date(value: unknown, name: string): string | undefined
+function date(value: unknown, name: string) {
+  if (value === undefined) return undefined
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/u.test(value)) {
+    throw new Error(`${name} must use YYYY-MM-DD format`)
+  }
+  const parsed = new Date(`${value}T00:00:00.000Z`)
+  if (Number.isNaN(parsed.valueOf()) || parsed.toISOString().slice(0, 10) !== value) {
+    throw new Error(`${name} must be a valid calendar date`)
+  }
+  return value
+}
+
+function bounded(value: unknown, name: string, maximum: number, required: true): string
+function bounded(
+  value: unknown,
+  name: string,
+  maximum: number,
+  required?: false,
+): string | undefined
+function bounded(value: unknown, name: string, maximum: number, required = false) {
+  if (value === undefined && !required) return undefined
+  const normalized = text(value)
+  if (normalized === undefined) throw new Error(`${name} must be a non-empty string`)
+  if (normalized.length > maximum) throw new Error(`${name} must be at most ${maximum} characters`)
+  return normalized
+}
+
+function priority(value: unknown) {
+  if (value === undefined) return undefined
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < 0 || value > 4)
+    throw new Error('priority must be an integer from 0 to 4')
+  return value
+}
+
+function unique<T>(values: Iterable<T>) {
+  return [...new Set(values)]
+}
+
+function assertWritableSelectors(status: ProjectStatus | undefined, lead: User | undefined) {
+  if (status?.archivedAt != null)
+    throw new Error(`Linear project status is archived: ${status.name}`)
+  if (lead?.active === false) throw new Error(`Linear project lead is disabled: ${lead.name}`)
+}
+
+function freeze<T>(value: T): T {
+  if (value === null || typeof value !== 'object' || Object.isFrozen(value)) return value
+  for (const child of Object.values(value)) freeze(child)
+  return Object.freeze(value)
+}
+
+function sameArray(left: unknown[], right: unknown[]) {
+  return (
+    left.length === right.length &&
+    [...left].sort().every((value, index) => value === [...right].sort()[index])
+  )
+}
+
+async function optional<T>(promise: PromiseLike<T> | undefined): Promise<T | undefined> {
+  if (promise === undefined) return undefined
+  try {
+    return await promise
+  } catch {
+    return undefined
+  }
+}
+
+function projectResultId(
+  payload: { success?: boolean; projectId?: string | undefined },
+  operation: string,
+) {
+  if (payload?.success === true && typeof payload.projectId === 'string') return payload.projectId
+  throw new Error(`Linear ${operation} did not return a project`)
+}
+
+function projectUpdateResultId(payload: {
+  success?: boolean
+  projectUpdateId?: string | undefined
+}) {
+  if (payload?.success === true && typeof payload.projectUpdateId === 'string')
+    return payload.projectUpdateId
+  throw new Error('Linear project update creation did not return a status report')
+}
+
+export function publicProjectUpdate(update: ProjectUpdate, author?: User) {
+  return {
+    id: update.id,
+    projectId: update.projectId,
+    body: update.body,
+    health: update.health,
+    url: update.url,
+    ...(author === undefined ? {} : { author: publicUser(author) }),
+    ...(update.userId === undefined ? {} : { userId: update.userId }),
+    createdAt: iso(update.createdAt),
+    updatedAt: iso(update.updatedAt),
+  }
+}
+
+export class LinearProjectWrites {
+  runtime: LinearRuntime
+  maxContentChars: number
+  projects: LinearProjectObservations
+  constructor(runtime: LinearRuntime) {
+    this.runtime = runtime
+    this.maxContentChars = runtime.maxDescriptionChars
+    this.projects = new LinearProjectObservations(runtime)
+  }
+
+  async prepareCreate(argumentsValue: unknown, signal?: AbortSignal): Promise<PreparedCreate> {
+    const args = objectArgs(argumentsValue)
+    const name = bounded(args.name, 'name', 255, true)
+    if (!Array.isArray(args.teams) || args.teams.length === 0)
+      throw new Error('teams must contain at least one Linear team')
+    const description = bounded(args.description, 'description', 2_000)
+    const content = bounded(args.content, 'content', this.maxContentChars)
+    const projectPriority = priority(args.priority)
+    const startDate = date(args.startDate, 'startDate')
+    const targetDate = date(args.targetDate, 'targetDate')
+    if (startDate !== undefined && targetDate !== undefined && startDate > targetDate) {
+      throw new Error('startDate must not be after targetDate')
+    }
+    const { client, organization } = await this.runtime.client(signal)
+    const [teams, status, lead, duplicates] = await Promise.all([
+      Promise.all(
+        unique(args.teams as unknown[]).map((selector) =>
+          this.runtime.request('resolve team', () => resolveTeam(client, selector)),
+        ),
+      ),
+      text(args.status) === undefined
+        ? undefined
+        : this.runtime.request('resolve project status', () =>
+            resolveProjectStatus(client, args.status),
+          ),
+      text(args.lead) === undefined
+        ? undefined
+        : this.runtime.request('resolve project lead', () => resolveUser(client, args.lead)),
+      this.projects.duplicates(client, name),
+    ])
+    assertWritableSelectors(status, lead)
+    const input = {
+      name,
+      teamIds: teams.map((team) => team.id),
+      ...(description === undefined ? {} : { description }),
+      ...(content === undefined ? {} : { content }),
+      ...(status === undefined ? {} : { statusId: status.id }),
+      ...(lead === undefined ? {} : { leadId: lead.id }),
+      ...(projectPriority === undefined ? {} : { priority: projectPriority }),
+      ...(startDate === undefined ? {} : { startDate }),
+      ...(targetDate === undefined ? {} : { targetDate }),
+    }
+    const warning =
+      duplicates.length === 0
+        ? []
+        : [
+            '',
+            'Possible duplicate projects:',
+            ...duplicates.map(
+              (project) =>
+                `- ${project.name} — ${project.url}${project.archived ? ' (archived)' : ''}`,
+            ),
+          ]
+    const reason = [
+      `Create Linear project “${name}” in ${organization.name}.`,
+      `Teams: ${teams.map((team) => `${team.key} — ${team.name}`).join(', ')}`,
+      ...(status === undefined ? [] : [`Status: ${status.name}`]),
+      ...(lead === undefined ? [] : [`Lead: ${lead.name}`]),
+      ...(input.priority === undefined ? [] : [`Priority: ${input.priority}`]),
+      ...warning,
+    ].join('\n')
+    return freeze({
+      kind: 'create-project',
+      workspaceId: organization.id,
+      input,
+      approvedDuplicateIds: duplicates.map((project) => project.id).sort(),
+      reason,
+    })
+  }
+
+  async executeCreate(prepared: PreparedCreate, signal?: AbortSignal) {
+    const { client } = await this.projects.approved(prepared, signal)
+    const payload = await this.runtime.request('create project', () =>
+      client.createProject(prepared.input),
+    )
+    const project = await this.runtime.request('load created project', () =>
+      client.project(projectResultId(payload, 'project creation')),
+    )
+    return this.projects.snapshot(project, { completeTeams: true })
+  }
+
+  async prepareUpdate(argumentsValue: unknown, signal?: AbortSignal): Promise<PreparedUpdate> {
+    const args = objectArgs(argumentsValue)
+    const { client, organization } = await this.runtime.client(signal)
+    const project = await this.projects.resolve(client, organization, args.project)
+    const before = await this.runtime.request('load project snapshot', () =>
+      this.projects.snapshot(project, { completeTeams: true }),
+    )
+    const expectedUpdatedAt =
+      args.expectedUpdatedAt === undefined
+        ? before.updatedAt
+        : timestamp(args.expectedUpdatedAt, 'expectedUpdatedAt')
+    if (expectedUpdatedAt !== before.updatedAt) {
+      throw new Error(
+        `Linear project changed since ${expectedUpdatedAt}; fetch it again before requesting an update.`,
+      )
+    }
+    if (
+      args.clearFields !== undefined &&
+      (!Array.isArray(args.clearFields) ||
+        !args.clearFields.every((field): field is string => typeof field === 'string'))
+    )
+      throw new Error('clearFields contains an unsupported project field')
+    const clearFields = unique((args.clearFields ?? []) as string[])
+    if (clearFields.some((field) => !CLEARABLE_FIELDS.has(field)))
+      throw new Error('clearFields contains an unsupported project field')
+    for (const field of clearFields) {
+      if (args[field] !== undefined)
+        throw new Error(`${field} cannot be set and cleared in the same update`)
+    }
+    if (args.teams !== undefined && !Array.isArray(args.teams))
+      throw new Error('teams must contain at least one Linear team')
+    const [status, lead, teams] = await Promise.all([
+      text(args.status) === undefined
+        ? undefined
+        : this.runtime.request('resolve project status', () =>
+            resolveProjectStatus(client, args.status),
+          ),
+      text(args.lead) === undefined
+        ? undefined
+        : this.runtime.request('resolve project lead', () => resolveUser(client, args.lead)),
+      args.teams === undefined
+        ? undefined
+        : Promise.all(
+            unique(args.teams as unknown[]).map((selector) =>
+              this.runtime.request('resolve team', () => resolveTeam(client, selector)),
+            ),
+          ),
+    ])
+    assertWritableSelectors(status, lead)
+    if (teams !== undefined && teams.length === 0)
+      throw new Error('teams must contain at least one Linear team')
+    const desired: ProjectInput = {
+      ...(args.name === undefined ? {} : { name: bounded(args.name, 'name', 255, true) }),
+      ...(args.description === undefined
+        ? {}
+        : { description: bounded(args.description, 'description', 2_000, true) }),
+      ...(args.content === undefined
+        ? {}
+        : { content: bounded(args.content, 'content', this.maxContentChars, true) }),
+      ...(status === undefined ? {} : { statusId: status.id }),
+      ...(lead === undefined ? {} : { leadId: lead.id }),
+      ...(args.priority === undefined ? {} : { priority: priority(args.priority)! }),
+      ...(args.startDate === undefined ? {} : { startDate: date(args.startDate, 'startDate')! }),
+      ...(args.targetDate === undefined
+        ? {}
+        : { targetDate: date(args.targetDate, 'targetDate')! }),
+      ...(teams === undefined ? {} : { teamIds: teams.map((team) => team.id) }),
+    }
+    const beforeValues: { [K in keyof ProjectInput]: ProjectInput[K] | undefined } = {
+      name: before.name,
+      description: before.description,
+      content: before.content,
+      statusId: before.statusId,
+      leadId: before.leadId,
+      priority: before.priority,
+      startDate: before.startDate,
+      targetDate: before.targetDate,
+      teamIds: before.teams.map((team) => team.id),
+    }
+    for (const field of clearFields) {
+      const inputField = field === 'lead' ? 'leadId' : field
+      desired[inputField as 'description' | 'content' | 'leadId' | 'startDate' | 'targetDate'] =
+        null
+    }
+    const nextStartDate = Object.hasOwn(desired, 'startDate') ? desired.startDate : before.startDate
+    const nextTargetDate = Object.hasOwn(desired, 'targetDate')
+      ? desired.targetDate
+      : before.targetDate
+    if (nextStartDate != null && nextTargetDate != null && nextStartDate > nextTargetDate) {
+      throw new Error('startDate must not be after targetDate')
+    }
+    const input: ProjectInput = {}
+    const changes = []
+    for (const [field, value] of Object.entries(desired)) {
+      const key = field as keyof ProjectInput
+      const prior = beforeValues[key]
+      const equal =
+        Array.isArray(value) && Array.isArray(prior) ? sameArray(value, prior) : value === prior
+      if (equal) continue
+      // The key/value pair comes from the already validated desired input.
+      Object.assign(input, { [key]: value })
+      const label =
+        field === 'statusId'
+          ? 'Status'
+          : field === 'leadId'
+            ? 'Lead'
+            : field === 'teamIds'
+              ? 'Teams'
+              : field.charAt(0).toUpperCase() + field.slice(1)
+      const from =
+        field === 'statusId'
+          ? before.status?.name
+          : field === 'leadId'
+            ? before.lead?.name
+            : field === 'teamIds'
+              ? before.teams.map((team) => team.key).join(', ')
+              : field === 'content'
+                ? `${String(prior ?? '').length} characters`
+                : prior
+      const to =
+        field === 'statusId'
+          ? (status?.name ?? 'cleared')
+          : field === 'leadId'
+            ? (lead?.name ?? 'cleared')
+            : field === 'teamIds'
+              ? teams!.map((team) => team.key).join(', ')
+              : field === 'content'
+                ? `${String(value ?? '').length} characters`
+                : value
+      changes.push(`${label}: ${from ?? 'unset'} → ${to ?? 'cleared'}`)
+    }
+    if (changes.length === 0)
+      throw new Error('Linear project update does not change any supported field.')
+    const duplicates =
+      input.name === undefined
+        ? []
+        : await this.projects.duplicates(client, input.name, { excludeId: project.id })
+    const removedTeams =
+      teams === undefined
+        ? []
+        : before.teams.filter(
+            (candidate) => !teams.some((selected) => selected.id === candidate.id),
+          )
+    const warnings = [
+      ...(status?.type === 'completed' || status?.type === 'canceled'
+        ? [`Warning: this moves the project to ${status.type}.`]
+        : []),
+      ...(removedTeams.length === 0
+        ? []
+        : [
+            `Warning: this removes team associations: ${removedTeams.map((candidate) => candidate.key).join(', ')}.`,
+          ]),
+      ...(duplicates.length === 0
+        ? []
+        : [
+            'Possible duplicate projects after rename:',
+            ...duplicates.map(
+              (candidate) =>
+                `- ${candidate.name} — ${candidate.url}${candidate.archived ? ' (archived)' : ''}`,
+            ),
+          ]),
+    ]
+    return freeze({
+      kind: 'update-project',
+      workspaceId: organization.id,
+      projectId: project.id,
+      expectedUpdatedAt,
+      input,
+      approvedDuplicateIds: duplicates.map((candidate) => candidate.id).sort(),
+      reason: [
+        `Update Linear project “${before.name}” in ${organization.name}.`,
+        ...changes,
+        ...(warnings.length === 0 ? [] : ['', ...warnings]),
+      ].join('\n'),
+    })
+  }
+
+  async executeUpdate(prepared: PreparedUpdate, signal?: AbortSignal) {
+    const { client, project } = await this.projects.approved(prepared, signal)
+    const payload = await this.runtime.request('update project', () =>
+      client.updateProject(project!.id, prepared.input),
+    )
+    const updated = await this.runtime.request('load updated project', () =>
+      client.project(projectResultId(payload, 'project update')),
+    )
+    return this.projects.snapshot(updated, { completeTeams: true })
+  }
+
+  async prepareProjectUpdate(
+    argumentsValue: unknown,
+    signal?: AbortSignal,
+  ): Promise<PreparedReport> {
+    const args = objectArgs(argumentsValue)
+    const { client, organization } = await this.runtime.client(signal)
+    const project = await this.projects.resolve(client, organization, args.project)
+    const body = bounded(args.body, 'body', this.maxContentChars, true)
+    if (args.health !== 'onTrack' && args.health !== 'atRisk' && args.health !== 'offTrack') {
+      throw new Error('health must be onTrack, atRisk, or offTrack')
+    }
+    return freeze({
+      kind: 'create-project-update',
+      workspaceId: organization.id,
+      projectId: project.id,
+      expectedUpdatedAt: iso(project.updatedAt),
+      input: { projectId: project.id, body, health: args.health },
+      reason: `Post a Linear status report to “${project.name}” in ${organization.name}.\nHealth: ${args.health}\nBody: ${body.length} characters`,
+    })
+  }
+
+  async executeProjectUpdate(prepared: PreparedReport, signal?: AbortSignal) {
+    const { client } = await this.projects.approved(prepared, signal)
+    const payload = await this.runtime.request('create project update', () =>
+      client.createProjectUpdate({
+        ...prepared.input,
+        health:
+          prepared.input.health === 'onTrack'
+            ? LinearDocument.ProjectUpdateHealthType.OnTrack
+            : prepared.input.health === 'atRisk'
+              ? LinearDocument.ProjectUpdateHealthType.AtRisk
+              : LinearDocument.ProjectUpdateHealthType.OffTrack,
+      }),
+    )
+    const update = await this.runtime.request('load created project update', () =>
+      client.projectUpdate(projectUpdateResultId(payload)),
+    )
+    const author = await optional(update.user)
+    return publicProjectUpdate(update, author)
+  }
+}
