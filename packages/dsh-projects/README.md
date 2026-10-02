@@ -1,6 +1,6 @@
 # Projects
 
-Projects adds a shared, read-only view of GitHub and Linear work to DSH `0.1.7-rc.2`. Open **Projects** in the left navigation, choose a local project, and select one of its linked sources. Agent tools read the same host service.
+Projects adds a shared, read-only view of GitHub and Linear work to DSH `0.2.0-rc.2`. Open **Projects** in the left navigation, choose a local project, and select one of its linked sources. Agent tools read the same host service.
 
 A local project can link to GitHub repositories, GitHub Projects, Linear projects, or Linear teams. Links are explicit. Projects does not infer relationships, mirror issues, or write to either tracker. GitHub board fields remain separate from issue state; Linear workflow names retain their native values.
 
@@ -109,6 +109,8 @@ The `/projects` Connection channel exposes the same operations to the authentica
 There is no agent configuration tool or tracker mutation endpoint. Existing GitHub/Linear write tools keep their existing approval requirements. The client registers the `local-projects` entry in `sidebar.panellist` and the matching key in `main`; both are root-scoped and do not create a Session binding.
 
 ## Development
+
+See the [DSH `0.2.0-rc.2` validation results](../../MIGRATION-0.2.0-rc.2.md#validation-results) for actual fixture and browser outcomes and their limits.
 
 Use existing pinned workspace dependencies. No new third-party library is required. After following the repository's dependency setup procedure, run from the repository root:
 

@@ -127,7 +127,7 @@ export async function startDisposableHost({ additionalPlugins = [], profilePatch
         name: 'dsh-visual-tests',
         private: true,
         type: 'module',
-        // The 0.1.7 Plugins inventory reads direct dependencies, not only the
+        // The Plugins inventory reads direct dependencies, not only the
         // composed bundle list. Existing local links above satisfy these specs;
         // fixture startup never invokes a package manager.
         dependencies: Object.fromEntries(

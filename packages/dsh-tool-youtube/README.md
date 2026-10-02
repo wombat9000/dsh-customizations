@@ -1,6 +1,6 @@
 # Local DSH YouTube Tools
 
-Gemini-backed tools for understanding public YouTube videos in DSH `0.1.7-rc.2`. The package registers ordinary tools and therefore also appears automatically in Programmatic Tool Calling (PTC) as `tools.youtube_watch`, `tools.youtube_transcript`, `tools.youtube_transcript_read`, and `tools.youtube_transcript_search`.
+Gemini-backed tools for understanding public YouTube videos in DSH `0.2.0-rc.2`. The package registers ordinary tools and therefore also appears automatically in Programmatic Tool Calling (PTC) as `tools.youtube_watch`, `tools.youtube_transcript`, `tools.youtube_transcript_read`, and `tools.youtube_transcript_search`.
 
 ## Tools
 
@@ -51,7 +51,7 @@ For headless use, the provider also resolves GEMINI_API_KEY from the environment
 
 Environment and `.env` credentials are read-only on the configuration page and take precedence over the managed credential store. An optional literal `apiKey` plugin setting exists for headless composition but should not be committed.
 
-The client registers `plugins.row.config` with key `@local/dsh-tool-youtube#local-tool-youtube`. Summary rendering is static; page rendering opens the credential form. DSH `0.1.7-rc.2` removes `settings.installSection`, so the host no longer registers an empty `youtube` settings section. Row-page discovery does not require that section. The host runs without Settings, and keys remain in the credential store. Model and operation limits remain ordinary Cordis configuration rather than volatile form fields.
+The client registers `plugins.row.config` with key `@local/dsh-tool-youtube#local-tool-youtube`. Summary rendering is static; page rendering opens the credential form. DSH `0.1.7-rc.2` removed `settings.installSection`, so the host no longer registers an empty `youtube` settings section. Row-page discovery does not require that section. The host runs without Settings, and keys remain in the credential store. Model and operation limits remain ordinary Cordis configuration rather than volatile form fields.
 
 ## Configuration
 
@@ -127,6 +127,8 @@ References: [Video understanding](https://ai.google.dev/gemini-api/docs/video-un
 Host and client sources use strict TypeScript, including checked indexed access and exact optional properties. Runtime validation remains necessary for model responses, persisted records, and RPC data. TypeScript does not establish the accuracy of model-generated timestamps.
 
 ## Build and test
+
+See the [DSH `0.2.0-rc.2` validation results](../../MIGRATION-0.2.0-rc.2.md#validation-results) for actual fixture and browser outcomes and their limits.
 
 After the repository's approved dependency setup, run these commands from the repository root. Builds use the existing pinned TypeScript and client bundler; no package-local compiler installation is needed.
 

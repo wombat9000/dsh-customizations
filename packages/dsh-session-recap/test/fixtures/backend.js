@@ -13,7 +13,7 @@ const require = createRequire(import.meta.url)
 const cli = createRequire(require.resolve('@deepseek-ai/dsh/package.json'))
 const installed = (name) => {
   const manifest = require(cli.resolve(`@deepseek-ai/${name}/package.json`))
-  assert.equal(manifest.version, name === 'cordis' ? '4.0.4' : '0.1.7-rc.2')
+  assert.equal(manifest.version, name === 'cordis' ? '4.0.4' : '0.2.0-rc.2')
   return import(pathToFileURL(cli.resolve(`@deepseek-ai/${name}`)).href)
 }
 const { Service } = await installed('cordis')

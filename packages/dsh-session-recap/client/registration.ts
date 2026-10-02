@@ -7,7 +7,7 @@ import type { RecapActionProps, RecapCardProps } from './containers/recap.tsx'
 import { SettingsCard } from './containers/SettingsCard.tsx'
 import type { SettingsCardProps } from './containers/SettingsCard.tsx'
 
-// Keep the adapter limited to our three consumed seats. DSH 0.1.7-rc.2
+// Keep the adapter limited to our three consumed seats. DSH 0.2.0-rc.2
 // declares plugins.row.config as keyed/root with owner-supplied view; the
 // conversation seats remain session lists. Owner props stay separate from inject.
 interface RecapSlots {

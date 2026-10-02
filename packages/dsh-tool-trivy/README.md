@@ -4,6 +4,8 @@ DSH bundle providing a controlled `trivy_scan` repository-audit tool, the bundle
 
 ## Prerequisite
 
+This bundle targets DSH `0.2.0-rc.2` only. See the [migration handoff](../../MIGRATION-0.2.0-rc.2.md) for validation results and deployment limits.
+
 Install [Trivy](https://trivy.dev/latest/getting-started/installation/) separately and ensure `trivy` is visible on the effective `PATH` of the DSH process. The plugin does not install, update, download, or configure the Trivy executable.
 
 Open **Settings → Trivy** to inspect the detected version or force a recheck. Trivy 0.50.0 or newer is required. The first scan may download or update Trivy's vulnerability database.

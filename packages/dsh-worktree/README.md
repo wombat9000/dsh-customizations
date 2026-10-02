@@ -2,9 +2,9 @@
 
 Manage Git worktrees from a coordinating DSH session and dispatch fresh background workers into them. The coordinator stays in its original checkout. Workers use fixed creation-time directories; this package does not modify DSH internals, switch session directories, or create sidebar workspace records.
 
-Targets **DSH 0.1.7-rc.2**. Uses its public agent, subagent, sandbox-policy, tool, and background-job APIs. Git and Node.js 22.19 or newer must be available on the **DSH host**. Paths refer to that host's filesystem; remote filesystem or container-path translation is not implemented.
+Targets **DSH 0.2.0-rc.2**. Uses its public agent, subagent, sandbox-policy, tool, and background-job APIs. Git and Node.js 22.19 or newer must be available on the **DSH host**. Paths refer to that host's filesystem; remote filesystem or container-path translation is not implemented.
 
-Use the repository's target-pinned, patched launcher and approved [profile setup](../../README.md#apply-the-starter-profile). The RPC-owner compatibility patch is separate from this plugin; no global DSH installation or live profile changes automatically.
+Use the repository's target-pinned launcher and approved [profile setup](../../README.md#apply-the-starter-profile). The RPC-owner compatibility patch remains required in every independent launcher/profile graph. See the [migration handoff](../../MIGRATION-0.2.0-rc.2.md) for validation results and limitations. No global DSH installation or live profile changes automatically.
 
 ## Install and select the preset
 
@@ -12,7 +12,7 @@ The repository's `personal-web` recipe includes this bundle. Its shared `worktre
 
 The bundle also makes **Worktree coordinator** (`worktree-coordinator`) available in the agent preset picker. This optional preset includes Standard's native coding tools, job controls, subagents, workflows, specialized coordination instructions, and an explicit ten-wake completion budget. No separate worker preset is needed: workers inherit their coordinator's composition, then receive the restricted tool set described below.
 
-**Before installing, check for a preset ID collision with `worktree-coordinator`.** DSH 0.1.7-rc.2 registers explicit declarations and rejects duplicate `config.id` values; it does not select a winning directory root. With approval, reconcile conflicting declarations before installation. Saved sessions retain their preset IDs, so preserve the declaration each retained session needs. Convert any custom directory-discovered presets into explicit declarations before relying on them in this target version.
+**Before installing, check for a preset ID collision with `worktree-coordinator`.** DSH 0.2.0-rc.2 registers explicit declarations and rejects duplicate `config.id` values; it does not select a winning directory root. With approval, reconcile conflicting declarations before installation. Saved sessions retain their preset IDs, so preserve the declaration each retained session needs. Convert any custom directory-discovered presets into explicit declarations before relying on them in this target version.
 
 1. With explicit installation and profile-write approval, apply or update `personal-web` through the [repository setup instructions](../../README.md#apply-the-starter-profile). For another target-compatible Web profile, use the verified checkout-local launcher to add this package after the Web bundle. Review any existing profile patch before replacement; do not use an unrelated global launcher.
 2. Restart that DSH profile and refresh the page to load the Worktrees tab.
@@ -29,11 +29,11 @@ The coordinator adds the installed Creator skills to its normal skill catalog th
 
 This adds guidance, not Creator runtime tools: `tool-cordis` remains absent, and worker tool restrictions and permissions stay unchanged. Workers can read the relevant `SKILL.md` with their existing file tools. The plugin skill's plain-JavaScript-only restrictions (no imports, TypeScript, or JSX) and `cordis_inspect_*`/`cordis_define`/`cordis_run` workflow apply to dynamic plugins, not static packaged plugins. For static development and review, use repository API contracts, imports, TypeScript/JSX where supported, and normal build/test workflows. Report unavailable dynamic inspection, activation, or composition runtime operations separately; do not bypass restrictions or block static repository work.
 
-The path resolves `@local/dsh-worktree/package.json` from the root host context's deployment `baseUrl`, then resolves `@deepseek-ai/dsh-agent-preset/package.json` from that bundle's dependency scope. It does not depend on the session working directory. The official package is pinned to **0.1.7-rc.2** and supplies the compatibility-tested `skills/` directory. Keep the bundle and its dependency installed. If either package cannot resolve, preset mounting fails. If the directory disappears, the upstream filesystem provider omits those skills; the compatibility test fails. Normal skill precedence still applies, so project skills can shadow same-named custom skills.
+The path resolves `@local/dsh-worktree/package.json` from the root host context's deployment `baseUrl`, then resolves `@deepseek-ai/dsh-agent-preset/package.json` from that bundle's dependency scope. It does not depend on the session working directory. The official package is pinned to **0.2.0-rc.2** and supplies the `skills/` directory; target-version compatibility validation is pending. Keep the bundle and its dependency installed. If either package cannot resolve, preset mounting fails. If the directory disappears, the upstream filesystem provider omits those skills; the compatibility test fails. Normal skill precedence still applies, so project skills can shadow same-named custom skills.
 
 ### Custom profile configuration
 
-Apply this bundle after `@deepseek-ai/dsh-web-app` in **DSH 0.1.7-rc.2**. Web supplies `agent-preset-registry` and its shipped declarations. This bundle adds its declaration without replacing any preset roster configuration. The final `personal-web` patch keeps `default: standard`; it no longer repeats custom directory roots.
+Apply this bundle after `@deepseek-ai/dsh-web-app` in **DSH 0.2.0-rc.2**. Web supplies `agent-preset-registry` and its shipped declarations. This bundle adds its declaration without replacing any preset roster configuration. The final `personal-web` patch keeps `default: standard`; it no longer repeats custom directory roots.
 
 [`cordis.patch.yml`](cordis.patch.yml) contains the complete declaration and its `config.plugins` list. Cordis config overrides replace the complete config object; preserve the stable `config.id`, metadata, and full child list when overriding this row. Preserve any intended `selectedDefault` separately on the registry row. Presets compose capabilities, not security sandboxes, and this declaration does not elevate worker permissions.
 

@@ -1,6 +1,6 @@
 # Google accounts
 
-`@local/dsh-google-auth` is the shared Google authentication provider for DSH `0.1.7-rc.2`. It owns Desktop OAuth client configuration, account identity, consent, credential storage, and token refresh. Integrations such as [Google Drive](../dsh-google-drive/README.md) declare their required permissions and consume the host's `googleAuth` service instead of implementing login themselves.
+`@local/dsh-google-auth` is the shared Google authentication provider for DSH `0.2.0-rc.2`. It owns Desktop OAuth client configuration, account identity, consent, credential storage, and token refresh. Integrations such as [Google Drive](../dsh-google-drive/README.md) declare their required permissions and consume the host's `googleAuth` service instead of implementing login themselves.
 
 ## First-version boundaries
 
@@ -122,5 +122,7 @@ node --test packages/dsh-google-auth/test/*.test.js
 The normal Node suite compiles strict host/client contracts, checks committed artifact freshness without rewriting files, and exercises the generated implementations. Browser component tests import the maintained TSX entry; Node loader tests cover the generated client registration. Rebuild both artifacts after changing source. Do not edit generated output directly. Builds use the existing pinned root compiler and bundler; they do not install dependencies or initiate OAuth.
 
 ## Verification
+
+See the [DSH `0.2.0-rc.2` validation results](../../MIGRATION-0.2.0-rc.2.md#validation-results) for verified scope and deployment limits.
 
 The automated suites use synthetic tokens, mock Google responses, real ephemeral loopback callbacks and TCP forwarding relays, mocked bridge clients, real DSH service/route lifecycle fixtures, and browser component tests. They do not authenticate a real account or deploy a live profile. A real consent and Drive listing test remains a post-deployment step.

@@ -1,6 +1,6 @@
 {
   "name": "@local/dsh-github",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "Preset-neutral GitHub tools with exact approvals and session-scoped issue grants",
   "type": "module",
@@ -52,5 +52,8 @@
       "platform": "web"
     }
   },
-  "license": "UNLICENSED"
+  "license": "UNLICENSED",
+  "peerDependencies": {
+    "@deepseek-ai/dsh": "0.2.0-rc.2"
+  }
 }

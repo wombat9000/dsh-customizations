@@ -29,7 +29,7 @@ test('portable recipe installs the matching Firecrawl bundle after base and Web'
     ...manifest.dependencies,
     ...manifest.peerDependencies,
   })) {
-    if (name.startsWith('@deepseek-ai/dsh-')) assert.equal(version, '0.1.7-rc.2', name)
+    if (name.startsWith('@deepseek-ai/dsh-')) assert.equal(version, '0.2.0-rc.2', name)
   }
   const patch = await readFile(new URL('../cordis.patch.yml', import.meta.url), 'utf8')
   assert.match(patch, /- id: web\s+config:\s+searchProvider: firecrawl\s+fetchProvider: firecrawl/)

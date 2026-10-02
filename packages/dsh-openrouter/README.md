@@ -29,7 +29,9 @@ Consumers must keep the returned key on the host, send it only to their intended
 
 ## Packaging and validation
 
-The bundle targets DSH `0.1.7-rc.2` and uses its existing credentials, settings, and connection services. It adds no OpenRouter SDK or other third-party runtime dependency beyond the repository's pinned DSH/schema packages. Maintained host code uses strict TypeScript; the client uses modular TypeScript/TSX with shared RPC contracts. The package exports the checked ESM host under [dist](dist/) and serves the generated lazy-loader [client bundle](client.js).
+See the [DSH `0.2.0-rc.2` validation results](../../MIGRATION-0.2.0-rc.2.md#validation-results). The known message-only OpenRouter RPC failure is pre-existing and is not fixed by repinning.
+
+The bundle targets DSH `0.2.0-rc.2` only and uses its existing credentials, settings, and connection services. It adds no OpenRouter SDK or other third-party runtime dependency beyond the repository's pinned DSH/schema packages. Maintained host code uses strict TypeScript; the client uses modular TypeScript/TSX with shared RPC contracts. The package exports the checked ESM host under [dist](dist/) and serves the generated lazy-loader [client bundle](client.js).
 
 With the repository's pinned development dependencies already available, run these commands from the repository root:
 
@@ -48,6 +50,6 @@ Host tests use synthetic credentials and real DSH Settings, ConfigEditor, and Lo
 
 ## Settings migration
 
-DSH `0.1.7-rc.2` derives settings from active Loader entries instead of separately registered sections. This plugin has an empty Config and stores no ordinary preferences. Its custom page uses the `plugins.row.config` key `@local/dsh-openrouter#local-openrouter`; credential selection reads the live `llm-pi-ai` Config projection through `settings.describe()`.
+Since DSH `0.1.7-rc.2`, settings derive from active Loader entries instead of separately registered sections. This plugin has an empty Config and stores no ordinary preferences. Its custom page uses the `plugins.row.config` key `@local/dsh-openrouter#local-openrouter`; credential selection reads the live `llm-pi-ai` Config projection through `settings.describe()`.
 
 An old `openrouter` section in `settings.yaml` does not match the `local-openrouter` entry and has no editable fields to import. DSH renames the legacy file to `settings.yaml.imported` before attempting section imports. That section is not a credential backup: keys remain in the existing credential store or credential reference. The record key `llm-pi-ai/openrouter` and reference names do not change.

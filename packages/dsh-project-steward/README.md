@@ -2,13 +2,13 @@
 
 Project Steward is a selectable agent preset for inspecting repository setup, agent guidance, and development practices. It proposes concrete improvements, applies only approved changes, validates them, and summarizes the results. It keeps Standard's coding tools and adds no Creator runtime tools.
 
-This composition-only bundle targets DSH `0.1.7-rc.2` only. Its intentional Standard customizations are the persona, bundled skill provider, and enabled Ralph with `maxRounds: 64`. It has no runtime entrypoint, new dependency, install hook, startup writer, or migration/sync engine. Selecting the preset does not create `AGENTS.md`, install dependencies, or require a directory structure. Approval rules are agent guidance, not a new security boundary; DSH's host sandbox and approval policy still govern tools.
+This composition-only bundle targets DSH `0.2.0-rc.2` only. Its intentional Standard customizations are the persona, bundled skill provider, and enabled Ralph with `maxRounds: 64`. It has no runtime entrypoint, new dependency, install hook, startup writer, or migration/sync engine. Selecting the preset does not create `AGENTS.md`, install dependencies, or require a directory structure. Approval rules are agent guidance, not a new security boundary; DSH's host sandbox and approval policy still govern tools.
 
 ## Install and select
 
 Before applying the bundle:
 
-1. Use a DSH `0.1.7-rc.2` Web profile that supplies `@deepseek-ai/dsh-agent-preset-registry` and Standard's host dependencies. Before dependency work in a source checkout, follow `.agents/skills/repository-setup/SKILL.md` from the repository root (not included in the installed package). No build is needed for this package.
+1. Use a DSH `0.2.0-rc.2` Web profile that supplies `@deepseek-ai/dsh-agent-preset-registry` and Standard's host dependencies. Before dependency work in a source checkout, follow `.agents/skills/repository-setup/SKILL.md` from the repository root (not included in the installed package). No build is needed for this package.
 2. Check declarations for the stable preset ID `project-steward` and the Cordis row ID `local-preset-project-steward`. A duplicate preset ID fails registration; installation does not shadow a same-ID preset. With approval, reconcile collisions before proceeding. Keep IDs referenced by saved sessions declared, or review those sessions before removing or renaming a declaration.
 3. Inspect the profile's `agent-preset-registry` row. Its `default: standard` is the fallback; `selectedDefault`, when set, overrides it for new sessions. A patch replaces the complete `config`, so preserve any existing `selectedDefault` when editing the row. A legacy `agent-presets` settings default is not the new field; review and migrate the intended selection explicitly.
 
@@ -38,6 +38,8 @@ The skill carries two Markdown drafting templates under `presets/project-steward
 The bundled skill provider resolves this package's `package.json` from `root.baseUrl` and loads `presets/project-steward/skills`. Templates resolve from the loaded skill's resource directory. Keep the package installed for these assets. A duplicated declaration still references this package unless you separately provide and configure replacement assets; preserve the license when redistributing them. Repository guidance you create from the templates is plain Markdown and needs neither DSH nor this package.
 
 ## Validate
+
+The attribution below records the original composition source. See the [DSH `0.2.0-rc.2` migration handoff](../../MIGRATION-0.2.0-rc.2.md) for current-target validation results and limits.
 
 From the repository root, with the existing pinned DSH development dependency available:
 

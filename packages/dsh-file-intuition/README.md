@@ -6,7 +6,7 @@ File Intuition adds four Jev-backed tools and a shared `file-intuition` referenc
 
 ## Availability
 
-This bundle targets DSH `0.1.7-rc.2` only. The `personal-web` recipe includes it after the existing shared OpenRouter and Jev bundles. While installed and active, its four tools and bundled skill are available across all presets, with no per-session toggle. Disable the plugin as a whole to remove them. The bundle declares no preset and does not change the preset roster or default. Source changes take effect after a separately approved profile update and restart.
+This bundle targets DSH `0.2.0-rc.2` only. The `personal-web` recipe includes it after the existing shared OpenRouter and Jev bundles. While installed and active, its four tools and bundled skill are available across all presets, with no per-session toggle. Disable the plugin as a whole to remove them. The bundle declares no preset and does not change the preset roster or default. Source changes take effect after a separately approved profile update and restart.
 
 The bundle reuses `ctx.jev.evaluate`. It adds no provider SDK, credential store, model selector, browser evaluation endpoint, or second Jev service. Configure the shared **Jev** plugin as usual. Its default model is `typesafe/jev-1.13`. Enable these tools only for workspaces whose eligible contents may be sent to that service.
 
@@ -71,6 +71,8 @@ The filesystem API returns an entire directory listing without pagination. File 
 Tests cover opaque remote-style targets, not an actual Docker filesystem transport. The implementation follows the injected filesystem contract; Docker behavior remains a deployment validation step. No live Jev accuracy, cost, latency or calibration benchmark is claimed by the mocked suite.
 
 ## Development
+
+See the [DSH `0.2.0-rc.2` validation results](../../MIGRATION-0.2.0-rc.2.md#validation-results) for verified scope and deployment limits.
 
 After repository setup and any required install approval, run from the repository root:
 

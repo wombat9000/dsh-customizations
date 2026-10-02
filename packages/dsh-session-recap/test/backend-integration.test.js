@@ -18,7 +18,7 @@ test(
   'real backend RPC owns registration, calls, settings persistence, disposal and remount',
   { timeout: 15000 },
   async (t) => {
-    assert.equal(version, '0.1.7-rc.2')
+    assert.equal(version, '0.2.0-rc.2')
     const directory = await state(t)
     const host = await backend(t, directory)
     assert.equal(host.routes.size, 1)

@@ -1,6 +1,6 @@
 # Local DSH Firecrawl Web Provider
 
-Local DSH `0.1.7-rc.2` bundle that uses Firecrawl API v2 behind DSH's existing
+Local DSH `0.2.0-rc.2` bundle that uses Firecrawl API v2 behind DSH's existing
 `web_search` and `web_fetch` tools.
 
 The package registers one provider (`firecrawl`) for both operations and adds a
@@ -11,10 +11,10 @@ provider-selection behavior.
 
 ## Install
 
-From this repository's root:
+From this repository's root, after the [setup procedure](../../.agents/skills/repository-setup/SKILL.md) and explicit install/profile-write approval:
 
 ```sh
-pnpm install --frozen-lockfile --ignore-scripts
+pnpm install --offline --frozen-lockfile --ignore-scripts
 pnpm run check
 pnpm run apply -- personal-web --dry-run
 pnpm run apply -- personal-web
@@ -136,6 +136,8 @@ Profile updates and restarts still require separate approval.
 
 ## Test
 
+See the [DSH `0.2.0-rc.2` validation results](../../MIGRATION-0.2.0-rc.2.md#validation-results) for verified scope and deployment limits.
+
 ```sh
 pnpm --filter @local/dsh-web-firecrawl test
 ```
@@ -152,7 +154,7 @@ uses `ctx.remote.credentials.describe([ref])`, `set(ref, value)`, and `unset(ref
 Responses use `{ ok, value/error }`, never `response.result`. The
 `plugins.row.config` slot key is `@local/dsh-web-firecrawl#local-web-firecrawl`,
 matching the bundle package and host row ID. Summary rendering is static; page
-rendering opens the existing credential form. DSH `0.1.7-rc.2` removes
+rendering opens the existing credential form. DSH `0.1.7-rc.2` removed
 `settings.installSection`, and row-page discovery needs no empty settings namespace.
 The host runs without Settings; secrets are edited only through the credential API.
 Provider options remain ordinary Cordis configuration, not volatile form fields.
