@@ -6,6 +6,7 @@ export default defineConfig({
     include: [
       'packages/*/test/browser/*.browser.test.mjs',
       'packages/dsh-tool-youtube/test/client.browser.test.tsx',
+      'packages/dsh-tool-imagegen/test/client.browser.test.tsx',
     ],
     // Component interactions only. Real-host visual comparisons use playwright.config.mjs.
     browser: {

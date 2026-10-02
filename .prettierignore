@@ -23,6 +23,8 @@ artifacts/
 /packages/dsh-google-auth/dist/
 /packages/dsh-tool-trivy/client.js
 /packages/dsh-tool-trivy/dist/
+/packages/dsh-tool-imagegen/client.js
+/packages/dsh-tool-imagegen/dist/
 /packages/dsh-session-recap/client.js
 /packages/dsh-session-recap/dist/
 /packages/dsh-file-intuition/dist/

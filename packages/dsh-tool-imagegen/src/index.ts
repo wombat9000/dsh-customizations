@@ -1,3 +1,8 @@
+import type { Context } from '@deepseek-ai/cordis'
+import type {} from '@deepseek-ai/dsh-system-prompt'
+import type { ObjectValueSchemaSpec } from '@deepseek-ai/dsh-tools'
+import { AttachmentId } from '@deepseek-ai/dsh-attachment'
+import type { ImageOutput } from './gemini.js'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import { launchEnvironmentOf } from '@deepseek-ai/dsh-launch-environment'
 import { defineTool } from '@deepseek-ai/dsh-tools'
@@ -58,7 +63,7 @@ const IMAGE_ATTACHMENT_SCHEMA = {
       },
     },
   },
-}
+} as const satisfies ObjectValueSchemaSpec
 
 export const IMAGE_OUTPUT_SCHEMA = {
   type: 'object',
@@ -80,15 +85,15 @@ export const IMAGE_OUTPUT_SCHEMA = {
       },
     },
   },
-}
+} as const satisfies ObjectValueSchemaSpec
 
-function safePrompt(prompt) {
+function safePrompt(prompt: unknown) {
   if (typeof prompt !== 'string') return 'Generate image'
   const value = prompt.trim()
   return value.length > 100 ? `${value.slice(0, 97)}...` : value
 }
 
-export function formatImageOutput(value) {
+export function formatImageOutput(value: ImageOutput) {
   const generated =
     value.images.length === 1 ? 'Generated 1 image' : `Generated ${value.images.length} images`
   const providerText =
@@ -96,14 +101,21 @@ export function formatImageOutput(value) {
   return `${generated} with ${value.model}.${providerText}`
 }
 
-export function renderImageOutput(_args, value) {
+export function renderImageOutput(_args: unknown, value: ImageOutput) {
   return [
-    { type: 'text', text: formatImageOutput(value) },
-    ...value.images.map(({ attachment }) => ({ type: 'image', attachment })),
+    { type: 'text' as const, text: formatImageOutput(value) },
+    ...value.images.map(({ attachment }) => ({ type: 'image' as const, attachment })),
   ]
 }
 
-export function registerImageTools(ctx, config, client) {
+export function registerImageTools(
+  ctx: {
+    tools: Pick<Context['tools'], 'register'>
+    systemPrompt: Pick<Context['systemPrompt'], 'section'>
+  },
+  config: Pick<ImageConfig, 'generate' | 'timeoutMs'>,
+  client: Pick<GeminiImageClient, 'generate'>,
+) {
   ctx.systemPrompt.section({
     name: 'tool:imagegen',
     order: 113,
@@ -137,7 +149,18 @@ export function registerImageTools(ctx, config, client) {
       },
       output: {
         schema: IMAGE_OUTPUT_SCHEMA,
-        render: renderImageOutput,
+        // The output schema validates the wire shape; the store owns the opaque ID brand.
+        render: (args, value) =>
+          renderImageOutput(args, {
+            ...value,
+            images: value.images.map((image) => ({
+              ...image,
+              attachment: {
+                ...image.attachment,
+                attachmentId: AttachmentId(image.attachment.attachmentId),
+              },
+            })),
+          }),
       },
       timeoutMs: config.timeoutMs,
       isConcurrencySafe: () => false,
@@ -157,27 +180,41 @@ export function registerImageTools(ctx, config, client) {
   )
 }
 
-export function resolveConfig(config = {}) {
-  const resolved = {
-    model: config.model ?? DEFAULT_MODEL,
-    timeoutMs: config.timeoutMs ?? DEFAULT_TIMEOUT_MS,
-    maxPromptChars: config.maxPromptChars ?? DEFAULT_MAX_PROMPT_CHARS,
-    maxImages: config.maxImages ?? DEFAULT_MAX_IMAGES,
-    generate: config.generate ?? true,
-    ...(typeof config.apiKey === 'string' && config.apiKey.length > 0
-      ? { apiKey: config.apiKey }
-      : {}),
-  }
-  if (typeof resolved.model !== 'string' || resolved.model.trim().length === 0)
+export interface ImageConfig {
+  model: string
+  timeoutMs: number
+  maxPromptChars: number
+  maxImages: number
+  generate: boolean
+  apiKey?: string
+}
+function property(value: unknown, key: string): unknown {
+  return value !== null && typeof value === 'object' ? Reflect.get(value, key) : undefined
+}
+export function resolveConfig(config: unknown = {}): ImageConfig {
+  const model = property(config, 'model') ?? DEFAULT_MODEL
+  if (typeof model !== 'string' || model.trim().length === 0)
     throw new Error('tool-imagegen: model must be a non-empty string')
-  for (const key of ['timeoutMs', 'maxPromptChars', 'maxImages']) {
-    if (!Number.isSafeInteger(resolved[key]) || resolved[key] < 1)
+  function integer(key: 'timeoutMs' | 'maxPromptChars' | 'maxImages', fallback: number) {
+    const value = property(config, key) ?? fallback
+    if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 1)
       throw new Error(`tool-imagegen: ${key} must be a positive integer`)
+    return value
   }
-  return resolved
+  const generate = property(config, 'generate') ?? true
+  if (typeof generate !== 'boolean') throw new Error('tool-imagegen: generate must be a boolean')
+  const apiKey = property(config, 'apiKey')
+  return {
+    model,
+    timeoutMs: integer('timeoutMs', DEFAULT_TIMEOUT_MS),
+    maxPromptChars: integer('maxPromptChars', DEFAULT_MAX_PROMPT_CHARS),
+    maxImages: integer('maxImages', DEFAULT_MAX_IMAGES),
+    generate,
+    ...(typeof apiKey === 'string' && apiKey.length > 0 ? { apiKey } : {}),
+  }
 }
 
-export function apply(ctx, config = {}) {
+export function apply(ctx: Context, config: unknown = {}) {
   const resolved = resolveConfig(config)
   const literalApiKey = resolved.apiKey
   const client = new GeminiImageClient({
