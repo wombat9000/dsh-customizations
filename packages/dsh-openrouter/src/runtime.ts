@@ -1,6 +1,44 @@
-export const RECORD_KEY = 'llm-pi-ai/openrouter'
-export const DEFAULT_REFERENCE = 'OPENROUTER_API_KEY'
-export const CHANNEL = '/openrouter-integration'
+import type { Context } from '@deepseek-ai/cordis'
+import { credentialKey, credentialRef } from '@deepseek-ai/dsh-credentials'
+import type {
+  ApiKeyRecord,
+  CredentialInfo,
+  CredentialProvider,
+  CredentialRecord,
+  CredentialRef,
+} from '@deepseek-ai/dsh-credentials'
+import type { SettingsForms } from '@deepseek-ai/dsh-settings'
+import { CHANNEL, isObject } from '../shared/contracts.js'
+import type { OpenRouterService, OpenRouterStatus, RpcResult } from '../shared/contracts.js'
+
+export { CHANNEL }
+export const RECORD_KEY = credentialKey('llm-pi-ai', 'openrouter')
+export const DEFAULT_REFERENCE = credentialRef('OPENROUTER_API_KEY')
+
+type Credentials = Pick<
+  CredentialProvider,
+  'readRecord' | 'describeRecord' | 'describe' | 'resolve' | 'set' | 'unset' | 'modifyRecord'
+>
+type Settings = Pick<SettingsForms, 'describe'>
+interface Selected extends OpenRouterStatus {
+  target: string
+  reference?: CredentialRef
+}
+interface Connection {
+  rpc: {
+    handle(
+      channel: string,
+      handler: (endpoint: string, payload: unknown) => Promise<RpcResult<OpenRouterStatus>>,
+      options: { authority: 'trusted-host' },
+    ): () => void
+  }
+}
+
+declare module '@deepseek-ai/cordis' {
+  interface Context {
+    openrouter: OpenRouterService
+  }
+}
 const CANONICAL_URL = 'https://openrouter.ai/api/v1'
 const SOURCE_NAMES = new Set(['env', 'file', 'project-env', 'user-env'])
 const messages = {
@@ -12,22 +50,34 @@ const messages = {
   invalid: 'Invalid OpenRouter settings request.',
 }
 class SafeError extends Error {}
-function fail(code) {
+function fail(code: keyof typeof messages): never {
   throw new SafeError(messages[code])
 }
-function validRecord(record) {
+function validRecord(record: unknown): asserts record is ApiKeyRecord | undefined {
   if (
     record !== undefined &&
-    (record?.kind !== 'api-key' || (record.key !== undefined && typeof record.key !== 'string'))
+    (!isObject(record) ||
+      record.kind !== 'api-key' ||
+      (record.key !== undefined && typeof record.key !== 'string'))
   )
     fail('unsupported')
 }
-function publicSource(info) {
-  return SOURCE_NAMES.has(info.source) ? info.source : info.configured ? 'reference' : 'none'
+function publicSource(info: CredentialInfo): string {
+  return info.source !== undefined && SOURCE_NAMES.has(info.source)
+    ? info.source
+    : info.configured
+      ? 'reference'
+      : 'none'
 }
 
-// No external dependencies: host adapters supply the credential seam and settings.
-export function createOpenRouterRuntime({ credentials, settings }) {
+// Upstream credential brands address the existing store; adapters supply only consumed services.
+export function createOpenRouterRuntime({
+  credentials,
+  settings,
+}: {
+  credentials: Credentials
+  settings: Settings
+}) {
   let active = true
   const guard = () => {
     if (!active) fail('stopped')
@@ -35,8 +85,10 @@ export function createOpenRouterRuntime({ credentials, settings }) {
   const route = () => {
     guard()
     // Settings projects the provider's live Config; it no longer owns a value store.
-    const profile = settings.describe().find((entry) => entry.ns === 'llm-pi-ai')?.value
-      ?.providers?.openrouter
+    const value = settings.describe().find((entry) => entry.ns === 'llm-pi-ai')?.value
+    const providers = isObject(value) ? value.providers : undefined
+    const profileValue = isObject(providers) ? providers.openrouter : undefined
+    const profile = isObject(profileValue) ? profileValue : undefined
     const baseURL = profile?.baseURL
     if (
       baseURL !== undefined &&
@@ -46,15 +98,18 @@ export function createOpenRouterRuntime({ credentials, settings }) {
     const ref = profile?.apiKeyEnv
     if (ref !== undefined && (typeof ref !== 'string' || !/^[A-Za-z_][A-Za-z0-9_]*$/u.test(ref)))
       fail('unsupported')
-    return ref
+    return ref === undefined ? undefined : credentialRef(ref)
   }
-  async function select(recordOverride, hasOverride = false) {
+  async function select(recordOverride?: CredentialRecord, hasOverride = false): Promise<Selected> {
     const initialRef = route()
     const result = await selectCurrent(recordOverride, hasOverride)
     if (route() !== initialRef) fail('changed')
     return result
   }
-  async function selectCurrent(recordOverride, hasOverride = false) {
+  async function selectCurrent(
+    recordOverride?: CredentialRecord,
+    hasOverride = false,
+  ): Promise<Selected> {
     const ref = route()
     if (ref !== undefined) {
       const info = await credentials.describe(ref)
@@ -99,7 +154,7 @@ export function createOpenRouterRuntime({ credentials, settings }) {
       target: `record:${RECORD_KEY}`,
     }
   }
-  async function safe(operation) {
+  async function safe<T>(operation: () => Promise<T>): Promise<T> {
     try {
       guard()
       return await operation()
@@ -107,16 +162,16 @@ export function createOpenRouterRuntime({ credentials, settings }) {
       throw new SafeError(error instanceof SafeError ? error.message : messages.unavailable)
     }
   }
-  async function status() {
+  async function status(): Promise<OpenRouterStatus> {
     try {
-      return await safe(select)
+      return await safe(() => select())
     } catch (error) {
       return {
         configured: false,
         writable: false,
         source: 'unavailable',
         target: null,
-        error: error.message,
+        error: error instanceof SafeError ? error.message : messages.unavailable,
       }
     }
   }
@@ -137,12 +192,10 @@ export function createOpenRouterRuntime({ credentials, settings }) {
       return value?.key || undefined
     })
   }
-  async function mutate(action, payload) {
+  async function mutate(action: 'save' | 'clear', payload: unknown) {
     return safe(async () => {
       if (
-        !payload ||
-        typeof payload !== 'object' ||
-        Array.isArray(payload) ||
+        !isObject(payload) ||
         Object.keys(payload).sort().join(',') !==
           (action === 'save' ? 'apiKey,target' : 'target') ||
         typeof payload.target !== 'string'
@@ -153,7 +206,9 @@ export function createOpenRouterRuntime({ credentials, settings }) {
         (typeof payload.apiKey !== 'string' || !/^[\x21-\x7e]{1,8192}$/u.test(payload.apiKey))
       )
         fail('invalid')
-      const check = (selected) => {
+      const apiKey =
+        action === 'save' && typeof payload.apiKey === 'string' ? payload.apiKey : undefined
+      const check = (selected: Selected) => {
         guard()
         if (selected.target !== payload.target) fail('changed')
         if (!selected.writable) fail('readonly')
@@ -162,7 +217,7 @@ export function createOpenRouterRuntime({ credentials, settings }) {
       check(selected)
       if (selected.reference !== undefined) {
         check(await select())
-        if (action === 'save') await credentials.set(selected.reference, payload.apiKey)
+        if (apiKey !== undefined) await credentials.set(selected.reference, apiKey)
         else await credentials.unset(selected.reference)
       } else {
         // Clear only the key, preserving owner environment data. modifyRecord's
@@ -170,8 +225,8 @@ export function createOpenRouterRuntime({ credentials, settings }) {
         await credentials.modifyRecord(RECORD_KEY, async (current) => {
           validRecord(current)
           check(await select(current, true))
-          return action === 'save'
-            ? { ...current, kind: 'api-key', key: payload.apiKey }
+          return apiKey !== undefined
+            ? { ...current, kind: 'api-key', key: apiKey }
             : { kind: 'api-key', ...(current?.env !== undefined ? { env: current.env } : {}) }
         })
       }
@@ -184,7 +239,7 @@ export function createOpenRouterRuntime({ credentials, settings }) {
     dispose() {
       active = false
     },
-    async rpc(endpoint, payload) {
+    async rpc(endpoint: string, payload?: unknown): Promise<RpcResult<OpenRouterStatus>> {
       try {
         guard()
         if (endpoint === 'status') return { ok: true, value: await status() }
@@ -200,13 +255,14 @@ export function createOpenRouterRuntime({ credentials, settings }) {
   }
 }
 
-export function mountOpenRouter(ctx) {
+export function mountOpenRouter(ctx: Context) {
   const runtime = createOpenRouterRuntime({ credentials: ctx.credentials, settings: ctx.settings })
   ctx.effect(() => () => runtime.dispose())
   ctx.provide('openrouter', runtime.service)
   ctx.inject(['settings'], (child) =>
     child.effect(() => child.settings.configure({ auto: false }, ctx.fiber)),
   )
-  ctx.effect(() => ctx.connection.rpc.handle(CHANNEL, runtime.rpc, { authority: 'trusted-host' }))
+  const connection: Connection = ctx.get('connection')
+  ctx.effect(() => connection.rpc.handle(CHANNEL, runtime.rpc, { authority: 'trusted-host' }))
   return runtime
 }

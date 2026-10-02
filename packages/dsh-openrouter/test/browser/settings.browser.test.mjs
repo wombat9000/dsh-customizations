@@ -2,14 +2,8 @@ import React, { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, expect, test, vi } from 'vitest'
 import { page } from 'vitest/browser'
-let plugin
-window.__ModuleLoader__ = {
-  load({ factory }) {
-    plugin = factory(() => React)
-  },
-}
-await import('../../client.js')
-delete window.__ModuleLoader__
+import { SettingsCard } from '../../client/settings.tsx'
+import { call } from '../../client/transport.ts'
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 let root, container
 let status
@@ -41,7 +35,7 @@ async function mount(overrides = {}) {
   container = document.createElement('div')
   document.body.append(container)
   root = createRoot(container)
-  await act(async () => root.render(React.createElement(plugin.SettingsCard, { rpc })))
+  await act(async () => root.render(React.createElement(SettingsCard, { rpc })))
   await act(async () => page.getByText('OpenRouter', { exact: true }).click())
   return rpc
 }
@@ -73,6 +67,19 @@ test('read-only credentials cannot be replaced or removed', async () => {
   await expect.element(page.getByLabelText('OpenRouter API key')).toBeDisabled()
   await expect.element(page.getByRole('button', { name: 'Remove shared key' })).toBeDisabled()
   expect(calls.map((call) => call.method)).toEqual(['status'])
+})
+test('malformed RPC status cannot become writable client state', async () => {
+  for (const value of [
+    null,
+    { writable: true },
+    { configured: false, writable: true, source: 'record', target: 123 },
+    { configured: false, writable: 'true', source: 'record', target: 'record:fixture' },
+    { configured: false, writable: true, source: 'record', target: 'record:fixture', error: {} },
+  ]) {
+    await expect(call({ call: async () => ({ ok: true, value }) }, 'status', {})).rejects.toThrow(
+      'OpenRouter settings are unavailable.',
+    )
+  }
 })
 test('transport errors do not expose request details and styles dispose', async () => {
   const rpc = await mount()

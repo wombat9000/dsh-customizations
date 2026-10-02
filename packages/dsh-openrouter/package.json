@@ -4,20 +4,24 @@
   "private": true,
   "description": "Shared host-only OpenRouter credential service for DSH",
   "type": "module",
-  "main": "src/index.js",
+  "main": "dist/src/index.js",
   "exports": {
-    ".": "./src/index.js",
+    ".": "./dist/src/index.js",
     "./client": "./client.js",
     "./package.json": "./package.json"
   },
   "files": [
-    "src",
+    "dist",
     "client.js",
     "cordis.patch.yml",
     "README.md"
   ],
   "scripts": {
-    "test": "node --test test/host.test.js"
+    "build": "node scripts/build-host.mjs && node scripts/build-client.mjs",
+    "build:host": "node scripts/build-host.mjs",
+    "build:client": "node scripts/build-client.mjs",
+    "typecheck": "node scripts/typecheck.mjs",
+    "test": "node --test test/*.test.js"
   },
   "engines": {
     "node": "^22.19.0 || >=24.0.0"

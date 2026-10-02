@@ -1,7 +1,12 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { createOpenRouterRuntime, RECORD_KEY, DEFAULT_REFERENCE, CHANNEL } from '../src/runtime.js'
-import * as plugin from '../src/index.js'
+import {
+  createOpenRouterRuntime,
+  RECORD_KEY,
+  DEFAULT_REFERENCE,
+  CHANNEL,
+} from '../dist/src/runtime.js'
+import * as plugin from '../dist/src/index.js'
 import z from '@deepseek-ai/schemastery'
 import { profileFixture } from '../../dsh-google-auth/test/profile-fixture.js'
 
