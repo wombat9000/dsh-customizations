@@ -458,11 +458,18 @@ export function createEnvironmentCard(
 
     if (!isConversation || sessionId === undefined) return null
 
-    // Pinned DSH 0.1.7-rc.2 markup: AppFrame owns the overlay; foreground
-    // push/fullscreen panels have no hidden ancestor. Match the panel's session,
-    // not the frame's track width (fullscreen may have no track) or slot depth.
-    // React owns this stylesheet, so session changes/unmount remove the rule.
-    const sidebarVisibility = `
+    // Pinned DSH 0.1.7-rc.2 markup: only the mounted Chat view emits
+    // data-chat-flow inside the main Conversation's session content. Exclude
+    // hidden retained views and embedded sidebars, and match the selected session.
+    // Foreground push/fullscreen panels have no hidden ancestor; their visibility
+    // does not depend on the frame's track width. React owns both visibility rules.
+    const cardVisibility = `
+      :has(> [data-shell-overlay]):not(:has(
+        [data-slot="main.conversation"] [data-conversation-content][data-conversation-session="${CSS.escape(sessionId)}"]
+        [data-slot="conversation.view"] [data-chat-flow]:not([hidden] *)
+      )) > [data-shell-overlay] [data-session-environment] {
+        display: none;
+      }
       :has(> [data-shell-overlay]):has(
         [data-sidebar-right-panel][data-sidebar-right-session="${CSS.escape(sessionId)}"][data-sidebar-right-open]:not([hidden] *)
       ) > [data-shell-overlay] [data-session-environment] {
@@ -562,7 +569,7 @@ export function createEnvironmentCard(
     return React.createElement(
       'section',
       { style: styles.card, 'aria-label': 'Session environment', 'data-session-environment': true },
-      React.createElement('style', null, sidebarVisibility),
+      React.createElement('style', null, cardVisibility),
       React.createElement('h2', { style: styles.title }, 'Environment'),
       React.createElement(
         'div',

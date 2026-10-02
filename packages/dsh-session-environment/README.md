@@ -4,7 +4,7 @@ A local DSH Web bundle that shows the selected session's working directory and c
 
 ## Behavior
 
-- Shows the floating, multi-row card only in Conversation with a unique selected session. Opening that session's right sidebar hides the card in normal, fullscreen, and narrow layouts; closing the sidebar restores it. Retained background sidebars do not hide it.
+- Shows the floating, multi-row card only while the unique selected session's Chat view is on screen. Trajectory, other tabs, global pages, and the blank-session setup screen hide it. Opening that session's right sidebar also hides the card in normal, fullscreen, and narrow layouts; closing the sidebar restores it in Chat. Retained background views and sidebars do not show or hide it.
 - Polls the unique session retained by `mainView` every 3 seconds. No selection or multiple main-view selections suspend polling.
 - Caches results by working directory, delays the initial “Checking…” label by 300 ms, and ignores stale responses to avoid flicker during session switches and checkouts.
 - Displays the home-relative, middle-truncated CWD with the full native path in a tooltip.
@@ -20,7 +20,7 @@ The host reads `session.header.cwd` for the requested session. Sessions sharing 
 
 The host plugin extends `TypertRemoteService` and publishes a strict `sessionEnvironment/read` Typert descriptor. The browser bundle self-mounts the matching Remote contribution and registers the card in `shell.overlay`. Timers, calls, Remote contributions, and Slot registrations follow their owning Cordis/React lifecycle.
 
-The card uses the injected `usePanelInfo` hook to distinguish Conversation from global pages. Its React-owned visibility stylesheet depends on DSH `0.1.7-rc.2`'s overlay and foreground-session sidebar data markers, not compiled CSS classes or a sidebar-width API. Recheck this markup contract when upgrading DSH.
+The card uses the injected `usePanelInfo` hook to distinguish Conversation from global pages. Its React-owned visibility stylesheet requires the selected session's foreground Chat flow inside the main Conversation and hides the card when that session's sidebar is open. It depends on DSH `0.1.7-rc.2`'s slot, Chat, session, overlay, and sidebar data markers, not tab labels, compiled CSS classes, or a sidebar-width API. Recheck this markup contract when upgrading DSH.
 
 The wire artifacts are explicit TypeScript modules rather than generator output because the published Typert generator expects the protocol package to be registered from the full DSH source workspace. Both host and client share protocol-typed descriptors with lazy `create()` codec factories and strict Zod validation. The build bundles the client codec. The host awaits `shell.execute(spec)` and then the execution handle's `result()`.
 

@@ -88,6 +88,19 @@ test('card follows Conversation and foreground sidebar state without leaking its
   container = document.createElement('main')
   const overlay = document.createElement('div')
   overlay.setAttribute('data-shell-overlay', '')
+  const main = document.createElement('div')
+  main.setAttribute('data-slot', 'main.conversation')
+  const content = document.createElement('div')
+  content.setAttribute('data-conversation-content', '')
+  content.setAttribute('data-conversation-session', first)
+  const view = document.createElement('div')
+  view.setAttribute('data-slot', 'conversation.view')
+  const chatFlow = document.createElement('div')
+  chatFlow.setAttribute('data-chat-flow', '')
+  view.append(chatFlow)
+  content.append(view)
+  main.append(content)
+  container.append(main)
   const sidebar = (id, hidden, open) => {
     const wrapper = document.createElement('div')
     wrapper.setAttribute('data-sidebar-right-session', id)
@@ -144,9 +157,12 @@ test('card follows Conversation and foreground sidebar state without leaking its
       byId: { [first]: session(first, false), [second]: session(second, true) },
     })
   })
-  // Selection can update before the shell finishes switching its DOM. An open
-  // panel for another session must not suppress the newly selected card.
+  // Selection can update before the shell switches its DOM. The old Chat
+  // content cannot show the new session's card.
+  await expect.element(card()).not.toBeVisible()
+  content.setAttribute('data-conversation-session', second)
   await expect.element(card()).toBeVisible()
+  // An open panel for another session cannot hide the selected Chat's card.
   foreground.wrapper.hidden = true
   background.wrapper.hidden = false
   await expect.element(card()).not.toBeVisible()
@@ -157,6 +173,19 @@ test('card follows Conversation and foreground sidebar state without leaking its
     await page.getByRole('button', { name: 'Copy CWD: /workspace/second', exact: true }).click()
   })
   expect(copied.mock.calls).toEqual([['/workspace/second']])
+
+  // Hidden retained Chat content and embedded Chat occurrences are not the
+  // foreground main Chat. Missing Chat content also fails closed.
+  view.hidden = true
+  await expect.element(card()).not.toBeVisible()
+  view.hidden = false
+  main.setAttribute('data-slot', 'rightbar.session')
+  await expect.element(card()).not.toBeVisible()
+  main.setAttribute('data-slot', 'main.conversation')
+  chatFlow.remove()
+  await expect.element(card()).not.toBeVisible()
+  view.append(chatFlow)
+  await expect.element(card()).toBeVisible()
 
   for (const activePanelId of ['projects', 'plugins', 'another-global-page']) {
     await act(async () => panels.set({ activePanelId }))

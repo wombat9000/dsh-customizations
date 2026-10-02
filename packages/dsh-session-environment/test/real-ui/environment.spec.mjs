@@ -60,9 +60,24 @@ async function visitGlobalPages(app) {
       await openSeededSession(app)
       await expect(card).toBeVisible()
     }
-    // Session-bound Conversation views are not global pages.
-    await app.getByRole('tab', { name: 'Trajectory', exact: true }).click()
-    await expect(card).toBeVisible()
+    // Every non-Chat session tab hides the card, not just global pages.
+    const tabs = app.locator('[data-conversation-tabs] [role="tab"]')
+    const labels = await tabs.allTextContents()
+    expect(labels).toContain('Trajectory')
+    for (const label of labels.filter((label) => label !== 'Chat')) {
+      await app.getByRole('tab', { name: label, exact: true }).click()
+      await expect(card).toBeHidden()
+      if (label === 'Trajectory') {
+        await app.reload()
+        await expect(app.getByRole('tab', { name: label, exact: true })).toHaveAttribute(
+          'aria-selected',
+          'true',
+        )
+        await expect(card).toBeHidden()
+      }
+      await app.getByRole('tab', { name: 'Chat', exact: true }).click()
+      await expect(card).toBeVisible()
+    }
   } finally {
     const chat = app.getByRole('tab', { name: 'Chat', exact: true })
     if (await chat.isVisible()) await chat.click()
@@ -152,7 +167,7 @@ test('follow native session environment through global pages, Files and restored
   try {
     await test.step('Real Remote and Shell follow the retained session CWD', () =>
       followSessionEnvironment(app))
-    await test.step('Global pages hide the card; Conversation tabs retain it', () =>
+    await test.step('Only Chat shows the card across global pages, tabs and reload', () =>
       visitGlobalPages(app))
     await test.step('Foreground Files, session switching and fullscreen reload', () =>
       browseFilesAndRestoreFullscreen(app))
