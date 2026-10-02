@@ -7,7 +7,7 @@ import {
   CREDENTIAL_KEY,
   credentialAdapter,
   parseClientJson,
-} from '../src/index.js'
+} from '../dist/src/index.js'
 
 const scope = 'https://www.googleapis.com/auth/drive.metadata.readonly'
 const otherScope = 'https://www.googleapis.com/auth/calendar.readonly'

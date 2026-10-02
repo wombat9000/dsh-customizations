@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 import { request as httpRequest } from 'node:http'
 import { createServer as tcpServer, connect } from 'node:net'
-import { GoogleOAuthClient, IDENTITY_SCOPES, normalizeScopes } from '../src/oauth.js'
+import { GoogleOAuthClient, IDENTITY_SCOPES, normalizeScopes } from '../dist/src/oauth.js'
 
 const A = 'https://www.googleapis.com/auth/calendar.readonly'
 const B = 'https://www.googleapis.com/auth/tasks.readonly'

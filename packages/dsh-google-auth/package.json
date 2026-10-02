@@ -4,21 +4,27 @@
   "private": true,
   "description": "Shared Google OAuth and explicit integration permissions for DSH 0.1.7-rc.2",
   "type": "module",
-  "main": "src/index.js",
+  "main": "dist/src/index.js",
   "exports": {
-    ".": "./src/index.js",
+    ".": "./dist/src/index.js",
     "./client": "./client.js",
-    "./sandbox": "./src/sandbox-publisher.js",
+    "./sandbox": "./dist/src/sandbox-publisher.js",
     "./package.json": "./package.json"
   },
   "files": [
-    "src",
+    "dist",
     "client.js",
     "cordis.patch.yml",
     "README.md"
   ],
   "scripts": {
-    "test": "node --test test/*.test.js"
+    "test": "node --test test/*.test.js",
+    "build": "node scripts/build-host.mjs && node scripts/build-client.mjs",
+    "build:host": "node scripts/build-host.mjs",
+    "build:client": "node scripts/build-client.mjs",
+    "typecheck": "node scripts/typecheck.mjs && node scripts/typecheck-host.mjs",
+    "typecheck:host": "node scripts/typecheck-host.mjs",
+    "typecheck:client": "node scripts/typecheck.mjs"
   },
   "engines": {
     "node": "^22.19.0 || >=24.0.0"

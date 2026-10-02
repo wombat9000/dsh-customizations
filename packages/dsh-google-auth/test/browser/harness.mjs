@@ -2,23 +2,8 @@ import React, { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { expect, vi } from 'vitest'
 
-let plugin
-const previousLoader = window.__ModuleLoader__
-window.__ModuleLoader__ = {
-  load({ id, factory }) {
-    expect(id).toBe('@local/dsh-google-auth')
-    plugin = factory((name) => {
-      expect(name).toBe('react')
-      return React
-    })
-  },
-}
-try {
-  await import('../../client.js')
-} finally {
-  if (previousLoader === undefined) delete window.__ModuleLoader__
-  else window.__ModuleLoader__ = previousLoader
-}
+import plugin from '../../client/index.ts'
+
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 export const ok = (value) => ({ ok: true, value })
 export const failure = (message) => ({ ok: false, error: { message } })

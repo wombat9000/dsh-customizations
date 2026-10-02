@@ -4,9 +4,9 @@ import { readFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { pathToFileURL } from 'node:url'
 import test from 'node:test'
-import * as plugin from '../src/index.js'
+import * as plugin from '../dist/src/index.js'
 import * as drive from '../../dsh-google-drive/src/index.js'
-import { allowedRequest, settingsHandler } from '../src/routes.js'
+import { allowedRequest, settingsHandler } from '../dist/src/routes.js'
 import { profileFixture } from './profile-fixture.js'
 
 const require = createRequire(import.meta.url)

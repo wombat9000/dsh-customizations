@@ -1,3 +1,13 @@
+import { isRecord } from '../shared/contracts.js'
+import type { AuthStatus, IntegrationDefinition, OAuthStatus } from '../shared/contracts.js'
+import type {
+  AuthContext,
+  CallbackPublisher,
+  ClientConfig,
+  CredentialProvider,
+  OAuthClient,
+  TokenRecord,
+} from './contracts.js'
 import z from '@deepseek-ai/schemastery'
 import { GoogleOAuthClient, normalizeScopes } from './oauth.js'
 import { registerSettingsRoutes } from './routes.js'
@@ -9,9 +19,9 @@ export const CLIENT_KEY = 'google-auth/client'
 export const CREDENTIAL_KEY = 'google-auth/default'
 const CONFIG_ERROR = 'Configure a Google Desktop OAuth client in Plugins → Google accounts.'
 
-function validClient(value) {
+function validClient(value: unknown): value is ClientConfig {
   return (
-    value &&
+    isRecord(value) &&
     typeof value.clientId === 'string' &&
     /^[A-Za-z0-9_-]+\.apps\.googleusercontent\.com$/u.test(value.clientId) &&
     value.clientId.length <= 512 &&
@@ -20,10 +30,11 @@ function validClient(value) {
   )
 }
 
-export function parseClientJson(text) {
+export function parseClientJson(text: unknown) {
   try {
     if (typeof text !== 'string' || text.length > 32768) throw new Error()
-    const installed = JSON.parse(text)?.installed
+    const parsed: unknown = JSON.parse(text)
+    const installed = isRecord(parsed) && isRecord(parsed.installed) ? parsed.installed : undefined
     const value = {
       clientId: installed?.client_id,
       ...(installed?.client_secret !== undefined ? { clientSecret: installed.client_secret } : {}),
@@ -35,25 +46,27 @@ export function parseClientJson(text) {
   }
 }
 
-export function credentialAdapter(provider, clientId, isCurrent = () => true) {
+export function credentialAdapter(
+  provider: CredentialProvider,
+  clientId: string,
+  isCurrent = () => true,
+) {
   return {
     async get() {
       try {
         if (!isCurrent()) throw new Error()
-        const record = await provider.readRecord(CREDENTIAL_KEY)
+        const raw = await provider.readRecord(CREDENTIAL_KEY)
+        const record = isRecord(raw) ? raw : undefined
+        const payload = isRecord(record?.payload) ? record.payload : undefined
         if (!isCurrent()) throw new Error()
-        if (
-          record?.kind !== 'grant' ||
-          record.payload?.version !== 1 ||
-          record.payload.clientId !== clientId
-        )
+        if (record?.kind !== 'grant' || payload?.version !== 1 || payload.clientId !== clientId)
           return undefined
-        return record.payload.tokens
+        return payload.tokens
       } catch {
         throw new Error('Could not read the Google credential store.')
       }
     },
-    async set(tokens, isValid = () => true) {
+    async set(tokens: TokenRecord, isValid = () => true) {
       try {
         await provider.modifyRecord(CREDENTIAL_KEY, async () => {
           // The OAuth guard is evaluated under the store lock, at the commit
@@ -75,11 +88,9 @@ export function credentialAdapter(provider, clientId, isCurrent = () => true) {
   }
 }
 
-function integrationDefinition(value) {
+function integrationDefinition(value: unknown): IntegrationDefinition {
   if (
-    !value ||
-    typeof value !== 'object' ||
-    Array.isArray(value) ||
+    !isRecord(value) ||
     typeof value.id !== 'string' ||
     !/^[a-z][a-z0-9-]{0,63}$/u.test(value.id) ||
     typeof value.label !== 'string' ||
@@ -107,14 +118,41 @@ function integrationDefinition(value) {
   })
 }
 
+export interface ServiceOptions {
+  credentials: CredentialProvider
+  createClient?: (
+    options: ClientConfig & { credentials: ReturnType<typeof credentialAdapter> },
+  ) => OAuthClient
+  getCallbackMode?: () => unknown
+  saveCallbackMode?: (value: boolean) => Promise<unknown>
+  getPublisher?: () => CallbackPublisher | undefined
+}
 export class GoogleAuthService {
+  declare credentials: CredentialProvider
+  declare createClient: NonNullable<ServiceOptions['createClient']>
+  declare getCallbackMode: NonNullable<ServiceOptions['getCallbackMode']>
+  declare saveCallbackMode: ServiceOptions['saveCallbackMode']
+  declare getPublisher: NonNullable<ServiceOptions['getPublisher']>
+  declare useSandbox: boolean
+  declare modeRevision: number
+  declare client: OAuthClient | undefined
+  declare loading: Promise<OAuthClient> | undefined
+  declare closed: boolean
+  declare generation: number
+  declare mutation: Promise<unknown>
+  declare integrations: Map<string, IntegrationDefinition>
+  declare pendingIntegrations: IntegrationDefinition[] | undefined
+  declare accessOperations: Set<{ integration: IntegrationDefinition; controller: AbortController }>
+  declare accessGeneration: number
+  declare accessListeners: Set<() => void>
+
   constructor({
     credentials,
     createClient = (options) => new GoogleOAuthClient(options),
     getCallbackMode = () => false,
     saveCallbackMode,
     getPublisher = () => undefined,
-  }) {
+  }: ServiceOptions) {
     this.credentials = credentials
     this.createClient = createClient
     this.getCallbackMode = getCallbackMode
@@ -153,7 +191,7 @@ export class GoogleAuthService {
     }
   }
 
-  async setCallbackMode(useSandbox) {
+  async setCallbackMode(useSandbox: boolean) {
     if (typeof useSandbox !== 'boolean') throw new Error('Choose a boolean sandbox callback mode.')
     if (this.closed) throw new Error('Google auth plugin has stopped.')
     this.syncCallbackMode()
@@ -184,14 +222,14 @@ export class GoogleAuthService {
     return this.accessGeneration
   }
 
-  onAccessChange(listener) {
+  onAccessChange(listener: () => void) {
     if (this.closed || typeof listener !== 'function')
       throw new Error('Google access observer is unavailable.')
     this.accessListeners.add(listener)
     return () => this.accessListeners.delete(listener)
   }
 
-  invalidateAccess(integrationId) {
+  invalidateAccess(integrationId?: string) {
     this.accessGeneration++
     for (const listener of this.accessListeners) {
       try {
@@ -206,7 +244,7 @@ export class GoogleAuthService {
     }
   }
 
-  registerIntegration(value) {
+  registerIntegration(value: IntegrationDefinition) {
     if (this.closed) throw new Error('Google auth plugin has stopped.')
     const definition = integrationDefinition(value)
     if (this.integrations.has(definition.id))
@@ -227,13 +265,15 @@ export class GoogleAuthService {
     }
   }
 
-  integration(id) {
+  integration(id: string) {
     if (typeof id !== 'string' || !this.integrations.has(id))
       throw new Error('Google integration is not registered.')
-    return this.integrations.get(id)
+    const definition = this.integrations.get(id)
+    if (!definition) throw new Error('Google integration is not registered.')
+    return definition
   }
 
-  assertIntegration(definition) {
+  assertIntegration(definition: IntegrationDefinition) {
     if (this.closed || this.integrations.get(definition.id) !== definition)
       throw new Error('Google integration changed; retry.')
   }
@@ -244,21 +284,19 @@ export class GoogleAuthService {
     if (!this.loading) {
       const generation = this.generation
       this.loading = (async () => {
-        let record
+        let raw: unknown
         try {
-          record = await this.credentials.readRecord(CLIENT_KEY)
+          raw = await this.credentials.readRecord(CLIENT_KEY)
         } catch {
           throw new Error('Could not read Google client configuration.')
         }
         if (this.closed || this.generation !== generation)
           throw new Error('Google configuration changed; retry.')
-        if (
-          record?.kind !== 'grant' ||
-          record.payload?.version !== 1 ||
-          !validClient(record.payload)
-        )
+        const record = isRecord(raw) ? raw : undefined
+        const payload = isRecord(record?.payload) ? record.payload : undefined
+        if (record?.kind !== 'grant' || payload?.version !== 1 || !validClient(payload))
           throw new Error(CONFIG_ERROR)
-        const { clientId, clientSecret } = record.payload
+        const { clientId, clientSecret } = payload
         this.client = this.createClient({
           clientId,
           clientSecret,
@@ -276,7 +314,7 @@ export class GoogleAuthService {
     return this.loading
   }
 
-  serialize(fn) {
+  serialize<T>(fn: () => T | Promise<T>) {
     const next = this.mutation.then(() => {
       if (this.closed) throw new Error('Google auth plugin has stopped.')
       return fn()
@@ -296,7 +334,7 @@ export class GoogleAuthService {
     await credentialAdapter(this.credentials, '').delete()
   }
 
-  async configure(clientJson) {
+  async configure(clientJson: string) {
     const config = parseClientJson(clientJson)
     return this.serialize(async () => {
       await this.resetClient()
@@ -324,10 +362,10 @@ export class GoogleAuthService {
     })
   }
 
-  async status() {
+  async status(): Promise<AuthStatus> {
     await this.mutation
     this.syncCallbackMode()
-    let status
+    let status: OAuthStatus
     try {
       status = await (await this.load()).status()
     } catch {
@@ -350,7 +388,9 @@ export class GoogleAuthService {
       pending: status.pending === true,
       useSandbox: this.useSandbox,
       sandboxAvailable: this.sandboxAvailable(),
-      ...(Number.isFinite(status.expiresAt) ? { expiresAt: status.expiresAt } : {}),
+      ...(typeof status.expiresAt === 'number' && Number.isFinite(status.expiresAt)
+        ? { expiresAt: status.expiresAt }
+        : {}),
       ...(status.error ? { error: status.error } : {}),
       ...(status.account
         ? {
@@ -375,7 +415,7 @@ export class GoogleAuthService {
     }
   }
 
-  async begin(...args) {
+  async begin(...args: never[]) {
     if (args.length)
       throw new Error('Google account login accepts no integration ID or caller scopes.')
     const integrations = [...this.integrations.values()]
@@ -455,7 +495,7 @@ export class GoogleAuthService {
 
   // Trusted host consumers only. No unscoped overload, browser endpoint, token
   // export tool, or automatic login; missing permissions require a UI action.
-  async getAccessToken(integrationId) {
+  async getAccessToken(integrationId: string) {
     const integration = this.integration(integrationId)
     await this.mutation
     this.assertIntegration(integration)
@@ -468,14 +508,17 @@ export class GoogleAuthService {
 
   // Keep downstream Google API work tied to the account lifecycle, not just
   // token issuance. The result cannot outlive disconnect/client replacement.
-  async withAccessToken(integrationId, operation) {
+  async withAccessToken<T>(
+    integrationId: string,
+    operation: (token: string, signal: AbortSignal) => T | Promise<T>,
+  ): Promise<T> {
     if (typeof operation !== 'function') throw new Error('Google access requires a host operation.')
     const integration = this.integration(integrationId)
     const controller = new AbortController()
     const entry = { integration, controller }
     this.accessOperations.add(entry)
-    let onAbort
-    const cancelled = new Promise((_resolve, reject) => {
+    let onAbort: () => void = () => {}
+    const cancelled = new Promise<never>((_resolve, reject) => {
       onAbort = () => reject(new Error('Google account access was cancelled.'))
       controller.signal.addEventListener('abort', onAbort, { once: true })
     })
@@ -508,12 +551,15 @@ export class GoogleAuthService {
   }
 }
 
-export function apply(ctx, config) {
+export function apply(ctx: AuthContext, config: { useSandbox: { get(): boolean } }) {
   const service = new GoogleAuthService({
     credentials: ctx.credentials,
     getCallbackMode: () => config.useSandbox.get(),
-    saveCallbackMode: (value) =>
-      ctx.get('settings').update(ctx.fiber.entry.options.id, { useSandbox: value }),
+    saveCallbackMode: (value) => {
+      const settings = ctx.get('settings')
+      if (!settings) throw new Error('Google callback settings are read-only.')
+      return settings.update(ctx.fiber.entry.options.id, { useSandbox: value })
+    },
     getPublisher: () => ctx.get('sandboxCallbackPublisher'),
   })
   ctx.effect(() => () => service.dispose())

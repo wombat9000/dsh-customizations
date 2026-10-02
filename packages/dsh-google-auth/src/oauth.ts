@@ -1,12 +1,46 @@
 import { createServer } from 'node:http'
-import { httpFailure } from './diagnostics.js'
 import { randomBytes, createHash, timingSafeEqual } from 'node:crypto'
-
+import { httpFailure } from './diagnostics.js'
+import type { Server } from 'node:http'
+import { isRecord } from '../shared/contracts.js'
+import type { Account, OAuthStatus } from '../shared/contracts.js'
+import type { TokenRecord, CredentialAdapter, BeginOptions, CallbackLease } from './contracts.js'
+interface StoredAccount {
+  id: string
+  email?: unknown
+}
+interface ConnectedGrant {
+  refreshToken: string
+  account: StoredAccount
+  scopes: string[]
+  accessToken?: unknown
+  expiresAt?: unknown
+}
+interface Flow {
+  controller: AbortController
+  expiresAt: number
+  accepted: boolean
+  committing?: boolean
+  timer?: ReturnType<typeof setTimeout>
+  server?: Server
+  redirectUri?: string
+  cleanup?: Promise<void>
+  responseFinished?: Promise<void>
+  publication?: Promise<CallbackLease>
+}
+export interface OAuthOptions {
+  clientId?: string
+  clientSecret?: string | undefined
+  credentials?: CredentialAdapter
+  fetch?: typeof globalThis.fetch
+  timeoutMs?: number
+  requestTimeoutMs?: number
+}
 export const IDENTITY_SCOPES = Object.freeze([
   'openid',
   'https://www.googleapis.com/auth/userinfo.email',
 ])
-const canonicalScope = (scope) =>
+const canonicalScope = (scope: string) =>
   scope === 'email'
     ? 'https://www.googleapis.com/auth/userinfo.email'
     : scope === 'profile'
@@ -16,38 +50,41 @@ const AUTHORIZE = 'https://accounts.google.com/o/oauth2/v2/auth'
 const TOKEN = 'https://oauth2.googleapis.com/token'
 const REVOKE = 'https://oauth2.googleapis.com/revoke'
 const USERINFO = 'https://openidconnect.googleapis.com/v1/userinfo'
-const fail = (message) => new Error(message)
+const fail = (message: string) => new Error(message)
 // Only locally constructed request diagnostics may cross the consent boundary.
-const requestDiagnostics = new WeakMap()
-const text = (value, max) => typeof value === 'string' && value.length > 0 && value.length <= max
-const same = (a, b) =>
+const requestDiagnostics = new WeakMap<Error, string>()
+const text = (value: unknown, max: number): value is string =>
+  typeof value === 'string' && value.length > 0 && value.length <= max
+const same = (a: unknown, b: string) =>
   typeof a === 'string' &&
   Buffer.byteLength(a) === Buffer.byteLength(b) &&
   timingSafeEqual(Buffer.from(a), Buffer.from(b))
-const validScope = (scope) =>
+const validScope = (scope: unknown): scope is string =>
   text(scope, 2048) &&
   (['openid', 'email', 'profile'].includes(scope) ||
     /^https:\/\/www\.googleapis\.com\/auth\/[A-Za-z0-9._/-]+$/.test(scope))
 // Google expands the OIDC email/profile aliases in token responses. Use the
 // same canonical names in requests, persisted grants and consumer comparisons.
-export function normalizeScopes(value) {
+export function normalizeScopes(value: unknown) {
   if (!Array.isArray(value) || value.length > 100 || !Array.from(value).every(validScope))
     throw fail('Invalid Google scopes.')
   return [...new Set(value.map(canonicalScope))]
 }
 const scopes = normalizeScopes
-const includes = (granted, required) => {
+const includes = (granted: unknown, required: unknown) => {
   const normalized = normalizeScopes(granted)
   return normalizeScopes(required).every((scope) => normalized.includes(scope))
 }
-const accountValid = (account) => text(account?.id, 1024)
-const connected = (record) =>
-  text(record?.refreshToken, 16_384) &&
-  accountValid(record?.account) &&
-  Array.isArray(record?.scopes) &&
+const accountValid = (account: unknown): account is StoredAccount =>
+  isRecord(account) && text(account.id, 1024)
+const connected = (record: unknown): record is ConnectedGrant =>
+  isRecord(record) &&
+  text(record.refreshToken, 16_384) &&
+  accountValid(record.account) &&
+  Array.isArray(record.scopes) &&
   record.scopes.length <= 100 &&
   Array.from(record.scopes).every(validScope)
-const accountCopy = (account) => ({
+const accountCopy = (account: StoredAccount): Account => ({
   id: account.id,
   ...(text(account.email, 320) ? { email: account.email } : {}),
 })
@@ -55,6 +92,23 @@ const accountCopy = (account) => ({
 // The host supplies credential storage. Its adapter checks isValid under its
 // storage lock immediately before committing; tokens never leave the host service.
 export class GoogleOAuthClient {
+  declare config: { clientId: string | undefined; clientSecret: string | undefined }
+  declare credentials: CredentialAdapter
+  declare fetch: typeof globalThis.fetch
+  declare timeoutMs: number
+  declare requestTimeoutMs: number
+  declare epoch: number
+  declare queue: Promise<unknown>
+  declare tokenQueue: Promise<unknown>
+  declare controllers: Set<AbortController>
+  declare cleanups: Set<Promise<void>>
+  declare flow: Flow | null
+  declare refresh: Promise<TokenRecord> | null
+  declare disposed: boolean
+  declare disconnecting: boolean | undefined
+  declare error: string | null
+  declare cleanupError: string | undefined
+
   constructor({
     clientId,
     clientSecret,
@@ -62,11 +116,13 @@ export class GoogleOAuthClient {
     fetch: fetchImpl = globalThis.fetch,
     timeoutMs = 300_000,
     requestTimeoutMs = 30_000,
-  } = {}) {
+  }: OAuthOptions = {}) {
     this.config = { clientId, clientSecret }
     if (
       !credentials ||
-      !['get', 'set', 'delete'].every((key) => typeof credentials[key] === 'function')
+      typeof credentials.get !== 'function' ||
+      typeof credentials.set !== 'function' ||
+      typeof credentials.delete !== 'function'
     ) {
       throw fail('A credential adapter is required.')
     }
@@ -110,7 +166,7 @@ export class GoogleOAuthClient {
       throw fail('Google operation was cancelled.')
   }
 
-  serialize(fn) {
+  serialize<T>(fn: () => T | Promise<T>) {
     const next = this.queue.then(fn)
     this.queue = next.catch(() => {})
     return next
@@ -124,7 +180,7 @@ export class GoogleOAuthClient {
     }
   }
 
-  async saveCredentials(record, epoch, flow) {
+  async saveCredentials(record: TokenRecord, epoch: number, flow?: Flow) {
     return this.serialize(async () => {
       this.assertActive(epoch)
       if (flow && this.flow !== flow) throw fail('Google sign-in was cancelled.')
@@ -146,7 +202,24 @@ export class GoogleOAuthClient {
     })
   }
 
-  async request(url, options = {}, signal, empty = false) {
+  request(
+    url: string,
+    options?: RequestInit,
+    signal?: AbortSignal,
+    empty?: false,
+  ): Promise<Record<string, unknown>>
+  request(
+    url: string,
+    options: RequestInit,
+    signal: AbortSignal | undefined,
+    empty: true,
+  ): Promise<undefined>
+  async request(
+    url: string,
+    options: RequestInit = {},
+    signal?: AbortSignal,
+    empty = false,
+  ): Promise<Record<string, unknown> | undefined> {
     this.assertActive()
     if (![TOKEN, REVOKE, USERINFO].includes(url)) throw fail('Invalid Google endpoint.')
     const controller = new AbortController()
@@ -154,14 +227,14 @@ export class GoogleOAuthClient {
     signal?.addEventListener('abort', abort, { once: true })
     if (signal?.aborted) abort()
     this.controllers.add(controller)
-    let onAbort
-    const cancelled = new Promise((_resolve, reject) => {
+    let onAbort: () => void = () => {}
+    const cancelled = new Promise<never>((_resolve, reject) => {
       onAbort = () => reject(fail('Cancelled.'))
       controller.signal.addEventListener('abort', onAbort, { once: true })
       if (controller.signal.aborted) onAbort()
     })
     const timer = setTimeout(abort, this.requestTimeoutMs)
-    let reader
+    let reader: ReadableStreamDefaultReader<Uint8Array> | undefined
     let failure = 'Google network request failed. Try again.'
     try {
       const operation = (async () => {
@@ -177,7 +250,7 @@ export class GoogleOAuthClient {
           throw fail('Cancelled.')
         }
         reader = response.body?.getReader()
-        const chunks = []
+        const chunks: Buffer[] = []
         let length = 0
         if (reader) {
           while (true) {
@@ -190,13 +263,12 @@ export class GoogleOAuthClient {
           }
         }
         if (empty && response.ok) return undefined
-        const result = JSON.parse(Buffer.concat(chunks).toString('utf8'))
+        const result: unknown = JSON.parse(Buffer.concat(chunks).toString('utf8'))
         if (!response.ok) {
           failure = httpFailure(response.status, result)
           throw fail('Google request failed.')
         }
-        if (!result || typeof result !== 'object' || Array.isArray(result))
-          throw fail('Invalid response.')
+        if (!isRecord(result)) throw fail('Invalid response.')
         return result
       })()
       return await Promise.race([operation, cancelled])
@@ -217,19 +289,24 @@ export class GoogleOAuthClient {
     }
   }
 
-  tokenParams(values) {
+  tokenParams(values: Record<string, string>) {
     return new URLSearchParams({
-      client_id: this.config.clientId,
+      client_id: String(this.config.clientId),
       ...(this.config.clientSecret ? { client_secret: this.config.clientSecret } : {}),
       ...values,
     })
   }
 
-  tokenRecord(result, previous, requested) {
+  tokenRecord(
+    result: Record<string, unknown>,
+    previous: ConnectedGrant | null | undefined,
+    requested: unknown,
+  ): TokenRecord {
     if (
       !text(result.access_token, 16_384) ||
       typeof result.token_type !== 'string' ||
       result.token_type.toLowerCase() !== 'bearer' ||
+      typeof result.expires_in !== 'number' ||
       !Number.isFinite(result.expires_in) ||
       result.expires_in <= 0 ||
       result.expires_in > 604_800
@@ -262,7 +339,7 @@ export class GoogleOAuthClient {
     }
   }
 
-  closeFlow(flow) {
+  closeFlow(flow: Flow) {
     clearTimeout(flow.timer)
     if (flow.cleanup) return flow.cleanup
     flow.server?.close()
@@ -287,9 +364,9 @@ export class GoogleOAuthClient {
     while (this.cleanups.size) await Promise.all([...this.cleanups])
   }
 
-  async waitForFlow(flow, operation) {
-    let abort
-    const cancelled = new Promise((_resolve, reject) => {
+  async waitForFlow<T>(flow: Flow, operation: Promise<T>): Promise<T> {
+    let abort: () => void = () => {}
+    const cancelled = new Promise<never>((_resolve, reject) => {
       abort = () => reject(fail('Cancelled.'))
       flow.controller.signal.addEventListener('abort', abort, { once: true })
       if (flow.controller.signal.aborted) abort()
@@ -312,9 +389,9 @@ export class GoogleOAuthClient {
     return true
   }
 
-  async begin({ scopes: required, publishCallback } = {}) {
+  async begin({ scopes: inputScopes, publishCallback }: BeginOptions = {}) {
     this.assertActive()
-    required = scopes(required)
+    let required = scopes(inputScopes)
     if (publishCallback !== undefined && typeof publishCallback !== 'function')
       throw fail('Invalid Google callback publisher.')
     if (!this.configured()) throw fail('Configure a Google Desktop OAuth client first.')
@@ -327,7 +404,7 @@ export class GoogleOAuthClient {
     const verifier = randomBytes(32).toString('base64url')
     const state = randomBytes(32).toString('base64url')
     const path = `/oauth/callback/${randomBytes(16).toString('hex')}`
-    const flow = {
+    const flow: Flow = {
       controller: new AbortController(),
       expiresAt: Date.now() + this.timeoutMs,
       accepted: false,
@@ -338,23 +415,23 @@ export class GoogleOAuthClient {
         this.error = 'Google sign-in timed out. Connect again.'
     }, this.timeoutMs)
     flow.timer.unref?.()
-    let previous
-    let requested
+    let previous: ConnectedGrant | null
+    let requested: string[]
     try {
-      previous = await this.waitForFlow(flow, this.readCredentials())
+      const stored = await this.waitForFlow(flow, this.readCredentials())
       this.assertActive(epoch)
       if (this.flow !== flow) throw fail('Cancelled.')
-      if (!connected(previous)) previous = null
+      previous = connected(stored) ? stored : null
       required = scopes([...required, ...IDENTITY_SCOPES])
       requested = scopes([...required, ...(previous?.scopes ?? [])])
     } catch {
       if (this.flow === flow) this.cancel()
       throw fail('Google sign-in could not start.')
     }
-    flow.server = createServer(
+    const server = (flow.server = createServer(
       { maxHeaderSize: 8192, requestTimeout: 5000, headersTimeout: 5000 },
       (req, res) => {
-        const reply = (status, message) => {
+        const reply = (status: number, message: string) => {
           res.writeHead(status, {
             'Content-Type': 'text/plain; charset=utf-8',
             'Cache-Control': 'no-store',
@@ -363,21 +440,22 @@ export class GoogleOAuthClient {
           })
           res.end(message)
         }
-        if (!flow.redirectUri) return reply(503, 'Sign-in listener is starting.')
+        const redirectUri = flow.redirectUri
+        if (!redirectUri) return reply(503, 'Sign-in listener is starting.')
         if (req.method !== 'GET') return reply(405, 'Method not allowed.')
         if (!req.url || req.url.length > 8192 || !req.url.startsWith('/'))
           return reply(400, 'Invalid callback.')
         let url
         try {
-          url = new URL(req.url, flow.redirectUri)
+          url = new URL(req.url, redirectUri)
         } catch {
           return reply(400, 'Invalid callback.')
         }
-        const redirect = new URL(flow.redirectUri)
+        const redirect = new URL(redirectUri)
         if (
           req.url.split('?')[0] !== path ||
           url.hash ||
-          req.headers.host !== flow.redirectUri.slice('http://'.length).split('/')[0] ||
+          req.headers.host !== redirectUri.slice('http://'.length).split('/')[0] ||
           url.origin !== redirect.origin ||
           url.pathname !== path
         )
@@ -390,7 +468,7 @@ export class GoogleOAuthClient {
           return reply(400, 'Invalid callback state.')
         }
         const trackResponse = () => {
-          flow.responseFinished = new Promise((resolve) => {
+          flow.responseFinished = new Promise<void>((resolve) => {
             // finish only reaches the internal kernel socket. Wait for TCP close
             // and a bounded relay drain grace before force-closing a public lease.
             const socket = req.socket
@@ -417,7 +495,7 @@ export class GoogleOAuthClient {
         flow.accepted = true
         trackResponse()
         reply(200, 'Google sign-in received. You can close this tab.')
-        flow.server.close()
+        server.close()
         void (async () => {
           let safeError = 'Google sign-in failed. Try connecting again.'
           try {
@@ -428,7 +506,7 @@ export class GoogleOAuthClient {
                 body: this.tokenParams({
                   grant_type: 'authorization_code',
                   code,
-                  redirect_uri: flow.redirectUri,
+                  redirect_uri: redirectUri,
                   code_verifier: verifier,
                 }),
               },
@@ -459,7 +537,9 @@ export class GoogleOAuthClient {
             }
             await this.saveCredentials(record, epoch, flow)
           } catch (error) {
-            if (this.flow === flow) this.error = requestDiagnostics.get(error) ?? safeError
+            if (this.flow === flow)
+              this.error =
+                error instanceof Error ? (requestDiagnostics.get(error) ?? safeError) : safeError
           } finally {
             if (this.flow === flow) {
               this.flow = null
@@ -468,18 +548,18 @@ export class GoogleOAuthClient {
           }
         })()
       },
-    )
-    flow.server.maxConnections = 16
-    flow.server.on('clientError', (_error, socket) => socket.destroy())
-    flow.server.on('error', () => {
+    ))
+    server.maxConnections = 16
+    server.on('clientError', (_error, socket) => socket.destroy())
+    server.on('error', () => {
       if (this.flow === flow && this.cancel())
         this.error = 'Google sign-in listener failed. Connect again.'
     })
     try {
-      await new Promise((resolve, reject) => {
+      await new Promise<void>((resolve, reject) => {
         const cleanup = () => {
           flow.controller.signal.removeEventListener('abort', onAbort)
-          flow.server.removeListener('error', onError)
+          server.removeListener('error', onError)
         }
         const onAbort = () => {
           cleanup()
@@ -490,15 +570,17 @@ export class GoogleOAuthClient {
           reject(fail('Listener failed.'))
         }
         flow.controller.signal.addEventListener('abort', onAbort, { once: true })
-        flow.server.once('error', onError)
-        flow.server.listen(0, '127.0.0.1', () => {
+        server.once('error', onError)
+        server.listen(0, '127.0.0.1', () => {
           cleanup()
           resolve()
         })
       })
       this.assertActive(epoch)
       if (this.flow !== flow) throw fail('Cancelled.')
-      const port = flow.server.address().port
+      const address = server.address()
+      if (!address || typeof address === 'string') throw fail('Listener failed.')
+      const port = address.port
       let origin = `http://127.0.0.1:${port}`
       if (publishCallback !== undefined) {
         // Retain the publication promise before calling user code: cancellation
@@ -526,7 +608,7 @@ export class GoogleOAuthClient {
       flow.redirectUri = `${origin}${path}`
       const url = new URL(AUTHORIZE)
       url.search = new URLSearchParams({
-        client_id: this.config.clientId,
+        client_id: String(this.config.clientId),
         redirect_uri: flow.redirectUri,
         response_type: 'code',
         scope: requested.join(' '),
@@ -545,12 +627,13 @@ export class GoogleOAuthClient {
     }
   }
 
-  async status() {
+  async status(): Promise<OAuthStatus> {
     this.assertActive()
     const epoch = this.epoch
     const record = await this.readCredentials()
     this.assertActive(epoch)
     const isConnected = connected(record)
+    const error = this.cleanupError || this.error
     return {
       configured: this.configured(),
       connected: isConnected,
@@ -558,13 +641,13 @@ export class GoogleOAuthClient {
       grantedScopes: isConnected ? normalizeScopes(record.scopes) : [],
       ...(isConnected ? { account: accountCopy(record.account) } : {}),
       ...(this.flow ? { expiresAt: this.flow.expiresAt } : {}),
-      ...(this.cleanupError || this.error ? { error: this.cleanupError || this.error } : {}),
+      ...(error ? { error } : {}),
     }
   }
 
-  async getAccessToken({ scopes: required } = {}) {
+  async getAccessToken({ scopes: inputScopes }: { scopes?: readonly string[] } = {}) {
     this.assertActive()
-    required = scopes(required)
+    const required = scopes(inputScopes)
     if (this.flow) throw fail('Finish or cancel Google sign-in first.')
     if (!this.configured()) throw fail('Configure a Google Desktop OAuth client first.')
     const epoch = this.epoch
@@ -575,7 +658,7 @@ export class GoogleOAuthClient {
     return operation
   }
 
-  async accessTokenOperation(required, epoch) {
+  async accessTokenOperation(required: string[], epoch: number) {
     this.assertActive(epoch)
     const record = await this.readCredentials()
     this.assertActive(epoch)
@@ -586,6 +669,7 @@ export class GoogleOAuthClient {
       )
     if (
       text(record.accessToken, 16_384) &&
+      typeof record.expiresAt === 'number' &&
       Number.isFinite(record.expiresAt) &&
       record.expiresAt > Date.now() + 60_000
     ) {
@@ -645,7 +729,7 @@ export class GoogleOAuthClient {
       this.disconnecting = false
     }
     this.error = null
-    const token = record?.refreshToken || record?.accessToken
+    const token = isRecord(record) ? record.refreshToken || record.accessToken : undefined
     if (revoke && text(token, 16_384)) {
       try {
         await this.request(

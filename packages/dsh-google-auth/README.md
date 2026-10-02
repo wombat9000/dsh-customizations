@@ -103,6 +103,24 @@ The provider uses these DSH credential keys:
 
 These are structural field names, not credentials. Old pre-release `google-drive/*` records are not imported or modified automatically. If you tested the earlier Drive-owned auth version, configure and connect again in Google accounts; legacy records can be removed separately after checking that they are no longer needed.
 
+## Development
+
+Maintained host modules live in [src](src/index.ts). The client uses typed React components in [client](client/settings.tsx) and shared HTTP contracts in [shared/contracts.ts](shared/contracts.ts). Both compiler configurations enable strict checking, unchecked-index checks, and exact optional properties. The package exports generated ESM host modules from `dist`; `client.js` remains the generated lazy-loader entry with the existing package ID and default plugin export.
+
+After the repository's approved dependency setup, run these commands from the repository root with `NODE_PATH` unset:
+
+```sh
+node packages/dsh-google-auth/scripts/typecheck-host.mjs
+node packages/dsh-google-auth/scripts/typecheck.mjs
+node packages/dsh-google-auth/scripts/build-host.mjs
+node packages/dsh-google-auth/scripts/build-client.mjs
+node packages/dsh-google-auth/scripts/build-host.mjs --check
+node packages/dsh-google-auth/scripts/build-client.mjs --check
+node --test packages/dsh-google-auth/test/*.test.js
+```
+
+The normal Node suite compiles strict host/client contracts, checks committed artifact freshness without rewriting files, and exercises the generated implementations. Browser component tests import the maintained TSX entry; Node loader tests cover the generated client registration. Rebuild both artifacts after changing source. Do not edit generated output directly. Builds use the existing pinned root compiler and bundler; they do not install dependencies or initiate OAuth.
+
 ## Verification
 
 The automated suites use synthetic tokens, mock Google responses, real ephemeral loopback callbacks and TCP forwarding relays, mocked bridge clients, real DSH service/route lifecycle fixtures, and browser component tests. They do not authenticate a real account or deploy a live profile. A real consent and Drive listing test remains a post-deployment step.
