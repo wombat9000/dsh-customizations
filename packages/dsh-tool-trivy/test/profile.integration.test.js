@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFile, stat } from 'node:fs/promises'
 import test from 'node:test'
-import { registerTrivyStatusRpc } from '../src/status.js'
+import { registerTrivyStatusRpc } from '../dist/src/status.js'
 
 const PACKAGE_ROOT = new URL('../', import.meta.url)
 const RECIPE = new URL('../../profiles/personal-web/recipe.json', PACKAGE_ROOT)
@@ -13,7 +13,7 @@ test('Trivy bundle ships its client, skill, and controlled scanner inputs', asyn
   assert.equal(manifest.name, '@local/dsh-tool-trivy')
   assert.equal(manifest.dsh.client.platform, 'web')
   assert.ok(manifest.files.includes('assets'))
-  assert.ok(manifest.files.includes('src/**/*.js'))
+  assert.ok(manifest.files.includes('dist/**/*.js'))
   for (const path of [
     ...Object.values(manifest.exports),
     'assets/trivy-audit.md',

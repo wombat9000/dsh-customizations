@@ -2,6 +2,17 @@ import { realpath, stat } from 'node:fs/promises'
 import { isAbsolute, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { HarnessError } from '@deepseek-ai/dsh-llm'
+import type { CollectedOutput, SubprocessOutputReader } from '@deepseek-ai/dsh-subprocess'
+import type {
+  Finding,
+  Scanner,
+  Severity,
+  ScanOptions,
+  ScanMetadata,
+  TrivyResult,
+  TrivyStatus,
+} from '../shared/contracts.js'
+import type { CheckOptions, TrivySubprocess, TrivyRuntime, ScanExecution } from './contracts.js'
 
 export const MINIMUM_TRIVY_VERSION = '0.50.0'
 export const DEFAULT_TIMEOUT_MS = 300_000
@@ -12,45 +23,46 @@ export const MAX_STDERR_BYTES = 64 * 1024
 export const MAX_FINDINGS = 200
 export const RENDERED_FINDINGS = 50
 export const EMPTY_CONFIG_PATH = fileURLToPath(
-  new URL('../assets/trivy-empty.yaml', import.meta.url),
+  new URL('../../assets/trivy-empty.yaml', import.meta.url),
 )
 export const EMPTY_IGNOREFILE_PATH = fileURLToPath(
-  new URL('../assets/trivy-empty.ignore', import.meta.url),
+  new URL('../../assets/trivy-empty.ignore', import.meta.url),
 )
 
-const SEVERITIES = ['UNKNOWN', 'LOW', 'MEDIUM', 'HIGH', 'CRITICAL']
+const SEVERITIES: Severity[] = ['UNKNOWN', 'LOW', 'MEDIUM', 'HIGH', 'CRITICAL']
 const SEVERITY_ORDER = new Map([...SEVERITIES].reverse().map((value, index) => [value, index]))
-const SCANNER_ARGUMENT = {
+const SCANNER_ARGUMENT: Record<Scanner, string> = {
   vulnerability: 'vuln',
   misconfiguration: 'misconfig',
 }
 
-function messageOf(error) {
+function messageOf(error: unknown) {
   return error instanceof Error ? error.message : String(error)
 }
 
-function diagnostic(value, maximum = 2_000) {
+function diagnostic(value: unknown, maximum = 2_000) {
   const normalized = String(value).trim()
   if (normalized.length <= maximum) return normalized
   return `…${normalized.slice(normalized.length - maximum + 1)}`
 }
 
 function abortError(message = 'Trivy scan aborted') {
-  const error = new Error(message)
+  const error = Object.assign(new Error(message), { code: 'TRIVY_ABORTED' })
   error.name = 'AbortError'
-  error.code = 'TRIVY_ABORTED'
   return error
 }
 
 export class TrivyError extends HarnessError {
-  constructor(code, message, details = {}) {
+  readonly details: Record<string, unknown>
+
+  constructor(code: string, message: string, details: Record<string, unknown> = {}) {
     super(message, code)
     this.name = 'TrivyError'
     this.details = details
   }
 }
 
-export function parseTrivyVersion(output) {
+export function parseTrivyVersion(output: string) {
   const match =
     /(?:^|\n)Version:\s*v?(\d+)\.(\d+)\.(\d+)(?:\s|$)/u.exec(output) ??
     /(?:^|\s)v?(\d+)\.(\d+)\.(\d+)(?:\s|$)/u.exec(output)
@@ -58,17 +70,22 @@ export function parseTrivyVersion(output) {
   return `${match[1]}.${match[2]}.${match[3]}`
 }
 
-export function compareVersions(left, right) {
-  const parse = (value) => value.split('.').map((part) => Number.parseInt(part, 10))
+export function compareVersions(left: string, right: string) {
+  const parse = (value: string) => value.split('.').map((part) => Number.parseInt(part, 10))
   const a = parse(left)
   const b = parse(right)
   for (let index = 0; index < 3; index += 1) {
-    if (a[index] !== b[index]) return a[index] < b[index] ? -1 : 1
+    const leftPart = a[index]
+    const rightPart = b[index]
+    if (leftPart !== rightPart) {
+      if (leftPart === undefined || rightPart === undefined) return 1
+      return leftPart < rightPart ? -1 : 1
+    }
   }
   return 0
 }
 
-function copyRead(reader) {
+function copyRead(reader: SubprocessOutputReader | undefined): CollectedOutput {
   if (reader === undefined) return { text: '', truncated: false }
   const value = reader.readFrom(0)
   return {
@@ -79,8 +96,22 @@ function copyRead(reader) {
 }
 
 export async function runCollected(
-  subprocess,
-  { argv, cwd, signal, timeoutMs, stdoutMaxBytes, stderrMaxBytes = MAX_STDERR_BYTES },
+  subprocess: Pick<TrivySubprocess, 'spawn'>,
+  {
+    argv,
+    cwd,
+    signal,
+    timeoutMs,
+    stdoutMaxBytes,
+    stderrMaxBytes = MAX_STDERR_BYTES,
+  }: {
+    argv: string[]
+    cwd: string
+    signal?: AbortSignal | undefined
+    timeoutMs: number
+    stdoutMaxBytes: number
+    stderrMaxBytes?: number
+  },
 ) {
   const controller = new AbortController()
   let timedOut = false
@@ -118,22 +149,30 @@ export async function runCollected(
   }
 }
 
-function notFound(error) {
-  return error?.code === 'ENOENT' || /not found|cannot find|could not find/iu.test(messageOf(error))
+function notFound(error: unknown) {
+  return (
+    (typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT') ||
+    /not found|cannot find|could not find/iu.test(messageOf(error))
+  )
 }
 
 export function createTrivyRuntime(
-  subprocess,
+  subprocess: TrivySubprocess,
   {
     now = () => Date.now(),
     cwd = () => process.cwd(),
     minimumVersion = MINIMUM_TRIVY_VERSION,
     statusCacheMs = STATUS_CACHE_MS,
+  }: {
+    now?: () => number
+    cwd?: () => string
+    minimumVersion?: string
+    statusCacheMs?: number
   } = {},
-) {
-  let cached
+): TrivyRuntime {
+  let cached: { checkedAtMs: number; value: TrivyStatus } | undefined
 
-  const check = async ({ force = false, signal } = {}) => {
+  const check = async ({ force = false, signal }: CheckOptions = {}): Promise<TrivyStatus> => {
     const current = now()
     if (!force && cached !== undefined && current - cached.checkedAtMs < statusCacheMs) {
       return { ...cached.value }
@@ -144,7 +183,7 @@ export function createTrivyRuntime(
       executable = await subprocess.resolveExecutable('trivy', undefined, signal)
     } catch (error) {
       if (signal?.aborted) throw abortError()
-      const value = {
+      const value: TrivyStatus = {
         state: notFound(error) ? 'not-found' : 'execution-failed',
         checkedAt: new Date(current).toISOString(),
         minimumVersion,
@@ -164,7 +203,7 @@ export function createTrivyRuntime(
         timeoutMs: STATUS_TIMEOUT_MS,
         stdoutMaxBytes: 32 * 1024,
       })
-      let value
+      let value: TrivyStatus
       if (result.timedOut) {
         value = {
           state: 'execution-failed',
@@ -218,7 +257,7 @@ export function createTrivyRuntime(
       return { ...value }
     } catch (error) {
       if (signal?.aborted) throw abortError()
-      const value = {
+      const value: TrivyStatus = {
         state: 'execution-failed',
         checkedAt: new Date(current).toISOString(),
         minimumVersion,
@@ -238,7 +277,7 @@ export function createTrivyRuntime(
   }
 }
 
-function within(root, candidate) {
+function within(root: string, candidate: string) {
   const path = relative(root, candidate)
   return (
     path === '' ||
@@ -248,7 +287,7 @@ function within(root, candidate) {
   )
 }
 
-export async function resolveScanTarget(workspace, target = '.') {
+export async function resolveScanTarget(workspace: unknown, target: unknown = '.') {
   if (typeof workspace !== 'string' || workspace.length === 0) {
     throw new TrivyError(
       'TRIVY_WORKSPACE_REQUIRED',
@@ -280,24 +319,16 @@ export async function resolveScanTarget(workspace, target = '.') {
   return { workspace: canonicalWorkspace, target: canonicalTarget }
 }
 
-export function normalizeScanOptions(args = {}) {
+export function normalizeScanOptions(args: Record<string, unknown> = {}): ScanOptions {
   const scanners = args.scanners ?? ['vulnerability', 'misconfiguration']
   const severities = args.severities ?? ['HIGH', 'CRITICAL']
-  if (
-    !Array.isArray(scanners) ||
-    scanners.length === 0 ||
-    scanners.some((value) => !(value in SCANNER_ARGUMENT))
-  ) {
+  if (!Array.isArray(scanners) || scanners.length === 0 || !scanners.every(isScanner)) {
     throw new TrivyError(
       'TRIVY_INVALID_SCANNERS',
       'Trivy scanners must contain vulnerability and/or misconfiguration.',
     )
   }
-  if (
-    !Array.isArray(severities) ||
-    severities.length === 0 ||
-    severities.some((value) => !SEVERITIES.includes(value))
-  ) {
+  if (!Array.isArray(severities) || severities.length === 0 || !severities.every(isSeverity)) {
     throw new TrivyError(
       'TRIVY_INVALID_SEVERITIES',
       'Trivy severities contain an unsupported value.',
@@ -311,7 +342,7 @@ export function normalizeScanOptions(args = {}) {
   }
 }
 
-export function buildTrivyArgv(executable, options, target) {
+export function buildTrivyArgv(executable: string, options: ScanOptions, target: string) {
   return [
     executable,
     '--config',
@@ -331,75 +362,100 @@ export function buildTrivyArgv(executable, options, target) {
   ]
 }
 
-function text(value, maximum = 500) {
+function text(value: unknown, maximum = 500) {
   if (typeof value !== 'string') return undefined
   const normalized = value.trim().replace(/\s+/gu, ' ')
   if (normalized.length === 0) return undefined
   return normalized.length <= maximum ? normalized : `${normalized.slice(0, maximum - 1)}…`
 }
 
-function severity(value) {
-  return SEVERITIES.includes(value) ? value : 'UNKNOWN'
+function isSeverity(value: unknown): value is Severity {
+  return typeof value === 'string' && SEVERITIES.some((entry) => entry === value)
+}
+function isScanner(value: unknown): value is Scanner {
+  return value === 'vulnerability' || value === 'misconfiguration'
+}
+function severity(value: unknown): Severity {
+  return isSeverity(value) ? value : 'UNKNOWN'
 }
 
-function primaryUrl(item) {
+function primaryUrl(item: Record<string, unknown>) {
   return (
     text(item.PrimaryURL, 500) ??
     (Array.isArray(item.References) ? text(item.References[0], 500) : undefined)
   )
 }
 
-function vulnerabilityFinding(result, item) {
+function vulnerabilityFinding(result: RawResult, item: Record<string, unknown>): Finding {
+  const title = text(item.Title, 300)
+  const packageName = text(item.PkgName, 300)
+  const installedVersion = text(item.InstalledVersion, 200)
+  const fixedVersion = text(item.FixedVersion, 200)
+  const status = text(item.Status, 100)
+  const url = primaryUrl(item)
   return {
     kind: 'vulnerability',
     target: text(result.Target, 500) ?? '(unknown target)',
     id: text(item.VulnerabilityID, 200) ?? '(unknown vulnerability)',
     severity: severity(item.Severity),
-    ...(text(item.Title, 300) === undefined ? {} : { title: text(item.Title, 300) }),
-    ...(text(item.PkgName, 300) === undefined ? {} : { package: text(item.PkgName, 300) }),
-    ...(text(item.InstalledVersion, 200) === undefined
-      ? {}
-      : { installedVersion: text(item.InstalledVersion, 200) }),
-    ...(text(item.FixedVersion, 200) === undefined
-      ? {}
-      : { fixedVersion: text(item.FixedVersion, 200) }),
-    ...(text(item.Status, 100) === undefined ? {} : { status: text(item.Status, 100) }),
-    ...(primaryUrl(item) === undefined ? {} : { primaryUrl: primaryUrl(item) }),
+    ...(title === undefined ? {} : { title }),
+    ...(packageName === undefined ? {} : { package: packageName }),
+    ...(installedVersion === undefined ? {} : { installedVersion }),
+    ...(fixedVersion === undefined ? {} : { fixedVersion }),
+    ...(status === undefined ? {} : { status }),
+    ...(url === undefined ? {} : { primaryUrl: url }),
   }
 }
 
-function misconfigurationFinding(result, item) {
-  const resource = text(item.CauseMetadata?.Resource, 300)
+function misconfigurationFinding(result: RawResult, item: Record<string, unknown>): Finding {
+  const resource = text(
+    reportRecord(item.CauseMetadata) ? item.CauseMetadata.Resource : undefined,
+    300,
+  )
+  const title = text(item.Title, 300)
+  const message = text(item.Message, 500)
+  const resolution = text(item.Resolution, 500)
+  const status = text(item.Status, 100)
+  const url = primaryUrl(item)
   return {
     kind: 'misconfiguration',
     target: text(result.Target, 500) ?? '(unknown target)',
     id: text(item.ID, 200) ?? text(item.AVDID, 200) ?? '(unknown misconfiguration)',
     severity: severity(item.Severity),
-    ...(text(item.Title, 300) === undefined ? {} : { title: text(item.Title, 300) }),
-    ...(text(item.Message, 500) === undefined ? {} : { message: text(item.Message, 500) }),
-    ...(text(item.Resolution, 500) === undefined ? {} : { resolution: text(item.Resolution, 500) }),
+    ...(title === undefined ? {} : { title }),
+    ...(message === undefined ? {} : { message }),
+    ...(resolution === undefined ? {} : { resolution }),
     ...(resource === undefined ? {} : { resource }),
-    ...(text(item.Status, 100) === undefined ? {} : { status: text(item.Status, 100) }),
-    ...(primaryUrl(item) === undefined ? {} : { primaryUrl: primaryUrl(item) }),
+    ...(status === undefined ? {} : { status }),
+    ...(url === undefined ? {} : { primaryUrl: url }),
   }
 }
 
-function emptySeverities() {
-  return Object.fromEntries(SEVERITIES.map((value) => [value, 0]))
+function emptySeverities(): Record<Severity, number> {
+  return { UNKNOWN: 0, LOW: 0, MEDIUM: 0, HIGH: 0, CRITICAL: 0 }
 }
 
-function reportRecord(value) {
+function reportRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-function invalidReport(detail) {
+function invalidReport(detail: string): never {
   throw new TrivyError(
     'TRIVY_INVALID_OUTPUT',
     `Trivy returned an unsupported JSON report: ${detail}.`,
   )
 }
 
-function validateTrivyReport(report) {
+interface RawResult extends Record<string, unknown> {
+  Target: string
+  Vulnerabilities?: Record<string, unknown>[]
+  Misconfigurations?: Record<string, unknown>[]
+}
+interface RawReport {
+  Results?: RawResult[]
+}
+
+function validateTrivyReport(report: unknown): asserts report is RawReport {
   if (!reportRecord(report)) invalidReport('expected an object')
   if (report.SchemaVersion !== 2) invalidReport('expected SchemaVersion 2')
   if (typeof report.CreatedAt !== 'string' || report.CreatedAt.length === 0)
@@ -426,7 +482,7 @@ function validateTrivyReport(report) {
     for (const [field, idFields] of [
       ['Vulnerabilities', ['VulnerabilityID']],
       ['Misconfigurations', ['ID', 'AVDID']],
-    ]) {
+    ] as const) {
       const items = result[field]
       if (items === undefined) continue
       if (!Array.isArray(items)) invalidReport(`${field} must be an array`)
@@ -443,10 +499,10 @@ function validateTrivyReport(report) {
   }
 }
 
-export function normalizeTrivyReport(report, metadata) {
+export function normalizeTrivyReport(report: unknown, metadata: ScanMetadata): TrivyResult {
   validateTrivyReport(report)
 
-  const all = []
+  const all: Finding[] = []
   for (const result of report.Results ?? []) {
     for (const item of result.Vulnerabilities ?? []) all.push(vulnerabilityFinding(result, item))
     for (const item of result.Misconfigurations ?? [])
@@ -483,7 +539,7 @@ export function normalizeTrivyReport(report, metadata) {
   }
 }
 
-export function renderTrivyResult(value) {
+export function renderTrivyResult(value: TrivyResult) {
   const totals = value.totals.bySeverity
   const lines = [
     `Trivy ${value.scannerVersion} scanned ${value.target}.`,
@@ -525,7 +581,12 @@ export function renderTrivyResult(value) {
   return lines.join('\n')
 }
 
-export async function scanWithTrivy(runtime, subprocess, args, exec) {
+export async function scanWithTrivy(
+  runtime: Pick<TrivyRuntime, 'check'>,
+  subprocess: TrivySubprocess,
+  args: Record<string, unknown>,
+  exec: ScanExecution,
+) {
   const options = normalizeScanOptions(args)
   const workspace = exec.agent?.session.header.cwd
   const paths = await resolveScanTarget(workspace, options.target)
@@ -564,7 +625,7 @@ export async function scanWithTrivy(runtime, subprocess, args, exec) {
     throw new TrivyError('TRIVY_SCAN_FAILED', `Trivy scan failed: ${detail}`)
   }
 
-  let report
+  let report: unknown
   try {
     report = JSON.parse(result.stdout.text)
   } catch (error) {

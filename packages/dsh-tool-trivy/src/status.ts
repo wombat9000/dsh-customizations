@@ -1,8 +1,13 @@
-export const TRIVY_STATUS_CHANNEL = '/trivy-status'
-export const TRIVY_STATUS_GET = 'get'
-export const TRIVY_STATUS_RECHECK = 'recheck'
+import {
+  TRIVY_STATUS_CHANNEL,
+  TRIVY_STATUS_GET,
+  TRIVY_STATUS_RECHECK,
+} from '../shared/contracts.js'
+import type { StatusResponse, TrivyStatus, PublicTrivyStatus } from '../shared/contracts.js'
+import type { StatusContext, TrivyRuntime } from './contracts.js'
+export { TRIVY_STATUS_CHANNEL, TRIVY_STATUS_GET, TRIVY_STATUS_RECHECK }
 
-function internalError(message) {
+function internalError(message: string): StatusResponse {
   return {
     ok: false,
     error: {
@@ -13,12 +18,12 @@ function internalError(message) {
   }
 }
 
-function publicStatus(value) {
+function publicStatus(value: TrivyStatus): PublicTrivyStatus {
   const { path: _path, ...status } = value
   return status
 }
 
-export function registerTrivyStatusRpc(ctx, runtime) {
+export function registerTrivyStatusRpc(ctx: StatusContext, runtime: Pick<TrivyRuntime, 'check'>) {
   const connection = ctx.get('connection')
   if (connection === undefined) return
   ctx.effect(

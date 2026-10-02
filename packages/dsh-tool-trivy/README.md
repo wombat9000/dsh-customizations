@@ -34,6 +34,19 @@ This bundle is maintained in `packages/dsh-tool-trivy` and selected by the `pers
 After the repository's approved dependency setup, run these commands from the repository root. Unit tests mock the subprocess service and do not require an installed Trivy binary. `test:integration` checks package/recipe wiring and a dormant RPC handler; it does not install dependencies, start DSH, execute Trivy, or verify a live browser.
 
 ```sh
+pnpm --filter @local/dsh-tool-trivy build
+pnpm --filter @local/dsh-tool-trivy typecheck
 pnpm --filter @local/dsh-tool-trivy test
 pnpm --filter @local/dsh-tool-trivy test:integration
+```
+
+Maintain host modules in `src/`, client modules in `client/`, and shared RPC/result contracts in `shared/`. Both compiler configurations enable strict checking, checked indexed access, and exact optional properties. The normal test command includes strict contract checks and host/client artifact freshness; it does not regenerate artifacts.
+
+The shared repository builders emit ESM host modules in `dist/` and the single lazy-loaded `client.js` bundle. Include these generated outputs when updating the package. The manifest loads `dist/src/index.js` and ships `dist/**/*.js`, the client bundle, and package-owned assets. Asset URLs resolve from the generated host's `dist/src/` depth.
+
+To check committed outputs without rewriting them, run:
+
+```sh
+node packages/dsh-tool-trivy/scripts/build-host.mjs --check
+node packages/dsh-tool-trivy/scripts/build-client.mjs --check
 ```

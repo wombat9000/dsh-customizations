@@ -1,7 +1,13 @@
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
-import { BUNDLED_SKILL_RANK } from '@deepseek-ai/dsh-skill'
+import {
+  BUNDLED_SKILL_RANK,
+  type SkillCandidate,
+  type SkillResourceBase,
+  type SkillProvider,
+} from '@deepseek-ai/dsh-skill'
 import { defineTool } from '@deepseek-ai/dsh-tools'
+import type { TrivyContext, TrivyRuntime } from './contracts.js'
 import { registerTrivyStatusRpc } from './status.js'
 import { createTrivyRuntime, renderTrivyResult, scanWithTrivy } from './trivy.js'
 
@@ -12,10 +18,10 @@ export const name = 'tool-trivy'
 export const inject = ['tools', 'subprocess', 'skills']
 
 const PROVIDER_NAME = 'trivy-audit'
-const SKILL_BODY_URL = new URL('../assets/trivy-audit.md', import.meta.url)
-const RESOURCE_BASE = {
+const SKILL_BODY_URL = new URL('../../assets/trivy-audit.md', import.meta.url)
+const RESOURCE_BASE: SkillResourceBase = {
   kind: 'directory',
-  path: fileURLToPath(new URL('../assets/', import.meta.url)),
+  path: fileURLToPath(new URL('../../assets/', import.meta.url)),
 }
 const SKILL_CANDIDATE = {
   name: 'trivy-audit',
@@ -32,9 +38,9 @@ const SKILL_CANDIDATE = {
   resourceBase: RESOURCE_BASE,
   rank: BUNDLED_SKILL_RANK,
   locator: SKILL_BODY_URL,
-}
+} satisfies SkillCandidate
 
-export function createTrivySkillProvider() {
+export function createTrivySkillProvider(): SkillProvider {
   return {
     name: PROVIDER_NAME,
     list: () => Promise.resolve([SKILL_CANDIDATE]),
@@ -75,7 +81,7 @@ const FINDING_SCHEMA = {
     status: { type: 'string' },
     primaryUrl: { type: 'string' },
   },
-}
+} as const
 
 const COUNTS_SCHEMA = {
   type: 'object',
@@ -88,7 +94,7 @@ const COUNTS_SCHEMA = {
     HIGH: { type: 'integer', required: true },
     CRITICAL: { type: 'integer', required: true },
   },
-}
+} as const
 
 export const TRIVY_OUTPUT_SCHEMA = {
   type: 'object',
@@ -129,9 +135,12 @@ export const TRIVY_OUTPUT_SCHEMA = {
     truncated: { type: 'boolean', required: true },
     findings: { type: 'array', required: true, items: FINDING_SCHEMA },
   },
-}
+} as const
 
-export function registerTrivyTool(ctx, runtime) {
+export function registerTrivyTool(
+  ctx: Pick<TrivyContext, 'tools' | 'subprocess'>,
+  runtime: TrivyRuntime,
+) {
   ctx.tools.register(
     defineTool({
       name: 'trivy_scan',
@@ -176,7 +185,7 @@ export function registerTrivyTool(ctx, runtime) {
   )
 }
 
-export function apply(ctx) {
+export function apply(ctx: TrivyContext) {
   const runtime = createTrivyRuntime(ctx.subprocess)
   ctx.skills.registerProvider(() => createTrivySkillProvider())
   ctx.inject(['connection', 'webServer'], (webCtx) => registerTrivyStatusRpc(webCtx, runtime))

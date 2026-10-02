@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
-import { mkdtemp, mkdir, realpath, rm, symlink, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises'
+import { fileURLToPath } from 'node:url'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
@@ -21,7 +22,7 @@ import {
   scanWithTrivy,
   TRIVY_STATUS_CHANNEL,
   TRIVY_STATUS_RECHECK,
-} from '../src/index.js'
+} from '../dist/src/index.js'
 
 function reader(text, lossy = false) {
   return { readFrom: () => ({ text, nextOffset: Buffer.byteLength(text), lossy }) }
@@ -402,6 +403,23 @@ test('bundled provider loads the Trivy audit instructions', async () => {
   const [candidate] = await provider.list()
   assert.equal(candidate.name, 'trivy-audit')
   assert.equal(candidate.source, 'bundled')
+  const assetRoot = new URL('../assets/', import.meta.url)
+  assert.equal(candidate.resourceBase.kind, 'directory')
+  assert.equal(candidate.resourceBase.path, fileURLToPath(assetRoot))
+  assert.equal(candidate.locator.href, new URL('trivy-audit.md', assetRoot).href)
+  for (const [resolved, filename] of [
+    [EMPTY_CONFIG_PATH, 'trivy-empty.yaml'],
+    [EMPTY_IGNOREFILE_PATH, 'trivy-empty.ignore'],
+  ]) {
+    assert.equal(resolved, fileURLToPath(new URL(filename, assetRoot)))
+    const content = await readFile(resolved, 'utf8')
+    if (filename.endsWith('.yaml')) assert.deepEqual(JSON.parse(content), {})
+    else
+      assert.equal(
+        content.split('\n').filter((line) => line.trim() && !line.startsWith('#')).length,
+        0,
+      )
+  }
   const definition = await provider.get(candidate)
   assert.match(definition.content, /never installs or updates/)
   assert.match(definition.content, /trivy_scan/)

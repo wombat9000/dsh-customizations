@@ -1,0 +1,15 @@
+import assert from 'node:assert/strict'
+import { readFile } from 'node:fs/promises'
+import test from 'node:test'
+import { checkHost } from '../../../scripts/build-host.mjs'
+import { buildHost } from '../scripts/build-host.mjs'
+import { buildClient, clientPath } from '../scripts/build-client.mjs'
+import { typecheck } from '../scripts/typecheck.mjs'
+
+test('strict host contracts and generated artifact freshness', () => {
+  checkHost(buildHost())
+})
+test('strict client RPC contracts and generated bundle freshness', async () => {
+  await typecheck()
+  assert.equal(await readFile(clientPath, 'utf8'), await buildClient())
+})
