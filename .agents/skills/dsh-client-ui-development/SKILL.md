@@ -58,6 +58,16 @@ Follow [repository setup](../repository-setup/SKILL.md) for prerequisites and [r
 - Do not require a new screenshot or baseline update for every UI element. Use baseline comparisons for intentional visual-regression coverage in the pinned environment. Diagnostic screenshots are not baseline comparisons.
 - Reuse host startup, authentication, navigation, and cleanup helpers. Restore shared state changed by a test. Do not introduce live credentials, tool execution, or paid model calls into display fixtures.
 
+### Screenshot evidence and handoff
+
+For user-visible changes where an image helps review the result, capture a diagnostic screenshot through the existing affected disposable-shell journey and include the most useful image in the user-facing completion response. Use the generated plugin bundle and real DSH styles with isolated fixture data. Reuse this capture path rather than starting another GUI server or staging a separate rendering. A minor change with no useful visual evidence does not need a new capture.
+
+Keep these images under the suite's ignored artifact output directory. Use a task-specific output directory when the default output is unavailable or would replace evidence another task still needs. Do not commit diagnostic images or update screenshot baselines merely to make a preview. Describe the capture as test-suite evidence from a disposable shell with fixture data, not as a deployed change or a baseline comparison.
+
+If a separate capture is necessary, use a unique task-owned temporary directory and report why the suite capture is insufficient. Retain selected evidence in an ignored artifact location or verified durable attachment storage. Remove only unused task-owned scratch captures after verifying their deletion targets and confirming that no agent or job needs them. Do not broadly clear shared test output. Preserve screenshots referenced in the final response.
+
+Delegated agents return accessible paths, captured states, provenance, and validation limits to their parent. Keep handed-off screenshots until the parent retains or discards them. The agent responsible for the user-facing response verifies access, selects the evidence, and presents it. Do not assume that a subagent's own image presentation reaches the main conversation.
+
 Existing references, not a new generic fixture API:
 
 - [Disposable host setup](../../../tests/real-ui/global-setup.mjs)

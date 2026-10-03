@@ -1,5 +1,6 @@
 // Test-only host plugin. Seed a completed user turn without invoking an agent or provider.
 import assert from 'node:assert/strict'
+import { registerGlobalGuidanceFixture } from './global-guidance-fixture.mjs'
 import {
   registerApprovalFixture,
   approvalCommandSeed,
@@ -32,6 +33,7 @@ export function prepareFixtureSession(ctx, id, options) {
   })
 }
 export async function apply(ctx) {
+  registerGlobalGuidanceFixture(ctx)
   registerApprovalFixture(ctx)
   const commandCwd = join(process.cwd(), '..', commandWorkspace)
   await mkdir(commandCwd, { recursive: true })

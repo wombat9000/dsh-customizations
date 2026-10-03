@@ -9,16 +9,23 @@ export const test = base.extend({
     )
     await context.addCookies([JSON.parse(process.env.DSH_TEST_COOKIE)])
     await page.goto(process.env.DSH_TEST_URL)
-    const notice = page.getByRole('button', { name: 'Continue', exact: true })
-    const configureLater = page.getByRole('button', { name: 'Configure later', exact: true })
-    await expect(notice.or(configureLater)).toBeVisible()
-    if (await notice.isVisible()) await notice.click()
-    await configureLater.click()
-    await expect(page.getByRole('button', { name: 'Settings', exact: true })).toBeVisible()
+    await dismissOnboarding(page)
     await use(page)
   },
 })
 export { expect }
+
+// The unconfigured-provider dialog returns after a real page reload. Reuse the
+// same native dismissal for startup and persistence journeys; never configure
+// a provider or bypass the dialog by mutating page/host state.
+export async function dismissOnboarding(page) {
+  const notice = page.getByRole('button', { name: 'Continue', exact: true })
+  const configureLater = page.getByRole('button', { name: 'Configure later', exact: true })
+  await expect(notice.or(configureLater)).toBeVisible()
+  if (await notice.isVisible()) await notice.click()
+  await configureLater.click()
+  await expect(page.getByRole('button', { name: 'Settings', exact: true })).toBeVisible()
+}
 
 export async function expandTurnProcesses(page) {
   // Target DSH folds completed tool steps by default. Exercise the native

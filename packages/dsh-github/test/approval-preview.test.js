@@ -5,6 +5,7 @@ import test from 'node:test'
 import React from 'react'
 import { createGitHubWriteRuntime, renderWritePreview } from '../dist/src/write-runtime.js'
 import { args, snapshot } from './write-payloads.js'
+import { createArgs, createObserved } from './pull-request-api-fixtures.js'
 import { fakeSubprocess, json } from './fixtures.js'
 import {
   approvalNames,
@@ -40,6 +41,42 @@ test('all seven previews derive exactly from actual immutable runtime preparatio
     assert.ok(model, name)
     assert.equal(model.reason, prepared.preview)
     assert.deepEqual(JSON.parse(JSON.stringify(model.value.exactPayload)), prepared.payload)
+  }
+})
+test('draft PR preview accepts the actual immutable REST preparation without another read', async () => {
+  const subprocess = fakeSubprocess([json({ data: createObserved() })])
+  const runtime = createGitHubWriteRuntime(subprocess)
+  const prepared = await runtime.prepare('createPullRequest', createArgs, {
+    agentId: 'fixture',
+    cwd: '/fixture',
+  })
+  const model = plugin.approvalModel('github_create_pull_request', prepared.preview)
+  assert.ok(model)
+  assert.equal(model.reason, prepared.preview)
+  assert.deepEqual(model.value.exactPayload, prepared.payload)
+  assert.equal(subprocess.specs.length, 1)
+})
+test('draft PR preview rejects non-drafts, malformed refs and non-creation changes', () => {
+  for (const mutate of [
+    (v) => {
+      v.change.after.draft = v.exactPayload.draft = false
+    },
+    (v) => {
+      v.targets.head.sha = 'not-a-commit'
+    },
+    (v) => {
+      v.targets.base.prefix = 'refs/tags/'
+    },
+    (v) => {
+      v.targets.repository.id = ''
+    },
+    (v) => {
+      v.change.before = {}
+    },
+  ]) {
+    const value = approvalValue('createPullRequest')
+    mutate(value)
+    assert.equal(plugin.approvalModel('github_create_pull_request', approvalReason(value)), null)
   }
 })
 test('malformed, missing, foreign, inconsistent and future payloads retain native fallback', () => {
@@ -89,6 +126,15 @@ const bindingPaths = {
     ['targets', 'repository', 'id'],
     ['change', 'title'],
     ['change', 'body'],
+  ],
+  createPullRequest: [
+    ['targets', 'head', 'name'],
+    ['targets', 'base', 'name'],
+    ['change', 'after', 'title'],
+    ['change', 'after', 'body'],
+    ['change', 'after', 'head'],
+    ['change', 'after', 'base'],
+    ['change', 'after', 'draft'],
   ],
   updateProject: [
     ['targets', 'project', 'id'],

@@ -32,6 +32,7 @@ artifacts/
 /packages/dsh-session-recap/client.js
 /packages/dsh-session-recap/dist/
 /packages/dsh-file-intuition/dist/
+/packages/dsh-global-guidance/dist/
 /packages/dsh-github/client.js
 /packages/dsh-github/dist/
 /packages/dsh-projects/client.js
