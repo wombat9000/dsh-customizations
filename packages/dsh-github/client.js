@@ -189,6 +189,78 @@ function fieldPhaseLabel(phase) {
 }
 
 //#endregion
+//#region client/pr-approval-model.ts
+const positive$1 = (value) => typeof value === "number" && Number.isSafeInteger(value) && value > 0 && value <= 2147483647;
+const sha = (value) => typeof value === "string" && /^[a-f0-9]{40}$/i.test(value);
+const keys = (value, allowed) => Object.keys(value).length === allowed.length && Object.keys(value).every((key) => allowed.includes(key));
+const same$1 = (left, right) => JSON.stringify(left) === JSON.stringify(right);
+const branch = (value) => object(value) && typeof value.ref === "string" && value.ref.length > 0 && sha(value.sha);
+function repository(value) {
+	return object(value) && id(value.id) && typeof value.nameWithOwner === "string" && /^[^/\s]+\/[^/\s]+$/.test(value.nameWithOwner) && safeUrl(value.url)?.toLowerCase() === `https://github.com/${value.nameWithOwner}`.toLowerCase();
+}
+function pullRequest(value, repo) {
+	return object(value) && id(value.id) && positive$1(value.number) && safeUrl(value.url)?.toLowerCase() === `https://github.com/${repo.nameWithOwner}/pull/${value.number}`.toLowerCase() && object(value.repository) && value.repository.id === repo.id && value.repository.nameWithOwner === repo.nameWithOwner && value.state === "OPEN" && typeof value.isDraft === "boolean" && typeof value.title === "string" && typeof value.body === "string" && branch(value.head) && branch(value.base);
+}
+function inlineComment(value) {
+	if (!object(value) || typeof value.path !== "string" || !value.path || value.path.startsWith("/") || value.path.includes("\\") || value.path.split("/").some((part) => !part || part === ".." || part === ".") || typeof value.body !== "string" || !value.body.trim() || !positive$1(value.line) || typeof value.side !== "string" || !["LEFT", "RIGHT"].includes(value.side)) return false;
+	const multiline = Object.hasOwn(value, "start_line") || Object.hasOwn(value, "start_side");
+	return keys(value, [
+		"path",
+		"body",
+		"line",
+		"side",
+		...multiline ? ["start_line", "start_side"] : []
+	]) && (!multiline || positive$1(value.start_line) && value.start_line < value.line && value.start_side === value.side);
+}
+/** Validate the complete immutable PR change before hiding the native raw reason.
+* This is presentation admission, not authorization or a new GitHub read.
+*/
+function pullRequestApprovalPayloadKeys(operation, targets, change, payload) {
+	if (!repository(targets.repository)) return null;
+	const repo = targets.repository;
+	if (operation === "updatePullRequest" || operation === "submitPullRequestReview") {
+		if (!pullRequest(targets.pullRequest, repo)) return null;
+		const pr = targets.pullRequest;
+		if (operation === "updatePullRequest") {
+			if (!object(change.before) || !object(change.after) || !keys(change, ["before", "after"])) return null;
+			if (Object.hasOwn(payload, "pullRequestId")) return payload.pullRequestId === pr.id && keys(payload, ["pullRequestId"]) && keys(change.before, ["draft"]) && keys(change.after, ["draft"]) && change.before.draft === pr.isDraft && typeof change.after.draft === "boolean" && change.before.draft !== change.after.draft ? ["pullRequestId"] : null;
+			const before = change.before;
+			const edited = Object.keys(payload);
+			return edited.length > 0 && edited.every((key) => ["title", "body"].includes(key)) && keys(change.before, edited) && same$1(change.after, payload) && edited.every((key) => typeof payload[key] === "string" && before[key] === pr[key]) && (payload.title === void 0 || typeof payload.title === "string" && payload.title.trim().length > 0 && payload.title.length <= 256 && !/[\r\n\t]/.test(payload.title)) ? edited : null;
+		}
+		const expected = [
+			"commit_id",
+			"body",
+			"event",
+			...Object.hasOwn(payload, "comments") ? ["comments"] : []
+		];
+		return keys(payload, expected) && keys(change, ["before", "after"]) && change.before === null && same$1(change.after, payload) && object(pr.head) && payload.commit_id === pr.head.sha && typeof payload.body === "string" && typeof payload.event === "string" && [
+			"COMMENT",
+			"APPROVE",
+			"REQUEST_CHANGES"
+		].includes(payload.event) && (payload.event === "APPROVE" || payload.body.trim().length > 0) && (payload.comments === void 0 || Array.isArray(payload.comments) && payload.comments.length > 0 && payload.comments.length <= 20 && payload.comments.every(inlineComment)) ? expected : null;
+	}
+	if (operation !== "createPullRequestStack" && operation !== "addPullRequestToStack") return null;
+	if (!keys(payload, ["pull_requests"]) || !keys(change, ["before", "after"]) || !Array.isArray(targets.pullRequests) || !Array.isArray(change.after) || change.after.length < 2 || change.after.length > 50 || !change.after.every(positive$1) || new Set(change.after).size !== change.after.length || targets.pullRequests.length !== change.after.length || !targets.pullRequests.every((pr) => pullRequest(pr, repo))) return null;
+	const prs = targets.pullRequests;
+	const after = change.after;
+	if (new Set(prs.map((pr) => pr.id)).size !== prs.length || !prs.every((pr, index) => pr.number === after[index])) return null;
+	for (let index = 1; index < prs.length; index++) {
+		const previous = prs[index - 1], next = prs[index];
+		if (!previous || !next || !object(previous.head) || !object(next.base) || previous.head.ref !== next.base.ref || previous.head.sha !== next.base.sha) return null;
+	}
+	if (operation === "createPullRequestStack") return change.before === null && targets.stack === void 0 && same$1(payload.pull_requests, change.after) ? ["pull_requests"] : null;
+	if (!Array.isArray(change.before) || change.before.length !== change.after.length - 1 || !same$1(change.before, change.after.slice(0, -1)) || !same$1(payload.pull_requests, change.after.slice(-1)) || !object(targets.stack)) return null;
+	const stack = targets.stack;
+	if (!id(stack.id) || !positive$1(stack.number) || stack.open !== true || stack.apiUrl !== `https://api.github.com/repos/${repo.nameWithOwner}/stacks/${stack.number}` || !object(stack.pullRequests) || !Array.isArray(stack.pullRequests.nodes) || stack.pullRequests.totalCount !== change.before.length || stack.pullRequests.nodes.length !== change.before.length || !object(stack.pullRequests.pageInfo) || stack.pullRequests.pageInfo.hasNextPage !== false || stack.pullRequests.pageInfo.nextPage !== null) return null;
+	for (const [index, member] of stack.pullRequests.nodes.entries()) {
+		const pr = prs[index];
+		if (!object(member) || !pr || member.id !== pr.id || member.number !== pr.number || !object(member.head) || !object(member.base) || !object(pr.head) || !object(pr.base) || member.head.ref !== pr.head.ref || member.head.sha !== pr.head.sha || member.base.ref !== pr.base.ref || member.base.sha !== pr.base.sha || member.isDraft !== pr.isDraft || member.state !== "open" || member.mergedAt !== null) return null;
+	}
+	return ["pull_requests"];
+}
+
+//#endregion
 //#region client/approval-model.ts
 const APPROVAL_OPERATIONS = {
 	createProject: "Create project",
@@ -196,6 +268,10 @@ const APPROVAL_OPERATIONS = {
 	linkProjectRepository: "Link repository to project",
 	createIssue: "Create issue",
 	createPullRequest: "Create draft pull request",
+	updatePullRequest: "Update pull request",
+	submitPullRequestReview: "Submit pull request review",
+	createPullRequestStack: "Create pull request stack",
+	addPullRequestToStack: "Add pull request to stack",
 	addProjectItem: "Add issue to project",
 	setProjectItemField: "Update project item field",
 	addIssueDependency: "Add blocking dependency"
@@ -256,6 +332,10 @@ function approvalModel(toolName, reason) {
 				"base",
 				"draft"
 			],
+			updatePullRequest: null,
+			submitPullRequestReview: null,
+			createPullRequestStack: null,
+			addPullRequestToStack: null,
 			updateProject: ["projectId", ...Object.keys(c)],
 			linkProjectRepository: ["projectId", "repositoryId"],
 			addProjectItem: ["projectId", "contentId"],
@@ -266,7 +346,8 @@ function approvalModel(toolName, reason) {
 				"value"
 			],
 			addIssueDependency: ["issueId", "blockingIssueId"]
-		}[operation];
+		}[operation] ?? pullRequestApprovalPayloadKeys(operation, t, c, p);
+		if (!payloadKeys) return null;
 		if (Object.keys(p).length !== payloadKeys.length || Object.keys(p).some((key) => !payloadKeys.includes(key))) return null;
 		if (operation === "createProject") {
 			if (c.creationPermission !== void 0 && typeof c.creationPermission !== "string") return null;
@@ -419,9 +500,23 @@ function ApprovalPreview({ model }) {
 			"Proposed issue title",
 			"Proposed issue body",
 			"Proposed PR title",
-			"Proposed PR body"
+			"Proposed PR body",
+			"Current PR title",
+			"Current PR body",
+			"Review body"
 		].includes(label) || operation === "updateProject" || operation === "setProjectItemField" && field?.dataType === "TEXT" && ["Before", "After"].includes(label)
 	}));
+	const branches = (value, prefix = "") => {
+		if (!object(value)) return;
+		for (const [key, label] of [["head", "Head branch (source)"], ["base", "Base branch (destination)"]]) {
+			const branch = object(value[key]) ? value[key] : void 0;
+			rows.push(/* @__PURE__ */ react.default.createElement("div", {
+				key: `${prefix}${key}`,
+				className: "gh-approval-resource"
+			}, /* @__PURE__ */ react.default.createElement("small", null, prefix, label), /* @__PURE__ */ react.default.createElement("code", null, text(branch?.ref) || text(branch?.name)), /* @__PURE__ */ react.default.createElement("small", null, "Commit ", text(branch?.sha))));
+		}
+	};
+	const readiness = (value) => value === true ? "Draft" : "Ready for review";
 	if (operation === "createProject") {
 		resource("Destination owner", t.destination);
 		content("Proposed project title", p.title);
@@ -443,15 +538,59 @@ function ApprovalPreview({ model }) {
 			key: "state",
 			className: "gh-approval-resource"
 		}, /* @__PURE__ */ react.default.createElement("small", null, "State"), /* @__PURE__ */ react.default.createElement("span", null, "Draft"), /* @__PURE__ */ react.default.createElement("small", null, "No branch pushes or merge")));
-		for (const [key, label] of [["head", "Head branch (source)"], ["base", "Base branch (destination)"]]) {
-			const branch = object(t[key]) ? t[key] : void 0;
-			rows.push(/* @__PURE__ */ react.default.createElement("div", {
-				key,
-				className: "gh-approval-resource"
-			}, /* @__PURE__ */ react.default.createElement("small", null, label), /* @__PURE__ */ react.default.createElement("code", null, text(branch?.name)), /* @__PURE__ */ react.default.createElement("small", null, "Commit ", text(branch?.sha))));
-		}
+		branches(t);
 		content("Proposed PR title", p.title);
 		content("Proposed PR body", p.body, true);
+	} else if (operation === "updatePullRequest") {
+		resource("Destination repository", t.repository);
+		resource("Pull request", t.pullRequest);
+		const before = object(c.before) ? c.before : void 0;
+		const after = object(c.after) ? c.after : void 0;
+		if (Object.hasOwn(p, "pullRequestId")) {
+			content("State before", readiness(before?.draft));
+			content("State after", readiness(after?.draft));
+			content("Change", after?.draft === true ? "Convert this pull request to draft." : "Mark this pull request ready for review. This does not merge it.");
+		} else {
+			for (const [key, title] of [["title", "PR title"], ["body", "PR body"]]) {
+				if (!Object.hasOwn(p, key)) continue;
+				content(`Current ${title}`, before?.[key], key === "body");
+				content(`Proposed ${title}`, p[key], key === "body");
+			}
+			content("Current state", readiness(object(t.pullRequest) ? t.pullRequest.isDraft : void 0));
+			content("Unchanged", "Only the selected title/body fields change. Readiness, branches and merge state stay unchanged.");
+		}
+		branches(t.pullRequest);
+	} else if (operation === "submitPullRequestReview") {
+		resource("Destination repository", t.repository);
+		resource("Pull request", t.pullRequest);
+		content("Review action", p.event === "APPROVE" ? "Approve" : p.event === "REQUEST_CHANGES" ? "Request changes" : "Comment");
+		content("Head commit", p.commit_id);
+		content("Review body", p.body, true);
+		if (Array.isArray(p.comments)) rows.push(/* @__PURE__ */ react.default.createElement("section", { key: "comments" }, /* @__PURE__ */ react.default.createElement("h4", null, "Inline review comments (", p.comments.length, ")"), p.comments.map((comment, index) => {
+			if (!object(comment)) return null;
+			const side = comment.side === "LEFT" ? "LEFT (old/deleted)" : "RIGHT (new/context)";
+			const range = comment.start_line === void 0 ? String(comment.line) : `${String(comment.start_line)}–${String(comment.line)}`;
+			return /* @__PURE__ */ react.default.createElement("details", { key: index }, /* @__PURE__ */ react.default.createElement("summary", null, text(comment.path), " · ", side, " · Lines ", range), /* @__PURE__ */ react.default.createElement(ApprovalText, {
+				label: `Inline comment ${index + 1}`,
+				value: text(comment.body),
+				markdown: true,
+				exact: true
+			}));
+		})));
+		content("Review effect", "Submits one review on this exact head commit. It does not mark the PR ready or merge it.");
+	} else if (operation === "createPullRequestStack" || operation === "addPullRequestToStack") {
+		resource("Destination repository", t.repository);
+		if (operation === "addPullRequestToStack") {
+			resource("Existing stack", t.stack);
+			content("Before stack order", Array.isArray(c.before) ? c.before.map((number) => `#${String(number)}`).join(" → ") : "");
+		}
+		content(operation === "createPullRequestStack" ? "Proposed stack order (bottom to top)" : "After stack order", Array.isArray(c.after) ? c.after.map((number) => `#${String(number)}`).join(" → ") : "");
+		if (Array.isArray(t.pullRequests)) for (const [index, pr] of t.pullRequests.entries()) {
+			const label = `Layer ${index + 1}${index === 0 ? " (bottom)" : index === t.pullRequests.length - 1 ? " (top)" : ""}`;
+			resource(label, pr);
+			branches(pr, `${label} · `);
+		}
+		content("Stack behavior", operation === "createPullRequestStack" ? "Creates a native stack in this bottom-to-top order. No branch base changes or merges." : "Appends the last listed PR to this existing stack. Existing members and their order stay unchanged; no branch base changes or merges.");
 	} else if (operation === "addIssueDependency") {
 		resource("Blocked issue", t.blockedIssue);
 		resource("Blocking issue", t.blockingIssue);

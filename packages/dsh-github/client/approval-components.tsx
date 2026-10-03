@@ -200,6 +200,9 @@ export function ApprovalPreview({ model }: { model: ApprovalModel | null | undef
             'Proposed issue body',
             'Proposed PR title',
             'Proposed PR body',
+            'Current PR title',
+            'Current PR body',
+            'Review body',
           ].includes(label) ||
           operation === 'updateProject' ||
           (operation === 'setProjectItemField' &&
@@ -208,6 +211,26 @@ export function ApprovalPreview({ model }: { model: ApprovalModel | null | undef
         }
       />,
     )
+  const branches = (value: unknown, prefix = '') => {
+    if (!object(value)) return
+    for (const [key, label] of [
+      ['head', 'Head branch (source)'],
+      ['base', 'Base branch (destination)'],
+    ] as const) {
+      const branch = object(value[key]) ? value[key] : undefined
+      rows.push(
+        <div key={`${prefix}${key}`} className="gh-approval-resource">
+          <small>
+            {prefix}
+            {label}
+          </small>
+          <code>{text(branch?.ref) || text(branch?.name)}</code>
+          <small>Commit {text(branch?.sha)}</small>
+        </div>,
+      )
+    }
+  }
+  const readiness = (value: unknown) => (value === true ? 'Draft' : 'Ready for review')
   if (operation === 'createProject') {
     resource('Destination owner', t.destination)
     content('Proposed project title', p.title)
@@ -239,21 +262,112 @@ export function ApprovalPreview({ model }: { model: ApprovalModel | null | undef
         <small>No branch pushes or merge</small>
       </div>,
     )
-    for (const [key, label] of [
-      ['head', 'Head branch (source)'],
-      ['base', 'Base branch (destination)'],
-    ] as const) {
-      const branch = object(t[key]) ? t[key] : undefined
-      rows.push(
-        <div key={key} className="gh-approval-resource">
-          <small>{label}</small>
-          <code>{text(branch?.name)}</code>
-          <small>Commit {text(branch?.sha)}</small>
-        </div>,
-      )
-    }
+    branches(t)
     content('Proposed PR title', p.title)
     content('Proposed PR body', p.body, true)
+  } else if (operation === 'updatePullRequest') {
+    resource('Destination repository', t.repository)
+    resource('Pull request', t.pullRequest)
+    const before = object(c.before) ? c.before : undefined
+    const after = object(c.after) ? c.after : undefined
+    if (Object.hasOwn(p, 'pullRequestId')) {
+      content('State before', readiness(before?.draft))
+      content('State after', readiness(after?.draft))
+      content(
+        'Change',
+        after?.draft === true
+          ? 'Convert this pull request to draft.'
+          : 'Mark this pull request ready for review. This does not merge it.',
+      )
+    } else {
+      for (const [key, title] of [
+        ['title', 'PR title'],
+        ['body', 'PR body'],
+      ] as const) {
+        if (!Object.hasOwn(p, key)) continue
+        content(`Current ${title}`, before?.[key], key === 'body')
+        content(`Proposed ${title}`, p[key], key === 'body')
+      }
+      content('Current state', readiness(object(t.pullRequest) ? t.pullRequest.isDraft : undefined))
+      content(
+        'Unchanged',
+        'Only the selected title/body fields change. Readiness, branches and merge state stay unchanged.',
+      )
+    }
+    branches(t.pullRequest)
+  } else if (operation === 'submitPullRequestReview') {
+    resource('Destination repository', t.repository)
+    resource('Pull request', t.pullRequest)
+    content(
+      'Review action',
+      p.event === 'APPROVE'
+        ? 'Approve'
+        : p.event === 'REQUEST_CHANGES'
+          ? 'Request changes'
+          : 'Comment',
+    )
+    content('Head commit', p.commit_id)
+    content('Review body', p.body, true)
+    if (Array.isArray(p.comments)) {
+      rows.push(
+        <section key="comments">
+          <h4>Inline review comments ({p.comments.length})</h4>
+          {p.comments.map((comment, index) => {
+            if (!object(comment)) return null
+            const side = comment.side === 'LEFT' ? 'LEFT (old/deleted)' : 'RIGHT (new/context)'
+            const range =
+              comment.start_line === undefined
+                ? String(comment.line)
+                : `${String(comment.start_line)}–${String(comment.line)}`
+            return (
+              <details key={index}>
+                <summary>
+                  {text(comment.path)} · {side} · Lines {range}
+                </summary>
+                <ApprovalText
+                  label={`Inline comment ${index + 1}`}
+                  value={text(comment.body)}
+                  markdown
+                  exact
+                />
+              </details>
+            )
+          })}
+        </section>,
+      )
+    }
+    content(
+      'Review effect',
+      'Submits one review on this exact head commit. It does not mark the PR ready or merge it.',
+    )
+  } else if (operation === 'createPullRequestStack' || operation === 'addPullRequestToStack') {
+    resource('Destination repository', t.repository)
+    if (operation === 'addPullRequestToStack') {
+      resource('Existing stack', t.stack)
+      content(
+        'Before stack order',
+        Array.isArray(c.before) ? c.before.map((number) => `#${String(number)}`).join(' → ') : '',
+      )
+    }
+    content(
+      operation === 'createPullRequestStack'
+        ? 'Proposed stack order (bottom to top)'
+        : 'After stack order',
+      Array.isArray(c.after) ? c.after.map((number) => `#${String(number)}`).join(' → ') : '',
+    )
+    if (Array.isArray(t.pullRequests)) {
+      for (const [index, pr] of t.pullRequests.entries()) {
+        const label = `Layer ${index + 1}${index === 0 ? ' (bottom)' : index === t.pullRequests.length - 1 ? ' (top)' : ''}`
+        resource(label, pr)
+        branches(pr, `${label} · `)
+      }
+    }
+    content(
+      'Stack behavior',
+      operation === 'createPullRequestStack'
+        ? 'Creates a native stack in this bottom-to-top order. No branch base changes or merges.'
+        : 'Appends the last listed PR to this existing stack. Existing members and their order stay unchanged; no branch base changes or merges.',
+    )
   } else if (operation === 'addIssueDependency') {
     resource('Blocked issue', t.blockedIssue)
     resource('Blocking issue', t.blockingIssue)
