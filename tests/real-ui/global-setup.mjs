@@ -9,6 +9,7 @@ const require = createRequire(import.meta.url)
 const root = resolve(import.meta.dirname, '../..')
 // Add UI bundles here; every spec shares this one host, not one host per package.
 const plugins = [
+  { name: '@local/dsh-global-guidance', directory: 'packages/dsh-global-guidance' },
   { name: '@local/dsh-openrouter', directory: 'packages/dsh-openrouter' },
   { name: '@local/dsh-jev', directory: 'packages/dsh-jev' },
   { name: '@wombat9000/dsh-session-recap', directory: 'packages/dsh-session-recap' },
@@ -79,6 +80,10 @@ export async function startDisposableHost({ additionalPlugins = [], profilePatch
     const fixture = join(profile, 'node_modules', 'dsh-visual-fixture')
     await mkdir(fixture, { recursive: true })
     await copyFile(join(root, 'tests/real-ui/session-fixture.mjs'), join(fixture, 'index.mjs'))
+    await copyFile(
+      join(root, 'tests/real-ui/global-guidance-fixture.mjs'),
+      join(fixture, 'global-guidance-fixture.mjs'),
+    )
     await copyFile(
       join(root, 'tests/real-ui/session-events.mjs'),
       join(fixture, 'session-events.mjs'),

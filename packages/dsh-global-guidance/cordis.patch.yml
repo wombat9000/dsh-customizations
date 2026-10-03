@@ -1,0 +1,5 @@
+# Each guidance theme is a host row with its own native component toggle.
+# Do not mount these rows in presets or introduce a second enabled setting.
+- insert:
+    - id: local-global-guidance-visual-evidence
+      name: '@local/dsh-global-guidance/visual-evidence'
