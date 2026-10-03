@@ -195,6 +195,7 @@ const APPROVAL_OPERATIONS = {
 	updateProject: "Update project",
 	linkProjectRepository: "Link repository to project",
 	createIssue: "Create issue",
+	createPullRequest: "Create draft pull request",
 	addProjectItem: "Add issue to project",
 	setProjectItemField: "Update project item field",
 	addIssueDependency: "Add blocking dependency"
@@ -216,6 +217,10 @@ function approvalModel(toolName, reason) {
 		const { operation, targets: t, change: c, exactPayload: p } = value;
 		if (!operationName(operation) || toolName !== `github_${operation.replace(/[A-Z]/g, (x) => `_${x.toLowerCase()}`)}` || value.host !== "github.com" || !object(t) || !object(c) || !object(p)) return null;
 		if (operation === "createIssue" && !(entity(t.repository) && p.repositoryId === t.repository.id && typeof p.title === "string" && typeof p.body === "string" && c.title === p.title && c.body === p.body)) return null;
+		if (operation === "createPullRequest") {
+			const branch = (value, name) => entity(value) && typeof name === "string" && name.length > 0 && value.name === name && value.prefix === "refs/heads/" && typeof value.sha === "string" && /^[a-f0-9]{40}$/i.test(value.sha);
+			if (!entity(t.repository) || !branch(t.head, p.head) || !branch(t.base, p.base) || typeof p.title !== "string" || typeof p.body !== "string" || p.draft !== true || c.before !== null || !same(c.after, p)) return null;
+		}
 		if (operation === "createProject" && !(entity(t.destination) && p.ownerId === t.destination.id && typeof p.title === "string" && c.title === p.title && (value.mutation === "createProject" || value.mutation === "copyProject" && entity(t.template) && p.projectId === t.template.id && object(c.copyBehavior) && typeof p.includeDraftIssues === "boolean" && c.copyBehavior.includeDraftIssues === p.includeDraftIssues))) return null;
 		if ([
 			"updateProject",
@@ -243,6 +248,13 @@ function approvalModel(toolName, reason) {
 				"repositoryId",
 				"title",
 				"body"
+			],
+			createPullRequest: [
+				"title",
+				"body",
+				"head",
+				"base",
+				"draft"
 			],
 			updateProject: ["projectId", ...Object.keys(c)],
 			linkProjectRepository: ["projectId", "repositoryId"],
@@ -405,7 +417,9 @@ function ApprovalPreview({ model }) {
 		exact: [
 			"Proposed project title",
 			"Proposed issue title",
-			"Proposed issue body"
+			"Proposed issue body",
+			"Proposed PR title",
+			"Proposed PR body"
 		].includes(label) || operation === "updateProject" || operation === "setProjectItemField" && field?.dataType === "TEXT" && ["Before", "After"].includes(label)
 	}));
 	if (operation === "createProject") {
@@ -423,6 +437,21 @@ function ApprovalPreview({ model }) {
 		resource("Destination repository", t.repository);
 		content("Proposed issue title", p.title);
 		content("Proposed issue body", p.body, true);
+	} else if (operation === "createPullRequest") {
+		resource("Destination repository", t.repository);
+		rows.push(/* @__PURE__ */ react.default.createElement("div", {
+			key: "state",
+			className: "gh-approval-resource"
+		}, /* @__PURE__ */ react.default.createElement("small", null, "State"), /* @__PURE__ */ react.default.createElement("span", null, "Draft"), /* @__PURE__ */ react.default.createElement("small", null, "No branch pushes or merge")));
+		for (const [key, label] of [["head", "Head branch (source)"], ["base", "Base branch (destination)"]]) {
+			const branch = object(t[key]) ? t[key] : void 0;
+			rows.push(/* @__PURE__ */ react.default.createElement("div", {
+				key,
+				className: "gh-approval-resource"
+			}, /* @__PURE__ */ react.default.createElement("small", null, label), /* @__PURE__ */ react.default.createElement("code", null, text(branch?.name)), /* @__PURE__ */ react.default.createElement("small", null, "Commit ", text(branch?.sha))));
+		}
+		content("Proposed PR title", p.title);
+		content("Proposed PR body", p.body, true);
 	} else if (operation === "addIssueDependency") {
 		resource("Blocked issue", t.blockedIssue);
 		resource("Blocking issue", t.blockingIssue);

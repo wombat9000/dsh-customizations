@@ -194,9 +194,13 @@ export function ApprovalPreview({ model }: { model: ApprovalModel | null | undef
         value={value === null ? null : typeof value === 'string' ? value : ''}
         markdown={markdown}
         exact={
-          ['Proposed project title', 'Proposed issue title', 'Proposed issue body'].includes(
-            label,
-          ) ||
+          [
+            'Proposed project title',
+            'Proposed issue title',
+            'Proposed issue body',
+            'Proposed PR title',
+            'Proposed PR body',
+          ].includes(label) ||
           operation === 'updateProject' ||
           (operation === 'setProjectItemField' &&
             field?.dataType === 'TEXT' &&
@@ -226,6 +230,30 @@ export function ApprovalPreview({ model }: { model: ApprovalModel | null | undef
     resource('Destination repository', t.repository)
     content('Proposed issue title', p.title)
     content('Proposed issue body', p.body, true)
+  } else if (operation === 'createPullRequest') {
+    resource('Destination repository', t.repository)
+    rows.push(
+      <div key="state" className="gh-approval-resource">
+        <small>State</small>
+        <span>Draft</span>
+        <small>No branch pushes or merge</small>
+      </div>,
+    )
+    for (const [key, label] of [
+      ['head', 'Head branch (source)'],
+      ['base', 'Base branch (destination)'],
+    ] as const) {
+      const branch = object(t[key]) ? t[key] : undefined
+      rows.push(
+        <div key={key} className="gh-approval-resource">
+          <small>{label}</small>
+          <code>{text(branch?.name)}</code>
+          <small>Commit {text(branch?.sha)}</small>
+        </div>,
+      )
+    }
+    content('Proposed PR title', p.title)
+    content('Proposed PR body', p.body, true)
   } else if (operation === 'addIssueDependency') {
     resource('Blocked issue', t.blockedIssue)
     resource('Blocking issue', t.blockingIssue)

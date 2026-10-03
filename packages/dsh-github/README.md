@@ -144,7 +144,7 @@ Native stack endpoints are in public preview. Requests pin REST API version `202
 
 All twelve PR tools have concise historical session cards. They show the action, repository/PR, branch direction, draft/readiness or review state, relevant counts, and stack layers where supplied. Long collections and exact changes expand on demand. Pagination, missing-patch, error, and uncertain-outcome warnings remain visible. An approved review is not a ready PR or a merge.
 
-Cards render only supplied arguments/results. They make no additional HTTP or GitHub requests and expose no write, retry, or approval controls. Native approval retains the complete exact payload; PR approvals use its plain-text fallback. Missing or malformed results never establish success. **Raw tool details** remain available, including after restoration. Source tests cover defensive models; real React/browser and disposable-shell tests cover rendering and the established tool-card seat.
+Cards render only supplied arguments/results. They make no additional HTTP or GitHub requests and expose no write, retry, or approval controls. Draft PR creation approvals show the destination repository, source and destination branches with commit SHAs, draft state, title, and a safe Markdown body. Exact source, whitespace, and the complete prepared payload remain expandable. Other PR approvals retain the native plain-text fallback. Missing or malformed results never establish success. **Raw tool details** remain available, including after restoration. Source tests cover defensive models; real React/browser and disposable-shell tests cover rendering and the established tool-card seat.
 
 ## Project-field change card
 

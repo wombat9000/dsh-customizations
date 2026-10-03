@@ -84,6 +84,40 @@ test('long safe Markdown remains fully reviewable with source, keyboard expansio
   expect(summary.parentElement.open).toBe(true)
   expect(summary.parentElement.querySelector('pre').textContent).toBe(issueBody)
 })
+test('draft PR preview labels branch direction and preserves the complete body and payload', async () => {
+  const reason = await mount('createPullRequest')
+  const region = container.querySelector('.gh-approval-valid')
+  region.style.width = '320px'
+  expect(region.scrollWidth).toBeLessThanOrEqual(region.clientWidth + 1)
+  expect(region.querySelector('h3').textContent).toBe('Create draft pull request')
+  const resources = [...region.querySelectorAll('.gh-approval-resource')]
+  expect(resources.map((node) => node.querySelector('small').textContent)).toEqual([
+    'Destination repository',
+    'State',
+    'Head branch (source)',
+    'Base branch (destination)',
+  ])
+  expect(resources[0].querySelector('a').href).toBe('https://github.com/fixture/repo')
+  expect(resources[1].querySelector('span').textContent).toBe('Draft')
+  expect(resources[2].querySelector('code').textContent).toBe('feature')
+  expect(resources[3].querySelector('code').textContent).toBe('main')
+  expect(region.textContent).toContain('No branch pushes or merge')
+  expect(region.querySelector('.gh-approval-markdown strong').textContent).toBe('Important')
+  expect(region.querySelector('.gh-approval-markdown').textContent).toContain(
+    'END OF COMPLETE BODY',
+  )
+  expect(region.querySelectorAll('script,img,iframe')).toHaveLength(0)
+  await act(async () =>
+    page.getByText('Proposed PR body: exact source and whitespace', { exact: true }).click(),
+  )
+  expect(region.querySelector('pre[aria-label="Proposed PR body: JSON string"]').textContent).toBe(
+    JSON.stringify(issueBody),
+  )
+  await act(async () =>
+    page.getByText('Technical details — complete exact approval payload', { exact: true }).click(),
+  )
+  expect(region.querySelector(':scope > details pre').textContent).toBe(reason)
+})
 test.each(['', '*\n`\n**\n  \t\n[bad](https://github.com.evil.test/a)'])(
   'empty and literal Markdown body stays reviewable (%j)',
   async (body) => {

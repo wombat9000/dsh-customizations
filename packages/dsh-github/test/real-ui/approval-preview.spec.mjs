@@ -134,6 +134,37 @@ async function reviewMembershipApproval(app, testInfo, theme, narrow) {
   await native.getByRole('button').first().click()
   await expect.poll(async () => (await action(app, 'state')).outcome).toBe('rejected')
 }
+async function reviewDraftApproval(app, testInfo) {
+  await openSession(app, 'dark')
+  const started = await action(app, 'start', 'createPullRequest')
+  const card = app.getByRole('region', { name: 'GitHub approval preview', exact: true })
+  await expect(card.getByRole('heading', { name: 'Create draft pull request' })).toBeVisible()
+  const native = app.locator('[data-approval-key]')
+  await expect(native.locator('[data-approval-scroll] > div').first()).toBeHidden()
+  await expect(native.getByRole('button')).toHaveCount(2)
+  for (const narrow of [false, true]) {
+    if (narrow)
+      await native.evaluate((node) => {
+        node.style.width = '320px'
+      })
+    expect(await card.evaluate((node) => node.scrollWidth <= node.clientWidth + 1)).toBe(true)
+    const path = testInfo.outputPath(`draft-pr-approval-dark${narrow ? '-narrow' : ''}.png`)
+    await native.screenshot({ path })
+    await testInfo.attach('Draft PR approval diagnostic (not baseline)', {
+      path,
+      contentType: 'image/png',
+    })
+  }
+  const details = card.getByText('Technical details — complete exact approval payload', {
+    exact: true,
+  })
+  await details.focus()
+  await details.press('Enter')
+  await expect(details.locator('..').locator('pre')).toHaveText(started.reason)
+  expect((await action(app, 'state')).outcome).toBe('pending')
+  await native.getByRole('button').first().click()
+  await expect.poll(async () => (await action(app, 'state')).outcome).toBe('rejected')
+}
 async function reviewCommandFallback(app) {
   await openSession(app, 'light')
   await app
@@ -201,8 +232,10 @@ test('review native GitHub approvals, controls and unrelated fallback', async ({
       await expect(app.locator('[data-approval-key]')).toHaveCount(0)
     })
   }
+  await test.step('Draft PR approval in native dark and narrow layouts', () =>
+    reviewDraftApproval(app, testInfo))
   await test.step('Unrelated command retains the shipped detail and Reject', () =>
     reviewCommandFallback(app))
-  await test.step('All seven registered previews, Allow once and malformed fallback', () =>
+  await test.step('All supported previews, Allow once and malformed fallback', () =>
     allowSupportedPreviews(app))
 })

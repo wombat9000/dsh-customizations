@@ -4,6 +4,7 @@ export const approvalNames = [
   'updateProject',
   'linkProjectRepository',
   'createIssue',
+  'createPullRequest',
   'addProjectItem',
   'setProjectItemField',
   'addIssueDependency',
@@ -52,6 +53,24 @@ export function approvalValue(operation = 'createIssue') {
       { repository },
       { title: 'New issue', body: issueBody },
       { repositoryId: 'R', title: 'New issue', body: issueBody },
+    ],
+    createPullRequest: [
+      {
+        repository,
+        head: { id: 'HEAD', name: 'feature', prefix: 'refs/heads/', sha: 'a'.repeat(40) },
+        base: { id: 'BASE', name: 'main', prefix: 'refs/heads/', sha: 'b'.repeat(40) },
+      },
+      {
+        before: null,
+        after: {
+          title: 'New draft PR',
+          body: issueBody,
+          head: 'feature',
+          base: 'main',
+          draft: true,
+        },
+      },
+      { title: 'New draft PR', body: issueBody, head: 'feature', base: 'main', draft: true },
     ],
     updateProject: [
       { project },

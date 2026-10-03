@@ -7,6 +7,7 @@ const APPROVAL_OPERATIONS = {
   updateProject: 'Update project',
   linkProjectRepository: 'Link repository to project',
   createIssue: 'Create issue',
+  createPullRequest: 'Create draft pull request',
   addProjectItem: 'Add issue to project',
   setProjectItemField: 'Update project item field',
   addIssueDependency: 'Add blocking dependency',
@@ -63,6 +64,27 @@ export function approvalModel(toolName: unknown, reason: unknown): ApprovalModel
       )
     )
       return null
+    if (operation === 'createPullRequest') {
+      const branch = (value: unknown, name: unknown) =>
+        entity(value) &&
+        typeof name === 'string' &&
+        name.length > 0 &&
+        value.name === name &&
+        value.prefix === 'refs/heads/' &&
+        typeof value.sha === 'string' &&
+        /^[a-f0-9]{40}$/i.test(value.sha)
+      if (
+        !entity(t.repository) ||
+        !branch(t.head, p.head) ||
+        !branch(t.base, p.base) ||
+        typeof p.title !== 'string' ||
+        typeof p.body !== 'string' ||
+        p.draft !== true ||
+        c.before !== null ||
+        !same(c.after, p)
+      )
+        return null
+    }
     if (
       operation === 'createProject' &&
       !(
@@ -141,6 +163,7 @@ export function approvalModel(toolName: unknown, reason: unknown): ApprovalModel
           ? ['ownerId', 'title', 'projectId', 'includeDraftIssues']
           : ['ownerId', 'title'],
       createIssue: ['repositoryId', 'title', 'body'],
+      createPullRequest: ['title', 'body', 'head', 'base', 'draft'],
       updateProject: ['projectId', ...Object.keys(c)],
       linkProjectRepository: ['projectId', 'repositoryId'],
       addProjectItem: ['projectId', 'contentId'],
