@@ -746,7 +746,7 @@ export function uncertainWriteResult(
     untrusted: true,
     knownTargets: prepared.knownTargets,
     ...(observedResources.length ? { observedResources } : {}),
-    message: `The mutation was dispatched and may have succeeded. Do not retry automatically. Inspect the explicit targets and any unconfirmed observed identities with read tools before ${prepared.operation === 'createPullRequest' ? 'making a new call' : 'requesting fresh approval'}. No rollback was attempted.`,
+    message: `The mutation was dispatched and may have succeeded. Do not retry automatically. Inspect the explicit targets and any unconfirmed observed identities with read tools before ${['createPullRequest', 'updatePullRequest'].includes(prepared.operation) ? 'making a new call' : 'requesting fresh approval'}. No rollback was attempted.`,
   }
 }
 export function createGitHubWriteRuntime(subprocess: Subprocess, config: GitHubRuntimeConfig = {}) {

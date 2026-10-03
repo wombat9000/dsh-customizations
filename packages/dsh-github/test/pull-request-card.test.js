@@ -10,11 +10,18 @@ import {
 registerTypeScript()
 const { pullRequestCardModel } = await import('../client/pull-request-model.ts')
 
-test('pending draft creation does not claim approval is required, while other writes still do', () => {
+test('pending draft creation and unknown PR updates do not claim approval is required', () => {
   const draft = pullRequestCardModel('github_create_pull_request')
   assert.match(draft.status, /Pending or running/)
   assert.doesNotMatch(draft.status, /approval required/)
-  assert.match(pullRequestCardModel('github_update_pull_request').status, /approval required/)
+  assert.doesNotMatch(
+    pullRequestCardModel('github_update_pull_request').status,
+    /approval required/,
+  )
+  assert.match(
+    pullRequestCardModel('github_submit_pull_request_review').status,
+    /approval required/,
+  )
 })
 
 test('PR cards never infer success from malformed, error-normalized or uncertain outcomes', () => {

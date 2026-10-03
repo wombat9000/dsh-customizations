@@ -111,7 +111,7 @@ The bundle does not persist planning state or workspace mappings, dispatch agent
 
 ## Pull requests and native stacks
 
-Draft PR creation requires no approval from this bundle. Other PR writes require exact-call approval; session issue-management grants never cover them. Independent DSH policy guards can still require approval or block draft creation. Preparation, caller/payload binding, and account, permission, and branch-SHA revalidation remain mandatory. Every tool requires `owner` and `repo`; existing PR targets use `pullNumber`.
+Draft PR creation and title/body edits to verified draft PRs require no approval from this bundle. Readiness changes, edits to non-draft PRs, and other PR writes require exact-call approval; session issue-management grants never cover them. Independent DSH policy guards can still require approval or block draft writes. The draft-edit exemption uses immutable preflight metadata and a title/body-only payload, not a requested `draft` flag. A detected draft-to-ready change before dispatch fails closed. Preparation, caller/payload binding, and account, permission, and branch-SHA revalidation remain mandatory. Every tool requires `owner` and `repo`; existing PR targets use `pullNumber`.
 
 | Tool                                | Purpose                                                                                    |
 | ----------------------------------- | ------------------------------------------------------------------------------------------ |

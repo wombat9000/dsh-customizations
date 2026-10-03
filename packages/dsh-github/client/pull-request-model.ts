@@ -64,9 +64,11 @@ export function pullRequestCardModel(toolName: string, block?: ToolBlock): PRCar
       status:
         toolName === 'github_create_pull_request'
           ? 'Pending or running · draft creation'
-          : writeTool(toolName)
-            ? 'Pending or running · approval required'
-            : 'Reading…',
+          : toolName === 'github_update_pull_request'
+            ? 'Pending or running · PR update'
+            : writeTool(toolName)
+              ? 'Pending or running · approval required'
+              : 'Reading…',
     }
   try {
     const parts = block.content?.filter((part) => part.type === 'text')
@@ -86,7 +88,7 @@ export function pullRequestCardModel(toolName: string, block?: ToolBlock): PRCar
         ...base,
         status: 'Outcome uncertain',
         warnings: [
-          toolName === 'github_create_pull_request'
+          ['github_create_pull_request', 'github_update_pull_request'].includes(toolName)
             ? 'The request may have succeeded. Inspect GitHub before making a new call; do not retry automatically.'
             : 'The request may have succeeded. Inspect GitHub before requesting fresh approval; do not retry automatically.',
           ...(envelope.backendFenced === true

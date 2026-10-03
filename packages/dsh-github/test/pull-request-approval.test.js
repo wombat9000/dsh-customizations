@@ -70,56 +70,134 @@ test('draft creation skips approval in the real Tools pipeline even without an a
   }
 })
 
-test('approval-free drafts retain exact arguments and caller binding before dispatch', async (t) => {
-  for (const change of ['arguments', 'caller']) {
-    await t.test(change, async (t) => {
-      const host = await fixture(t, [graph(createObserved())])
-      host.ctx.on('tools/pre-execute', (exec) => {
-        if (change === 'arguments')
-          exec.arguments = { ...createArgs, title: 'Changed after preparation' }
-        else exec.agent = { ...exec.agent }
-        return { kind: 'allow' }
-      })
-      const result = await host.execute('github_create_pull_request', createArgs)
-      assert.equal(JSON.parse(result.value).outcome, 'failed')
-      assert.match(result.value, /APPROVAL_REQUIRED/)
+test('draft title/body edits skip approval without an answerer or approval service', async (t) => {
+  const cases = [
+    [{}, { title: 'Updated draft title' }],
+    [{ policy: 'never' }, { body: '' }],
+    [{ approval: false }, { title: 'Updated draft title', body: 'Updated draft body' }],
+  ]
+  for (const [options, update] of cases) {
+    await t.test(JSON.stringify(options), async (t) => {
+      const host = await approvalHost(t, options)
+      const draft = () => graph(observed(7, { isDraft: true }))
+      const subprocess = fakeSubprocess([
+        draft(),
+        draft(),
+        json(restPull(7, { draft: true, ...update })),
+      ])
+      registerGitHubWriteTools(host.ctx, createGitHubWriteRuntime(subprocess))
+      const result = await host.execute('github_update_pull_request', { ...target, ...update })
+      assert.equal(result.isError, false, JSON.stringify(result))
+      assert.equal(JSON.parse(result.value).outcome, 'confirmed')
+      assert.equal(JSON.parse(result.value).resource.isDraft, true)
       assert.equal(host.requests.length, 0)
-      assert.equal(mutations(host.subprocess).length, 0)
+      assert.deepEqual(host.audit(), [])
+      assert.equal(mutations(subprocess).length, 1)
+      assert.deepEqual(JSON.parse(mutations(subprocess)[0].stdio.stdin.data), update)
     })
   }
 })
 
-test('draft creation retains independent ask, deny and cancel policies', async (t) => {
-  for (const kind of ['ask', 'deny', 'cancel']) {
-    await t.test(kind, async (t) => {
-      const host = await fixture(t, [
-        graph(createObserved()),
-        graph(createObserved()),
-        json(
-          restPull(9, {
-            title: createArgs.title,
-            body: createArgs.body,
-            draft: true,
-            head: restPull().head,
-            base: restPull().base,
-          }),
-        ),
-      ])
-      host.ctx.on('tools/pre-execute', () => ({ kind, reason: 'Independent policy' }))
-      const result = await host.execute('github_create_pull_request', createArgs)
-      if (kind === 'ask') {
-        assert.equal(result.isError, false, JSON.stringify(result))
-        assert.equal(JSON.parse(result.value).outcome, 'confirmed')
-        assert.equal(host.requests.length, 1)
-        assert.match(host.requests[0].reason, /Independent policy/)
-        assert.match(host.requests[0].reason, /exactPayload/)
-        assert.equal(mutations(host.subprocess).length, 1)
-      } else {
-        assert.equal(result.isError, true)
+test('uncertain draft edits retain reconciliation guidance without retrying or asking for fresh approval', async (t) => {
+  const draft = () => graph(observed(7, { isDraft: true }))
+  const host = await fixture(t, [
+    draft(),
+    draft(),
+    { stdout: '', stderr: 'HTTP 503 github_pat_secret', exitCode: 1 },
+  ])
+  const result = await host.execute('github_update_pull_request', {
+    ...target,
+    title: 'Updated draft title',
+  })
+  assert.equal(JSON.parse(result.value).outcome, 'uncertain')
+  assert.doesNotMatch(result.value, /github_pat_secret|fresh approval/)
+  assert.equal(host.requests.length, 0)
+  assert.equal(mutations(host.subprocess).length, 1)
+})
+
+test('draft edits do not dispatch if the PR becomes ready before the final recheck', async (t) => {
+  const host = await fixture(t, [graph(observed(7, { isDraft: true })), graph(observed())])
+  const result = await host.execute('github_update_pull_request', {
+    ...target,
+    title: 'Updated draft title',
+  })
+  assert.equal(JSON.parse(result.value).outcome, 'failed')
+  assert.match(result.value, /CONFLICT/)
+  assert.equal(host.requests.length, 0)
+  assert.equal(mutations(host.subprocess).length, 0)
+})
+
+function draftWriteCases() {
+  return [
+    {
+      name: 'github_create_pull_request',
+      args: createArgs,
+      preflight: graph(createObserved()),
+      response: json(
+        restPull(9, {
+          title: createArgs.title,
+          body: createArgs.body,
+          draft: true,
+          head: restPull().head,
+          base: restPull().base,
+        }),
+      ),
+    },
+    {
+      name: 'github_update_pull_request',
+      args: { ...target, title: 'Updated draft title' },
+      preflight: graph(observed(7, { isDraft: true })),
+      response: json(restPull(7, { title: 'Updated draft title', draft: true })),
+    },
+  ]
+}
+
+test('approval-free draft writes retain exact arguments and caller binding before dispatch', async (t) => {
+  for (const operation of draftWriteCases()) {
+    for (const change of ['arguments', 'caller']) {
+      await t.test(`${operation.name}/${change}`, async (t) => {
+        const host = await fixture(t, [operation.preflight])
+        host.ctx.on('tools/pre-execute', (exec) => {
+          if (change === 'arguments')
+            exec.arguments = { ...operation.args, title: 'Changed after preparation' }
+          else exec.agent = { ...exec.agent }
+          return { kind: 'allow' }
+        })
+        const result = await host.execute(operation.name, operation.args)
+        assert.equal(JSON.parse(result.value).outcome, 'failed')
+        assert.match(result.value, /APPROVAL_REQUIRED/)
         assert.equal(host.requests.length, 0)
         assert.equal(mutations(host.subprocess).length, 0)
-      }
-    })
+      })
+    }
+  }
+})
+
+test('draft writes retain independent ask, deny and cancel policies', async (t) => {
+  for (const operation of draftWriteCases()) {
+    for (const kind of ['ask', 'deny', 'cancel']) {
+      await t.test(`${operation.name}/${kind}`, async (t) => {
+        const host = await fixture(t, [
+          operation.preflight,
+          operation.preflight,
+          operation.response,
+        ])
+        host.ctx.on('tools/pre-execute', () => ({ kind, reason: 'Independent policy' }))
+        const result = await host.execute(operation.name, operation.args)
+        if (kind === 'ask') {
+          assert.equal(result.isError, false, JSON.stringify(result))
+          assert.equal(JSON.parse(result.value).outcome, 'confirmed')
+          assert.equal(host.requests.length, 1)
+          assert.match(host.requests[0].reason, /Independent policy/)
+          assert.match(host.requests[0].reason, /exactPayload/)
+          assert.equal(mutations(host.subprocess).length, 1)
+        } else {
+          assert.equal(result.isError, true)
+          assert.equal(host.requests.length, 0)
+          assert.equal(mutations(host.subprocess).length, 0)
+        }
+      })
+    }
   }
 })
 
