@@ -1,5 +1,6 @@
 // Test-only host plugin. Seed a completed user turn without invoking an agent or provider.
 import assert from 'node:assert/strict'
+import { seedEnvironmentCI } from './environment-ci-fixture.mjs'
 import { registerGlobalGuidanceFixture } from './global-guidance-fixture.mjs'
 import {
   registerApprovalFixture,
@@ -49,6 +50,7 @@ export async function apply(ctx) {
   await mkdir(fieldCwd, { recursive: true })
   const field = githubFieldSessionSeed(fieldCwd)
   await persistSession(ctx, prepareFixtureSession(ctx, field.id, field.options))
+  await seedEnvironmentCI(ctx, { prepareFixtureSession, persistSession })
   // The Web listener can become ready before async plugins finish applying.
   await writeFile(join(process.cwd(), '.visual-fixture-ready'), id)
 }

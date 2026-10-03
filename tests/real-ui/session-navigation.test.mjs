@@ -11,17 +11,25 @@ function fixture({
   content = true,
   duplicate = false,
   grouped = true,
+  nativeGroupLabel = false,
+  paginated = false,
 } = {}) {
   const clicks = []
   const waits = []
   let selected
-  const workspace = { role: 'treeitem', name: grouped ? 'workspace' : 'Ungrouped', expanded }
+  const groupName = grouped ? 'workspace' : 'Ungrouped'
+  const workspace = {
+    role: 'treeitem',
+    name: nativeGroupLabel ? `${groupName} New session in ${groupName}` : groupName,
+    expanded,
+  }
+  const more = { role: 'button', name: 'Show 1 more sessions', parent: workspace }
   const blank = { role: 'treeitem', name: 'New Session', parent: workspace }
   const persisted = { role: 'treeitem', name: `workspace ${age}`, parent: workspace }
   const tree = {
     role: 'tree',
     name: 'Sessions',
-    children: [workspace, blank, ...(seed ? [persisted] : [])],
+    children: [workspace, blank, ...(paginated ? [more] : seed ? [persisted] : [])],
   }
   if (duplicate) tree.children.push({ ...persisted })
   const message = { text: 'Review the Session recap interface.' }
@@ -72,6 +80,7 @@ function fixture({
         assert.ok(visible(node), 'cannot click a hidden session')
         clicks.push(node.name)
         if (node === workspace) node.expanded = !node.expanded
+        else if (node === more) tree.children.splice(tree.children.indexOf(more), 1, persisted)
         else selected = node
       },
     }
@@ -123,6 +132,12 @@ test('refuses ambiguous persisted rows instead of choosing the first', async () 
   const { page, clicks } = fixture({ duplicate: true })
   await assert.rejects(openSeededSession(page), /exactly one element/)
   assert.deepEqual(clicks, [])
+})
+
+test('expands the native preview with six fixtures and recognizes the group action label', async () => {
+  const { page, clicks } = fixture({ grouped: false, nativeGroupLabel: true, paginated: true })
+  await openSeededSession(page)
+  assert.deepEqual(clicks, ['Show 1 more sessions', 'workspace 8mo'])
 })
 
 test('requires the seeded conversation content after navigation', async () => {

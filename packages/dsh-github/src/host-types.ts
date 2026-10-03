@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { GitHubReads, Schema, Subprocess } from './contracts.js'
 import type { GrantCaller } from './grant-contracts.js'
+import type { GitHubLiveCI } from './live-ci.js'
 
 // Narrow consumed DSH 0.2.0-rc.2 host surface. Tool execution arguments and
 // event payloads stay unknown; host-owned object identity is never reconstructed.
@@ -73,7 +74,7 @@ export interface WebHost {
 export interface Host extends ToolHost, WebHost {
   subprocess: Subprocess
   get(name: 'agents'): Agents | undefined
-  provide(name: string, service: Readonly<GitHubReads>): unknown
+  provide(name: string, service: Readonly<GitHubReads> | Readonly<GitHubLiveCI>): unknown
   on(
     event: 'tools/pre-execute',
     handler: (exec: Execution, next: () => Promise<Decision>) => Promise<Decision>,

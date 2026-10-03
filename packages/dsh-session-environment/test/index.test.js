@@ -18,6 +18,7 @@ import {
   resolveConfig,
 } from '../lib/index.js'
 import { TYPERT } from '../lib/types/typert.host.js'
+import { sessionCIRequestSchema, sessionCISnapshotSchema } from '../lib/types/schemas.js'
 
 function shellResult(stdout, overrides = {}) {
   return {
@@ -158,6 +159,48 @@ test('reports bounded execution failures', () => {
   )
 })
 
+test('a branch switch during local sampling never binds old Git display to new CI identity', async () => {
+  const session = { header: { cwd: '/workspace/demo' } }
+  let branch = 'branch-a'
+  let switchDuringGitRead = true
+  const ctx = {
+    sessions: { get: () => session },
+    get: () => ({ readCheckout() {} }),
+    shell: {
+      resolve: (request) => request,
+      async execute(spec) {
+        let output
+        if (spec.command.includes('__DSH_CI_HEAD__')) {
+          output = [
+            '/workspace/demo',
+            '__DSH_CI_HEAD__',
+            (branch === 'branch-a' ? 'a' : 'b').repeat(40),
+            '__DSH_CI_BRANCH__',
+            branch,
+            '__DSH_CI_REMOTES__',
+            'origin\thttps://github.com/fixture/demo.git (fetch)',
+            '',
+          ].join('\n')
+        } else {
+          output = repositoryOutput({ branch })
+          if (switchDuringGitRead) {
+            branch = 'branch-b'
+            switchDuringGitRead = false
+          }
+        }
+        return { result: async () => shellResult(output) }
+      },
+    },
+  }
+  const request = { sessionId: 'session-test' }
+  const signal = new AbortController().signal
+  const switched = await readSessionEnvironment(ctx, request, resolveConfig(), signal)
+  assert.equal(switched.checkoutKey, undefined)
+  const stable = await readSessionEnvironment(ctx, request, resolveConfig(), signal)
+  assert.equal(stable.branch, 'branch-b')
+  assert.match(stable.checkoutKey ?? '', /^[a-f0-9]{64}$/)
+})
+
 test('reads the live session cwd through the Shell service', async () => {
   let resolved
   const ctx = {
@@ -276,6 +319,49 @@ test('lazy codecs preserve strict request and snapshot validation on both faces'
     ])
       assert.throws(() => result.parse(invalid))
   }
+})
+
+test('CI wire codecs reject arbitrary targets, unsafe links, wrong SHAs and unbounded cadence', () => {
+  const request = { sessionId: 'abc', checkoutKey: 'a'.repeat(64) }
+  assert.deepEqual(sessionCIRequestSchema.parse(request), request)
+  assert.throws(() => sessionCIRequestSchema.parse({ ...request, repo: 'other' }))
+  const row = {
+    kind: 'current',
+    label: 'PR #42',
+    sha: 'b'.repeat(40),
+    url: 'https://github.com/acme/repo/pull/42/checks',
+    state: 'success',
+    count: 1,
+    complete: true,
+    mismatch: false,
+    warning: null,
+  }
+  const snapshot = {
+    checkoutKey: request.checkoutKey,
+    rows: [row],
+    checkedAt: 123,
+    freshUntil: 25123,
+    refreshAfterMs: 25000,
+    error: null,
+    stale: false,
+  }
+  assert.deepEqual(sessionCISnapshotSchema.parse(snapshot), snapshot)
+  for (const invalid of [
+    ...[
+      'javascript:alert(1)',
+      'http://github.com/acme/repo/pull/42/checks',
+      'https://github.com.evil.test/acme/repo/pull/42/checks',
+      'https://secret@github.com/acme/repo/pull/42/checks',
+      'https://github.com:443/acme/repo/pull/42/checks',
+      'https://github.com/acme/repo/pull/42/checks?token=secret',
+      'https://github.com/acme/repo/pull/42/checks#secret',
+    ].map((url) => ({ ...snapshot, rows: [{ ...row, url }] })),
+    { ...snapshot, freshUntil: -1 },
+    { ...snapshot, rows: [{ ...row, sha: 'not-a-commit' }] },
+    { ...snapshot, rows: [{ ...row, credentials: 'secret' }] },
+    { ...snapshot, refreshAfterMs: 3000 },
+  ])
+    assert.throws(() => sessionCISnapshotSchema.parse(invalid))
 })
 
 test('validates config and publishes a strict cancellable Remote descriptor', () => {
