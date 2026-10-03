@@ -20,6 +20,7 @@ artifacts/browser/
 artifacts/real-ui/
 artifacts/draft-pr-approval/
 artifacts/global-guidance/
+artifacts/codex-fast/
 artifacts/worktrees-before/
 
 # Backups created by the profile apply script

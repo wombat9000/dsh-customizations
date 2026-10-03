@@ -1,0 +1,4 @@
+# This bundle never edits the Codex provider or its OAuth helper.
+- insert:
+    - id: local-codex-fast
+      name: '@local/dsh-codex-fast'
