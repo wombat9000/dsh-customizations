@@ -61,7 +61,8 @@ const status = {
 test('client owns its intended tool keys and disposes every registration', () => {
   const { record, plugin } = load(),
     entries = [],
-    disposed = []
+    disposed = [],
+    tailDisposed = []
   const keys = [
     'github_request_issue_management',
     'github_set_project_item_field',
@@ -88,10 +89,21 @@ test('client owns its intended tool keys and disposes every registration', () =>
   plugin.apply({
     slots: {
       inject(name, callback) {
-        assert.ok(['tool.call.toolview', 'conversation.approval.detail'].includes(name))
+        assert.ok(
+          [
+            'tool.call.toolview',
+            'conversation.approval.detail',
+            'conversation.chat.turnTail',
+          ].includes(name),
+        )
         callback()()
       },
       register(options, component) {
+        if (options.name === 'conversation.chat.turnTail') {
+          assert.equal(options.id, 'local-github-activity-overview')
+          assert.equal(component, plugin.ActivityOverview)
+          return () => tailDisposed.push(options.id)
+        }
         if (options.name === 'conversation.approval.detail') {
           assert.equal(component, plugin.NativeApprovalDetail)
           assert.equal(options.priority, -10)
@@ -117,6 +129,7 @@ test('client owns its intended tool keys and disposes every registration', () =>
     keys.map((key) => ({ name: 'tool.call.toolview', key })),
   )
   assert.deepEqual(disposed, keys.toReversed())
+  assert.deepEqual(tailDisposed, ['local-github-activity-overview'])
 })
 test('scope/status validation fails closed on malformed and mismatched data', () => {
   assert.equal(plugin.validScope(scope), true)

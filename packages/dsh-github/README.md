@@ -146,6 +146,12 @@ All twelve PR tools have concise historical session cards. They show the action,
 
 Cards render only supplied arguments/results. They make no additional HTTP or GitHub requests and expose no write, retry, or approval controls. Draft PR creation approvals show the destination repository, source and destination branches with commit SHAs, draft state, title, and a safe Markdown body. Exact source, whitespace, and the complete prepared payload remain expandable. Other PR approvals retain the native plain-text fallback. Missing or malformed results never establish success. **Raw tool details** remain available, including after restoration. Source tests cover defensive models; real React/browser and disposable-shell tests cover rendering and the established tool-card seat.
 
+## Historical activity overview
+
+Each completed turn with GitHub evidence has one compact **GitHub activity** card outside collapsed work details. It consolidates repeated calls by PR, issue, project, or repository and separates read-only inspections from confirmed writes, no-change results, denied calls, failures, and uncertain outcomes. Later reads never confirm an earlier uncertain write.
+
+The overview uses only loaded history, including nested tool calls. It identifies partial history and incomplete read coverage; large turns expand through bounded disclosures. Links identify targets, not write success. It makes no requests or model calls, shows no live CI status, and leaves per-tool cards and native approval controls unchanged. Historical access approvals do not restore current grants.
+
 ## Project-field change card
 
 `github_set_project_item_field` has a conversation card with the verified project, item, field, and prepared before → after values. It supports text, number, date, single-select, and iteration fields. Missing names fall back to stable IDs; an absent previous value is not treated as an empty value. Issue, pull request, and draft content are labelled separately.
