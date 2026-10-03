@@ -1317,7 +1317,7 @@ function pullRequestCardModel(toolName, block) {
 	} catch {}
 	if (block?.kind !== "tool-result") return {
 		...base,
-		status: writeTool(toolName) ? "Pending or running · approval required" : "Reading…"
+		status: toolName === "github_create_pull_request" ? "Pending or running · draft creation" : writeTool(toolName) ? "Pending or running · approval required" : "Reading…"
 	};
 	try {
 		const parts = block.content?.filter((part) => part.type === "text");
@@ -1333,7 +1333,7 @@ function pullRequestCardModel(toolName, block) {
 		if (envelope.outcome === "uncertain") return {
 			...base,
 			status: "Outcome uncertain",
-			warnings: ["The request may have succeeded. Inspect GitHub before requesting fresh approval; do not retry automatically.", ...envelope.backendFenced === true ? ["GitHub backend fenced after unconfirmed process cleanup."] : []]
+			warnings: [toolName === "github_create_pull_request" ? "The request may have succeeded. Inspect GitHub before making a new call; do not retry automatically." : "The request may have succeeded. Inspect GitHub before requesting fresh approval; do not retry automatically.", ...envelope.backendFenced === true ? ["GitHub backend fenced after unconfirmed process cleanup."] : []]
 		};
 		if (block.isError === true) return {
 			...base,

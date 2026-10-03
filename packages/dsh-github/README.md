@@ -111,7 +111,7 @@ The bundle does not persist planning state or workspace mappings, dispatch agent
 
 ## Pull requests and native stacks
 
-All PR writes require exact-call approval. Session issue-management grants never cover them. Every tool requires `owner` and `repo`; existing PR targets use `pullNumber`.
+Draft PR creation requires no approval from this bundle. Other PR writes require exact-call approval; session issue-management grants never cover them. Independent DSH policy guards can still require approval or block draft creation. Preparation, caller/payload binding, and account, permission, and branch-SHA revalidation remain mandatory. Every tool requires `owner` and `repo`; existing PR targets use `pullNumber`.
 
 | Tool                                | Purpose                                                                                    |
 | ----------------------------------- | ------------------------------------------------------------------------------------------ |
@@ -144,7 +144,7 @@ Native stack endpoints are in public preview. Requests pin REST API version `202
 
 All twelve PR tools have concise historical session cards. They show the action, repository/PR, branch direction, draft/readiness or review state, relevant counts, and stack layers where supplied. Long collections and exact changes expand on demand. Pagination, missing-patch, error, and uncertain-outcome warnings remain visible. An approved review is not a ready PR or a merge.
 
-Cards render only supplied arguments/results. They make no additional HTTP or GitHub requests and expose no write, retry, or approval controls. Draft PR creation approvals show the destination repository, source and destination branches with commit SHAs, draft state, title, and a safe Markdown body. Exact source, whitespace, and the complete prepared payload remain expandable. Other PR approvals retain the native plain-text fallback. Missing or malformed results never establish success. **Raw tool details** remain available, including after restoration. Source tests cover defensive models; real React/browser and disposable-shell tests cover rendering and the established tool-card seat.
+Cards render only supplied arguments/results. They make no additional HTTP or GitHub requests and expose no write, retry, or approval controls. If an independent policy requests approval for draft creation, its preview shows the destination repository, source and destination branches with commit SHAs, draft state, title, and a safe Markdown body. Exact source, whitespace, and the complete prepared payload remain expandable. Other PR approvals retain the native plain-text fallback. Missing or malformed results never establish success. **Raw tool details** remain available, including after restoration. Source tests cover defensive models; real React/browser and disposable-shell tests cover rendering and the established tool-card seat.
 
 ## Historical activity overview
 

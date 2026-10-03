@@ -10,6 +10,13 @@ import {
 registerTypeScript()
 const { pullRequestCardModel } = await import('../client/pull-request-model.ts')
 
+test('pending draft creation does not claim approval is required, while other writes still do', () => {
+  const draft = pullRequestCardModel('github_create_pull_request')
+  assert.match(draft.status, /Pending or running/)
+  assert.doesNotMatch(draft.status, /approval required/)
+  assert.match(pullRequestCardModel('github_update_pull_request').status, /approval required/)
+})
+
 test('PR cards never infer success from malformed, error-normalized or uncertain outcomes', () => {
   const tool = 'github_create_pull_request'
   for (const envelope of [
@@ -37,6 +44,7 @@ test('PR cards never infer success from malformed, error-normalized or uncertain
   assert.equal(uncertain.status, 'Outcome uncertain')
   assert.equal(uncertain.entries.length, 0)
   assert.match(uncertain.warnings.join(' '), /do not retry automatically/)
+  assert.doesNotMatch(uncertain.warnings.join(' '), /fresh approval/)
 })
 test('thread comments must be supplied before a PR card can establish completeness', () => {
   const comments = { nodes: [], totalCount: 0, pageInfo: { hasNextPage: false, endCursor: null } }

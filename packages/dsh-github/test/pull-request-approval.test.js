@@ -41,7 +41,89 @@ async function fixture(t, responses, answer = 'allowed-once') {
   return { ...host, subprocess }
 }
 
-test('new REST and GraphQL PR writes cross the real approval pipeline once with exact payloads', async (t) => {
+test('draft creation skips approval in the real Tools pipeline even without an answerer', async (t) => {
+  for (const options of [{}, { policy: 'never' }, { approval: false }]) {
+    await t.test(JSON.stringify(options), async (t) => {
+      const host = await approvalHost(t, options)
+      const subprocess = fakeSubprocess([
+        graph(createObserved()),
+        graph(createObserved()),
+        json(
+          restPull(9, {
+            title: createArgs.title,
+            body: createArgs.body,
+            draft: true,
+            head: restPull().head,
+            base: restPull().base,
+          }),
+        ),
+      ])
+      registerGitHubWriteTools(host.ctx, createGitHubWriteRuntime(subprocess))
+      const result = await host.execute('github_create_pull_request', createArgs)
+      assert.equal(result.isError, false, JSON.stringify(result))
+      assert.equal(JSON.parse(result.value).outcome, 'confirmed')
+      assert.equal(host.requests.length, 0)
+      assert.deepEqual(host.audit(), [])
+      assert.equal(mutations(subprocess).length, 1)
+      assert.equal(JSON.parse(mutations(subprocess)[0].stdio.stdin.data).draft, true)
+    })
+  }
+})
+
+test('approval-free drafts retain exact arguments and caller binding before dispatch', async (t) => {
+  for (const change of ['arguments', 'caller']) {
+    await t.test(change, async (t) => {
+      const host = await fixture(t, [graph(createObserved())])
+      host.ctx.on('tools/pre-execute', (exec) => {
+        if (change === 'arguments')
+          exec.arguments = { ...createArgs, title: 'Changed after preparation' }
+        else exec.agent = { ...exec.agent }
+        return { kind: 'allow' }
+      })
+      const result = await host.execute('github_create_pull_request', createArgs)
+      assert.equal(JSON.parse(result.value).outcome, 'failed')
+      assert.match(result.value, /APPROVAL_REQUIRED/)
+      assert.equal(host.requests.length, 0)
+      assert.equal(mutations(host.subprocess).length, 0)
+    })
+  }
+})
+
+test('draft creation retains independent ask, deny and cancel policies', async (t) => {
+  for (const kind of ['ask', 'deny', 'cancel']) {
+    await t.test(kind, async (t) => {
+      const host = await fixture(t, [
+        graph(createObserved()),
+        graph(createObserved()),
+        json(
+          restPull(9, {
+            title: createArgs.title,
+            body: createArgs.body,
+            draft: true,
+            head: restPull().head,
+            base: restPull().base,
+          }),
+        ),
+      ])
+      host.ctx.on('tools/pre-execute', () => ({ kind, reason: 'Independent policy' }))
+      const result = await host.execute('github_create_pull_request', createArgs)
+      if (kind === 'ask') {
+        assert.equal(result.isError, false, JSON.stringify(result))
+        assert.equal(JSON.parse(result.value).outcome, 'confirmed')
+        assert.equal(host.requests.length, 1)
+        assert.match(host.requests[0].reason, /Independent policy/)
+        assert.match(host.requests[0].reason, /exactPayload/)
+        assert.equal(mutations(host.subprocess).length, 1)
+      } else {
+        assert.equal(result.isError, true)
+        assert.equal(host.requests.length, 0)
+        assert.equal(mutations(host.subprocess).length, 0)
+      }
+    })
+  }
+})
+
+test('draft creation skips only its own approval while other PR writes ask once with exact payloads', async (t) => {
   const cases = [
     [
       'create_pull_request',
@@ -68,6 +150,12 @@ test('new REST and GraphQL PR writes cross the real approval pipeline once with 
       { ...target, draft: false },
       [graph(observed(7, { isDraft: true }))],
       graph({ markPullRequestReadyForReview: { pullRequest: graphPull() } }),
+    ],
+    [
+      'update_pull_request',
+      { ...target, draft: true },
+      [graph(observed())],
+      graph({ convertPullRequestToDraft: { pullRequest: graphPull(7, { isDraft: true }) } }),
     ],
     [
       'submit_pull_request_review',
@@ -141,8 +229,8 @@ test('new REST and GraphQL PR writes cross the real approval pipeline once with 
         )
         assert.match(html.replace(/<[^>]*>/g, ''), /Readiness\s*Draft\s*→\s*Ready for review/)
       }
-      assert.equal(host.requests.length, 1)
-      assert.match(host.requests[0].reason, /exactPayload/)
+      assert.equal(host.requests.length, name === 'create_pull_request' ? 0 : 1)
+      if (name !== 'create_pull_request') assert.match(host.requests[0].reason, /exactPayload/)
       assert.equal(mutations(host.subprocess).length, 1)
       const spec = mutations(host.subprocess)[0]
       assert.ok(spec.argv.includes('X-GitHub-Api-Version: 2026-03-10'))
@@ -157,8 +245,9 @@ test('new REST and GraphQL PR writes cross the real approval pipeline once with 
         )
     })
 })
-test('rejected PR creation, stale approved heads and uncertain dispatched responses never trigger another write', async (t) => {
+test('independent rejection, stale prepared heads and uncertain dispatched responses never trigger another write', async (t) => {
   const rejected = await fixture(t, [graph(createObserved())], 'rejected')
+  rejected.ctx.on('tools/pre-execute', () => ({ kind: 'ask', reason: 'Independent policy' }))
   assert.equal((await rejected.execute('github_create_pull_request', createArgs)).isError, true)
   assert.equal(mutations(rejected.subprocess).length, 0)
   const changed = createObserved()
@@ -174,7 +263,7 @@ test('rejected PR creation, stale approved heads and uncertain dispatched respon
   ])
   const result = await uncertain.execute('github_create_pull_request', createArgs)
   assert.equal(JSON.parse(result.value).outcome, 'uncertain')
-  assert.doesNotMatch(result.value, /github_pat_secret/)
+  assert.doesNotMatch(result.value, /github_pat_secret|fresh approval/)
   assert.equal(mutations(uncertain.subprocess).length, 1)
 })
 test('PR preflight reports account changes before later permission rejection', async () => {
