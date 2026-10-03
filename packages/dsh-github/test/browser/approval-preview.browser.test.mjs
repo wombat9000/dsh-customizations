@@ -49,6 +49,7 @@ test.each(approvalNames)(
     expect(container.querySelector('.gh-approval-valid')).not.toBeNull()
     expect(getComputedStyle(container.querySelector('[data-native-reason]')).display).toBe('none')
     expect(container.querySelectorAll('button')).toHaveLength(2)
+    expect(container.querySelector('.gh-approval-valid > details').open).toBe(false)
     const summary = page.getByText('Technical details — complete exact approval payload', {
       exact: true,
     })
@@ -117,6 +118,149 @@ test('draft PR preview labels branch direction and preserves the complete body a
     page.getByText('Technical details — complete exact approval payload', { exact: true }).click(),
   )
   expect(region.querySelector(':scope > details pre').textContent).toBe(reason)
+})
+const prVariants = [
+  'updatePullRequest',
+  'updatePullRequest:title-only',
+  'updatePullRequest:body-empty',
+  'updatePullRequest:draft',
+  'updatePullRequest:ready',
+  'submitPullRequestReview',
+  'submitPullRequestReview:approve',
+  'submitPullRequestReview:request-changes',
+  'submitPullRequestReview:inline',
+  'submitPullRequestReview:multiline',
+  'createPullRequestStack',
+  'addPullRequestToStack',
+]
+test.each(prVariants)(
+  '%s presents the bound PR change with closed technical details and safe narrow content',
+  async (request) => {
+    const value = approvalValue(request)
+    const reason = await mount(request, approvalReason(value))
+    const region = container.querySelector('.gh-approval-valid')
+    expect(region).not.toBeNull()
+    region.style.width = '320px'
+    expect(region.scrollWidth).toBeLessThanOrEqual(region.clientWidth + 1)
+    expect(region.querySelector(':scope > details').open).toBe(false)
+    const main = region.querySelector('.gh-approval-main')
+    expect(main.textContent).toContain('Destination repository')
+    expect(main.querySelectorAll('script,img,iframe')).toHaveLength(0)
+    expect(
+      [...main.querySelectorAll('a')].every((a) =>
+        a.href.startsWith('https://github.com/fixture/repo'),
+      ),
+    ).toBe(true)
+    const exact = []
+    if (value.operation === 'updatePullRequest') {
+      expect(main.textContent).toContain('Pull request')
+      if ('draft' in value.change.after) {
+        expect(main.textContent).toContain('State before')
+        expect(main.textContent).toContain('State after')
+        const sections = [...main.querySelectorAll('section')]
+        for (const [label, state] of [
+          ['State before', value.change.before.draft],
+          ['State after', value.change.after.draft],
+        ]) {
+          const row = sections.find((node) => node.querySelector('h4')?.textContent === label)
+          expect(row?.textContent).toContain(state ? 'Draft' : 'Ready for review')
+        }
+      } else {
+        for (const key of Object.keys(value.exactPayload)) {
+          const suffix = key === 'title' ? 'PR title' : 'PR body'
+          exact.push(
+            [`Current ${suffix}`, value.change.before[key]],
+            [`Proposed ${suffix}`, value.exactPayload[key]],
+          )
+        }
+        if ('body' in value.exactPayload && value.exactPayload.body !== '') {
+          expect(main.querySelector('.gh-approval-markdown strong')?.textContent).toBe('Important')
+          expect(main.textContent).toContain('END OF COMPLETE BODY')
+        }
+      }
+    } else if (value.operation === 'submitPullRequestReview') {
+      expect(main.textContent).toContain('Pull request')
+      expect(main.textContent).toContain('Review action')
+      expect(main.textContent).toContain(
+        { COMMENT: 'Comment', APPROVE: 'Approve', REQUEST_CHANGES: 'Request changes' }[
+          value.exactPayload.event
+        ],
+      )
+      expect(main.textContent).toContain('Head commit')
+      expect(main.textContent).toContain(value.exactPayload.commit_id)
+      exact.push(['Review body', value.exactPayload.body])
+      if (value.exactPayload.comments) {
+        expect(main.textContent).toContain('Inline review comments')
+        const comment = value.exactPayload.comments[0]
+        expect(main.textContent).toContain(comment.path)
+        expect(main.textContent).toContain(comment.side)
+        expect(main.textContent).toContain(String(comment.line))
+        if (comment.start_line) expect(main.textContent).toContain(String(comment.start_line))
+        expect(
+          [...main.querySelectorAll('pre[aria-label$="JSON string"]')].some(
+            (pre) => pre.textContent === JSON.stringify(comment.body),
+          ),
+        ).toBe(true)
+      }
+    } else {
+      expect(main.textContent).toContain(
+        value.operation === 'createPullRequestStack'
+          ? 'Proposed stack order (bottom to top)'
+          : 'Before stack order',
+      )
+      if (value.operation === 'addPullRequestToStack')
+        expect(main.textContent).toContain('After stack order')
+      let previous = -1
+      for (const pr of value.targets.pullRequests) {
+        const position = main.textContent.indexOf(pr.title)
+        expect(position).toBeGreaterThan(previous)
+        previous = position
+        for (const identity of [
+          `#${pr.number}`,
+          pr.head.ref,
+          pr.head.sha,
+          pr.base.ref,
+          pr.base.sha,
+        ])
+          expect(main.textContent).toContain(identity)
+      }
+      expect(main.textContent).toMatch(/No branch base changes|no branch base changes/)
+      expect(main.textContent).toMatch(/merge/i)
+    }
+    for (const [label, source] of exact) {
+      const summary = [...region.querySelectorAll('summary')].find(
+        (node) => node.textContent === `${label}: exact source and whitespace`,
+      )
+      expect(summary, label).toBeDefined()
+      expect(summary.parentElement.open).toBe(false)
+      summary.focus()
+      await act(async () => userEvent.keyboard('{Enter}'))
+      expect(summary.parentElement.open).toBe(true)
+      expect(summary.parentElement.querySelector('pre').textContent).toBe(source)
+      expect(
+        summary.parentElement.querySelector('pre[aria-label$="JSON string"]').textContent,
+      ).toBe(JSON.stringify(source))
+    }
+    const technical = region.querySelector(':scope > details > summary')
+    technical.focus()
+    await act(async () => userEvent.keyboard('{Enter}'))
+    expect(region.querySelector(':scope > details pre').textContent).toBe(reason)
+    expect(container.querySelectorAll('button')).toHaveLength(2)
+  },
+)
+test.each([
+  'updatePullRequest',
+  'submitPullRequestReview',
+  'createPullRequestStack',
+  'addPullRequestToStack',
+])('%s malformed or future payload preserves raw native details', async (operation) => {
+  const value = approvalValue(operation)
+  value.exactPayload.future = 'unknown mutation semantics'
+  const reason = await mount(operation, approvalReason(value))
+  expect(container.querySelector('.gh-approval-valid')).toBeNull()
+  expect(getComputedStyle(container.querySelector('[data-native-reason]')).display).not.toBe('none')
+  expect(container.querySelector('[data-native-reason]').textContent).toBe(reason)
+  expect(container.querySelectorAll('button')).toHaveLength(2)
 })
 test.each(['', '*\n`\n**\n  \t\n[bad](https://github.com.evil.test/a)'])(
   'empty and literal Markdown body stays reviewable (%j)',

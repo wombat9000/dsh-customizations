@@ -1,5 +1,6 @@
 import { object, id } from './validation.ts'
 import { fieldValueModel } from './field-model.ts'
+import { pullRequestApprovalPayloadKeys } from './pr-approval-model.ts'
 
 // Native approval details use only the immutable prepared reason, never a new read.
 const APPROVAL_OPERATIONS = {
@@ -8,6 +9,10 @@ const APPROVAL_OPERATIONS = {
   linkProjectRepository: 'Link repository to project',
   createIssue: 'Create issue',
   createPullRequest: 'Create draft pull request',
+  updatePullRequest: 'Update pull request',
+  submitPullRequestReview: 'Submit pull request review',
+  createPullRequestStack: 'Create pull request stack',
+  addPullRequestToStack: 'Add pull request to stack',
   addProjectItem: 'Add issue to project',
   setProjectItemField: 'Update project item field',
   addIssueDependency: 'Add blocking dependency',
@@ -157,19 +162,25 @@ export function approvalModel(toolName: unknown, reason: unknown): ApprovalModel
       )
     )
       return null
-    const payloadKeys = {
-      createProject:
-        value.mutation === 'copyProject'
-          ? ['ownerId', 'title', 'projectId', 'includeDraftIssues']
-          : ['ownerId', 'title'],
-      createIssue: ['repositoryId', 'title', 'body'],
-      createPullRequest: ['title', 'body', 'head', 'base', 'draft'],
-      updateProject: ['projectId', ...Object.keys(c)],
-      linkProjectRepository: ['projectId', 'repositoryId'],
-      addProjectItem: ['projectId', 'contentId'],
-      setProjectItemField: ['projectId', 'itemId', 'fieldId', 'value'],
-      addIssueDependency: ['issueId', 'blockingIssueId'],
-    }[operation]
+    const payloadKeys =
+      {
+        createProject:
+          value.mutation === 'copyProject'
+            ? ['ownerId', 'title', 'projectId', 'includeDraftIssues']
+            : ['ownerId', 'title'],
+        createIssue: ['repositoryId', 'title', 'body'],
+        createPullRequest: ['title', 'body', 'head', 'base', 'draft'],
+        updatePullRequest: null,
+        submitPullRequestReview: null,
+        createPullRequestStack: null,
+        addPullRequestToStack: null,
+        updateProject: ['projectId', ...Object.keys(c)],
+        linkProjectRepository: ['projectId', 'repositoryId'],
+        addProjectItem: ['projectId', 'contentId'],
+        setProjectItemField: ['projectId', 'itemId', 'fieldId', 'value'],
+        addIssueDependency: ['issueId', 'blockingIssueId'],
+      }[operation] ?? pullRequestApprovalPayloadKeys(operation, t, c, p)
+    if (!payloadKeys) return null
     if (
       Object.keys(p).length !== payloadKeys.length ||
       Object.keys(p).some((key) => !payloadKeys.includes(key))

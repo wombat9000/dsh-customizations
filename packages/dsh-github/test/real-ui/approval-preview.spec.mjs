@@ -165,6 +165,87 @@ async function reviewDraftApproval(app, testInfo) {
   await native.getByRole('button').first().click()
   await expect.poll(async () => (await action(app, 'state')).outcome).toBe('rejected')
 }
+async function reviewRemainingPRApprovals(app, testInfo) {
+  await openSession(app, 'dark')
+  for (const request of [
+    'updatePullRequest',
+    'updatePullRequest:title-only',
+    'updatePullRequest:body-empty',
+    'updatePullRequest:draft',
+    'updatePullRequest:ready',
+    'submitPullRequestReview',
+    'submitPullRequestReview:approve',
+    'submitPullRequestReview:request-changes',
+    'submitPullRequestReview:multiline',
+    'createPullRequestStack',
+    'addPullRequestToStack',
+  ]) {
+    await test.step(`${request} bound native preview and Reject`, async () => {
+      const started = await action(app, 'start', request)
+      const card = app.getByRole('region', { name: 'GitHub approval preview', exact: true })
+      const native = app.locator('[data-approval-key]')
+      await expect(card).toBeVisible()
+      await expect(native.getByRole('button')).toHaveCount(2)
+      await expect(native.locator('[data-approval-scroll] > div').first()).toBeHidden()
+      const details = card.getByText('Technical details — complete exact approval payload', {
+        exact: true,
+      })
+      await expect(details.locator('..')).not.toHaveAttribute('open', '')
+      if (request === 'updatePullRequest') {
+        await expect(card).toContainText('Current PR title')
+        await expect(card).toContainText('Proposed PR title')
+        await expect(card).toContainText('Current PR body')
+        await expect(card).toContainText('Proposed PR body')
+        const widePath = testInfo.outputPath('pr-update-approval-dark.png')
+        await native.screenshot({ path: widePath })
+        await testInfo.attach(
+          'PR update diagnostic: disposable dark shell, synthetic data, collapsed technical details',
+          { path: widePath, contentType: 'image/png' },
+        )
+        await native.evaluate((node) => {
+          node.style.width = '320px'
+          node.style.maxWidth = '100%'
+        })
+        expect(await card.evaluate((node) => node.scrollWidth <= node.clientWidth + 1)).toBe(true)
+        const path = testInfo.outputPath('pr-update-approval-dark-narrow.png')
+        await native.screenshot({ path })
+        await testInfo.attach(
+          'PR update diagnostic: disposable dark narrow shell, synthetic data, collapsed technical details',
+          { path, contentType: 'image/png' },
+        )
+        const source = card.getByText('Proposed PR body: exact source and whitespace', {
+          exact: true,
+        })
+        await source.focus()
+        await source.press('Enter')
+        await expect(source.locator('..')).toHaveAttribute('open', '')
+        expect((await action(app, 'state')).outcome).toBe('pending')
+      } else if (request.endsWith(':draft') || request.endsWith(':ready')) {
+        await expect(card).toContainText('State before')
+        await expect(card).toContainText('State after')
+        await expect(card).toContainText('Draft')
+        await expect(card).toContainText('Ready for review')
+      } else if (request.startsWith('submitPullRequestReview')) {
+        await expect(card).toContainText('Review action')
+        await expect(card).toContainText('Head commit')
+        await expect(card).toContainText('Review body')
+        if (request.endsWith(':multiline'))
+          await expect(card).toContainText('Inline review comments')
+      } else if (request.includes('Stack')) {
+        await expect(card).toContainText('Layer 7')
+        await expect(card).toContainText('Layer 8')
+        if (request === 'addPullRequestToStack') await expect(card).toContainText('Layer 9')
+      }
+      await details.focus()
+      await details.press('Enter')
+      await expect(details.locator('..').locator('pre')).toHaveText(started.reason)
+      expect((await action(app, 'state')).outcome).toBe('pending')
+      await native.getByRole('button').first().click()
+      await expect(card).toHaveCount(0)
+      await expect.poll(async () => (await action(app, 'state')).outcome).toBe('rejected')
+    })
+  }
+}
 async function reviewCommandFallback(app) {
   await openSession(app, 'light')
   await app
@@ -234,6 +315,8 @@ test('review native GitHub approvals, controls and unrelated fallback', async ({
   }
   await test.step('Draft PR approval in native dark and narrow layouts', () =>
     reviewDraftApproval(app, testInfo))
+  await test.step('Remaining PR updates, readiness, reviews and ordered stacks', () =>
+    reviewRemainingPRApprovals(app, testInfo))
   await test.step('Unrelated command retains the shipped detail and Reject', () =>
     reviewCommandFallback(app))
   await test.step('All supported previews, Allow once and malformed fallback', () =>

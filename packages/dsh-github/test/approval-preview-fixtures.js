@@ -5,17 +5,22 @@ export const approvalNames = [
   'linkProjectRepository',
   'createIssue',
   'createPullRequest',
+  'updatePullRequest',
+  'submitPullRequestReview',
+  'createPullRequestStack',
+  'addPullRequestToStack',
   'addProjectItem',
   'setProjectItemField',
   'addIssueDependency',
 ]
 export const approvalTool = (operation) =>
-  `github_${operation.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`)}`
+  `github_${operation.split(':')[0].replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`)}`
 export const issueBody =
   '# Review specification\n\n**Important** and *emphasis*, `code`.\n- First requirement\n- Second requirement\n\n[Safe](https://github.com/fixture/repo) [Unsafe](javascript:alert)\n<img src=x onerror=alert(1)>\n\n  two spaces\tand tab\r\n' +
   'Long readable content. '.repeat(500) +
   '\nEND OF COMPLETE BODY'
-export function approvalValue(operation = 'createIssue') {
+export function approvalValue(request = 'createIssue') {
+  const [operation, variant] = request.split(':')
   const project = {
     owner: { login: 'fixture' },
     id: 'P',
@@ -41,6 +46,77 @@ export function approvalValue(operation = 'createIssue') {
     number: 12,
     title: 'Blocking requirement',
     url: 'https://github.com/fixture/repo/issues/12',
+  }
+  const pull = (number) => ({
+    id: `PR_${number}`,
+    number,
+    url: `https://github.com/fixture/repo/pull/${number}`,
+    repository: { id: 'R', nameWithOwner: 'fixture/repo' },
+    title: `Layer ${number}`,
+    body: 'Current PR body  with spaces\t\r\n',
+    updatedAt: '2026-04-15T10:00:00Z',
+    state: 'OPEN',
+    isDraft: false,
+    viewerCanUpdate: true,
+    viewerDidAuthor: false,
+    author: { id: 'AUTHOR', login: 'author' },
+    head: { ref: `layer-${number}`, sha: String(number).repeat(40), repository },
+    base: {
+      ref: number === 7 ? 'main' : `layer-${number - 1}`,
+      sha: number === 7 ? 'b'.repeat(40) : String(number - 1).repeat(40),
+      repository,
+    },
+    changedFiles: 1,
+    pendingReviews: [],
+  })
+  const pullRequest = pull(7)
+  const members = [pull(7), pull(8)]
+  const stack = {
+    id: 'STACK_42',
+    databaseId: 42,
+    number: 42,
+    apiUrl: 'https://api.github.com/repos/fixture/repo/stacks/42',
+    base: { ref: 'main' },
+    open: true,
+    createdAt: '2026-04-15T10:00:00Z',
+    pullRequests: {
+      nodes: members.map((pr) => ({
+        id: pr.id,
+        number: pr.number,
+        title: pr.title,
+        url: pr.url,
+        state: 'open',
+        isDraft: pr.isDraft,
+        mergedAt: null,
+        head: { ref: pr.head.ref, sha: pr.head.sha },
+        base: { ref: pr.base.ref, sha: pr.base.sha },
+      })),
+      totalCount: 2,
+      pageInfo: { page: 1, hasNextPage: false, nextPage: null },
+    },
+  }
+  const reviewPayload = {
+    commit_id: pullRequest.head.sha,
+    body: issueBody,
+    event:
+      variant === 'approve'
+        ? 'APPROVE'
+        : variant === 'request-changes'
+          ? 'REQUEST_CHANGES'
+          : 'COMMENT',
+    ...(variant === 'inline' || variant === 'multiline'
+      ? {
+          comments: [
+            {
+              path: 'src/app.js',
+              body: 'Inline **review**  \t\r\n<img src=x>',
+              line: 3,
+              side: 'RIGHT',
+              ...(variant === 'multiline' ? { start_line: 2, start_side: 'RIGHT' } : {}),
+            },
+          ],
+        }
+      : {}),
   }
   const field = { id: 'F', name: 'Status', dataType: 'SINGLE_SELECT' }
   const rows = {
@@ -71,6 +147,29 @@ export function approvalValue(operation = 'createIssue') {
         },
       },
       { title: 'New draft PR', body: issueBody, head: 'feature', base: 'main', draft: true },
+    ],
+    updatePullRequest: [
+      { repository, pullRequest },
+      {
+        before: { title: pullRequest.title, body: pullRequest.body },
+        after: { title: 'Updated PR title', body: issueBody },
+      },
+      { title: 'Updated PR title', body: issueBody },
+    ],
+    submitPullRequestReview: [
+      { repository, pullRequest },
+      { before: null, after: reviewPayload },
+      reviewPayload,
+    ],
+    createPullRequestStack: [
+      { repository, pullRequests: members },
+      { before: null, after: [7, 8] },
+      { pull_requests: [7, 8] },
+    ],
+    addPullRequestToStack: [
+      { repository, stack, pullRequests: [...members, pull(9)] },
+      { before: [7, 8], after: [7, 8, 9] },
+      { pull_requests: [9] },
     ],
     updateProject: [
       { project },
@@ -106,6 +205,21 @@ export function approvalValue(operation = 'createIssue') {
       { before: [], addBlockedBy: blocking },
       { issueId: 'I', blockingIssueId: 'B' },
     ],
+  }
+  if (operation === 'updatePullRequest' && variant) {
+    if (variant === 'draft' || variant === 'ready') {
+      pullRequest.isDraft = variant === 'ready'
+      rows[operation][1] = {
+        before: { draft: pullRequest.isDraft },
+        after: { draft: !pullRequest.isDraft },
+      }
+      rows[operation][2] = { pullRequestId: pullRequest.id }
+    } else {
+      const key = variant === 'title-only' ? 'title' : 'body'
+      const after = { [key]: key === 'title' ? 'Updated PR title  ' : '' }
+      rows[operation][1] = { before: { [key]: pullRequest[key] }, after }
+      rows[operation][2] = after
+    }
   }
   const [targets, change, exactPayload] = rows[operation]
   return { operation, mutation: operation, host: 'github.com', targets, change, exactPayload }
