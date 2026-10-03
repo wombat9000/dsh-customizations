@@ -24,7 +24,37 @@ export interface SessionStatus {
   pendingInteraction: PendingInteraction | null
 }
 export type UseSessionStatus = <T>(selector: (map: ReadonlyMap<string, SessionStatus>) => T) => T
-export type UseChat = <T>(selector: (snapshot: { nodes: ReadonlyMap<string, unknown> }) => T) => T
+// RC2 nodes is a keyed reader, not a Map. Native approval only consumes values().
+export type UseChat = <T>(
+  selector: (snapshot: { nodes: { values(): readonly unknown[] } }) => T,
+) => T
+export interface TurnLocation {
+  readonly turn: number
+  readonly status: 'open' | 'closed' | 'unknown'
+  readonly start: unknown
+  readonly end: unknown
+}
+export interface ToolChatData {
+  readonly root: unknown
+}
+export interface ToolTurnSource {
+  getSnapshot(): readonly ToolChatData[]
+  subscribe(listener: () => void): () => void
+}
+// Consumed surface verified in RC2 chat snapshot.d.ts and conversation.d.ts.
+// The source includes hidden nodes and has stable identity per turn and kind.
+export interface ActivityChatSnapshot {
+  readonly nodes: {
+    turnDataSource(turn: number, kind: 'tool-call'): ToolTurnSource
+  }
+}
+export interface ActivityOverviewProps {
+  sessionId: string
+  turn: TurnLocation
+  seq: number
+  openFile: (path: string) => void
+  useChat: <T>(selector: (snapshot: ActivityChatSnapshot) => T) => T
+}
 export interface CardEndpoints {
   status: { payload: { sessionId: string; callId: string }; result: unknown }
   revoke: { payload: { sessionId: string; callId: string; grantId: string }; result: unknown }

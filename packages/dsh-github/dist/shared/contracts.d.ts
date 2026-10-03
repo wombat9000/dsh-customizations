@@ -28,8 +28,35 @@ export interface SessionStatus {
 }
 export type UseSessionStatus = <T>(selector: (map: ReadonlyMap<string, SessionStatus>) => T) => T;
 export type UseChat = <T>(selector: (snapshot: {
-    nodes: ReadonlyMap<string, unknown>;
+    nodes: {
+        values(): readonly unknown[];
+    };
 }) => T) => T;
+export interface TurnLocation {
+    readonly turn: number;
+    readonly status: 'open' | 'closed' | 'unknown';
+    readonly start: unknown;
+    readonly end: unknown;
+}
+export interface ToolChatData {
+    readonly root: unknown;
+}
+export interface ToolTurnSource {
+    getSnapshot(): readonly ToolChatData[];
+    subscribe(listener: () => void): () => void;
+}
+export interface ActivityChatSnapshot {
+    readonly nodes: {
+        turnDataSource(turn: number, kind: 'tool-call'): ToolTurnSource;
+    };
+}
+export interface ActivityOverviewProps {
+    sessionId: string;
+    turn: TurnLocation;
+    seq: number;
+    openFile: (path: string) => void;
+    useChat: <T>(selector: (snapshot: ActivityChatSnapshot) => T) => T;
+}
 export interface CardEndpoints {
     status: {
         payload: {

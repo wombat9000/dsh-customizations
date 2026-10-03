@@ -24,6 +24,7 @@ import { ReadCard } from './read-components.tsx'
 import { apply } from './registration.ts'
 import { PR_TOOLS, pullRequestCardModel } from './pull-request-model.ts'
 import { PullRequestCard } from './pull-request-card.tsx'
+import { ActivityOverview } from './activity-overview.tsx'
 // Preserve the complete historical factory return surface for the loader and tests.
 export default {
   inject: ['slots'],
@@ -54,5 +55,6 @@ export default {
   PR_TOOLS,
   pullRequestCardModel,
   PullRequestCard,
+  ActivityOverview,
   apply,
 }

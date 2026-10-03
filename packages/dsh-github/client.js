@@ -309,7 +309,7 @@ function Link({ url, children }) {
 
 //#endregion
 //#region client/styles.ts
-const css = `.gh-grant{color:var(--dsw-alias-label-primary);background:var(--dsw-alias-interactive-bg-tertiary,transparent);border:1px solid var(--dsw-alias-border-standard,#8885);border-radius:12px;padding:14px;margin:8px 0;min-width:0;font-size:14px;line-height:1.5;overflow-wrap:anywhere}.gh-grant h3,.gh-grant h4{margin:0 0 8px}.gh-grant p{margin:8px 0}.gh-grant ul{padding-left:22px;margin:8px 0}.gh-grant li{margin:6px 0}.gh-grant a{color:var(--dsw-alias-brand-primary,#486ed4);text-decoration:underline}.gh-grant button,.gh-grant summary{font:inherit;cursor:pointer}.gh-grant button{color:inherit;background:transparent;border:1px solid var(--dsw-alias-border-standard,#8888);border-radius:7px;padding:7px 12px;white-space:normal}.gh-grant button:disabled{opacity:.6;cursor:default}.gh-grant :is(button,summary,a):focus-visible{outline:2px solid var(--dsw-alias-brand-primary,#486ed4);outline-offset:3px}.gh-grant details{margin:10px 0}.gh-grant pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;max-height:320px;overflow:auto;padding:8px;background:var(--dsw-specific-input-major,transparent)}.gh-grant small{display:block;color:var(--dsw-alias-label-secondary);font-size:12px}.gh-grant [role=alert]{color:var(--dsw-alias-state-error-primary,#b33)}.gh-grant .gh-scroll{max-height:340px;overflow:auto;padding:2px 6px}.gh-grant section+section{border-top:1px solid var(--dsw-alias-border-standard,#8885);margin-top:12px;padding-top:12px}.gh-grant .gh-note{color:var(--dsw-alias-label-secondary)}`;
+const css$1 = `.gh-grant{color:var(--dsw-alias-label-primary);background:var(--dsw-alias-interactive-bg-tertiary,transparent);border:1px solid var(--dsw-alias-border-standard,#8885);border-radius:12px;padding:14px;margin:8px 0;min-width:0;font-size:14px;line-height:1.5;overflow-wrap:anywhere}.gh-grant h3,.gh-grant h4{margin:0 0 8px}.gh-grant p{margin:8px 0}.gh-grant ul{padding-left:22px;margin:8px 0}.gh-grant li{margin:6px 0}.gh-grant a{color:var(--dsw-alias-brand-primary,#486ed4);text-decoration:underline}.gh-grant button,.gh-grant summary{font:inherit;cursor:pointer}.gh-grant button{color:inherit;background:transparent;border:1px solid var(--dsw-alias-border-standard,#8888);border-radius:7px;padding:7px 12px;white-space:normal}.gh-grant button:disabled{opacity:.6;cursor:default}.gh-grant :is(button,summary,a):focus-visible{outline:2px solid var(--dsw-alias-brand-primary,#486ed4);outline-offset:3px}.gh-grant details{margin:10px 0}.gh-grant pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;max-height:320px;overflow:auto;padding:8px;background:var(--dsw-specific-input-major,transparent)}.gh-grant small{display:block;color:var(--dsw-alias-label-secondary);font-size:12px}.gh-grant [role=alert]{color:var(--dsw-alias-state-error-primary,#b33)}.gh-grant .gh-scroll{max-height:340px;overflow:auto;padding:2px 6px}.gh-grant section+section{border-top:1px solid var(--dsw-alias-border-standard,#8885);margin-top:12px;padding-top:12px}.gh-grant .gh-note{color:var(--dsw-alias-label-secondary)}`;
 const approvalCss = "[data-approval-scroll]:has(.gh-approval-valid)>div:first-child{display:none}.gh-approval-valid{max-width:100%;text-align:left;font-family:system-ui,sans-serif;word-break:normal;white-space:normal}.gh-approval-valid .gh-approval-main{max-height:48vh;overflow:auto;overflow-wrap:anywhere}.gh-approval-valid .gh-approval-markdown{white-space:normal}.gh-approval-valid pre{white-space:pre-wrap;word-break:break-word}.gh-approval-valid h4{margin-top:8px}.gh-grant.gh-approval-valid{border:0;padding:4px;margin:0;background:transparent;container-type:inline-size}.gh-approval-valid .gh-approval-main{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 16px}.gh-approval-valid .gh-approval-main>section{grid-column:1/-1;border:0;padding:0;margin:0}.gh-approval-valid .gh-approval-resource{min-width:0;padding:6px 0}.gh-approval-valid .gh-approval-resource a{display:inline-block;overflow-wrap:anywhere}@container(max-width:500px){.gh-approval-valid .gh-approval-main{grid-template-columns:minmax(0,1fr)}}";
 const itemCss = `.gh-grant .gh-item{padding:8px 0;margin:0;border-top:1px solid var(--dsw-alias-border-standard,#8885);min-width:0}.gh-grant .gh-item-head{display:grid;grid-template-columns:minmax(0,1fr) minmax(100px,.32fr) minmax(100px,.32fr);gap:4px 16px;align-items:start}.gh-grant .gh-item h4{margin:0;font-size:14px}.gh-grant .gh-item p{margin:2px 0}.gh-grant .gh-item details{margin:4px 0 0}.gh-grant .gh-item summary{font-size:12px}.gh-grant .gh-item-pr{font-size:12px}.gh-grant .gh-item-fields{margin:4px 0;padding-left:20px}.gh-grant .gh-item-fields li{margin:2px 0}.gh-grant.gh-items{container-type:inline-size}@container (max-width:500px){.gh-grant .gh-item-head{grid-template-columns:minmax(0,1fr);gap:2px}}`;
 const issueCss = `.gh-grant.gh-issues{container-type:inline-size}.gh-grant .gh-issue{padding:8px 0;min-width:0}.gh-grant .gh-issue-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px 16px}.gh-grant .gh-issue-head h4{margin:0;min-width:0}.gh-grant .gh-issue-state{font-size:12px;border:1px solid var(--dsw-alias-border-standard,#8885);border-radius:12px;padding:1px 8px;flex-shrink:0}.gh-grant .gh-issue p{margin:4px 0}.gh-grant .gh-issue-collection{margin:6px 0}.gh-grant .gh-issue-chips{display:inline-flex;flex-wrap:wrap;gap:4px}.gh-grant .gh-issue-chip{border:1px solid var(--dsw-alias-border-standard,#8885);border-radius:10px;padding:0 7px}.gh-grant .gh-issue-related{display:block}@container(max-width:500px){.gh-grant .gh-issue-head{flex-direction:column;gap:4px}}`;
@@ -487,7 +487,7 @@ function ApprovalPreview({ model }) {
 		onKeyDown: (event) => {
 			if (event.key === "Enter" && event.target instanceof Element && event.target.closest("summary")) event.stopPropagation();
 		}
-	}, /* @__PURE__ */ react.default.createElement("style", null, css + approvalCss), /* @__PURE__ */ react.default.createElement("h3", null, model.title), /* @__PURE__ */ react.default.createElement("p", { className: "gh-note" }, "Review this GitHub change. Resource content is untrusted; opening a link does not approve the change."), /* @__PURE__ */ react.default.createElement("div", {
+	}, /* @__PURE__ */ react.default.createElement("style", null, css$1 + approvalCss), /* @__PURE__ */ react.default.createElement("h3", null, model.title), /* @__PURE__ */ react.default.createElement("p", { className: "gh-note" }, "Review this GitHub change. Resource content is untrusted; opening a link does not approve the change."), /* @__PURE__ */ react.default.createElement("div", {
 		className: "gh-approval-main",
 		tabIndex: 0,
 		role: "group",
@@ -573,7 +573,7 @@ function GrantPresentation({ status, pending, phase, error, busy, block, inspect
 	return /* @__PURE__ */ react.default.createElement("section", {
 		className: "gh-grant",
 		"aria-label": "GitHub issue management grant"
-	}, /* @__PURE__ */ react.default.createElement("style", null, css), /* @__PURE__ */ react.default.createElement("h3", null, "Manage selected issues for this session"), /* @__PURE__ */ react.default.createElement("p", { role: "status" }, phaseLabel(phase)), pending && /* @__PURE__ */ react.default.createElement("p", null, "Review the complete native approval preview below the conversation. Use its Allow once or Reject controls. Approval does not confirm any GitHub write."), error && /* @__PURE__ */ react.default.createElement("p", { role: "alert" }, error), status?.scope && /* @__PURE__ */ react.default.createElement(Scope, { scope: status.scope }), !status?.scope && pending && /* @__PURE__ */ react.default.createElement("p", null, "Structured scope is unavailable. The complete approval reason remains accessible below and in the native approval panel."), exact && /* @__PURE__ */ react.default.createElement("details", null, /* @__PURE__ */ react.default.createElement("summary", null, "Complete exact approval preview"), /* @__PURE__ */ react.default.createElement("pre", { tabIndex: 0 }, exact)), status && status.grants.length > 0 && /* @__PURE__ */ react.default.createElement("section", { "aria-label": "Session grants" }, /* @__PURE__ */ react.default.createElement("h4", null, "Session grants"), status.grants.map((grant) => /* @__PURE__ */ react.default.createElement("section", { key: grant.id }, /* @__PURE__ */ react.default.createElement("p", null, /* @__PURE__ */ react.default.createElement("strong", null, phaseLabel(grant.state)), /* @__PURE__ */ react.default.createElement("small", null, `Grant ID: ${grant.id}`)), /* @__PURE__ */ react.default.createElement("details", null, /* @__PURE__ */ react.default.createElement("summary", null, "Review grant scope"), /* @__PURE__ */ react.default.createElement(Scope, { scope: grant.scope })), grant.state === "active" ? /* @__PURE__ */ react.default.createElement("button", {
+	}, /* @__PURE__ */ react.default.createElement("style", null, css$1), /* @__PURE__ */ react.default.createElement("h3", null, "Manage selected issues for this session"), /* @__PURE__ */ react.default.createElement("p", { role: "status" }, phaseLabel(phase)), pending && /* @__PURE__ */ react.default.createElement("p", null, "Review the complete native approval preview below the conversation. Use its Allow once or Reject controls. Approval does not confirm any GitHub write."), error && /* @__PURE__ */ react.default.createElement("p", { role: "alert" }, error), status?.scope && /* @__PURE__ */ react.default.createElement(Scope, { scope: status.scope }), !status?.scope && pending && /* @__PURE__ */ react.default.createElement("p", null, "Structured scope is unavailable. The complete approval reason remains accessible below and in the native approval panel."), exact && /* @__PURE__ */ react.default.createElement("details", null, /* @__PURE__ */ react.default.createElement("summary", null, "Complete exact approval preview"), /* @__PURE__ */ react.default.createElement("pre", { tabIndex: 0 }, exact)), status && status.grants.length > 0 && /* @__PURE__ */ react.default.createElement("section", { "aria-label": "Session grants" }, /* @__PURE__ */ react.default.createElement("h4", null, "Session grants"), status.grants.map((grant) => /* @__PURE__ */ react.default.createElement("section", { key: grant.id }, /* @__PURE__ */ react.default.createElement("p", null, /* @__PURE__ */ react.default.createElement("strong", null, phaseLabel(grant.state)), /* @__PURE__ */ react.default.createElement("small", null, `Grant ID: ${grant.id}`)), /* @__PURE__ */ react.default.createElement("details", null, /* @__PURE__ */ react.default.createElement("summary", null, "Review grant scope"), /* @__PURE__ */ react.default.createElement(Scope, { scope: grant.scope })), grant.state === "active" ? /* @__PURE__ */ react.default.createElement("button", {
 		type: "button",
 		disabled: busy,
 		onClick: () => revoke(grant.id),
@@ -789,7 +789,7 @@ function FieldChangeCard(props) {
 	return /* @__PURE__ */ react.createElement("section", {
 		className: "gh-grant",
 		"aria-label": "GitHub project field change"
-	}, /* @__PURE__ */ react.createElement("style", null, css), /* @__PURE__ */ react.createElement("h3", null, "GitHub · Project field change"), /* @__PURE__ */ react.createElement("p", { role: "status" }, fieldPhaseLabel(phase)), phase === "no-change" && /* @__PURE__ */ react.createElement("p", null, "The field already has the requested value. Nothing was changed."), reason && /* @__PURE__ */ react.createElement("p", { role: "alert" }, reason), !reason && phase === "unknown" && error && /* @__PURE__ */ react.createElement("p", { role: "alert" }, error), target && /* @__PURE__ */ react.createElement("p", null, /* @__PURE__ */ react.createElement(Link, { url: content?.url }, `${target}${text(content?.title) ? ` — ${content?.title}` : ""}`)), projectLabel && /* @__PURE__ */ react.createElement("p", null, /* @__PURE__ */ react.createElement(Link, { url: project?.url }, projectLabel)), fieldLabel && /* @__PURE__ */ react.createElement("p", null, /* @__PURE__ */ react.createElement("strong", null, fieldLabel)), requested && !identities && /* @__PURE__ */ react.createElement("p", { className: "gh-note" }, `Requested target (call arguments, not verified resource metadata): ${requested}`), showValues && /* @__PURE__ */ react.createElement(react.Fragment, null, /* @__PURE__ */ react.createElement("p", { className: "gh-note" }, "Prepared change (not a fresh read of the field):"), /* @__PURE__ */ react.createElement("pre", {
+	}, /* @__PURE__ */ react.createElement("style", null, css$1), /* @__PURE__ */ react.createElement("h3", null, "GitHub · Project field change"), /* @__PURE__ */ react.createElement("p", { role: "status" }, fieldPhaseLabel(phase)), phase === "no-change" && /* @__PURE__ */ react.createElement("p", null, "The field already has the requested value. Nothing was changed."), reason && /* @__PURE__ */ react.createElement("p", { role: "alert" }, reason), !reason && phase === "unknown" && error && /* @__PURE__ */ react.createElement("p", { role: "alert" }, error), target && /* @__PURE__ */ react.createElement("p", null, /* @__PURE__ */ react.createElement(Link, { url: content?.url }, `${target}${text(content?.title) ? ` — ${content?.title}` : ""}`)), projectLabel && /* @__PURE__ */ react.createElement("p", null, /* @__PURE__ */ react.createElement(Link, { url: project?.url }, projectLabel)), fieldLabel && /* @__PURE__ */ react.createElement("p", null, /* @__PURE__ */ react.createElement("strong", null, fieldLabel)), requested && !identities && /* @__PURE__ */ react.createElement("p", { className: "gh-note" }, `Requested target (call arguments, not verified resource metadata): ${requested}`), showValues && /* @__PURE__ */ react.createElement(react.Fragment, null, /* @__PURE__ */ react.createElement("p", { className: "gh-note" }, "Prepared change (not a fresh read of the field):"), /* @__PURE__ */ react.createElement("pre", {
 		tabIndex: 0,
 		"aria-label": "Prepared before and after values"
 	}, before.available && after.available ? `${before.label} → ${after.label}` : before.available ? `Before: ${before.label}` : `After: ${after.label}`), [before, after].map((value, index) => value.identity && /* @__PURE__ */ react.createElement("small", { key: index }, `${index ? "After" : "Before"} ID: ${value.identity}${value.detail ? `; ${value.detail}` : ""}`))), pending && /* @__PURE__ */ react.createElement("p", null, "The native approval panel keeps the complete exact preview and Allow once / Reject controls. Approval is not confirmation that this write succeeded."), phase === "uncertain" && /* @__PURE__ */ react.createElement("p", { role: "alert" }, "Do not retry automatically. Inspect the explicit GitHub targets before requesting a fresh change. No rollback is implied."), !["no-change", "failed"].includes(phase) && typeof result?.message === "string" && /* @__PURE__ */ react.createElement("p", null, fieldSafeText(result.message)), typeof result?.cleanupWarning === "string" && /* @__PURE__ */ react.createElement("p", { role: "alert" }, fieldSafeText(result.cleanupWarning)), exact && /* @__PURE__ */ react.createElement("details", null, /* @__PURE__ */ react.createElement("summary", null, "Complete exact approval preview"), /* @__PURE__ */ react.createElement("pre", { tabIndex: 0 }, exact)), /* @__PURE__ */ react.createElement("details", null, /* @__PURE__ */ react.createElement("summary", null, "Technical details"), identities && /* @__PURE__ */ react.createElement("p", null, `Verified preparation identifiers: ${identities}`), /* @__PURE__ */ react.createElement("pre", { tabIndex: 0 }, rawDetails(block) || "No raw tool result is available yet."), typeof inspect === "function" && /* @__PURE__ */ react.createElement("button", {
@@ -1258,7 +1258,7 @@ function ReadCard({ toolName, block, inspect }) {
 	return /* @__PURE__ */ react.default.createElement("section", {
 		className: `gh-grant${model.kind === "items" ? " gh-items" : model.kind === "issues" ? " gh-issues" : ""}`,
 		"aria-label": `GitHub ${model.title}`
-	}, /* @__PURE__ */ react.default.createElement("style", null, css, model.kind === "items" ? itemCss : model.kind === "issues" ? issueCss : ""), model.kind === "items" && /* @__PURE__ */ react.default.createElement("small", null, "Historical tool result · no automatic refresh"), !issueDetail && /* @__PURE__ */ react.default.createElement("h3", null, `GitHub · ${model.title}`), !issueDetail && /* @__PURE__ */ react.default.createElement("p", { role: "status" }, model.state === "running" ? "Reading…" : model.state === "returned" ? `${model.returnedCount} ${model.singular ? "entry" : "entries"} returned${model.total === void 0 ? "" : `; ${model.total} total reported${model.totalMeaning ? ` (${model.totalMeaning})` : ""}`}` : "Result unavailable"), model.error && /* @__PURE__ */ react.default.createElement("p", { role: "alert" }, model.error), model.warnings.map((warning, index) => /* @__PURE__ */ react.default.createElement("p", {
+	}, /* @__PURE__ */ react.default.createElement("style", null, css$1, model.kind === "items" ? itemCss : model.kind === "issues" ? issueCss : ""), model.kind === "items" && /* @__PURE__ */ react.default.createElement("small", null, "Historical tool result · no automatic refresh"), !issueDetail && /* @__PURE__ */ react.default.createElement("h3", null, `GitHub · ${model.title}`), !issueDetail && /* @__PURE__ */ react.default.createElement("p", { role: "status" }, model.state === "running" ? "Reading…" : model.state === "returned" ? `${model.returnedCount} ${model.singular ? "entry" : "entries"} returned${model.total === void 0 ? "" : `; ${model.total} total reported${model.totalMeaning ? ` (${model.totalMeaning})` : ""}`}` : "Result unavailable"), model.error && /* @__PURE__ */ react.default.createElement("p", { role: "alert" }, model.error), model.warnings.map((warning, index) => /* @__PURE__ */ react.default.createElement("p", {
 		key: index,
 		role: "note"
 	}, warning)), model.templateOnly && /* @__PURE__ */ react.default.createElement("p", null, `Template filtering applies only to this page${Number.isSafeInteger(model.scannedCount) ? `; ${model.scannedCount} projects scanned` : ""}. An empty page does not imply no templates exist.`), model.state === "returned" && model.entries.length === 0 && /* @__PURE__ */ react.default.createElement("p", null, "No entries returned on this page."), issueList && sharedRepository && /* @__PURE__ */ react.default.createElement("p", { className: "gh-note" }, sharedRepository), model.entries.map((entry, index) => issueList ? /* @__PURE__ */ react.default.createElement(IssueRow, {
@@ -1317,7 +1317,7 @@ function pullRequestCardModel(toolName, block) {
 	} catch {}
 	if (block?.kind !== "tool-result") return {
 		...base,
-		status: writeTool(toolName) ? "Pending or running · approval required" : "Reading…"
+		status: toolName === "github_create_pull_request" ? "Pending or running · draft creation" : toolName === "github_update_pull_request" ? "Pending or running · PR update" : writeTool(toolName) ? "Pending or running · approval required" : "Reading…"
 	};
 	try {
 		const parts = block.content?.filter((part) => part.type === "text");
@@ -1333,7 +1333,7 @@ function pullRequestCardModel(toolName, block) {
 		if (envelope.outcome === "uncertain") return {
 			...base,
 			status: "Outcome uncertain",
-			warnings: ["The request may have succeeded. Inspect GitHub before requesting fresh approval; do not retry automatically.", ...envelope.backendFenced === true ? ["GitHub backend fenced after unconfirmed process cleanup."] : []]
+			warnings: [["github_create_pull_request", "github_update_pull_request"].includes(toolName) ? "The request may have succeeded. Inspect GitHub before making a new call; do not retry automatically." : "The request may have succeeded. Inspect GitHub before requesting fresh approval; do not retry automatically.", ...envelope.backendFenced === true ? ["GitHub backend fenced after unconfirmed process cleanup."] : []]
 		};
 		if (block.isError === true) return {
 			...base,
@@ -1447,7 +1447,7 @@ function PullRequestCard({ toolName, block, inspect }) {
 	return /* @__PURE__ */ react.default.createElement("section", {
 		className: "gh-grant gh-pr",
 		"aria-label": `GitHub ${model.title}`
-	}, /* @__PURE__ */ react.default.createElement("style", null, css, `
+	}, /* @__PURE__ */ react.default.createElement("style", null, css$1, `
       .gh-pr { min-width:0; overflow-wrap:anywhere; }
       .gh-pr h3 { margin:0; font-size:inherit; }
       .gh-pr p { margin:4px 0; }
@@ -1471,8 +1471,342 @@ function PullRequestCard({ toolName, block, inspect }) {
 }
 
 //#endregion
+//#region client/activity-model.ts
+const readNames = /* @__PURE__ */ new Set([
+	...READ_TOOLS,
+	...PR_TOOLS.filter((name) => /^github_(get|list)_/.test(name)),
+	"github_connection_status",
+	"github_detect_repositories",
+	"github_list_repositories",
+	"github_get_repository",
+	"github_get_issue_comments"
+]);
+const writeTitles = {
+	github_create_project: "Create project",
+	github_update_project: "Update project",
+	github_link_project_repository: "Link repository to project",
+	github_create_issue: "Create issue",
+	github_add_project_item: "Add project item",
+	github_set_project_item_field: "Set project field",
+	github_add_issue_dependency: "Add blocking dependency",
+	...Object.fromEntries(Object.entries(PR_TOOL_TITLES).filter(([name]) => !readNames.has(name)))
+};
+const positive = (value) => typeof value === "number" && Number.isSafeInteger(value) && value > 0;
+const segment = (value) => typeof value === "string" && /^[A-Za-z0-9_.-]{1,100}$/.test(value) && value !== "." && value !== "..";
+function parseArgs(block) {
+	try {
+		const raw = block.call?.argsRaw ?? block.argsRaw;
+		if (typeof raw !== "string" || raw.length > 65536) return {};
+		const value = JSON.parse(raw);
+		return object(value) ? value : {};
+	} catch {
+		return {};
+	}
+}
+function envelope(block) {
+	if (block.kind !== "tool-result") return void 0;
+	const parts = Array.isArray(block.content) ? block.content.filter((part) => object(part) && part.type === "text") : void 0;
+	const raw = parts?.[0]?.text;
+	if (parts?.length !== 1 || typeof raw !== "string" || raw.length > 524288) return void 0;
+	try {
+		const value = JSON.parse(raw);
+		return object(value) && value.host === "github.com" ? value : void 0;
+	} catch {
+		return;
+	}
+}
+function linkedResource(value) {
+	const url = typeof value === "string" && value.length <= 4096 ? safeUrl(value) : void 0;
+	if (!url) return void 0;
+	const path = new URL(url).pathname;
+	const item = path.match(/^\/([^/]+)\/([^/]+)\/(pull|issues)\/([1-9]\d*)(?:\/.*)?$/);
+	if (item) {
+		const label = `${item[1]}/${item[2]} ${item[3] === "pull" ? "PR" : "issue"} #${item[4]}`;
+		const canonical = `https://github.com/${item[1]}/${item[2]}/${item[3]}/${item[4]}`;
+		return {
+			key: canonical.toLowerCase(),
+			label,
+			url: canonical
+		};
+	}
+	const project = path.match(/^\/(orgs|users)\/([^/]+)\/projects\/([1-9]\d*)(?:\/.*)?$/);
+	if (project) return {
+		key: `project:${project[2]?.toLowerCase()}:${project[3]}`,
+		label: `${project[2]} project #${project[3]}`,
+		url: `https://github.com/${project[1]}/${project[2]}/projects/${project[3]}`
+	};
+}
+function resourceFor(name, args, result, callId) {
+	const repo = segment(args.owner) && segment(args.repo) ? `${args.owner}/${args.repo}` : "";
+	const isProject = name.includes("project");
+	if (!isProject && repo && name !== "github_list_pull_requests" && positive(args.pullNumber)) return linkedResource(`https://github.com/${repo}/pull/${args.pullNumber}`);
+	if (!isProject && repo && positive(args.issueNumber)) return linkedResource(`https://github.com/${repo}/issues/${args.issueNumber}`);
+	const data = supplied(result, "data"), resource = supplied(result, "resource");
+	const targets = supplied(result, "knownTargets");
+	const candidates = isProject ? [
+		supplied(resource, "project"),
+		resource,
+		supplied(targets, "project"),
+		name === "github_get_project" ? data : void 0
+	] : [
+		supplied(data, "pullRequest"),
+		resource,
+		supplied(resource, "issue"),
+		supplied(targets, "issue"),
+		supplied(targets, "blockedIssue"),
+		supplied(targets, "pullRequest"),
+		name === "github_get_issue" ? data : void 0
+	];
+	for (const candidate of candidates) {
+		const linked = linkedResource(supplied(candidate, "url"));
+		if (linked) return linked;
+	}
+	if (segment(args.owner) && positive(args.projectNumber)) return {
+		key: `project:${args.owner.toLowerCase()}:${args.projectNumber}`,
+		label: `${args.owner} project #${args.projectNumber}`
+	};
+	if (repo) return {
+		key: `repo:${repo.toLowerCase()}`,
+		label: repo,
+		url: `https://github.com/${repo}`
+	};
+	if (segment(args.owner)) return {
+		key: `owner:${args.owner.toLowerCase()}`,
+		label: `${args.owner} · owner scope`,
+		url: `https://github.com/${args.owner}`
+	};
+	if (name === "github_connection_status" || name === "github_detect_repositories") return {
+		key: "connection",
+		label: "GitHub connection / workspace"
+	};
+	if (name === "github_search_issues") return {
+		key: "search",
+		label: "GitHub issue search"
+	};
+	if (name === "github_request_issue_management") return {
+		key: "access",
+		label: "Session issue-management access"
+	};
+	return {
+		key: `unknown:${callId}`,
+		label: "GitHub resource not identified"
+	};
+}
+function confirmedWrite(name, block, result) {
+	if (PR_TOOLS.includes(name)) return pullRequestCardModel(name, block).status === "Confirmed";
+	const resource = result.resource;
+	if (!object(resource)) return false;
+	const entity = (value) => object(value) && id(value.id) && !!safeUrl(value.url);
+	switch (name) {
+		case "github_create_project":
+		case "github_update_project": return result.operation === (name === "github_create_project" ? "createProject" : "updateProject") && entity(resource) && positive(resource.number) && typeof resource.title === "string" && linkedResource(resource.url)?.key.startsWith("project:") === true;
+		case "github_create_issue": return result.operation === "createIssue" && entity(resource) && positive(resource.number) && typeof resource.title === "string" && /\/issues\//.test(text(resource.url));
+		case "github_link_project_repository": return result.operation === "linkProjectRepository" && entity(resource.repository) && entity(resource.project) && linkedResource(supplied(resource.project, "url"))?.key.startsWith("project:") === true;
+		case "github_add_project_item":
+		case "github_set_project_item_field": return result.operation === (name === "github_add_project_item" ? "addProjectItem" : "setProjectItemField") && id(resource.id) && entity(resource.project) && linkedResource(supplied(resource.project, "url"))?.key.startsWith("project:") === true && (name !== "github_add_project_item" || id(supplied(resource.content, "id")));
+		case "github_add_issue_dependency": return result.operation === "addIssueDependency" && entity(resource.issue) && entity(resource.blockingIssue);
+		default: return false;
+	}
+}
+function inspectedRead(name, block, data) {
+	if (READ_TOOLS.includes(name)) return readCardModel(name, block).state === "returned";
+	if (PR_TOOLS.includes(name)) return !pullRequestCardModel(name, block).error;
+	switch (name) {
+		case "github_connection_status": return typeof data.cliAvailable === "boolean" && (typeof data.authenticated === "boolean" || data.authenticated === "unknown");
+		case "github_detect_repositories": return typeof data.gitRepository === "boolean" && Array.isArray(data.candidates) && data.candidates.every((candidate) => object(candidate) && segment(candidate.owner) && segment(candidate.repo) && candidate.nameWithOwner === `${candidate.owner}/${candidate.repo}` && safeUrl(candidate.url) === `https://github.com/${candidate.owner}/${candidate.repo}`) && typeof data.ambiguous === "boolean";
+		case "github_get_repository": return id(data.id) && typeof data.nameWithOwner === "string" && !!safeUrl(data.url);
+		case "github_list_repositories": return Array.isArray(data.nodes) && data.nodes.every((entry) => object(entry) && id(entry.id) && typeof entry.nameWithOwner === "string" && !!safeUrl(entry.url)) && object(data.pageInfo);
+		case "github_get_issue_comments": return Array.isArray(data.nodes) && data.nodes.every((entry) => object(entry) && id(entry.id) && typeof entry.body === "string" && !!safeUrl(entry.url)) && object(data.pageInfo);
+		default: return false;
+	}
+}
+function actionFor(name, block, result) {
+	const mode = readNames.has(name) ? "read" : Object.hasOwn(writeTitles, name) ? "write" : name === "github_request_issue_management" ? "access" : "unknown";
+	let label = writeTitles[name] ?? PR_TOOL_TITLES[name] ?? name.replace(/^github_/, "").replaceAll("_", " ");
+	let outcome = "uncertain";
+	const raw = Array.isArray(block.content) && block.content.length === 1 ? text(block.content[0]?.text) : "";
+	const denied = block.isError === true && [
+		`Error: the user rejected tool "${name}"`,
+		`Error: tool "${name}" requires approval, but no approval channel is available`,
+		`Error: tool "${name}" requires approval, but the call has no agent to route it through`
+	].includes(raw);
+	if (result?.outcome === "uncertain") outcome = "uncertain";
+	else if (denied || block.error?.code === "ABORTED_BEFORE_DISPATCH" || block.error?.code === "TOOL_NOT_STARTED") outcome = "denied";
+	else if (object(result?.error) || result?.outcome === "failed") outcome = "failed";
+	else if (block.isError === true) outcome = mode === "write" ? "uncertain" : "failed";
+	else if (mode === "read" && result?.untrusted === true && object(result.data) && Object.keys(result.data).length > 0) outcome = inspectedRead(name, block, result.data) ? "inspected" : "uncertain";
+	else if (mode === "write" && result?.untrusted === true && result.outcome === "confirmed" && confirmedWrite(name, block, result)) outcome = "confirmed";
+	else if (name === "github_set_project_item_field" && fieldResult(block)?.outcome === "no-change") outcome = "no-change";
+	else if (mode === "access" && result?.untrusted === true && result.outcome === "granted" && object(result.grant) && id(result.grant.id) && result.grant.state === "active" && validScope(result.grant.scope)) outcome = "confirmed";
+	if (block.isError === true && mode === "write" && outcome === "uncertain") label += " · tool reported an error";
+	if (name === "github_set_project_item_field") {
+		const args = parseArgs(block);
+		if (typeof args.itemId === "string") label += ` · item ${args.itemId.slice(0, 80)}`;
+		if (typeof args.fieldId === "string") label += ` · field ${args.fieldId.slice(0, 80)}`;
+	}
+	if (name === "github_set_project_item_field" && object(result?.change)) {
+		const before = fieldValueModel(result.change, "before"), after = fieldValueModel(result.change, "after");
+		const field = text(supplied(result.change.field, "name"));
+		if (before.available && after.available) label += ` · ${field || "field"}: ${before.label} → ${after.label}`;
+	}
+	if (outcome === "confirmed" && name === "github_update_pull_request") {
+		const after = supplied(result?.change, "after");
+		if (object(after)) {
+			const changes = ["title", "body"].filter((key) => Object.hasOwn(after, key));
+			if (typeof after.draft === "boolean") changes.push(after.draft ? "draft" : "ready for review");
+			if (changes.length) label += ` · ${changes.join(", ")}`;
+		}
+	}
+	if (outcome === "confirmed" && name === "github_submit_pull_request_review") {
+		const state = text(supplied(result?.resource, "state"));
+		const sha = text(supplied(result?.resource, "commitSha")).slice(0, 12);
+		label += ` · ${state} · commit ${sha}`;
+	}
+	if (block.kind !== "tool-result") label += " · no result recorded; execution unconfirmed";
+	if (mode === "access") label = "Request session access (historical, not current authority)";
+	return {
+		label: label.slice(0, 240),
+		mode,
+		outcome,
+		count: 1
+	};
+}
+/** One bounded, historical projection. No transport, clocks, or recovery state. */
+function githubActivityModel(data, turn) {
+	if (turn.status !== "closed") return null;
+	const resources = /* @__PURE__ */ new Map(), warnings = /* @__PURE__ */ new Set();
+	const counts = /* @__PURE__ */ new Map();
+	const seenObjects = /* @__PURE__ */ new Set(), seenCalls = /* @__PURE__ */ new Set();
+	if (data.length > 5e3) warnings.add("Overview inspection limit reached; additional calls remain in tool details.");
+	const pending = data.slice(0, 5e3).map((value) => value.root).toReversed();
+	let budget = 5e3, calls = 0;
+	while (pending.length && budget-- > 0) {
+		const candidate = pending.pop();
+		if (!object(candidate) || seenObjects.has(candidate)) continue;
+		seenObjects.add(candidate);
+		if (Array.isArray(candidate.subCalls)) {
+			const available = Math.max(0, 5e3 - pending.length);
+			if (candidate.subCalls.length > available) warnings.add("Overview inspection limit reached; additional calls remain in tool details.");
+			pending.push(...candidate.subCalls.slice(0, available).toReversed());
+		}
+		const block = {
+			kind: text(candidate.kind),
+			argsRaw: typeof candidate.argsRaw === "string" ? candidate.argsRaw : void 0,
+			call: { argsRaw: typeof supplied(candidate.call, "argsRaw") === "string" ? text(supplied(candidate.call, "argsRaw")) : void 0 },
+			content: Array.isArray(candidate.content) ? candidate.content.map((part) => object(part) ? {
+				type: text(part.type),
+				text: part.text
+			} : {}) : void 0,
+			isError: candidate.isError === true,
+			error: object(candidate.error) ? {
+				name: candidate.error.name,
+				code: candidate.error.code
+			} : void 0
+		};
+		const result = envelope(block);
+		const name = text(supplied(candidate.call, "name")) || text(candidate.name);
+		if (!name.startsWith("github_") && !result) continue;
+		const callId = text(candidate.callId);
+		if (callId && seenCalls.has(callId)) continue;
+		if (callId) seenCalls.add(callId);
+		else warnings.add("Some calls lack identity; deduplication is incomplete.");
+		calls++;
+		const resource = resourceFor(name, parseArgs(block), result, callId || `missing-${calls}`);
+		const action = actionFor(name, block, result);
+		const outcomeLabel = action.outcome === "inspected" ? "read-only inspections" : action.outcome === "confirmed" ? action.mode === "write" ? "confirmed writes" : "historical access approvals" : action.outcome === "no-change" ? "no-change results" : `${action.outcome} outcomes`;
+		counts.set(outcomeLabel, (counts.get(outcomeLabel) ?? 0) + 1);
+		if (!name) warnings.add("A GitHub result has no loaded call head; operation and target may be unavailable.");
+		if (action.outcome === "uncertain") warnings.add("Some outcomes are uncertain or unavailable. A later read does not confirm an earlier write; inspect GitHub before retrying.");
+		if (action.mode === "read" && result) {
+			const inspection = inspectCollections(result, name);
+			if (inspection.completeness !== "complete" || READ_TOOLS.includes(name) && readCardModel(name, block).completeness !== "complete" || inspection.notices.length || PR_TOOLS.includes(name) && pullRequestCardModel(name, block).warnings.length) warnings.add("Read coverage is partial or unknown. Inspect individual tool details for pagination, truncation, and evidence limits.");
+		}
+		let group = resources.get(resource.key);
+		if (!group) {
+			if (resources.size >= 100) {
+				warnings.add("Only 100 resource groups are summarized; additional calls remain in tool details.");
+				continue;
+			}
+			group = {
+				...resource,
+				actions: []
+			};
+			resources.set(resource.key, group);
+		}
+		if (!group.url && resource.url) group.url = resource.url;
+		const existing = group.actions.find((value) => value.label === action.label && value.mode === action.mode && value.outcome === action.outcome);
+		if (existing) existing.count++;
+		else if (group.actions.length < 40) group.actions.push(action);
+		else warnings.add("Some resource actions exceed the compact summary limit; inspect tool details.");
+	}
+	if (!calls) return null;
+	if (pending.length) warnings.add("Overview inspection limit reached; additional calls remain in tool details.");
+	if (!turn.start || !turn.end) warnings.add("Partial history window: the full turn is not loaded. Only available GitHub evidence is summarized.");
+	const important = (warning) => /Partial history|Some outcomes|inspection limit|Only 100|lack identity|no loaded call head/.test(warning);
+	const allWarnings = [...warnings].sort((a, b) => Number(important(b)) - Number(important(a)));
+	return {
+		resources: [...resources.values()],
+		calls,
+		summary: [...counts].map(([label, count]) => `${count} ${label}`),
+		warnings: allWarnings.length > 8 ? [...allWarnings.slice(0, 7), "Additional completeness warnings remain in tool details."] : allWarnings
+	};
+}
+
+//#endregion
+//#region client/activity-overview.tsx
+const outcomeLabels = {
+	inspected: "Inspected · read only",
+	confirmed: "Confirmed",
+	"no-change": "No change · not dispatched",
+	denied: "Denied / not executed",
+	failed: "Failed",
+	uncertain: "Uncertain · success not established"
+};
+const css = `
+.gh-activity{box-sizing:border-box;max-width:100%;min-width:0;padding:12px 14px;border:1px solid var(--dsw-alias-border-primary,rgba(128,128,128,.3));border-radius:var(--dsw-radius-md,10px);font-size:13px;line-height:1.5;overflow-wrap:anywhere;background:var(--dsw-alias-interactive-bg-hover,transparent);color:var(--dsw-alias-label-primary,inherit)}
+.gh-activity h3{font-size:14px;margin:0 0 4px}.gh-activity p{margin:4px 0}.gh-activity ul{margin:5px 0;padding-left:18px}.gh-activity li{margin:3px 0}.gh-activity .gh-activity-resource{margin:8px 0}.gh-activity .gh-activity-caption{color:var(--dsw-alias-label-tertiary,inherit);font-size:12px}.gh-activity [role=note]{border-left:2px solid var(--dsw-alias-label-secondary,currentColor);padding-left:8px}.gh-activity summary{cursor:pointer}.gh-activity .gh-activity-outcome{font-weight:600}.gh-activity a{color:inherit;text-decoration:underline}
+`;
+function Actions({ actions }) {
+	return /* @__PURE__ */ react.default.createElement("ul", null, actions.map((action, index) => /* @__PURE__ */ react.default.createElement("li", { key: index }, /* @__PURE__ */ react.default.createElement("span", { className: "gh-activity-outcome" }, outcomeLabels[action.outcome]), " — ", action.mode === "write" ? "Write: " : action.mode === "access" ? "Access: " : action.mode === "unknown" ? "Unclassified operation: " : "", action.label, action.count > 1 ? ` (${action.count} calls)` : "")));
+}
+const actionPriority = (action) => action.outcome === "uncertain" || action.outcome === "failed" ? 0 : action.mode !== "read" ? 1 : 2;
+function Resource({ resource }) {
+	const actions = resource.actions.toSorted((a, b) => actionPriority(a) - actionPriority(b));
+	return /* @__PURE__ */ react.default.createElement("li", { className: "gh-activity-resource" }, /* @__PURE__ */ react.default.createElement("strong", null, /* @__PURE__ */ react.default.createElement(Link, { url: resource.url }, resource.label)), /* @__PURE__ */ react.default.createElement(Actions, { actions: actions.slice(0, 3) }), resource.actions.length > 3 && /* @__PURE__ */ react.default.createElement("details", null, /* @__PURE__ */ react.default.createElement("summary", null, "More actions (", resource.actions.length - 3, ")"), /* @__PURE__ */ react.default.createElement(Actions, { actions: actions.slice(3) })));
+}
+function ActivitySummary({ model }) {
+	if (!model) return null;
+	const resources = model.resources.toSorted((a, b) => Math.min(...a.actions.map(actionPriority)) - Math.min(...b.actions.map(actionPriority)));
+	const first = resources.slice(0, 3), rest = resources.slice(3);
+	return /* @__PURE__ */ react.default.createElement("section", {
+		className: "gh-activity",
+		role: "region",
+		"aria-label": "GitHub activity overview"
+	}, /* @__PURE__ */ react.default.createElement("style", null, css), /* @__PURE__ */ react.default.createElement("h3", null, "GitHub activity"), /* @__PURE__ */ react.default.createElement("p", { className: "gh-activity-caption" }, model.calls, " calls · ", model.resources.length, " resources · Loaded history, not live status"), /* @__PURE__ */ react.default.createElement("p", null, model.summary.join(" · ")), model.warnings.map((warning, index) => /* @__PURE__ */ react.default.createElement("p", {
+		role: "note",
+		key: index
+	}, warning)), /* @__PURE__ */ react.default.createElement("ul", null, first.map((resource) => /* @__PURE__ */ react.default.createElement(Resource, {
+		key: resource.key,
+		resource
+	}))), rest.length > 0 && /* @__PURE__ */ react.default.createElement("details", null, /* @__PURE__ */ react.default.createElement("summary", null, "More resources (", rest.length, ")"), /* @__PURE__ */ react.default.createElement("ul", null, rest.map((resource) => /* @__PURE__ */ react.default.createElement(Resource, {
+		key: resource.key,
+		resource
+	})))), /* @__PURE__ */ react.default.createElement("p", { className: "gh-activity-caption" }, "Repeated calls are consolidated. Links identify supplied or requested targets, not write success. Full evidence and native approvals remain in tool details."));
+}
+function ActivityOverview({ turn, useChat }) {
+	const source = useChat((snapshot) => snapshot.nodes.turnDataSource(turn.turn, "tool-call"));
+	const data = (0, react.useSyncExternalStore)(source.subscribe, source.getSnapshot, source.getSnapshot);
+	const model = (0, react.useMemo)(() => githubActivityModel(data, turn), [data, turn]);
+	return /* @__PURE__ */ react.default.createElement(ActivitySummary, { model });
+}
+
+//#endregion
 //#region client/registration.ts
 function apply(ctx) {
+	ctx.slots.inject("conversation.chat.turnTail", () => ctx.slots.register({
+		name: "conversation.chat.turnTail",
+		id: "local-github-activity-overview"
+	}, ActivityOverview));
 	ctx.slots.inject("conversation.approval.detail", () => ctx.slots.register({
 		name: "conversation.approval.detail",
 		priority: -10
@@ -1533,6 +1867,7 @@ var client_default = {
 	PR_TOOLS,
 	pullRequestCardModel,
 	PullRequestCard,
+	ActivityOverview,
 	apply
 };
 

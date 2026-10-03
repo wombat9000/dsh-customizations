@@ -55,6 +55,23 @@ export function presentationContracts(ctx: GitHubRegistrationContext) {
     { name: 'tool.call.toolview', priority: -10 },
     () => null,
   )
+  ctx.slots.register<'conversation.chat.turnTail'>(
+    // @ts-expect-error Turn tail is a list contribution with an id, never a tool key.
+    { name: 'conversation.chat.turnTail', key: 'github' },
+    () => null,
+  )
+  ctx.slots.register<'conversation.chat.turnTail'>(
+    { name: 'conversation.chat.turnTail', id: 'github-activity' },
+    ({ turn, useChat }) => {
+      const source = useChat((snapshot) => snapshot.nodes.turnDataSource(turn.turn, 'tool-call'))
+      const data = source.getSnapshot()
+      void data
+      // @ts-expect-error RC2 turn owner is a resolved TurnLocation, not a numeric id.
+      const turnNumber: number = turn
+      void turnNumber
+      return null
+    },
+  )
   void card
   void badCard
   void missingSession
