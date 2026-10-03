@@ -110,6 +110,17 @@ test('real pinned DSH registry exposes host tools across preset/session scopes a
     'listProjectItems',
     'getProject',
   ])
+  const liveCI = ctx.get('localGitHubLiveCI')
+  const noRepository = await liveCI.readCheckout(
+    { cwd: '/session/a', root: '/session/a', branch: 'feature', head: 'a'.repeat(40), remotes: [] },
+    new AbortController().signal,
+  )
+  assert.equal(noRepository.rows[0].warning, 'No GitHub repository')
+  assert.equal(
+    subprocess.specs.length,
+    0,
+    'host mounting and missing targets do not dispatch GitHub reads',
+  )
   const registry = ctx.get('tools')
   const standard = { preset: 'standard' }
   const minimal = { preset: 'minimal' }
@@ -138,6 +149,20 @@ test('real pinned DSH registry exposes host tools across preset/session scopes a
   )
   await plugin.dispose()
   assert.equal(ctx.get('localGitHubReads'), undefined)
+  assert.equal(ctx.get('localGitHubLiveCI'), undefined)
+  await assert.rejects(
+    liveCI.readCheckout(
+      {
+        cwd: '/session/a',
+        root: '/session/a',
+        branch: 'feature',
+        head: 'a'.repeat(40),
+        remotes: [],
+      },
+      new AbortController().signal,
+    ),
+    { code: 'CANCELLED' },
+  )
   for (const scope of [undefined, standard, minimal, a, b])
     assert.equal(registry.view(scope).visible.size, 0)
 })

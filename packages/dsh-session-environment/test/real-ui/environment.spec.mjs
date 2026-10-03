@@ -1,5 +1,6 @@
 import { test, expect, openSeededSession } from '../../../../tests/real-ui/fixtures.mjs'
 import { githubFieldWorkspaceName } from '../../../../tests/real-ui/github-field-fixture.mjs'
+import { environmentCIWorkspace, environmentCIPrompt } from './ci-fixture.mjs'
 
 const environmentCard = (app) =>
   app.getByRole('region', { name: 'Session environment', exact: true, includeHidden: true })
@@ -163,10 +164,46 @@ async function browseNarrowFiles(app) {
 
 test('follow native session environment through global pages, Files and restored fullscreen', async ({
   app,
-}) => {
+}, testInfo) => {
   try {
     await test.step('Real Remote and Shell follow the retained session CWD', () =>
       followSessionEnvironment(app))
+    await test.step('Live CI mounts through real Remote, managed Shell and fixture gh', async () => {
+      await app
+        .getByRole('tree', { name: 'Sessions', exact: true })
+        .getByRole('treeitem', { name: new RegExp(`^${environmentCIWorkspace}\\s`) })
+        .click()
+      await closeSidebar(app)
+      await expect(app.getByText(environmentCIPrompt, { exact: true })).toBeVisible()
+      const card = environmentCard(app)
+      await expect(card.getByText('PR #42', { exact: true })).toBeVisible()
+      await expect(card.getByText('Default · trunk', { exact: true })).toBeVisible()
+      await expect(card.getByText('running', { exact: true })).toBeVisible()
+      await expect(card.getByText('success', { exact: true })).toBeVisible()
+      await expect(
+        card.getByText('Local HEAD differs · checks cover remote code', { exact: true }),
+      ).toBeVisible()
+      await expect(
+        card.getByRole('link', { name: 'PR #42 checks at aaaaaaa', exact: true }),
+      ).toHaveAttribute('href', 'https://github.com/ci-fixture/repo/pull/42/checks')
+      await expect(
+        card.getByRole('link', { name: 'Default · trunk checks at bbbbbbb', exact: true }),
+      ).toHaveAttribute(
+        'href',
+        `https://github.com/ci-fixture/repo/commit/${'b'.repeat(40)}/checks`,
+      )
+      await expect(card).toContainText(/\d+s ago/)
+      const screenshot = testInfo.outputPath('environment-live-ci.png')
+      await card.screenshot({ path: screenshot })
+      await testInfo.attach('Live checkout CI (isolated shell, fixture GitHub)', {
+        path: screenshot,
+        contentType: 'image/png',
+      })
+      await openFiles(app)
+      await expect(card).toBeHidden()
+      await closeSidebar(app)
+      await expect(card).toBeVisible()
+    })
     await test.step('Only Chat shows the card across global pages, tabs and reload', () =>
       visitGlobalPages(app))
     await test.step('Foreground Files, session switching and fullscreen reload', () =>

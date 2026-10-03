@@ -15,6 +15,13 @@ export const TYPERT = {
         description: 'Reads bounded CWD and Git state for one live Session.',
         members: [
           {
+            name: 'readCI',
+            kind: 'method',
+            signature:
+              'readCI(request: SessionCIRequest, signal: AbortSignal): Promise<SessionCISnapshot>',
+            summary: 'Read optional commit-bound CI for the verified current checkout.',
+          },
+          {
             name: 'read',
             kind: 'method',
             signature:
@@ -31,7 +38,7 @@ export const TYPERT = {
           {
             name: 'SessionEnvironmentSnapshot',
             declaration:
-              'export interface SessionEnvironmentSnapshot { readonly cwd: string | null; readonly home: string; readonly repo: boolean | null; readonly hasHead: boolean | null; readonly branch: string | null; readonly upstream: string | null; readonly ahead: number | null; readonly behind: number | null; readonly dirtyFiles: number | null; readonly additions: number | null; readonly deletions: number | null; readonly error?: string }',
+              'export interface SessionEnvironmentSnapshot { readonly cwd: string | null; readonly home: string; readonly repo: boolean | null; readonly hasHead: boolean | null; readonly branch: string | null; readonly upstream: string | null; readonly ahead: number | null; readonly behind: number | null; readonly dirtyFiles: number | null; readonly additions: number | null; readonly deletions: number | null; readonly checkoutKey?: string; readonly error?: string }',
           },
         ],
       },

@@ -10,6 +10,8 @@ import { createGitHubGrantRuntime } from './grants.js';
 import { createGrantCaller, registerGitHubGrantTools } from './grant-tools.js';
 import { createGitHubPresentation } from './presentation.js';
 import { registerGitHubRoutes } from './routes.js';
+import { mountGitHubLiveCI } from './live-ci.js';
+export * from './live-ci.js';
 export * from './runtime.js';
 export * from './tools.js';
 export * from './write-runtime.js';
@@ -24,6 +26,7 @@ export function apply(ctx) {
         onAccount: (actor) => grants.observeAccount(actor),
     });
     mountGitHubReads(ctx, runtime);
+    mountGitHubLiveCI(ctx);
     const pullRequests = createGitHubPullRequestRuntime(ctx.subprocess);
     for (const tool of createGitHubTools({ ...runtime, ...pullRequests }))
         ctx.tools.register(tool);

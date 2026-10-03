@@ -45,7 +45,7 @@
     "bundle:client": "tsc -b tsconfig.browser.json --force && tsdown --config tsdown.config.mjs --config-loader native --env.DSH_BUILD_FACE client",
     "bundle": "pnpm run bundle:host && pnpm run bundle:client",
     "build": "pnpm run bundle",
-    "test": "pnpm run bundle && node --test test/index.test.js test/client.test.js",
+    "test": "pnpm run bundle && node --test test/index.test.js test/client.test.js test/ci-host.test.js",
     "test:integration": "pnpm run bundle && node --test test/profile.integration.test.js"
   },
   "engines": {

@@ -113,6 +113,17 @@ export async function startDisposableHost({ additionalPlugins = [], profilePatch
       join(root, 'packages/dsh-github/test/pull-request-card-fixtures.js'),
       join(fixture, 'pull-request-card-fixtures.js'),
     )
+    await copyFile(
+      join(root, 'packages/dsh-session-environment/test/real-ui/ci-fixture.mjs'),
+      join(fixture, 'environment-ci-fixture.mjs'),
+    )
+    const fixtureBin = join(directory, 'fixture-bin')
+    await mkdir(fixtureBin)
+    await writeFile(
+      join(fixtureBin, 'gh'),
+      await readFile(join(root, 'packages/dsh-session-environment/test/real-ui/gh-fixture.mjs')),
+      { mode: 0o755 },
+    )
     await writeFile(
       join(fixture, 'package.json'),
       JSON.stringify({
@@ -164,7 +175,9 @@ export async function startDisposableHost({ additionalPlugins = [], profilePatch
     const cli = join(dirname(launcherManifest), 'lib/bin.js')
     // Never inherit provider credentials, DSH paths, proxy credentials, or shell init settings.
     const env = {
-      PATH: process.env.PATH,
+      // An isolated gh fixture exercises the real managed backend without
+      // consulting live GitHub or host credentials. Unknown descriptors fail.
+      PATH: `${fixtureBin}:${process.env.PATH ?? ''}`,
       HOME: home,
       USER: 'visual-test',
       LOGNAME: 'visual-test',

@@ -9,6 +9,8 @@ import type { UseSessions } from '@deepseek-ai/dsh-client-ui-session/client'
 import React from 'react'
 import sessionEnvironmentRemote from '@local/dsh-session-environment/remote'
 import type { SessionEnvironmentSnapshot } from '@local/dsh-session-environment/types'
+import { CIRows, useEnvironmentVisible, useLiveCI } from './ci.js'
+import type { CIRemote } from './ci.js'
 
 const POLL_INTERVAL_MS = 3_000
 const LOADING_DELAY_MS = 300
@@ -19,6 +21,7 @@ interface CachedEnvironment {
   readonly home: string
   readonly repo: boolean
   readonly hasHead: boolean | null
+  readonly checkoutKey?: string
   readonly branch: string | null
   readonly upstream: string | null
   readonly ahead: number | null
@@ -34,6 +37,7 @@ interface EnvironmentInfo {
   readonly home: string | null
   readonly repo: boolean | null
   readonly hasHead: boolean | null
+  readonly checkoutKey?: string
   readonly branch: string | null
   readonly upstream: string | null
   readonly ahead: number | null
@@ -61,7 +65,7 @@ export function selectedEnvironmentSession(state: SessionListState): SessionId |
   return selected.length === 1 ? selected[0]?.id : undefined
 }
 
-interface SessionEnvironmentRemote {
+interface SessionEnvironmentRemote extends CIRemote {
   read(
     request: { readonly sessionId: SessionId },
     signal?: AbortSignal,
@@ -153,6 +157,7 @@ function cachedInfo(cwd: string | null, cached: CachedEnvironment): EnvironmentI
     home: cached.home,
     repo: cached.repo,
     hasHead: cached.hasHead,
+    ...(cached.checkoutKey ? { checkoutKey: cached.checkoutKey } : {}),
     branch: cached.branch,
     upstream: cached.upstream,
     ahead: cached.ahead,
@@ -360,6 +365,13 @@ export function createEnvironmentCard(
       return typeof item?.cwd === 'string' ? item.cwd : null
     })
     const [info, setInfo] = React.useState<EnvironmentInfo>(blankInfo('idle', null, false))
+    const cardRef = React.useRef<HTMLElement>(null)
+    const visible = useEnvironmentVisible(cardRef, isConversation && sessionId !== undefined)
+    const ciRequest =
+      sessionId && info.cwd === cwd && info.checkoutKey
+        ? { sessionId, checkoutKey: info.checkoutKey }
+        : null
+    const ci = useLiveCI(sessionEnvironment, ciRequest, visible)
 
     React.useEffect(() => {
       if (sessionId === undefined) {
@@ -367,6 +379,7 @@ export function createEnvironmentCard(
         return undefined
       }
 
+      if (!visible) return undefined
       const cached = cwd === null ? undefined : environmentCache.get(cwd)
       setInfo(cached === undefined ? blankInfo('pending', cwd, false) : cachedInfo(cwd, cached))
 
@@ -420,6 +433,7 @@ export function createEnvironmentCard(
             home: next.home,
             repo: next.repo,
             hasHead: next.hasHead,
+            ...(next.checkoutKey ? { checkoutKey: next.checkoutKey } : {}),
             branch: next.branch,
             upstream: next.upstream,
             ahead: next.ahead,
@@ -454,7 +468,7 @@ export function createEnvironmentCard(
         window.clearInterval(interval)
         resetDisposer()
       }
-    }, [sessionId, cwd])
+    }, [sessionId, cwd, visible])
 
     if (!isConversation || sessionId === undefined) return null
 
@@ -568,7 +582,12 @@ export function createEnvironmentCard(
 
     return React.createElement(
       'section',
-      { style: styles.card, 'aria-label': 'Session environment', 'data-session-environment': true },
+      {
+        ref: cardRef,
+        style: styles.card,
+        'aria-label': 'Session environment',
+        'data-session-environment': true,
+      },
       React.createElement('style', null, cardVisibility),
       React.createElement('h2', { style: styles.title }, 'Environment'),
       React.createElement(
@@ -612,6 +631,10 @@ export function createEnvironmentCard(
         React.createElement('span', { style: styles.label }, 'Changes'),
         React.createElement('span', { style: styles.value, title: changesTitle }, changesNode),
       ),
+      React.createElement(CIRows, {
+        snapshot: ci,
+        available: Boolean(ciRequest && sessionEnvironment.readCI),
+      }),
     )
   }
 }

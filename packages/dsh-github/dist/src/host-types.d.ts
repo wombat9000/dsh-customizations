@@ -2,6 +2,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { GitHubReads, Schema, Subprocess } from './contracts.js';
 import type { GrantCaller } from './grant-contracts.js';
+import type { GitHubLiveCI } from './live-ci.js';
 export interface Session {
     id: string;
     header: {
@@ -79,7 +80,7 @@ export interface WebHost {
 export interface Host extends ToolHost, WebHost {
     subprocess: Subprocess;
     get(name: 'agents'): Agents | undefined;
-    provide(name: string, service: Readonly<GitHubReads>): unknown;
+    provide(name: string, service: Readonly<GitHubReads> | Readonly<GitHubLiveCI>): unknown;
     on(event: 'tools/pre-execute', handler: (exec: Execution, next: () => Promise<Decision>) => Promise<Decision>): unknown;
     on(event: 'tools/result', handler: (exec: Execution, result: {
         isError: boolean;
