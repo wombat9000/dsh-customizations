@@ -1,6 +1,6 @@
 # @local/dsh-linear
 
-Workspace-scoped Linear integration for DSH `0.1.7-rc.2` with broad read access and approval-gated project writes.
+Workspace-scoped Linear integration for DSH `0.2.0-rc.2` with broad read access and approval-gated project writes.
 
 ## What it adds
 
@@ -72,11 +72,13 @@ An existing `LINEAR_API_KEY` from the launch environment is supported but read-o
 
 ### Retained workspace bindings
 
-Before upgrading a retained profile, back up its configuration and check for an old `settings.yaml` section named `linear`. DSH `0.1.7-rc.2` imports legacy sections by Loader entry ID, but this bundle's entry is `local-linear`. Upstream does not remap `linear` to `local-linear` automatically.
+Before upgrading a retained profile, back up its configuration and check for an old `settings.yaml` section named `linear`. DSH `0.2.0-rc.2` imports legacy sections by Loader entry ID, but this bundle's entry is `local-linear`. Upstream does not remap `linear` to `local-linear` automatically.
 
 Preserve `organizationId`, `organizationName`, and `organizationUrlKey` under the `local-linear` entry's `config` in the active profile patch before relying on the old workspace restriction. If DSH has already attempted the import, inspect `settings.yaml.imported`: DSH renames the file before importing and leaves rejected sections there without retrying them. Verify the workspace on the Linear configuration page before using its tools. Credentials remain in the credential store; do not copy API keys into the patch.
 
 ## Development
+
+See the [DSH `0.2.0-rc.2` validation results](../../MIGRATION-0.2.0-rc.2.md#validation-results) for verified scope and retained-state cautions.
 
 The client registers `plugins.row.config` with key `@local/dsh-linear#local-linear`. Summary rendering is static; page rendering mounts the connection form. The RPC channel remains `/linear-integration`.
 

@@ -4,7 +4,7 @@ A Gemini-backed `generate_image` tool for DSH. It reuses the shared `GEMINI_API_
 
 ## Install
 
-The `personal-web` recipe selects this bundle after YouTube. Follow the repository's [setup and approved apply procedure](../../README.md#apply-the-starter-profile); the checkout-local launcher and each separate profile graph must retain the RC2 RPC-owner patch. Merely pulling this source does not install it or restart any instance.
+This bundle targets DSH `0.2.0-rc.2` only. The `personal-web` recipe selects it after YouTube. Follow the repository's [setup and approved apply procedure](../../README.md#apply-the-starter-profile). The RPC-owner patch remains required in each independent launcher and profile graph. See the [migration handoff](../../MIGRATION-0.2.0-rc.2.md) for validation results and limitations. Merely pulling this source does not install it or restart any instance.
 
 After an explicitly approved profile update, restart through your normal service mechanism and reload the browser. Configure the shared key in **Settings → Plugins → Plugin configuration → YouTube**. Headless deployments can export `GEMINI_API_KEY` instead. Imagegen has no separate credentials/settings card and does not require the YouTube runtime when the credential is otherwise available.
 

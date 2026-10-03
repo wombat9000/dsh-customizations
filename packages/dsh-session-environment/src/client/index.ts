@@ -458,7 +458,7 @@ export function createEnvironmentCard(
 
     if (!isConversation || sessionId === undefined) return null
 
-    // Pinned DSH 0.1.7-rc.2 markup: only the mounted Chat view emits
+    // Pinned DSH 0.2.0-rc.2 markup: only the mounted Chat view emits
     // data-chat-flow inside the main Conversation's session content. Exclude
     // hidden retained views and embedded sidebars, and match the selected session.
     // Foreground push/fullscreen panels have no hidden ancestor; their visibility

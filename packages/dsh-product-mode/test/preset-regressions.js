@@ -20,7 +20,7 @@ import {
   webRoot,
 } from './fixtures.js'
 
-// Both composition-only bundles obey the same 0.1.7-rc.2 contract.
+// Both composition-only bundles obey the same 0.2.0-rc.2 contract.
 export function presetRegressions({ id, name, skill, marker, resource }) {
   test(`${name}: publication and additive recipe declarations`, async (t) => {
     const f = await fixture(t, id)
@@ -28,7 +28,7 @@ export function presetRegressions({ id, name, skill, marker, resource }) {
     assert.equal(manifest.name, `@local/dsh-${id}`)
     assert.equal(manifest.exports['./package.json'], './package.json')
     assert.equal(manifest.dsh.bundle.patch, './cordis.patch.yml')
-    assert.equal((await json(cli.resolve('@deepseek-ai/dsh/package.json'))).version, '0.1.7-rc.2')
+    assert.equal((await json(cli.resolve('@deepseek-ai/dsh/package.json'))).version, '0.2.0-rc.2')
     assert.equal(manifest.main, undefined)
     assert.equal(manifest.dependencies, undefined)
     assert.equal(manifest.devDependencies, undefined)

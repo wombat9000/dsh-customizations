@@ -1,7 +1,7 @@
 import { ProjectsError } from './configuration.js'
 import type { ProjectsService } from './service.js'
 
-// Narrow consumed ToolDefinition surface, verified against DSH 0.1.7-rc.2 tools Inspect.
+// Narrow consumed ToolDefinition surface, checked against DSH 0.2.0-rc.2 tools contracts.
 export interface ProjectTool {
   name: string
   description: string

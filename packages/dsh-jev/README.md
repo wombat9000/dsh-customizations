@@ -14,7 +14,7 @@ The default is `typesafe/jev-1.13`. The alias `~typesafe/jev-latest` follows fut
 
 ## Settings migration
 
-The bundle targets DSH `0.1.7-rc.2`. Its `model` Config field is volatile: the host reads the live reference with `.get()`, and profile updates take effect without remounting the service. A model change cancels pending evaluations. The custom page uses the `plugins.row.config` key `@local/dsh-jev#local-jev`. Settings writes address the owning Loader entry, `local-jev` in the bundled composition, rather than the former `jev` section.
+The bundle targets DSH `0.2.0-rc.2` only. See the [migration handoff](../../MIGRATION-0.2.0-rc.2.md) for target-release validation results and deployment cautions. Its `model` Config field is volatile: the host reads the live reference with `.get()`, and profile updates take effect without remounting the service. A model change cancels pending evaluations. The custom page uses the `plugins.row.config` key `@local/dsh-jev#local-jev`. Settings writes address the owning Loader entry, `local-jev` in the bundled composition, rather than the former `jev` section.
 
 If your old `settings.yaml` contains a `jev` section, do not assume DSH imports its model selection. The upstream importer matches section names to entry IDs and does not map `jev` to `local-jev`. It renames the file to `settings.yaml.imported` before attempting imports; rejected sections remain there for recovery and are not retried automatically. After migration, verify the model on the configuration page and save the intended value. Credentials remain owned by the shared OpenRouter plugin.
 

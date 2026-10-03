@@ -1,8 +1,8 @@
 {
   "name": "@local/dsh-google-drive",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
-  "description": "Session-scoped Drive reading and Google Sheets previews with approved edits for DSH 0.1.7-rc.2",
+  "description": "Session-scoped Drive reading and Google Sheets previews with approved edits for DSH 0.2.0-rc.2",
   "type": "module",
   "main": "dist/src/index.js",
   "exports": {
@@ -43,5 +43,8 @@
       "platform": "web"
     }
   },
-  "license": "UNLICENSED"
+  "license": "UNLICENSED",
+  "peerDependencies": {
+    "@deepseek-ai/dsh": "0.2.0-rc.2"
+  }
 }

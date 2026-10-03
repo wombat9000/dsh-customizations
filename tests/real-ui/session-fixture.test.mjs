@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import test from 'node:test'
-import { seedSession, persistSession } from './session-fixture.mjs'
+import { seedSession, persistSession, prepareFixtureSession } from './session-fixture.mjs'
 import {
   approvalCommandSeed,
   beginCommandTurn,
@@ -22,6 +22,12 @@ const installed = (name) => import(pathToFileURL(cli.resolve(`@deepseek-ai/${nam
 const { Context } = await installed('cordis')
 const { default: Sessions, SESSION_FORMAT_VERSION } = await installed('dsh-session')
 const { default: Persistence } = await installed('dsh-session-persistence-jsonl')
+const { default: Storage } = await installed('dsh-storage')
+const StorageJson = await installed('dsh-storage-json')
+const StorageDomain = await installed('dsh-storage-domain')
+const { default: Projections } = await installed('dsh-session-projection')
+const { default: Titles } = await installed('dsh-session-title')
+const { default: ProjectionCache } = await installed('dsh-session-projection-cache')
 import { waitForFixture } from './global-setup.mjs'
 
 function fixture(failure) {
@@ -33,6 +39,12 @@ function fixture(failure) {
         calls.push('prepare')
         events = options.seed
         return { id, header: { id, ...options.meta }, snapshotEvents: () => events }
+      },
+    },
+    sessionProjectionCache: {
+      async write() {
+        calls.push('write cache')
+        if (failure === 'cache') throw Error(failure)
       },
     },
     sessionPersistence: {
@@ -86,15 +98,20 @@ test('visual seed owns, flushes, closes and reopens its persistence handle witho
     'open reader',
     'read',
     'close reader',
+    'write cache',
   ])
 })
-for (const failure of ['append', 'flush', 'read', 'mismatch']) {
+for (const failure of ['append', 'flush', 'read', 'mismatch', 'cache']) {
   test(`visual seed closes its handle on ${failure} failure`, async () => {
     const { ctx, calls } = fixture(failure)
     await assert.rejects(seedSession(ctx))
     assert.ok(calls.includes('close writer'))
-    if (['read', 'mismatch'].includes(failure)) assert.equal(calls.at(-1), 'close reader')
-    else assert.ok(!calls.includes('open reader'))
+    if (failure === 'cache') assert.deepEqual(calls.slice(-2), ['close reader', 'write cache'])
+    else {
+      assert.ok(!calls.includes('write cache'))
+      if (['read', 'mismatch'].includes(failure)) assert.equal(calls.at(-1), 'close reader')
+      else assert.ok(!calls.includes('open reader'))
+    }
   })
 }
 
@@ -108,6 +125,12 @@ test('all synthetic histories reopen through native V4 persistence without tools
   })
   await ctx.plugin(Sessions).await()
   await ctx.plugin(Persistence, { root: directory, compression: 'none' }).await()
+  await ctx.plugin(Storage).await()
+  await ctx.plugin(StorageJson, { root: join(directory, 'cache') }).await()
+  await ctx.plugin(StorageDomain, { backend: 'json' }).await()
+  await ctx.plugin(Projections).await()
+  await ctx.plugin(Titles, { fallbackMaxWords: 5, fallbackMaxBytes: 40, maxTitleBytes: 80 }).await()
+  await ctx.plugin(ProjectionCache, { writeEveryEvents: 200, writeIntervalMs: 5000 }).await()
   await seedSession(ctx)
   for (const factory of [
     approvalCommandSeed,
@@ -116,11 +139,17 @@ test('all synthetic histories reopen through native V4 persistence without tools
     githubFieldSessionSeed,
   ]) {
     const fixture = factory(directory)
-    const session = ctx.sessions.prepare(fixture.id, fixture.options)
+    const session = prepareFixtureSession(ctx, fixture.id, fixture.options)
     await persistSession(ctx, session)
     const reader = await ctx.sessionPersistence.open(session.id, 'read')
     try {
-      assert.deepEqual((await reader.read()).events, session.snapshotEvents())
+      const stored = (await reader.read()).events
+      assert.deepEqual(stored, session.snapshotEvents())
+      assert.equal(
+        stored.findLast((event) => event.type === 'session/title')?.data.title,
+        basename(session.header.cwd),
+        'native sidebar navigation requires an explicit persisted fixture title',
+      )
     } finally {
       await reader.close()
     }
@@ -171,6 +200,15 @@ test('all synthetic histories reopen through native V4 persistence without tools
     } finally {
       await reopened.close()
     }
+  }
+  const headers = await ctx.sessionPersistence.list()
+  assert.equal(headers.length, 5)
+  for (const { header } of headers) {
+    assert.equal(
+      ctx.sessionProjectionCache.cachedSnapshot(header)?.values.title,
+      basename(header.cwd),
+      'cold sidebar titles must be available before any session is activated',
+    )
   }
   assert.equal(ctx.get('tools'), undefined)
   assert.equal(ctx.get('llm'), undefined)

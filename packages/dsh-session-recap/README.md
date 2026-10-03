@@ -6,7 +6,7 @@ While generation runs, a highlight shimmers across the fixed icon; it does not r
 
 ## Install and configure
 
-This bundle targets only DSH `0.1.7-rc.2` and requires the standard base and Web bundles. It ships compiled JavaScript with a committed client bundle; installation needs no build step. After editing source files, regenerate the affected outputs as described under [Development](#development). This RC also requires the repository's pinned RPC-owner patch; use the [repository launcher and profile setup](../../README.md#apply-the-starter-profile), not an unpatched global launcher.
+This bundle targets only DSH `0.2.0-rc.2` and requires the standard base and Web bundles. It ships compiled JavaScript with a committed client bundle; installation needs no build step. After editing source files, regenerate the affected outputs as described under [Development](#development). The RPC-owner patch remains required in each independent launcher and profile graph. Read the [migration handoff](../../MIGRATION-0.2.0-rc.2.md) and use the [repository launcher and profile setup](../../README.md#apply-the-starter-profile), not an unrelated global launcher.
 
 1. From this repository, validate and preview the profile:
 
@@ -21,7 +21,7 @@ This bundle targets only DSH `0.1.7-rc.2` and requires the standard base and Web
    pnpm run apply -- personal-web
    ```
 
-3. Start DSH with `dsh --profile personal-web`. If that profile is already running, restart it and refresh the page.
+3. Start DSH with `./node_modules/.bin/dsh --profile personal-web`. If that profile is already running, restart it and refresh the page.
 4. Open **Plugins**, select the `@wombat9000/dsh-session-recap` bundle, then select **Configure** for its `wombat9000-session-recap` row.
 5. Select a model from the instance's provider catalog, then select **Save**. You can enter exact provider and model IDs when the catalog does not list a supported route.
 
@@ -49,7 +49,7 @@ The category vocabulary is **Direction**, **Decision**, **Key insight**, **Open 
 
 The writer can return `null` for a selected category it cannot support, but must produce at least one nonempty card. Each card is limited to 180 characters, with 480 characters combined and a headline of at most 120 characters. The prompt targets 12–20 words per card. No generated label, icon, color, HTML, or component code controls the UI.
 
-The writing request uses JSON instructions and strict local validation, not provider-enforced structured output. A valid but oversized response receives at most one shortening attempt under the same request deadline; malformed responses fail.
+The writing request uses JSON instructions and strict local validation, not provider-enforced structured output. The intended flow permits at most one shortening attempt for a valid but oversized response under the same request deadline; malformed responses fail. The existing shortening defects are pre-existing and are not claimed fixed by this migration.
 
 If Jev is missing, unconfigured, fails, or finds no suitable categories, the existing writer produces standard bullets and the panel explains the fallback. Fallback results are not cached while Jev selection is enabled, so a later request can recover after configuration or service repair. Disabling Jev uses the standard recap without an additional provider call. Jev selection and writing share the recap's overall deadline and stale-session checks.
 

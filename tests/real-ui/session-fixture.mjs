@@ -9,32 +9,51 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { githubSessionSeed, githubWorkspaceName } from './github-grants-fixture.mjs'
 import { githubItemsSeed, githubItemsWorkspace } from './github-items-fixture.mjs'
 import { githubFieldSessionSeed, githubFieldWorkspaceName } from './github-field-fixture.mjs'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 
-export const inject = ['sessions', 'sessionPersistence']
+export const inject = ['sessions', 'sessionPersistence', 'sessionProjectionCache', 'sessionTitle']
+
+export function prepareFixtureSession(ctx, id, options) {
+  // The target sidebar uses durable titles, not the catalog's cwd fallback.
+  // Preserve deterministic fixture times and never invoke a title provider.
+  const seed = options.seed
+  assert.ok(seed.length > 0, 'display fixtures require a nonempty seeded history')
+  return ctx.sessions.prepare(id, {
+    ...options,
+    seed: [
+      ...seed,
+      {
+        seq: seed.length,
+        time: seed.at(-1).time,
+        type: 'session/title',
+        data: { title: basename(options.meta.cwd), messageSeqs: [], source: { kind: 'user' } },
+      },
+    ],
+  })
+}
 export async function apply(ctx) {
   registerApprovalFixture(ctx)
   const commandCwd = join(process.cwd(), '..', commandWorkspace)
   await mkdir(commandCwd, { recursive: true })
   const command = approvalCommandSeed(commandCwd)
-  await persistSession(ctx, ctx.sessions.prepare(command.id, command.options))
+  await persistSession(ctx, prepareFixtureSession(ctx, command.id, command.options))
   const id = await seedSession(ctx)
   await seedGitHubSession(ctx)
   const itemsCwd = join(process.cwd(), '..', githubItemsWorkspace)
   await mkdir(itemsCwd, { recursive: true })
   const items = githubItemsSeed(itemsCwd)
-  await persistSession(ctx, ctx.sessions.prepare(items.id, items.options))
+  await persistSession(ctx, prepareFixtureSession(ctx, items.id, items.options))
   const fieldCwd = join(process.cwd(), '..', githubFieldWorkspaceName)
   await mkdir(fieldCwd, { recursive: true })
   const field = githubFieldSessionSeed(fieldCwd)
-  await persistSession(ctx, ctx.sessions.prepare(field.id, field.options))
+  await persistSession(ctx, prepareFixtureSession(ctx, field.id, field.options))
   // The Web listener can become ready before async plugins finish applying.
   await writeFile(join(process.cwd(), '.visual-fixture-ready'), id)
 }
 
 export async function seedSession(ctx) {
   const time = Date.UTC(2026, 0, 2, 3, 4, 5)
-  const session = ctx.sessions.prepare('visual-test-history', {
+  const session = prepareFixtureSession(ctx, 'visual-test-history', {
     meta: { cwd: process.cwd(), createdAt: time },
     seed: [
       { seq: 0, time, type: 'turn/start', data: { turn: 1 } },
@@ -80,7 +99,7 @@ export async function seedGitHubSession(ctx) {
   const cwd = join(process.cwd(), '..', githubWorkspaceName)
   await mkdir(cwd, { recursive: true })
   const fixture = githubSessionSeed(cwd)
-  return persistSession(ctx, ctx.sessions.prepare(fixture.id, fixture.options))
+  return persistSession(ctx, prepareFixtureSession(ctx, fixture.id, fixture.options))
 }
 
 export async function persistSession(ctx, session) {
@@ -100,5 +119,9 @@ export async function persistSession(ctx, session) {
   } finally {
     await reader.close()
   }
+  // Cold listings only expose already-durable projection checkpoints. This
+  // detached seed bypasses live-session write hooks, so publish its cache only
+  // after the actual log has been flushed, closed, and independently reopened.
+  await ctx.sessionProjectionCache.write(session)
   return session.id
 }

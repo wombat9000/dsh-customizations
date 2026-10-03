@@ -1,6 +1,6 @@
 {
   "name": "@local/dsh-tool-youtube",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "Gemini-backed YouTube video tools for DSH",
   "type": "module",
@@ -46,18 +46,19 @@
     }
   },
   "dependencies": {
-    "@deepseek-ai/dsh-credentials": "0.1.7-rc.2",
-    "@deepseek-ai/dsh-launch-environment": "0.1.7-rc.2",
-    "@deepseek-ai/dsh-tools": "0.1.7-rc.2",
+    "@deepseek-ai/dsh-credentials": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-launch-environment": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-tools": "0.2.0-rc.2",
     "@deepseek-ai/schemastery": "3.18.4",
     "@google/genai": "2.21.0"
   },
   "peerDependencies": {
+    "@deepseek-ai/dsh": "0.2.0-rc.2",
     "@deepseek-ai/cordis": "4.0.4",
-    "@deepseek-ai/dsh-api-remotes": "0.1.7-rc.2",
-    "@deepseek-ai/dsh-client-connection": "0.1.7-rc.2",
-    "@deepseek-ai/dsh-client-ui-plugin-manager": "0.1.7-rc.2",
-    "@deepseek-ai/dsh-system-prompt": "0.1.7-rc.2",
+    "@deepseek-ai/dsh-api-remotes": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-client-connection": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-client-ui-plugin-manager": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-system-prompt": "0.2.0-rc.2",
     "react": "18.3.1"
   },
   "license": "UNLICENSED"

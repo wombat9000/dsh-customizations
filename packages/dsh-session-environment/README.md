@@ -1,6 +1,6 @@
 # @local/dsh-session-environment
 
-A local DSH Web bundle that shows the selected session's working directory and current Git state in a compact `shell.overlay` Environment card. It targets DSH `0.1.7-rc.2`.
+A local DSH Web bundle that shows the selected session's working directory and current Git state in a compact `shell.overlay` Environment card. It targets DSH `0.2.0-rc.2`.
 
 ## Behavior
 
@@ -20,13 +20,15 @@ The host reads `session.header.cwd` for the requested session. Sessions sharing 
 
 The host plugin extends `TypertRemoteService` and publishes a strict `sessionEnvironment/read` Typert descriptor. The browser bundle self-mounts the matching Remote contribution and registers the card in `shell.overlay`. Timers, calls, Remote contributions, and Slot registrations follow their owning Cordis/React lifecycle.
 
-The card uses the injected `usePanelInfo` hook to distinguish Conversation from global pages. Its React-owned visibility stylesheet requires the selected session's foreground Chat flow inside the main Conversation and hides the card when that session's sidebar is open. It depends on DSH `0.1.7-rc.2`'s slot, Chat, session, overlay, and sidebar data markers, not tab labels, compiled CSS classes, or a sidebar-width API. Recheck this markup contract when upgrading DSH.
+The card uses the injected `usePanelInfo` hook to distinguish Conversation from global pages. Its React-owned visibility stylesheet requires the selected session's foreground Chat flow inside the main Conversation and hides the card when that session's sidebar is open. It depends on DSH `0.2.0-rc.2`'s slot, Chat, session, overlay, and sidebar data markers, not tab labels, compiled CSS classes, or a sidebar-width API. Recheck this markup contract when upgrading DSH.
 
 The wire artifacts are explicit TypeScript modules rather than generator output because the published Typert generator expects the protocol package to be registered from the full DSH source workspace. Both host and client share protocol-typed descriptors with lazy `create()` codec factories and strict Zod validation. The build bundles the client codec. The host awaits `shell.execute(spec)` and then the execution handle's `result()`.
 
 This package was imported from the user-owned `tools/dsh` repository's `packages/dsh-session-environment` at revision `4cea852`. The compatibility migration updates the TypeScript contracts and regression tests for the target runtime. The package keeps its `@local` identity because its self-imports, client loader ID, and Typert descriptors depend on that name.
 
 ## Build and test
+
+See the [DSH `0.2.0-rc.2` validation results](../../MIGRATION-0.2.0-rc.2.md#validation-results) for shell-marker checks, screenshot outcomes, and remaining limits.
 
 After the approved dependency setup, run from the repository root:
 
@@ -63,7 +65,7 @@ Restart the target DSH Web process, then refresh its existing browser page. Type
 
 ## Dependency provenance
 
-The import retains exact pins from the existing plugin rather than introducing a replacement toolchain. [TypeScript's official download guide](https://www.typescriptlang.org/download/) identifies `typescript` (`microsoft/TypeScript`, Apache-2.0). [tsdown's installation guide](https://tsdown.dev/guide/getting-started) identifies `tsdown` (`rolldown/tsdown`, MIT). [Zod's documentation](https://zod.dev/) identifies `zod` (`colinhacks/zod`, MIT). Node and React type declarations come from `DefinitelyTyped/DefinitelyTyped` (MIT). DSH dependencies match the repository's pinned `0.1.7-rc.2` runtime.
+The import retains exact pins from the existing plugin rather than introducing a replacement toolchain. [TypeScript's official download guide](https://www.typescriptlang.org/download/) identifies `typescript` (`microsoft/TypeScript`, Apache-2.0). [tsdown's installation guide](https://tsdown.dev/guide/getting-started) identifies `tsdown` (`rolldown/tsdown`, MIT). [Zod's documentation](https://zod.dev/) identifies `zod` (`colinhacks/zod`, MIT). Node and React type declarations come from `DefinitelyTyped/DefinitelyTyped` (MIT). DSH dependencies match the repository's pinned `0.2.0-rc.2` runtime.
 
 Registry metadata confirms these owners, licenses, and maintained release lines. TypeScript and Zod are established ecosystem dependencies; tsdown is the existing plugin's newer bundler, maintained under the Rolldown project. The download-count endpoint was unavailable during this import, so current adoption counts were not verified. The registry advisory check reported no vulnerabilities in the resolved graph at import time; rerun `pnpm audit` when updating dependencies.
 

@@ -1,8 +1,8 @@
 {
   "name": "@local/dsh-google-auth",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
-  "description": "Shared Google OAuth and explicit integration permissions for DSH 0.1.7-rc.2",
+  "description": "Shared Google OAuth and explicit integration permissions for DSH 0.2.0-rc.2",
   "type": "module",
   "main": "dist/src/index.js",
   "exports": {
@@ -44,6 +44,7 @@
     "@deepseek-ai/schemastery": "3.18.4"
   },
   "peerDependencies": {
+    "@deepseek-ai/dsh": "0.2.0-rc.2",
     "react": "18.3.1"
   },
   "license": "UNLICENSED"

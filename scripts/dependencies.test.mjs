@@ -19,9 +19,16 @@ const directories = [
 ]
 
 test('DSH declarations and normal lockfile resolve the target release, including peers', () => {
-  assert.equal(version, '0.1.7-rc.2')
+  assert.equal(version, '0.2.0-rc.2')
   for (const directory of directories) {
     const pkg = json(join(directory, 'package.json'))
+    if (directory !== root) {
+      assert.equal(
+        pkg.peerDependencies?.['@deepseek-ai/dsh'],
+        version,
+        `${pkg.name} runtime admission`,
+      )
+    }
     for (const field of [
       'dependencies',
       'devDependencies',

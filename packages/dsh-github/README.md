@@ -1,6 +1,6 @@
 # GitHub tools
 
-This bundle adds eighteen read tools, twelve write tools, and a session issue-management grant request to every DSH session, independent of preset. Writes require individual approval unless a live grant covers a supported field update or dependency addition. It targets DSH `0.1.7-rc.2` and `github.com`. It uses the GitHub CLI already available through DSH’s managed subprocess backend; it adds no SDK, login flow, or credential store. The Web conversation card shows grant scope, revocation, and recent change outcomes.
+This bundle adds eighteen read tools, twelve write tools, and a session issue-management grant request to every DSH session, independent of preset. Writes require individual approval unless a live grant covers a supported field update or dependency addition. It targets DSH `0.2.0-rc.2` and `github.com`. It uses the GitHub CLI already available through DSH’s managed subprocess backend; it adds no SDK, login flow, or credential store. The Web conversation card shows grant scope, revocation, and recent change outcomes.
 
 ## Access and execution
 
@@ -186,6 +186,8 @@ The session retains up to 50 grant records and 200 recent attempted changes in m
 The browser bridge exposes only status and revocation, with same-origin, loopback, strict input, and no-store checks. It makes no GitHub requests and cannot approve or execute a mutation. Tools without a grant keep their existing behavior. Source changes require an approved profile update and restart before they affect the running GUI.
 
 ## Packaging and validation
+
+See the [DSH `0.2.0-rc.2` validation results](../../MIGRATION-0.2.0-rc.2.md#validation-results) for actual test outcomes and screenshot limitations.
 
 The portable `personal-web` recipe selects `@local/dsh-github`. The bundle inserts a host plugin row and does not replace the preset roster. Applying it to a profile and restarting DSH require separate approval; editing this source does not update the running GUI.
 

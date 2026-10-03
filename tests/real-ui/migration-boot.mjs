@@ -6,6 +6,7 @@ import { startDisposableHost } from './global-setup.mjs'
 
 const cleanup = await startDisposableHost({
   additionalPlugins: [
+    { name: '@local/dsh-file-intuition', directory: 'packages/dsh-file-intuition' },
     { name: '@local/dsh-project-steward', directory: 'packages/dsh-project-steward' },
     { name: '@local/dsh-google-auth', directory: 'packages/dsh-google-auth' },
     { name: '@local/dsh-google-drive', directory: 'packages/dsh-google-drive' },
@@ -42,7 +43,7 @@ try {
     if (channel === '/local-worktrees') assert.equal(result.result.value.state, 'unavailable')
   }
   console.log(
-    'PASS: fifteen-plugin boot, V4 persisted fixtures, authentication, shell and read-only RPCs',
+    'PASS: seventeen-plugin boot, V4 persisted fixtures, authentication, shell and read-only RPCs',
   )
 } finally {
   await cleanup()
