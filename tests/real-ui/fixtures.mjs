@@ -2,14 +2,15 @@ import { test as base, expect } from '@playwright/test'
 export { openSeededSession } from './session-navigation.mjs'
 
 export const test = base.extend({
-  app: async ({ page, context }, use) => {
+  configuredProvider: [false, { option: true }],
+  app: async ({ page, context, configuredProvider }, use) => {
     const origin = new URL(process.env.DSH_TEST_URL).origin
     await context.route('**/*', (route) =>
       new URL(route.request().url()).origin === origin ? route.continue() : route.abort(),
     )
     await context.addCookies([JSON.parse(process.env.DSH_TEST_COOKIE)])
     await page.goto(process.env.DSH_TEST_URL)
-    await dismissOnboarding(page)
+    await dismissOnboarding(page, { configuredProvider })
     await use(page)
   },
 })
@@ -18,8 +19,21 @@ export { expect }
 // The unconfigured-provider dialog returns after a real page reload. Reuse the
 // same native dismissal for startup and persistence journeys; never configure
 // a provider or bypass the dialog by mutating page/host state.
-export async function dismissOnboarding(page) {
+export async function dismissOnboarding(
+  page,
+  { configuredProvider = false, previewAcknowledged = false } = {},
+) {
   const notice = page.getByRole('button', { name: 'Continue', exact: true })
+  if (configuredProvider) {
+    // A configured provider skips only the provider dialog, not the first-run notice.
+    if (!previewAcknowledged) {
+      await expect(notice).toBeVisible()
+      await notice.click()
+      await expect(notice).toBeHidden()
+    }
+    await expect(page.getByRole('button', { name: 'Settings', exact: true })).toBeVisible()
+    return
+  }
   const configureLater = page.getByRole('button', { name: 'Configure later', exact: true })
   await expect(notice.or(configureLater)).toBeVisible()
   if (await notice.isVisible()) await notice.click()

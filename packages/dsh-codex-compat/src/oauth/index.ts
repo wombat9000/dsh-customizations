@@ -1,0 +1,150 @@
+import type { Context } from '@deepseek-ai/cordis'
+import { createInterface } from 'node:readline/promises'
+import { setTimeout as delay } from 'node:timers/promises'
+import type { AuthorizationInteraction, AuthorizationService } from '@deepseek-ai/dsh-authorization'
+import { credentialKey } from '@deepseek-ai/dsh-credentials'
+
+export const name = 'local-codex-oauth'
+export const inject = ['authorization', 'credentials']
+export const CODEX_CREDENTIAL_KEY = credentialKey('llm-pi-ai', 'openai-codex')
+
+type Input = NodeJS.ReadableStream & { isTTY?: boolean }
+type Output = NodeJS.WritableStream & { isTTY?: boolean }
+type Services = Pick<Context, 'authorization' | 'credentials' | 'logger'>
+
+/** The native adapter registers flows after the authorization service becomes available. */
+async function waitForCodexFlow(
+  authorization: Pick<AuthorizationService, 'describe'>,
+  signal: AbortSignal,
+) {
+  const deadline = Date.now() + 5_000
+  for (;;) {
+    signal.throwIfAborted()
+    const entry = authorization.describe(CODEX_CREDENTIAL_KEY)
+    if (entry) {
+      if (!entry.methods.some((method) => method.id === 'oauth'))
+        throw new Error('Native Codex OAuth method is unavailable.')
+      return
+    }
+    if (Date.now() >= deadline)
+      throw new Error('Codex OAuth flow was not registered by dsh-llm-pi-ai.')
+    await delay(25, undefined, { signal })
+  }
+}
+
+function waitForAbort(signal: AbortSignal | undefined): Promise<string> {
+  if (!signal)
+    return Promise.reject(new Error('Headless Codex callback prompts require cancellation.'))
+  return new Promise((_, reject) => {
+    if (signal.aborted) {
+      reject(signal.reason)
+      return
+    }
+    signal.addEventListener('abort', () => reject(signal.reason), { once: true })
+  })
+}
+
+/** Non-secret native notices and optional callback text only; no token payloads. */
+export function createTerminalInteraction({
+  input = process.stdin,
+  output = process.stderr,
+  signal: ownerSignal,
+}: { input?: Input; output?: Output; signal?: AbortSignal } = {}): AuthorizationInteraction {
+  const interactive = Boolean(input.isTTY && output.isTTY)
+  const writeLine = (message: string) => output.write(`[Codex OAuth] ${message}\n`)
+  return {
+    notify(notice) {
+      if (ownerSignal?.aborted) return
+      writeLine(notice.message)
+      if (notice.url) writeLine(`Open: ${notice.url}`)
+      if (notice.code) writeLine(`Code: ${notice.code}`)
+    },
+    async prompt(prompt) {
+      // Native browser login gives manual input a separate signal from the whole login.
+      const signal =
+        ownerSignal && prompt.signal
+          ? AbortSignal.any([ownerSignal, prompt.signal])
+          : (ownerSignal ?? prompt.signal)
+      signal?.throwIfAborted()
+      if (prompt.kind === 'secret')
+        throw new Error('Codex OAuth refuses unexpected secret prompts.')
+      if (prompt.kind === 'select') {
+        const preferred = interactive ? 'browser' : 'device_code'
+        const selected =
+          prompt.options.find((option) => option.id === preferred) ?? prompt.options[0]
+        if (!selected) throw new Error('Codex OAuth offered no login method.')
+        writeLine(`Using login method: ${selected.label}`)
+        return selected.id
+      }
+      // A native browser callback can win while this optional text fallback waits.
+      if (!interactive) return waitForAbort(signal)
+      const terminal = createInterface({ input, output })
+      try {
+        return await terminal.question(`${prompt.message}\n> `, { signal })
+      } finally {
+        terminal.close()
+      }
+    },
+  }
+}
+
+/** Preserve the native record. Only native authorization can commit a replacement. */
+export async function authorizeCodex(
+  ctx: Services,
+  signal: AbortSignal,
+  { forceLogin = false, output = process.stderr }: { forceLogin?: boolean; output?: Output } = {},
+) {
+  signal.throwIfAborted()
+  // Unlike the old helper's readRecord, this metadata query never exposes grant tokens.
+  const stored = await ctx.credentials.describeRecord(CODEX_CREDENTIAL_KEY)
+  signal.throwIfAborted()
+  if (stored.configured && !forceLogin) {
+    ctx.logger.info('Codex OAuth credential is already configured')
+    return 'already-configured' as const
+  }
+  await waitForCodexFlow(ctx.authorization, signal)
+  signal.throwIfAborted()
+  const interactionLifetime = new AbortController()
+  try {
+    const outcome = await ctx.authorization.begin({
+      key: CODEX_CREDENTIAL_KEY,
+      method: 'oauth',
+      interaction: createTerminalInteraction({
+        output,
+        signal: AbortSignal.any([signal, interactionLifetime.signal]),
+      }),
+      signal,
+    })
+    output.write(
+      `[Codex OAuth] Login ${outcome.status === 'authorized' ? 'complete' : 'cancelled'}\n`,
+    )
+    return outcome.status
+  } finally {
+    // Also retire manual input when native cancellation/settlement wins independently.
+    interactionLifetime.abort(new Error('Codex OAuth interaction ended.'))
+  }
+}
+
+/** Reviewed terminal helper, independent of Fast and of provider/model configuration. */
+export async function apply(ctx: Context) {
+  const activation = new AbortController()
+  const release = ctx.effect(
+    () => () => activation.abort(new Error('Codex OAuth component disposed.')),
+  )
+  await waitForCodexFlow(ctx.authorization, activation.signal)
+  release()
+  ctx.effect(() => {
+    const controller = new AbortController()
+    void authorizeCodex(ctx, controller.signal, {
+      forceLogin: process.env.DSH_CODEX_REAUTH === '1',
+    }).catch(() => {
+      if (controller.signal.aborted) return
+      // Provider failures may contain sensitive data; never echo their raw text.
+      const message =
+        'Codex OAuth login failed. Retry sign-in using the native Models page or DSH_CODEX_REAUTH=1.'
+      ctx.logger.error(message)
+      process.stderr.write(`[Codex OAuth] ${message}\n`)
+    })
+    return () => controller.abort(new Error('Codex OAuth component disposed.'))
+  })
+}
