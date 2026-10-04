@@ -13,10 +13,12 @@ interface Context {
   }
 }
 export function apply(ctx: Context) {
-  ctx.slots.inject('conversation.input.left', () =>
+  // RC2: this session-scoped list renders immediately before the native model picker.
+  // It supplies the same session/projection props as input.left and replaces no native control.
+  ctx.slots.inject('conversation.input.right', () =>
     ctx.slots.register<FastToggleProps>(
       {
-        name: 'conversation.input.left',
+        name: 'conversation.input.right',
         id: 'local-codex-fast',
         order: 10,
         inject: () => ({ rpc: ctx.get('connection').rpc }),

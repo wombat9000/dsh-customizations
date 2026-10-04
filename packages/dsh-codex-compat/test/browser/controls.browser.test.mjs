@@ -1,7 +1,7 @@
 import React, { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, expect, test, vi } from 'vitest'
-import { page } from 'vitest/browser'
+import { page, userEvent } from 'vitest/browser'
 import { FastToggle, IntegrationSettings } from '../../client/fast/controls.tsx'
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 let root, container
@@ -16,6 +16,10 @@ const status = (overrides) => ({
   requested: false,
   supported: true,
   sessionRevision: 0,
+  subagentsRequested: false,
+  subagentsRevision: 0,
+  sessionOffPending: false,
+  subagentsOffPending: false,
   observation: 'none',
   notice: null,
   ...overrides,
@@ -69,7 +73,7 @@ test('stale reads cannot undo a successful Fast toggle; cost and unsupported exp
   await expect.element(toggle).toHaveAttribute('aria-checked', 'true')
   await act(async () => slow.resolve({ ok: true, value: status() }))
   await expect.element(toggle).toHaveAttribute('aria-checked', 'true')
-  await act(async () => page.getByText('Higher usage', { exact: true }).click())
+  await act(async () => page.getByRole('button', { name: 'Fast options', exact: true }).click())
   await expect.element(page.getByText(/2.5× included usage/)).toBeVisible()
 })
 
@@ -113,6 +117,82 @@ test('session changes reject old responses and malformed status never enables Fa
     )
   await expect.element(page.getByRole('switch', { name: 'Codex Fast mode' })).toBeDisabled()
 })
+
+test('second-stage Subagents Fast works while the main model is unsupported and closes accessibly', async () => {
+  let saved = status({ supported: false, notice: 'Unsupported parent model' })
+  const rpc = {
+    call: vi.fn(async (_channel, method, payload) => {
+      if (method === 'subagents-set') {
+        expect(payload).toEqual({ sessionId: 'session-a', enabled: true, revision: 0 })
+        saved = { ...saved, subagentsRequested: true, subagentsRevision: 1 }
+      }
+      return { ok: true, value: saved }
+    }),
+  }
+  await mount(FastToggle, { rpc, sessionId: 'session-a', useProjection: () => projection })
+  const options = page.getByRole('button', { name: 'Fast options', exact: true })
+  await act(async () => options.click())
+  const children = page.getByRole('switch', { name: 'Subagents Fast', exact: true })
+  await expect.element(children).toHaveAttribute('aria-checked', 'false')
+  await expect.element(children).toBeEnabled()
+  await expect.element(page.getByText(/Independent of this session/)).toBeVisible()
+  await act(async () => children.click())
+  await expect.element(children).toHaveAttribute('aria-checked', 'true')
+  await expect
+    .element(page.getByRole('switch', { name: 'Codex Fast mode' }))
+    .toHaveAttribute('aria-checked', 'false')
+  await expect.element(page.getByRole('switch', { name: 'Codex Fast mode' })).toBeDisabled()
+  await expect.element(options).toHaveTextContent('Subagents On ▾')
+  await act(async () => userEvent.keyboard('{Escape}'))
+  await expect.element(options).toHaveAttribute('aria-expanded', 'false')
+  await expect.element(options).toHaveFocus()
+  await act(async () => options.click())
+  // An outside pointer interaction closes the disclosure without changing the policy.
+  await act(async () => userEvent.click(document.body))
+  await expect.element(options).toHaveAttribute('aria-expanded', 'false')
+})
+
+for (const scope of ['session', 'subagents']) {
+  test(`failed ${scope} Off exposes an explicit retry that never sends Enable`, async () => {
+    const requested = scope === 'session' ? 'requested' : 'subagentsRequested'
+    const pending = scope === 'session' ? 'sessionOffPending' : 'subagentsOffPending'
+    const label = scope === 'session' ? 'Codex Fast mode' : 'Subagents Fast'
+    let saved = status({ [requested]: true })
+    let writes = 0
+    const rpc = {
+      call: vi.fn(async (_channel, method, payload) => {
+        if (method === `${scope}-set`) {
+          expect(payload.enabled).toBe(false)
+          writes++
+          saved = { ...saved, [requested]: false, [pending]: writes === 1 }
+          if (writes === 1) return { ok: false, error: { message: 'Retry Off to persist it.' } }
+        }
+        return { ok: true, value: saved }
+      }),
+    }
+    await mount(FastToggle, { rpc, sessionId: 'session-a', useProjection: () => projection })
+    await act(async () => page.getByRole('button', { name: 'Fast options', exact: true }).click())
+    const control = page.getByRole('switch', { name: label, exact: true })
+    await act(async () => control.click())
+    await expect.element(control).toHaveAttribute('aria-checked', 'false')
+    await expect.element(page.getByRole('alert')).toHaveTextContent('Retry Off to persist it.')
+    if (scope === 'session') {
+      saved = { ...saved, provider: 'another-provider', model: 'another/model', supported: false }
+      await act(() => window.dispatchEvent(new Event('focus')))
+    }
+    const retryLabel = scope === 'session' ? 'Retry session Off' : 'Retry Subagents Off'
+    const retry = page.getByRole('button', { name: retryLabel, exact: true })
+    await act(async () => retry.click())
+    expect(writes).toBe(2)
+    await expect.element(retry).not.toBeInTheDocument()
+    await expect.element(control).toHaveAttribute('aria-checked', 'false')
+    expect(
+      rpc.call.mock.calls
+        .filter((c) => c[1] === `${scope}-set`)
+        .every((c) => c[2].enabled === false),
+    ).toBe(true)
+  })
+}
 
 test('integration recovery is independent and can refresh after a transient status failure', async () => {
   const rpc = {

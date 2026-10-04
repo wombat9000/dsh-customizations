@@ -20,6 +20,10 @@ export function isFastStatus(value) {
         typeof value.requested === 'boolean' &&
         typeof value.supported === 'boolean' &&
         Number.isSafeInteger(value.sessionRevision) &&
+        typeof value.subagentsRequested === 'boolean' &&
+        Number.isSafeInteger(value.subagentsRevision) &&
+        typeof value.sessionOffPending === 'boolean' &&
+        typeof value.subagentsOffPending === 'boolean' &&
         ['none', 'requested', 'error'].includes(String(value.observation)) &&
         (value.notice === null || typeof value.notice === 'string'));
 }

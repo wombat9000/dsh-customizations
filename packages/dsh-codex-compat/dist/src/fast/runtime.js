@@ -20,7 +20,12 @@ const spec = defineDomain({
         schema: z.object({ enabled: z.boolean(), revision: z.number().int().nonnegative() }).strict(),
         initial: { enabled: true, revision: 0 },
     },
-    tables: { sessions: domainTable(record) },
+    tables: {
+        sessions: domainTable(record),
+        // Additive v1 table: existing JSON units load an absent table as empty.
+        // This policy belongs to the root session, not its selected provider/model.
+        subagents: domainTable(z.object({ enabled: z.boolean(), revision: z.number().int().nonnegative() }).strict()),
+    },
 });
 class UserError extends Error {
 }
@@ -44,6 +49,8 @@ export class CodexFastRuntime {
     observations = new Map();
     sessionOff = new Set();
     sessionEpoch = new Map();
+    subagentsOff = new Set();
+    subagentsEpoch = new Map();
     ctx;
     domain;
     constructor(ctx, domain) {
@@ -109,6 +116,7 @@ export class CodexFastRuntime {
             saved?.enabled === true &&
             saved.provider === selected.provider &&
             saved.model === selected.model;
+        const subagents = this.domain?.table('subagents').get(sessionId);
         const observed = this.observations.get(sessionId);
         const integration = this.integrationStatus();
         const supported = this.bridge.supports(selected.provider, selected.model);
@@ -120,6 +128,10 @@ export class CodexFastRuntime {
             requested,
             supported,
             sessionRevision: saved?.revision ?? 0,
+            subagentsRequested: !this.subagentsOff.has(sessionId) && subagents?.enabled === true,
+            subagentsRevision: subagents?.revision ?? 0,
+            sessionOffPending: this.sessionOff.has(sessionId) && saved?.enabled === true,
+            subagentsOffPending: this.subagentsOff.has(sessionId) && subagents?.enabled === true,
             observation: observed && observed.model === selected.model ? observed.kind : 'none',
             notice: !supported
                 ? 'This provider/model is not on the reviewed Codex Fast allowlist.'
@@ -128,24 +140,60 @@ export class CodexFastRuntime {
                     : null,
         };
     }
-    /** Only ordinary LOOP requests in the exact opted-in top-level session qualify. */
+    /** Follow native delegation only. A top-level fork's parentSession is seed lineage, not inheritance. */
+    policyOwner(sessionId) {
+        const visited = new Set();
+        const checks = [];
+        let id = sessionId;
+        while (!visited.has(id)) {
+            visited.add(id);
+            const agent = this.ctx.agents.get(SessionId(id));
+            if (!agent)
+                return null;
+            const currentId = SessionId(id);
+            checks.push(() => this.ctx.agents.get(currentId) === agent);
+            const header = agent.session.header;
+            const depth = header.delegationDepth ?? 0;
+            if (header.origin !== 'subagent')
+                return depth === 0
+                    ? {
+                        sessionId: id,
+                        subagent: id !== sessionId,
+                        live: () => checks.every((check) => check()),
+                    }
+                    : null;
+            if (!Number.isSafeInteger(depth) || depth < 1 || !header.parentSession)
+                return null;
+            const parent = this.ctx.agents.get(header.parentSession);
+            if (!parent ||
+                (parent.session.header.delegationDepth ?? 0) !== depth - 1 ||
+                !this.ctx.agents.isOwnedBy(currentId, parent))
+                return null;
+            checks.push(() => this.ctx.agents.isOwnedBy(currentId, parent));
+            id = String(header.parentSession);
+        }
+        return null;
+    }
+    /** Ordinary LOOP calls use either this session's choice or its root's independent child policy. */
     stream(options, next) {
-        const saved = options.sessionId === undefined
-            ? undefined
-            : this.domain?.table('sessions').get(String(options.sessionId));
-        const agent = options.sessionId === undefined ? undefined : this.ctx.agents.get(options.sessionId);
+        const owner = options.sessionId === undefined ? null : this.policyOwner(String(options.sessionId));
+        const saved = owner
+            ? this.domain?.table(owner.subagent ? 'subagents' : 'sessions').get(owner.sessionId)
+            : undefined;
+        const revoked = owner?.subagent ? this.subagentsOff : this.sessionOff;
         const target = this.enabled() &&
-            !this.sessionOff.has(String(options.sessionId)) &&
+            !!owner &&
+            !revoked.has(owner.sessionId) &&
             isAgentLoopRequest(options) &&
             options.purpose === undefined &&
             supportsFast(options.provider, options.model) &&
-            agent?.session.header.origin !== 'subagent' &&
-            (agent?.session.header.delegationDepth ?? 0) === 0 &&
-            !!agent &&
             saved?.enabled === true &&
-            saved.model === options.model &&
-            saved.provider === options.provider;
-        if (!target)
+            (owner.subagent ||
+                ('model' in saved &&
+                    'provider' in saved &&
+                    saved.model === options.model &&
+                    saved.provider === options.provider));
+        if (!target || !owner)
             return this.bridge.stream(options, next, null);
         try {
             this.bridge.enable();
@@ -154,11 +202,17 @@ export class CodexFastRuntime {
             this.observations.set(String(options.sessionId), { model: options.model, kind: 'error' });
             throw new FastBridgeError();
         }
+        // Child models qualify independently of the parent's selected model/provider.
+        // An unreviewed API/endpoint/catalog entry remains a native Standard call.
+        if (owner.subagent && !this.bridge.supports(options.provider, options.model))
+            return this.bridge.stream(options, next, null);
         const sessionId = String(options.sessionId);
         const runtime = this;
         const live = () => runtime.enabled() &&
-            !runtime.sessionOff.has(sessionId) &&
-            runtime.domain?.table('sessions').get(sessionId) === saved;
+            !revoked.has(owner.sessionId) &&
+            owner.live() &&
+            runtime.domain?.table(owner.subagent ? 'subagents' : 'sessions').get(owner.sessionId) ===
+                saved;
         const stream = this.bridge.stream(options, next, {
             live,
             report() {
@@ -228,11 +282,51 @@ export class CodexFastRuntime {
                     }),
                 };
             }
+            if (endpoint === 'subagents-set') {
+                const value = input(raw, ['sessionId', 'enabled', 'revision']);
+                if (!identity(value.sessionId) ||
+                    typeof value.enabled !== 'boolean' ||
+                    !revision(value.revision))
+                    fail('Invalid subagent Fast setting.');
+                const sessionId = value.sessionId;
+                this.selection(sessionId); // Only a human's top-level session can own this policy.
+                if (value.enabled === false) {
+                    this.subagentsOff.add(sessionId);
+                    this.subagentsEpoch.set(sessionId, (this.subagentsEpoch.get(sessionId) ?? 0) + 1);
+                }
+                const epoch = this.subagentsEpoch.get(sessionId) ?? 0;
+                return {
+                    ok: true,
+                    value: await this.queued(async () => {
+                        if (!this.domain)
+                            throw new UserError('Fast settings storage is unavailable.');
+                        if (signal.aborted)
+                            fail('Fast settings change was cancelled.');
+                        const status = this.sessionStatus(sessionId);
+                        if (value.enabled === true &&
+                            (status.subagentsRevision !== value.revision ||
+                                epoch !== (this.subagentsEpoch.get(sessionId) ?? 0)))
+                            fail('Subagent Fast settings changed. Refresh before trying again.');
+                        if (value.enabled === true && (!status.enabled || !status.available))
+                            fail('Enable the Fast integration first.');
+                        await this.domain.table('subagents').put(sessionId, {
+                            enabled: value.enabled,
+                            revision: status.subagentsRevision + 1,
+                        });
+                        if (epoch === (this.subagentsEpoch.get(sessionId) ?? 0))
+                            this.subagentsOff.delete(sessionId);
+                        return this.sessionStatus(sessionId);
+                    }),
+                };
+            }
             if (endpoint !== 'session-set')
                 fail('Unknown Codex Fast operation.');
             const value = input(raw, ['sessionId', 'provider', 'model', 'enabled', 'revision']);
             if (!identity(value.sessionId) ||
-                !identity(value.model) ||
+                typeof value.model !== 'string' ||
+                value.model.length < 1 ||
+                value.model.length > 200 ||
+                (value.enabled === true && !identity(value.model)) ||
                 value.provider !== 'openai-codex' ||
                 typeof value.enabled !== 'boolean' ||
                 !revision(value.revision))
@@ -260,9 +354,11 @@ export class CodexFastRuntime {
                         fail('The session model or Fast setting changed. Refresh before trying again.');
                     if (value.enabled === true && (!status.enabled || !status.available || !status.supported))
                         fail('Enable the Fast integration and select a supported Codex model first.');
+                    const previous = this.domain.table('sessions').get(sessionId);
                     await this.domain.table('sessions').put(value.sessionId, {
                         provider: 'openai-codex',
-                        model: value.model,
+                        // Recovery Off disables the saved choice, even if the UI now shows another route.
+                        model: value.enabled === false && previous ? previous.model : value.model,
                         enabled: value.enabled,
                         revision: status.sessionRevision + 1,
                     });
