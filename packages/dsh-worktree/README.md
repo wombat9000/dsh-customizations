@@ -1,10 +1,39 @@
-# Worktree workers
+# Session worktrees and workers
 
-Manage Git worktrees from a coordinating DSH session and dispatch fresh background workers into them. The coordinator stays in its original checkout. Workers use fixed creation-time directories; this package does not modify DSH internals, switch session directories, or create sidebar workspace records.
+Start ordinary interactive DSH sessions in isolated Git worktrees, or dispatch fresh background workers from a coordinating session. Interactive sessions get their own native Workspace and archive-cleanup lifecycle. Delegated workers keep their existing one-shot workflow. This package does not change DSH core or mutate existing session directories.
 
 Targets **DSH 0.2.0-rc.2**. Uses its public agent, subagent, sandbox-policy, tool, and background-job APIs. Git and Node.js 22.19 or newer must be available on the **DSH host**. Paths refer to that host's filesystem; remote filesystem or container-path translation is not implemented.
 
 Use the repository's target-pinned launcher and approved [profile setup](../../README.md#apply-the-starter-profile). The RPC-owner compatibility patch remains required in every independent launcher/profile graph. See the [migration handoff](../../MIGRATION-0.2.0-rc.2.md) for validation results and limitations. No global DSH installation or live profile changes automatically.
+
+## Start an interactive session in a worktree
+
+Creation, cleanup, and restoration require **Full access** for the affected session. The source must be a local Git repository with a conventional original `.git` directory. This feature does not install dependencies or change your profile.
+
+1. Choose a workspace and start a blank session. Before the first prompt, enable **Use worktree** in the workspace controls. The toggle starts off and remembers your choice per source workspace.
+2. Wait for creation to finish. DSH opens a new ordinary interactive session with its own fixed working directory and native Workspace. It copies the source's settled preset, model, reasoning effort, plan mode, sandbox mode, and approval policy. It does not copy in-flight settings changes.
+3. Continue your draft in the new session. The native workspace handoff preserves draft text and reuploads pending attachment receipts for the new session. It does not preserve every editor selection, undo entry, or attachment-chip identity.
+
+If creation or preference persistence fails, the checked toggle keeps submission blocked. Explicitly turn off **Use worktree** to continue in the shared checkout. Turning it off never removes an existing checkout. A late creation stays visible in **Session worktrees** without navigating away from a newer selection.
+
+Each checkout uses `.dsh/worktrees/session-<UUID>` and branch `worktree/session-<UUID>`. Use that assigned branch for commits and pull requests. Branch renaming or switching stops managed execution until you repair its recorded identity. If the nested checkout directory is not already ignored, creation adds `/.dsh/worktrees/` to the repository-local `.git/info/exclude`. It does not edit tracked ignore files or global Git configuration.
+
+The sidebar shows a separate native Workspace titled **Worktree: <short UUID>**. Native workspace nesting can group it beneath the original repository. Owned session rows provide an idle branch marker, worktree details on hover, and a branch-copy action. Native running-status indicators take priority over the idle marker.
+
+### Archive and recover
+
+Archive through the native session action or **Session worktrees → Archive session**. The latter also supports unused blank sessions.
+
+- If the checkout is verified clean and no session, worker, or known background job may use it, archive reconciliation removes it. Background jobs without a surfaced working directory conservatively defer cleanup, including jobs whose producer Agent has closed.
+- If files are dirty, the checkout remains. The cleanup dialog includes tracked, untracked, and ignored files. **Keep checkout** preserves them. **Discard files and remove checkout** permanently discards the exact reviewed snapshot. The confirmation expires after three minutes; file, HEAD, or archive-state changes require another review.
+- If a branch tip is safely merged into the recorded local source branch, cleanup deletes that branch with an expected-tip transaction. Otherwise, it keeps the branch. Cleanup never merges work or deletes another branch.
+- If permissions, ownership, activity, snapshot limits, or a Git outcome cannot be verified, cleanup retains pending recovery state. Review the message in **Session worktrees**, stop relevant work, and retry **Review cleanup**.
+
+Cleanup keeps immutable committed-tip recovery refs under `refs/dsh/worktree-sessions/`. These refs intentionally remain after branch deletion, so restoration survives source-branch rewrites and Git garbage collection. **Restore and open** reconstructs the saved committed checkout and repairs native membership before unarchiving. It cannot recover discarded uncommitted files. For a retained checkout, restoration preserves newer commits and existing outputs rather than resetting them.
+
+The execution guard prevents a removed or unverified owned checkout from silently resuming in a recreated plain directory. Destructive previews stop above 10,000 entries or 64 MiB of inspected content. Ordinary execution and retained-checkout recovery use lightweight ownership checks, so large outputs alone do not block them. Unsafe directory or Git-metadata symlinks, submodules, checkout filters, path or branch collisions, and stale worktree registration can require manual inspection instead of forced cleanup.
+
+Isolation applies to the checkout and branch, not to Git metadata, credentials, external services, or processes outside DSH. Keep external terminals and editors out of a checkout you archive. The public API does not expose host-wide filesystem occupancy. No DSH core files or native registration entries are modified.
 
 ## Install and select the preset
 
@@ -61,7 +90,7 @@ Git inspection includes tracked and untracked files, but excludes ignored files 
 | `worktree_list`     | None                                                         | Registered checkouts, branches, busy state, and this agent's active/latest job IDs |
 | `worktree_dispatch` | `worktree`, `task`, optional `mode`, optional `context_from` | Background job ID immediately                                                      |
 
-`name` is a unique lowercase slug, up to 48 letters, digits, or hyphens, starting with a letter or digit. Creation uses branch `worktree/<name>` at the invoking checkout's current `HEAD` and directory `<original-checkout>/.dsh/worktrees/<name>`. It does not copy uncommitted changes, install dependencies, commit changes, or reuse existing branches. Add `.dsh/worktrees/` to your repository's ignore rules if needed; the plugin does not edit them automatically.
+`name` is a unique lowercase slug, up to 48 letters, digits, or hyphens, starting with a letter or digit. Creation uses branch `worktree/<name>` at the invoking checkout's current `HEAD` and directory `<original-checkout>/.dsh/worktrees/<name>`. It does not copy uncommitted changes, install dependencies, commit changes, or reuse existing branches. For this worker-tool workflow, add `.dsh/worktrees/` to your repository's ignore rules if needed. Only interactive-session creation adds a verified repository-local exclude rule automatically.
 
 **Creation requires the coordinator's Full access mode**, because Git updates protected shared repository metadata. The plugin refuses lower modes instead of bypassing them or silently escalating. Git post-checkout hooks are disabled for creation. Configured smudge/process filters cause creation to refuse; set up such repositories manually rather than silently bypassing required content transforms.
 
@@ -76,7 +105,7 @@ Dispatch accepts an existing registered linked worktree from this repository, in
 3. Finish independent coordination work while the jobs run. When only workers remain, end the turn with a brief progress update naming pending jobs and the next action. After completion notifications arrive, collect each report with `job_output`; do not use `wait: true` merely to supervise workers.
 4. Dispatch `mode: read-only` review assignments to the same paths. Optionally set `context_from` to the completed implementation job ID.
 5. Dispatch fresh write-mode workers to address review findings.
-6. Review and integrate retained changes explicitly. The plugin never merges or deletes worktrees.
+6. Review and integrate retained changes explicitly. Worker tools never merge or delete their checkouts. Interactive-session archive cleanup applies only to its own durable ownership records.
 
 One-shot means **one assignment**, not one model call. A worker can run many steps and tools. Each subsequent dispatch creates a new session; `send_message` and `interrupt_agent` do not continue these workers. Cancel with `job_kill`.
 
@@ -109,7 +138,7 @@ Jobs and report mappings are **process-local**. They do not survive a harness re
 
 Dispatch uses DSH's public one-shot subagent registry with a single-use provider, preserving native `subagent/start` and `subagent/end` events. The provider registration is removed after startup; the accepted run remains owned by the parent and job until disposal.
 
-No changes to the Environment plugin are necessary: it already reads the viewed live session's directory. Native subagent navigation is reused through parent lineage and one-shot descriptors; this package registers no top-level workspaces or persistent UI.
+No changes to the Environment plugin are necessary: it already reads the viewed live session's directory. Native subagent navigation is reused through parent lineage and one-shot descriptors; delegated workers do not register native Workspaces. Interactive sessions register their own Workspaces and persistent recovery state, separately from worker navigation.
 
 ## Development
 

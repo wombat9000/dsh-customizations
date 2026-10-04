@@ -9,6 +9,7 @@ import * as git from './git.js'
 import { startRegisteredWorker } from './worker.js'
 import { CHANNEL, createSnapshotRpcHandler } from './snapshot.js'
 import { registerWorktreeTools } from './tools.js'
+import { mountSessionWorktrees } from './session-host.js'
 
 export const name = 'worktree-workers'
 const MAX_REPORTS = 100
@@ -62,6 +63,7 @@ export class WorktreeManager {
   settleRun: typeof settleRun
   active: Map<string, ActiveRun>
   creating: Set<string>
+  readonly checkoutOperations = new Set<string>()
   history: WeakMap<Agent, Map<string, RunRecord>>
   constructor(ctx: Context, dependencies: Dependencies = {}) {
     this.ctx = ctx
@@ -163,6 +165,8 @@ export class WorktreeManager {
     )
     signal?.throwIfAborted()
     this.cwd(parent)
+    if (this.checkoutOperations.has(worktree.path))
+      throw new Error('This checkout is being cleaned up or restored; retry after it finishes')
     if (this.activeWorktrees().has(worktree.path))
       throw new Error(
         'This worktree already has an active assignment; collect or cancel its job before dispatching another',
@@ -288,6 +292,11 @@ export default class WorktreeService extends Service {
     // Preset-neutral inherited contributions, owned by this service's Fiber.
     // DSH applies each agent's restrictions before lookup or execution.
     registerWorktreeTools(ctx, this)
+    ctx.inject(['sessionController', 'workspaceRegistry', 'storageDomain'], async (scope) => {
+      // Cordis initializers return void, not the runtime instance. Returning
+      // that object prevents the injected scope's registrations from activating.
+      await mountSessionWorktrees(scope, this.manager)
+    })
     ctx.inject(['connection', 'webServer'], (connectionCtx) => {
       connectionCtx.effect(() =>
         connectionCtx.connection.rpc.handle(CHANNEL, createSnapshotRpcHandler(ctx, this.manager)),

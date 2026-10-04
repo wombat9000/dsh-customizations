@@ -248,6 +248,973 @@ function watchCapability({ sessions, rpc, register, interval = setInterval, clea
 }
 
 //#endregion
+//#region client/session-contracts.ts
+function shellSeats(ctx) {
+	return ctx.slots;
+}
+
+//#endregion
+//#region shared/session-contracts.ts
+const SESSION_CHANNEL = "/local-worktree-sessions";
+
+//#endregion
+//#region client/session-store.ts
+function errorMessage(error) {
+	return error instanceof Error ? error.message : "Session worktree request failed.";
+}
+function currentSession(ctx) {
+	const selected = Object.values(ctx.sessions.list.getSnapshot().byId).filter((row) => (row.retainedBy.mainView ?? 0) > 0);
+	return selected.length === 1 ? selected[0]?.id : void 0;
+}
+function createSessionRequest(ctx) {
+	const rpc = ctx.connection.rpc;
+	return async (endpoint, input, signal) => {
+		const response = await rpc.call(SESSION_CHANNEL, endpoint, input, signal);
+		if (typeof response !== "object" || response === null || !("ok" in response)) throw new Error("Invalid session worktree response.");
+		const result = response;
+		if (!result.ok) throw new Error(`${result.error.code}: ${result.error.message}`);
+		return result.value;
+	};
+}
+function createSessionStore(ctx) {
+	const request = createSessionRequest(ctx);
+	const listeners = /* @__PURE__ */ new Set();
+	const reviewed = /* @__PURE__ */ new Set();
+	const blocks = /* @__PURE__ */ new Map();
+	let state = {
+		sessionId: currentSession(ctx),
+		status: null,
+		records: [],
+		loading: true,
+		error: null,
+		readError: null,
+		busy: /* @__PURE__ */ new Set(),
+		dialog: null
+	};
+	let disposed = false;
+	let controller = null;
+	let pendingRefresh = false;
+	let reviewing = false;
+	const publish = (patch) => {
+		if (disposed) return;
+		state = {
+			...state,
+			...patch
+		};
+		for (const listener of listeners) listener();
+	};
+	const setBusy = (id, busy) => {
+		const next = new Set(state.busy);
+		if (busy) next.add(id);
+		else next.delete(id);
+		publish({ busy: next });
+	};
+	const clearBlock = (id) => {
+		const block = blocks.get(id);
+		if (!block) return;
+		if (ctx.conversation.blocks.storeFor(id).getSnapshot() === block) ctx.conversation.blocks.set(id, void 0);
+		blocks.delete(id);
+	};
+	const block = (id, reason = "Preparing session worktree…") => {
+		const own = blocks.get(id);
+		const current = ctx.conversation.blocks.storeFor(id).getSnapshot();
+		if (current && current !== own) return;
+		if (own?.reason === reason && current === own) return;
+		const value = { reason };
+		blocks.set(id, value);
+		ctx.conversation.blocks.set(id, value);
+	};
+	async function refresh() {
+		if (disposed || document.visibilityState === "hidden") return;
+		if (controller) {
+			pendingRefresh = true;
+			return;
+		}
+		const selected = state.sessionId;
+		const abort = new AbortController();
+		controller = abort;
+		try {
+			const status = await request("status", selected ? { sessionId: selected } : {}, abort.signal);
+			if (disposed || abort.signal.aborted || selected !== state.sessionId) return;
+			publish({
+				status,
+				records: status.records,
+				loading: false,
+				readError: null
+			});
+			reviewNext();
+		} catch (error) {
+			if (!disposed && !abort.signal.aborted && selected === state.sessionId) publish({
+				loading: false,
+				readError: errorMessage(error)
+			});
+		} finally {
+			if (controller === abort) controller = null;
+			if (pendingRefresh && !disposed) {
+				pendingRefresh = false;
+				refresh();
+			}
+		}
+	}
+	async function cleanup(sessionId) {
+		if (disposed || state.busy.has(sessionId)) return;
+		setBusy(sessionId, true);
+		reviewed.add(sessionId);
+		try {
+			const result = await request("cleanup", { sessionId });
+			if (disposed) return;
+			if (result.state === "confirm" && result.confirmation) publish({
+				dialog: {
+					record: result.record,
+					confirmation: result.confirmation
+				},
+				error: null
+			});
+			else publish({ error: result.state === "pending" ? result.record.message : null });
+		} catch (error) {
+			publish({ error: errorMessage(error) });
+		} finally {
+			setBusy(sessionId, false);
+			refresh();
+		}
+	}
+	async function reviewNext() {
+		if (disposed || reviewing || state.dialog) return;
+		const pending = state.records.find((row) => row.state === "pending" && !reviewed.has(row.sessionId));
+		if (!pending) return;
+		reviewing = true;
+		await cleanup(pending.sessionId);
+		reviewing = false;
+		if (!state.dialog) reviewNext();
+	}
+	const selectionChanged = () => {
+		const next = currentSession(ctx);
+		if (next === state.sessionId) return;
+		controller?.abort();
+		const previous = state.sessionId;
+		if (previous && !state.busy.has(previous)) clearBlock(previous);
+		publish({
+			sessionId: next,
+			status: null,
+			loading: true,
+			error: null,
+			readError: null
+		});
+		refresh();
+	};
+	return {
+		request,
+		getSnapshot: () => state,
+		subscribe: (listener) => {
+			listeners.add(listener);
+			return () => {
+				listeners.delete(listener);
+			};
+		},
+		refresh,
+		block,
+		clearBlock,
+		report: (error) => publish({ error: errorMessage(error) }),
+		dismissError: () => publish({
+			error: null,
+			readError: null
+		}),
+		cleanup,
+		keepCheckout() {
+			publish({ dialog: null });
+			reviewNext();
+		},
+		async discardCheckout() {
+			const dialog = state.dialog;
+			if (!dialog || disposed || state.busy.has(dialog.record.sessionId)) return;
+			const sessionId = dialog.record.sessionId;
+			setBusy(sessionId, true);
+			try {
+				const result = await request("cleanup", {
+					sessionId,
+					confirmationId: dialog.confirmation.id
+				});
+				if (result.state !== "removed") throw new Error(result.record.message || "Cleanup needs a new review.");
+				publish({
+					dialog: null,
+					error: null
+				});
+			} catch (error) {
+				publish({ error: errorMessage(error) });
+			} finally {
+				setBusy(sessionId, false);
+				refresh();
+				reviewNext();
+			}
+		},
+		async archive(sessionId) {
+			if (disposed || state.busy.has(sessionId)) return;
+			setBusy(sessionId, true);
+			try {
+				await ctx.uiWorkspace.archiveSession(sessionId);
+				publish({ error: null });
+			} catch (error) {
+				publish({ error: errorMessage(error) });
+			} finally {
+				setBusy(sessionId, false);
+				refresh();
+			}
+		},
+		async restore(sessionId) {
+			if (disposed || state.busy.has(sessionId)) return;
+			setBusy(sessionId, true);
+			try {
+				const record = await request("restore", { sessionId });
+				reviewed.delete(sessionId);
+				if (disposed) return;
+				await ctx.sessions.refresh();
+				if (!disposed) ctx.uiWorkspace.openSession(record.sessionId);
+			} catch (error) {
+				publish({ error: errorMessage(error) });
+			} finally {
+				setBusy(sessionId, false);
+				refresh();
+			}
+		},
+		async create(sessionId, onCreated) {
+			if (disposed || state.busy.has(sessionId)) return;
+			setBusy(sessionId, true);
+			block(sessionId);
+			try {
+				const record = await request("create", {
+					sessionId,
+					requestId: crypto.randomUUID()
+				});
+				if (disposed) return;
+				await ctx.sessions.refresh();
+				if (!disposed) onCreated(record);
+			} catch (error) {
+				publish({ error: errorMessage(error) });
+			} finally {
+				if (currentSession(ctx) !== sessionId) clearBlock(sessionId);
+				setBusy(sessionId, false);
+				refresh();
+			}
+		},
+		start() {
+			const unsubscribe = ctx.sessions.list.subscribe(selectionChanged);
+			const onVisible = () => {
+				if (document.visibilityState === "hidden") controller?.abort();
+				else refresh();
+			};
+			document.addEventListener("visibilitychange", onVisible);
+			const timer = setInterval(() => {
+				refresh();
+			}, 7500);
+			refresh();
+			return () => {
+				disposed = true;
+				controller?.abort();
+				clearInterval(timer);
+				unsubscribe();
+				document.removeEventListener("visibilitychange", onVisible);
+				for (const id of blocks.keys()) clearBlock(id);
+				listeners.clear();
+			};
+		}
+	};
+}
+
+//#endregion
+//#region client/session-components.tsx
+const surface = {
+	color: "var(--dsw-alias-label-primary)",
+	background: "var(--dsw-alias-bg-base)",
+	border: "1px solid var(--dsw-alias-border-l3)",
+	borderRadius: 12
+};
+const action = {
+	font: "inherit",
+	color: "inherit",
+	background: "var(--dsw-alias-interactive-bg-hover)",
+	border: "1px solid var(--dsw-alias-border-l3)",
+	borderRadius: 8,
+	padding: "6px 12px",
+	cursor: "pointer"
+};
+function BranchIcon({ size = 16 }) {
+	return /* @__PURE__ */ react.default.createElement("svg", {
+		width: size,
+		height: size,
+		viewBox: "0 0 24 24",
+		fill: "none",
+		stroke: "currentColor",
+		strokeWidth: "1.6",
+		"aria-hidden": "true"
+	}, /* @__PURE__ */ react.default.createElement("circle", {
+		cx: "6",
+		cy: "5",
+		r: "2"
+	}), /* @__PURE__ */ react.default.createElement("circle", {
+		cx: "6",
+		cy: "19",
+		r: "2"
+	}), /* @__PURE__ */ react.default.createElement("circle", {
+		cx: "18",
+		cy: "5",
+		r: "2"
+	}), /* @__PURE__ */ react.default.createElement("path", { d: "M6 7v10m12-10c0 6-12 3-12 8" }));
+}
+function Dialog({ title, children, footer, onClose, busy = false }) {
+	const root = (0, react.useRef)(null);
+	const close = (0, react.useRef)(onClose);
+	close.current = onClose;
+	(0, react.useEffect)(() => {
+		const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+		const node = root.current;
+		node?.querySelector("button:not(:disabled)")?.focus();
+		const handleKey = (event) => {
+			if (event.key === "Escape") {
+				event.preventDefault();
+				event.stopPropagation();
+				if (!busy) close.current();
+			}
+			if (event.key !== "Tab" || !node) return;
+			const controls = [...node.querySelectorAll("button:not(:disabled), input:not(:disabled), [tabindex=\"0\"]")];
+			const first = controls[0];
+			const last = controls.at(-1);
+			if (!first || !last) {
+				event.preventDefault();
+				node.focus();
+				return;
+			}
+			if (event.shiftKey && (document.activeElement === first || !node.contains(document.activeElement))) {
+				event.preventDefault();
+				last.focus();
+			}
+			if (!event.shiftKey && (document.activeElement === last || !node.contains(document.activeElement))) {
+				event.preventDefault();
+				first.focus();
+			}
+		};
+		document.addEventListener("keydown", handleKey, true);
+		return () => {
+			document.removeEventListener("keydown", handleKey, true);
+			previous?.focus();
+		};
+	}, [busy]);
+	const titleId = react.default.useId();
+	return /* @__PURE__ */ react.default.createElement("div", { style: {
+		position: "fixed",
+		pointerEvents: "auto",
+		inset: 0,
+		zIndex: 1e3,
+		background: "rgb(0 0 0 / 35%)",
+		display: "grid",
+		placeItems: "center",
+		padding: 20
+	} }, /* @__PURE__ */ react.default.createElement("div", {
+		ref: root,
+		tabIndex: -1,
+		role: "dialog",
+		"aria-modal": "true",
+		"aria-labelledby": titleId,
+		style: {
+			...surface,
+			padding: 24,
+			width: "min(560px, 100%)",
+			maxHeight: "85vh",
+			overflow: "auto",
+			boxShadow: "0 12px 48px rgb(0 0 0 / 20%)"
+		}
+	}, /* @__PURE__ */ react.default.createElement("h2", {
+		id: titleId,
+		style: {
+			fontSize: 18,
+			margin: "0 0 16px"
+		}
+	}, title), children, /* @__PURE__ */ react.default.createElement("div", { style: {
+		display: "flex",
+		flexWrap: "wrap",
+		justifyContent: "flex-end",
+		gap: 8,
+		marginTop: 20
+	} }, footer)));
+}
+function SessionWorktreesPage({ store }) {
+	const state = (0, react.useSyncExternalStore)(store.subscribe, store.getSnapshot);
+	const records = state.records;
+	const error = state.error ?? state.readError;
+	return /* @__PURE__ */ react.default.createElement("section", {
+		"aria-label": "Session worktrees",
+		style: {
+			padding: 28,
+			overflow: "auto",
+			height: "100%",
+			boxSizing: "border-box",
+			color: "var(--dsw-alias-label-primary)"
+		}
+	}, /* @__PURE__ */ react.default.createElement("div", { style: {
+		display: "flex",
+		alignItems: "center",
+		gap: 16
+	} }, /* @__PURE__ */ react.default.createElement("h1", { style: { fontSize: 22 } }, "Session worktrees"), /* @__PURE__ */ react.default.createElement("button", {
+		type: "button",
+		style: action,
+		onClick: () => {
+			store.refresh();
+		}
+	}, "Refresh")), /* @__PURE__ */ react.default.createElement("p", null, "Owned session checkouts remain recoverable here, including archived sessions whose checkout is missing."), /* @__PURE__ */ react.default.createElement("p", { style: { color: "var(--dsw-alias-label-tertiary)" } }, "Use Restore and open before continuing an archived session. Native unarchive actions do not recreate a removed checkout. Turning off Use worktree keeps its checkout."), error && /* @__PURE__ */ react.default.createElement("p", { role: "alert" }, error), state.loading && /* @__PURE__ */ react.default.createElement("p", { role: "status" }, "Loading session worktrees…"), !state.loading && records.length === 0 && /* @__PURE__ */ react.default.createElement("p", null, "No session worktrees yet."), /* @__PURE__ */ react.default.createElement("div", { style: {
+		display: "grid",
+		gap: 16,
+		marginTop: 20
+	} }, records.map((record) => /* @__PURE__ */ react.default.createElement("article", {
+		key: record.sessionId,
+		style: {
+			...surface,
+			padding: 18
+		}
+	}, /* @__PURE__ */ react.default.createElement("div", { style: {
+		display: "flex",
+		flexWrap: "wrap",
+		alignItems: "center",
+		gap: 10
+	} }, /* @__PURE__ */ react.default.createElement(BranchIcon, null), /* @__PURE__ */ react.default.createElement("strong", null, record.branch), /* @__PURE__ */ react.default.createElement("span", null, record.state)), /* @__PURE__ */ react.default.createElement("dl", { style: {
+		fontSize: 13,
+		overflowWrap: "anywhere"
+	} }, /* @__PURE__ */ react.default.createElement("dt", null, "Checkout"), /* @__PURE__ */ react.default.createElement("dd", { style: { margin: "4px 0 12px" } }, /* @__PURE__ */ react.default.createElement("code", null, record.path)), /* @__PURE__ */ react.default.createElement("dt", null, "Source"), /* @__PURE__ */ react.default.createElement("dd", { style: { margin: "4px 0 12px" } }, record.repository, " · ", record.sourceRef ?? "HEAD", " · ", record.sourceWorkspaceId), /* @__PURE__ */ react.default.createElement("dt", null, "Session"), /* @__PURE__ */ react.default.createElement("dd", { style: { margin: "4px 0 12px" } }, record.sessionId), /* @__PURE__ */ react.default.createElement("dt", null, "HEAD"), /* @__PURE__ */ react.default.createElement("dd", { style: { margin: "4px 0" } }, /* @__PURE__ */ react.default.createElement("code", null, record.head), record.branchDeleted ? " · Branch removed" : "")), record.message && /* @__PURE__ */ react.default.createElement("p", null, record.message), /* @__PURE__ */ react.default.createElement("div", { style: {
+		display: "flex",
+		flexWrap: "wrap",
+		gap: 8
+	} }, record.state === "active" && /* @__PURE__ */ react.default.createElement("button", {
+		type: "button",
+		style: action,
+		disabled: state.busy.has(record.sessionId),
+		onClick: () => {
+			store.archive(record.sessionId);
+		}
+	}, "Archive session"), /* @__PURE__ */ react.default.createElement("button", {
+		type: "button",
+		style: action,
+		disabled: state.busy.has(record.sessionId) || record.state === "creating",
+		onClick: () => {
+			store.restore(record.sessionId);
+		}
+	}, "Restore and open"), record.state !== "removed" && /* @__PURE__ */ react.default.createElement("button", {
+		type: "button",
+		style: action,
+		disabled: state.busy.has(record.sessionId) || record.state === "creating",
+		onClick: () => {
+			store.cleanup(record.sessionId);
+		}
+	}, record.state === "pending" ? "Review cleanup" : "Retry cleanup"))))));
+}
+function SessionOverlay({ store }) {
+	const state = (0, react.useSyncExternalStore)(store.subscribe, store.getSnapshot);
+	const dialog = state.dialog;
+	const error = state.error ?? state.readError;
+	const pending = state.records.filter((record) => record.state === "pending") ?? [];
+	if (dialog) {
+		const busy = state.busy.has(dialog.record.sessionId);
+		return /* @__PURE__ */ react.default.createElement(Dialog, {
+			title: "Remove archived session checkout?",
+			busy,
+			onClose: store.keepCheckout,
+			footer: /* @__PURE__ */ react.default.createElement(react.default.Fragment, null, /* @__PURE__ */ react.default.createElement("button", {
+				type: "button",
+				style: action,
+				disabled: busy,
+				onClick: store.keepCheckout
+			}, "Keep checkout"), /* @__PURE__ */ react.default.createElement("button", {
+				type: "button",
+				style: {
+					...action,
+					color: "var(--dsw-alias-label-danger, #c43c3c)"
+				},
+				disabled: busy || Date.now() >= dialog.confirmation.expiresAt,
+				onClick: () => {
+					store.discardCheckout();
+				}
+			}, "Discard files and remove checkout"))
+		}, /* @__PURE__ */ react.default.createElement("p", null, "This checkout contains files that cleanup would discard. This action cannot be undone."), /* @__PURE__ */ react.default.createElement("p", { style: { overflowWrap: "anywhere" } }, /* @__PURE__ */ react.default.createElement("code", null, dialog.record.path)), /* @__PURE__ */ react.default.createElement("p", null, "Branch: ", /* @__PURE__ */ react.default.createElement("strong", null, dialog.record.branch)), /* @__PURE__ */ react.default.createElement("p", { style: { overflowWrap: "anywhere" } }, "HEAD: ", /* @__PURE__ */ react.default.createElement("code", null, dialog.confirmation.head)), /* @__PURE__ */ react.default.createElement("ul", { style: {
+			maxHeight: 200,
+			overflow: "auto",
+			overflowWrap: "anywhere"
+		} }, dialog.confirmation.files.map((file, index) => /* @__PURE__ */ react.default.createElement("li", { key: `${index}:${file}` }, /* @__PURE__ */ react.default.createElement("code", null, file)))), /* @__PURE__ */ react.default.createElement("p", { style: { fontSize: 12 } }, "Review expires at ", new Date(dialog.confirmation.expiresAt).toLocaleTimeString(), ". If files or HEAD change, keep the checkout and request a new review."), error && /* @__PURE__ */ react.default.createElement("p", { role: "alert" }, error));
+	}
+	if (!pending.length && !error) return null;
+	return /* @__PURE__ */ react.default.createElement("aside", {
+		"aria-label": "Session worktree notice",
+		style: {
+			...surface,
+			position: "fixed",
+			pointerEvents: "auto",
+			bottom: 20,
+			right: 20,
+			zIndex: 100,
+			padding: 14,
+			maxWidth: 360
+		}
+	}, error && /* @__PURE__ */ react.default.createElement(react.default.Fragment, null, /* @__PURE__ */ react.default.createElement("p", {
+		role: "alert",
+		style: { margin: "0 0 8px" }
+	}, error), /* @__PURE__ */ react.default.createElement("button", {
+		type: "button",
+		style: action,
+		onClick: store.dismissError
+	}, "Dismiss"), state.readError && /* @__PURE__ */ react.default.createElement("button", {
+		type: "button",
+		style: action,
+		onClick: () => {
+			store.refresh();
+		}
+	}, "Retry")), pending.length > 0 && /* @__PURE__ */ react.default.createElement(react.default.Fragment, null, /* @__PURE__ */ react.default.createElement("p", { style: { margin: "0 0 8px" } }, pending.length, " archived session checkout", pending.length === 1 ? "" : "s", " need cleanup review. Kept files remain on disk."), /* @__PURE__ */ react.default.createElement("button", {
+		type: "button",
+		style: action,
+		disabled: state.busy.has(pending[0].sessionId),
+		onClick: () => {
+			store.cleanup(pending[0].sessionId);
+		}
+	}, "Review cleanup")));
+}
+function SessionLeading(props) {
+	const record = (0, react.useSyncExternalStore)(props.store.subscribe, props.store.getSnapshot).records.find((row) => row.sessionId === props.sessionId);
+	return record ? /* @__PURE__ */ react.default.createElement("span", {
+		title: `Session worktree: ${record.branch}`,
+		style: { display: "inline-flex" }
+	}, /* @__PURE__ */ react.default.createElement(BranchIcon, null)) : null;
+}
+function SessionHover(props) {
+	const record = (0, react.useSyncExternalStore)(props.store.subscribe, props.store.getSnapshot).records.find((row) => row.sessionId === props.sessionId);
+	return record ? /* @__PURE__ */ react.default.createElement("div", { style: {
+		fontSize: 12,
+		maxWidth: 320,
+		overflowWrap: "anywhere"
+	} }, /* @__PURE__ */ react.default.createElement("strong", null, "Session worktree"), /* @__PURE__ */ react.default.createElement("div", null, record.branch, " · ", record.state), /* @__PURE__ */ react.default.createElement("div", null, record.path), /* @__PURE__ */ react.default.createElement("div", null, "Source: ", record.repository), record.message && /* @__PURE__ */ react.default.createElement("div", null, record.message)) : null;
+}
+function CopyCheckout(props) {
+	const state = (0, react.useSyncExternalStore)(props.store.subscribe, props.store.getSnapshot);
+	const [, close] = props.useMenuOpenState();
+	const record = state.records.find((row) => row.sessionId === props.sessionId);
+	if (!record) return null;
+	return /* @__PURE__ */ react.default.createElement("button", {
+		type: "button",
+		role: "menuitem",
+		style: {
+			...action,
+			width: "100%",
+			textAlign: "left"
+		},
+		onClick: () => {
+			close(false);
+			navigator.clipboard.writeText(record.path).catch(props.store.report);
+		}
+	}, "Copy checkout path");
+}
+
+//#endregion
+//#region client/directory-alias.ts
+const DIRECTORY_ALIAS = "conversation.hero.worktree.directoryFlow";
+const SOURCE = "conversation.hero.workspace.directoryFlow";
+/** RC2 child declarations belong to ONE entry. Use a plugin-owned hole and
+* re-register the native flow's public component/inject/locale into it, with
+* the same root scope and owner contract. Never mutate native StoredEntry data
+* or redeclare its child. Preserve provider disposal/replacement via the ledger.
+*/
+function mountDirectoryAlias(ctx) {
+	ctx.slots.inject(DIRECTORY_ALIAS, () => {
+		let previous;
+		let unregister;
+		const reconcile = () => {
+			const entry = [...ctx.slots.entries(SOURCE)].sort((a, b) => (a.options.priority ?? 0) - (b.options.priority ?? 0))[0];
+			if (entry === previous) return;
+			unregister?.();
+			unregister = void 0;
+			previous = entry;
+			if (!entry || entry.store || entry.children || entry.select || typeof entry.component !== "function") return;
+			unregister = ctx.slots.register({
+				name: DIRECTORY_ALIAS,
+				...entry.locale ? { locale: entry.locale } : {},
+				...entry.inject ? { inject: entry.inject } : {}
+			}, entry.component);
+		};
+		const unsubscribe = ctx.slots.subscribe(SOURCE, reconcile);
+		reconcile();
+		return () => {
+			unsubscribe();
+			unregister?.();
+		};
+	});
+}
+
+//#endregion
+//#region client/session-picker.tsx
+const absent = {
+	getSnapshot: () => void 0,
+	subscribe: (_listener) => () => {}
+};
+function SessionPicker(props) {
+	const { ctx, store } = props;
+	const state = (0, react.useSyncExternalStore)(store.subscribe, store.getSnapshot);
+	const summary = props.useSessions((list) => {
+		const selected = Object.values(list.byId).filter((row) => (row.retainedBy.mainView ?? 0) > 0);
+		return selected.length === 1 ? selected[0] : void 0;
+	});
+	const boundSession = (id) => {
+		try {
+			return ctx.sessions.binding(id)?.session;
+		} catch (error) {
+			if (error instanceof Error && error.message.startsWith("uiConversation.binding: unknown session")) return void 0;
+			throw error;
+		}
+	};
+	const liveSource = summary ? boundSession(summary.id) ?? absent : absent;
+	const live = (0, react.useSyncExternalStore)(react.default.useCallback((listener) => liveSource.subscribe(listener), [liveSource]), react.default.useCallback(() => liveSource.getSnapshot(), [liveSource]));
+	const blank = Boolean(live?.blank && !live.promptAttempted);
+	const workspaceSnapshot = props.useWorkspaces((value) => value);
+	const available = props.useDirectoryFlow((value) => value);
+	const [flowOpen, setFlowOpen] = (0, react.useState)(false);
+	const [adopting, setAdopting] = (0, react.useState)(false);
+	const [folderError, setFolderError] = (0, react.useState)(null);
+	const [menuPosition, setMenuPosition] = (0, react.useState)({
+		top: 0,
+		left: 0
+	});
+	const menu = (0, react.useRef)(null);
+	const attempted = (0, react.useRef)(/* @__PURE__ */ new Set());
+	const preferenceBusy = (0, react.useRef)(false);
+	const [saving, setSaving] = (0, react.useState)(false);
+	const [requested, setRequested] = (0, react.useState)(null);
+	(0, react.useEffect)(() => {
+		setRequested(null);
+	}, [summary?.id, props.selectedId]);
+	const latest = (0, react.useRef)({
+		sessionId: summary?.id,
+		workspaceId: props.selectedId,
+		blank,
+		onPick: props.onPick
+	});
+	latest.current = {
+		sessionId: summary?.id,
+		workspaceId: props.selectedId,
+		blank,
+		onPick: props.onPick
+	};
+	const ready = state.sessionId === summary?.id && !state.loading && state.status !== null && (state.status.sourceWorkspaceId === props.selectedId || state.status.current?.workspaceId === props.selectedId);
+	const managed = ready ? state.status?.current ?? state.status?.records.find((record) => record.sessionId === summary?.id) : void 0;
+	const source = managed?.sourceWorkspaceId ?? state.status?.sourceWorkspaceId;
+	const wantsWorktree = requested ?? Boolean(ready && state.status?.defaultEnabled);
+	const checked = Boolean(managed || wantsWorktree);
+	const busy = saving || Boolean(summary && state.busy.has(summary.id));
+	const identityMatches = (sessionId, workspaceId) => {
+		const current = latest.current;
+		const session = boundSession(sessionId)?.getSnapshot();
+		return current.sessionId === sessionId && current.workspaceId === workspaceId && current.blank && currentSession(ctx) === sessionId && Boolean(session?.blank && !session.promptAttempted);
+	};
+	const create = (sessionId, workspaceId) => store.create(sessionId, (record) => {
+		if (record.workspaceId && identityMatches(sessionId, workspaceId)) latest.current.onPick(record.workspaceId);
+	});
+	(0, react.useLayoutEffect)(() => {
+		if (!summary || !blank) return;
+		if (state.loading || wantsWorktree && !managed) store.block(summary.id, busy || state.loading ? "Preparing session worktree…" : "Worktree requested. Turn off Use worktree to continue in the shared checkout.");
+		else if (!state.busy.has(summary.id)) store.clearBlock(summary.id);
+		return () => {
+			if (!state.busy.has(summary.id)) store.clearBlock(summary.id);
+		};
+	}, [
+		summary?.id,
+		blank,
+		ready,
+		state.loading,
+		state.status,
+		managed,
+		state.busy,
+		wantsWorktree,
+		busy,
+		store
+	]);
+	(0, react.useEffect)(() => {
+		if (!summary || !blank || !ready || managed || busy || !props.selectedId || !state.status?.defaultEnabled || !state.status.canCreate || requested === false) return;
+		if (state.status.sourceWorkspaceId !== props.selectedId) return;
+		const key = `${summary.id}:${props.selectedId}`;
+		if (attempted.current.has(key)) return;
+		attempted.current.add(key);
+		create(summary.id, props.selectedId);
+	}, [
+		summary?.id,
+		blank,
+		ready,
+		managed,
+		busy,
+		props.selectedId,
+		state.status,
+		requested,
+		store
+	]);
+	async function toggle(enabled) {
+		if (!summary || !props.selectedId || !source || !ready || busy || preferenceBusy.current) return;
+		const sessionId = summary.id;
+		const workspaceId = props.selectedId;
+		preferenceBusy.current = true;
+		setRequested(enabled);
+		setSaving(true);
+		if (enabled) store.block(sessionId);
+		try {
+			await store.request("preference", {
+				workspaceId: source,
+				enabled
+			});
+			if (!identityMatches(sessionId, workspaceId)) return;
+			if (enabled && !managed) {
+				attempted.current.add(`${sessionId}:${workspaceId}`);
+				await create(sessionId, workspaceId);
+			} else if (!enabled && managed) latest.current.onPick(managed.sourceWorkspaceId);
+		} catch (error) {
+			store.report(error);
+		} finally {
+			preferenceBusy.current = false;
+			setSaving(false);
+			if (!enabled) store.clearBlock(sessionId);
+			store.refresh();
+		}
+	}
+	(0, react.useEffect)(() => {
+		if (!available) setFlowOpen(false);
+	}, [available]);
+	const openDirectory = () => {
+		props.onClose();
+		setFolderError(null);
+		setFlowOpen(true);
+	};
+	(0, react.useEffect)(() => {
+		if (props.open && workspaceSnapshot.phase === "ready" && workspaceSnapshot.items.length === 0 && available && !flowOpen && !adopting) openDirectory();
+	}, [
+		props.open,
+		workspaceSnapshot.phase,
+		workspaceSnapshot.items.length,
+		available,
+		flowOpen,
+		adopting
+	]);
+	(0, react.useLayoutEffect)(() => {
+		if (!props.open) return;
+		const position = () => {
+			const rect = props.anchorRef?.current?.getBoundingClientRect();
+			if (rect) setMenuPosition({
+				top: Math.min(rect.bottom + 6, window.innerHeight - 100),
+				left: Math.max(8, Math.min(rect.left, window.innerWidth - 300))
+			});
+		};
+		position();
+		window.addEventListener("resize", position);
+		window.addEventListener("scroll", position, true);
+		return () => {
+			window.removeEventListener("resize", position);
+			window.removeEventListener("scroll", position, true);
+		};
+	}, [props.open, props.anchorRef]);
+	(0, react.useEffect)(() => {
+		if (!props.open) return;
+		menu.current?.querySelector("[role=\"menuitemradio\"][aria-checked=\"true\"], button")?.focus();
+		const outside = (event) => {
+			const target = event.target;
+			if (target instanceof Node && !menu.current?.contains(target) && !props.anchorRef?.current?.contains(target)) props.onClose();
+		};
+		const key = (event) => {
+			if (event.key === "Escape") {
+				event.preventDefault();
+				event.stopPropagation();
+				props.onClose();
+				props.anchorRef?.current?.focus();
+			}
+			if (event.key === "Tab") props.onClose();
+			if (![
+				"ArrowDown",
+				"ArrowUp",
+				"Home",
+				"End"
+			].includes(event.key)) return;
+			const items = [...menu.current?.querySelectorAll("button:not(:disabled)") ?? []];
+			if (!items.length) return;
+			event.preventDefault();
+			const index = items.indexOf(document.activeElement);
+			items[event.key === "Home" ? 0 : event.key === "End" ? items.length - 1 : (index + (event.key === "ArrowDown" ? 1 : -1) + items.length) % items.length]?.focus();
+		};
+		document.addEventListener("pointerdown", outside);
+		document.addEventListener("keydown", key, true);
+		return () => {
+			document.removeEventListener("pointerdown", outside);
+			document.removeEventListener("keydown", key, true);
+		};
+	}, [
+		props.open,
+		props.onClose,
+		props.anchorRef
+	]);
+	const folderFailure = (message) => {
+		setFlowOpen(false);
+		setFolderError(message);
+	};
+	const pickWorkspace = (workspaceId) => {
+		props.onClose();
+		props.onPick(workspaceId);
+	};
+	const menuOpen = props.open && (workspaceSnapshot.items.length > 0 || !available);
+	return /* @__PURE__ */ react.default.createElement(react.default.Fragment, null, blank && /* @__PURE__ */ react.default.createElement("label", {
+		style: {
+			display: "inline-flex",
+			alignItems: "center",
+			gap: 6,
+			fontSize: 13,
+			whiteSpace: "nowrap"
+		},
+		title: ready ? state.status?.reason || "Remember this choice for the source workspace. Turning off keeps the checkout." : "Checking worktree availability…"
+	}, /* @__PURE__ */ react.default.createElement("input", {
+		type: "checkbox",
+		checked,
+		disabled: !ready || busy || !checked && !state.status?.canCreate,
+		onChange: (event) => {
+			toggle(event.target.checked);
+		}
+	}), busy ? "Preparing worktree…" : "Use worktree"), menuOpen && /* @__PURE__ */ react.default.createElement("div", {
+		ref: menu,
+		role: "menu",
+		"aria-label": "Workspaces",
+		style: {
+			...surface,
+			position: "fixed",
+			...menuPosition,
+			width: 290,
+			maxHeight: "min(420px, 65vh)",
+			overflow: "auto",
+			padding: 6,
+			zIndex: 500,
+			boxShadow: "0 6px 24px rgb(0 0 0 / 15%)"
+		}
+	}, workspaceSnapshot.items.map((workspace) => /* @__PURE__ */ react.default.createElement("button", {
+		key: workspace.workspaceId,
+		type: "button",
+		role: "menuitemradio",
+		"aria-checked": props.selectedId === workspace.workspaceId,
+		disabled: adopting,
+		title: workspace.path,
+		style: {
+			...action,
+			display: "block",
+			width: "100%",
+			textAlign: "left",
+			marginBottom: 3
+		},
+		onClick: () => pickWorkspace(workspace.workspaceId)
+	}, workspace.title || "Default workspace", props.selectedId === workspace.workspaceId ? " ✓" : "")), workspaceSnapshot.phase === "pending" && /* @__PURE__ */ react.default.createElement("p", { role: "status" }, "Loading workspaces…"), available && /* @__PURE__ */ react.default.createElement("button", {
+		type: "button",
+		role: "menuitem",
+		disabled: adopting,
+		style: {
+			...action,
+			width: "100%",
+			textAlign: "left"
+		},
+		onClick: openDirectory
+	}, "Add workspace…"), !available && workspaceSnapshot.items.length === 0 && /* @__PURE__ */ react.default.createElement("p", null, "No workspaces available.")), props.renderSlot(DIRECTORY_ALIAS, {
+		open: flowOpen,
+		busy: adopting,
+		onPicked: (path) => {
+			if (adopting) return;
+			setAdopting(true);
+			props.createWorkspace({ path }).then((workspace) => {
+				setFlowOpen(false);
+				pickWorkspace(workspace.workspaceId);
+			}).catch((error) => folderFailure(error instanceof Error ? error.message : "Could not add workspace.")).finally(() => setAdopting(false));
+		},
+		onCancel: () => setFlowOpen(false),
+		onError: folderFailure
+	}), folderError && /* @__PURE__ */ react.default.createElement(Dialog, {
+		title: "Could not add workspace",
+		onClose: () => setFolderError(null),
+		footer: /* @__PURE__ */ react.default.createElement(react.default.Fragment, null, /* @__PURE__ */ react.default.createElement("button", {
+			type: "button",
+			style: action,
+			onClick: () => setFolderError(null)
+		}, "Cancel"), /* @__PURE__ */ react.default.createElement("button", {
+			type: "button",
+			style: action,
+			disabled: !available,
+			onClick: openDirectory
+		}, "Choose again"))
+	}, /* @__PURE__ */ react.default.createElement("p", { role: "alert" }, folderError)));
+}
+
+//#endregion
+//#region client/session-slot.tsx
+function mountHeroPicker(ctx, store) {
+	const directoryFlow = {
+		getSnapshot: () => ctx.slots.entries(DIRECTORY_ALIAS).length > 0,
+		subscribe: (listener) => ctx.slots.subscribe(DIRECTORY_ALIAS, listener)
+	};
+	ctx.slots.inject("conversation.hero.workspace", () => ctx.slots.register({
+		name: "conversation.hero.workspace",
+		priority: -10,
+		children: { [DIRECTORY_ALIAS]: {
+			kind: "single",
+			scope: "root"
+		} },
+		locale: "workspace",
+		inject: () => ({
+			createWorkspace: (input) => ctx.workspaces.create(input),
+			hooks: { directoryFlow }
+		})
+	}, (props) => /* @__PURE__ */ react.default.createElement(SessionPicker, {
+		...props,
+		ctx,
+		store
+	})));
+	mountDirectoryAlias(ctx);
+}
+
+//#endregion
+//#region client/session-registration.tsx
+function mountSessionClient(ctx) {
+	const store = createSessionStore(ctx);
+	ctx.effect(() => store.start());
+	mountHeroPicker(ctx, store);
+	ctx.slots.inject("sidebar.session.row.leading", () => ctx.slots.register({
+		name: "sidebar.session.row.leading",
+		id: "local-worktree-session",
+		order: 30
+	}, (props) => /* @__PURE__ */ react.default.createElement(SessionLeading, {
+		...props,
+		store
+	})));
+	ctx.slots.inject("sidebar.session.row.hover", () => ctx.slots.register({
+		name: "sidebar.session.row.hover",
+		id: "local-worktree-session",
+		order: 30
+	}, (props) => /* @__PURE__ */ react.default.createElement(SessionHover, {
+		...props,
+		store
+	})));
+	ctx.slots.inject("sidebar.workspaces.session.menu.item", () => ctx.slots.register({
+		name: "sidebar.workspaces.session.menu.item",
+		id: "local-worktree-copy-checkout",
+		order: 350
+	}, (props) => /* @__PURE__ */ react.default.createElement(CopyCheckout, {
+		...props,
+		store
+	})));
+	ctx.slots.inject("sidebar.panellist", () => shellSeats(ctx).register({
+		name: "sidebar.panellist",
+		id: "local-session-worktrees",
+		order: 15,
+		label: "Session worktrees"
+	}, BranchIcon));
+	ctx.slots.inject("main", () => shellSeats(ctx).register({
+		name: "main",
+		key: "local-session-worktrees"
+	}, () => /* @__PURE__ */ react.default.createElement(SessionWorktreesPage, { store })));
+	ctx.slots.inject("shell.overlay", () => shellSeats(ctx).register({
+		name: "shell.overlay",
+		id: "local-session-worktrees",
+		order: 30
+	}, () => /* @__PURE__ */ react.default.createElement(SessionOverlay, { store })));
+}
+
+//#endregion
 //#region client/index.ts
 var client_default = {
 	name: "local-worktrees",
@@ -258,24 +1225,37 @@ var client_default = {
 		"jobs"
 	],
 	apply(ctx) {
+		ctx.inject?.([
+			"workspaces",
+			"uiWorkspace",
+			"conversation"
+		], mountSessionClient);
 		ctx.slots.inject("conversation.view", () => {
 			const jobs = ctx.jobs;
 			const rpc = ctx.connection.rpc;
 			return watchCapability({
 				sessions: ctx.sessions,
 				rpc,
-				register: (sessionId) => ctx.slots.register({
-					name: "conversation.view",
-					id: "worktrees",
-					order: 20,
-					label: "Worktrees",
-					inject: (viewed) => ({ sessionId: viewed })
-				}, (props) => props.sessionId === sessionId ? react.createElement(Panel, {
-					key: sessionId,
-					sessionId,
-					jobs,
-					rpc
-				}) : null)
+				register: (sessionId) => {
+					const reference = ctx.sessions.retain?.(sessionId, { source: "worktreeTab" });
+					reference?.ready.catch(() => {});
+					const dispose = ctx.slots.register({
+						name: "conversation.view",
+						id: "worktrees",
+						order: 20,
+						label: "Worktrees",
+						inject: (viewed) => ({ sessionId: viewed })
+					}, (props) => props.sessionId === sessionId ? react.createElement(Panel, {
+						key: sessionId,
+						sessionId,
+						jobs,
+						rpc
+					}) : null);
+					return () => {
+						dispose();
+						if (reference) queueMicrotask(() => reference.release());
+					};
+				}
 			});
 		});
 	},
