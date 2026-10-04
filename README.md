@@ -177,6 +177,10 @@ To use one recipe with a different local profile name, run:
 pnpm run apply -- personal-web --profile laptop-web
 ```
 
+## Optional Codex compatibility bundle
+
+[Codex Compatibility](packages/dsh-codex-compat/README.md) packages the reviewed terminal OAuth helper and optional Fast mode as two independently controlled components. Native DSH/pi-ai still owns authentication, credentials, provider configuration, and inference. Fast integration Off preserves login and Standard inference. The bundle targets DSH `0.2.0-rc.2` with pi-ai `0.87.1` and is not included in `personal-web`. Migration from sandbox-only helpers or installation into a retained profile requires separate approval.
+
 ## Update another computer
 
 After pulling changes, repeat the setup procedure's executable, ownership, cache, and approval checks before installing. The commands below do not authorize installs or profile changes:
