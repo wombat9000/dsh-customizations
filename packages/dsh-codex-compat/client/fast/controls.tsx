@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { UseProjection } from '@deepseek-ai/dsh-api-session-controller/client'
 import {
   CHANNEL,
@@ -46,7 +46,9 @@ const box: React.CSSProperties = {
 const control: React.CSSProperties = {
   padding: '5px 8px',
   borderRadius: 6,
-  border: '1px solid var(--dsw-alias-border-l1)',
+  borderWidth: 1,
+  borderStyle: 'solid',
+  borderColor: 'var(--dsw-alias-border-l1)',
   background: 'var(--dsw-alias-bg-layer-1)',
   color: 'var(--dsw-alias-label-primary)',
   font: 'inherit',
@@ -63,9 +65,67 @@ export function FastToggle({ rpc, sessionId, useProjection }: FastToggleProps) {
   const [state, setState] = useState<FastStatus | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [expanded, setExpanded] = useState(false)
+  const details = useRef<HTMLDetailsElement>(null)
+  const anchor = useRef<HTMLDivElement>(null)
+  const panel = useRef<HTMLElement>(null)
+  const [panelPosition, setPanelPosition] = useState({ left: 16, top: 16 })
   const generation = useRef(0)
   const readSequence = useRef(0)
   const mutating = useRef(false)
+  useLayoutEffect(() => {
+    if (!expanded || !anchor.current || !panel.current) return
+    const position = () => {
+      if (!anchor.current || !panel.current) return
+      const trigger = anchor.current.getBoundingClientRect()
+      const content = panel.current.getBoundingClientRect()
+      const left = Math.max(
+        16,
+        Math.min(trigger.right - content.width, window.innerWidth - content.width - 16),
+      )
+      const above = trigger.top - content.height - 8
+      const below = trigger.bottom + 8
+      const top =
+        above >= 16
+          ? above
+          : below + content.height <= window.innerHeight - 16
+            ? below
+            : Math.max(16, window.innerHeight - content.height - 16)
+      setPanelPosition((previous) =>
+        previous.left === left && previous.top === top ? previous : { left, top },
+      )
+    }
+    position()
+    const observer = new ResizeObserver(position)
+    observer.observe(anchor.current)
+    observer.observe(panel.current)
+    window.addEventListener('resize', position)
+    window.addEventListener('scroll', position, true)
+    return () => {
+      observer.disconnect()
+      window.removeEventListener('resize', position)
+      window.removeEventListener('scroll', position, true)
+    }
+  }, [expanded])
+  useEffect(() => {
+    if (!expanded) return
+    const closeOutside = (event: PointerEvent) => {
+      if (event.target instanceof Node && !details.current?.contains(event.target))
+        setExpanded(false)
+    }
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      event.preventDefault()
+      setExpanded(false)
+      details.current?.querySelector<HTMLElement>('summary')?.focus()
+    }
+    document.addEventListener('pointerdown', closeOutside)
+    document.addEventListener('keydown', closeOnEscape)
+    return () => {
+      document.removeEventListener('pointerdown', closeOutside)
+      document.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [expanded])
   // Bind settlements to session/model identity, including unmount and native model changes.
   useEffect(() => {
     const current = ++generation.current
@@ -73,6 +133,7 @@ export function FastToggle({ rpc, sessionId, useProjection }: FastToggleProps) {
     setState(null)
     setError('')
     setBusy(false)
+    setExpanded(false)
     const refresh = () => {
       if (mutating.current) return
       const sequence = ++readSequence.current
@@ -106,30 +167,45 @@ export function FastToggle({ rpc, sessionId, useProjection }: FastToggleProps) {
       window.removeEventListener('dsh-codex-fast-changed', refresh)
     }
   }, [rpc, sessionId, projection])
-  const toggle = async () => {
-    if (!state || busy) return
+  const toggle = async (scope: 'session' | 'subagents', desired?: boolean) => {
+    if (!state || busy || mutating.current) return
+    const enabled = desired ?? !(scope === 'subagents' ? state.subagentsRequested : state.requested)
     const current = generation.current
     ++readSequence.current
     mutating.current = true
     setBusy(true)
     setError('')
     try {
-      const result = await call(
-        rpc,
-        'session-set',
-        {
-          sessionId,
-          provider: state.provider,
-          model: state.model,
-          enabled: !state.requested,
-          revision: state.sessionRevision,
-        },
-        isFastStatus,
-      )
+      const result =
+        scope === 'subagents'
+          ? await call(
+              rpc,
+              'subagents-set',
+              {
+                sessionId,
+                enabled,
+                revision: state.subagentsRevision,
+              },
+              isFastStatus,
+            )
+          : await call(
+              rpc,
+              'session-set',
+              {
+                sessionId,
+                // Off is recovery for the saved Codex choice, even after selecting another provider.
+                provider: enabled ? state.provider : 'openai-codex',
+                model: state.model,
+                enabled,
+                revision: state.sessionRevision,
+              },
+              isFastStatus,
+            )
       if (current === generation.current) setState(result)
     } catch (failure) {
       if (current === generation.current) {
         setError(failure instanceof Error ? failure.message : 'Fast setting failed.')
+        setExpanded(true)
         // Off can take effect in memory even if its durable write fails.
         try {
           const fresh = await call(rpc, 'session-status', { sessionId }, isFastStatus)
@@ -153,8 +229,14 @@ export function FastToggle({ rpc, sessionId, useProjection }: FastToggleProps) {
         ? state.notice
         : null
   const checked = !!state?.requested && !!state.enabled && !!state.available && state.supported
+  const subagentsChecked = !!state?.subagentsRequested && !!state.enabled && !!state.available
+  const integrationUnavailable = !state?.enabled || !state.available
   return (
-    <div style={box} data-codex-fast-control>
+    <div
+      ref={anchor}
+      style={{ ...box, flexWrap: 'nowrap', gap: 0, position: 'relative' }}
+      data-codex-fast-control
+    >
       <button
         type="button"
         role="switch"
@@ -163,36 +245,139 @@ export function FastToggle({ rpc, sessionId, useProjection }: FastToggleProps) {
         disabled={busy || !state || (!state.requested && !!unavailable)}
         style={{
           ...control,
+          borderTopRightRadius: 0,
+          borderBottomRightRadius: 0,
+          whiteSpace: 'nowrap',
           ...(checked ? { borderColor: 'var(--dsw-alias-brand-primary)' } : {}),
         }}
         title={unavailable ?? COST_NOTICE}
         onClick={() => {
-          void toggle()
+          void toggle('session')
         }}
       >
         Fast {checked ? 'On' : 'Off'}
       </button>
-      <details style={{ maxWidth: 320 }}>
-        <summary style={{ cursor: 'pointer' }}>Higher usage</summary>
-        <p>{COST_NOTICE}</p>
-        <p>
-          Changes affect new requests. A request whose body is already prepared may still use Fast.
-        </p>
-        <p>
-          {unavailable ??
-            state?.notice ??
-            'Only this session’s ordinary Codex requests use Fast. Other calls stay unchanged.'}
-        </p>
-        <button
-          type="button"
-          style={control}
-          onClick={() => window.dispatchEvent(new Event('dsh-codex-fast-changed'))}
+      <details
+        ref={details}
+        open={expanded}
+        onToggle={() => setExpanded(details.current?.open ?? false)}
+      >
+        <summary
+          role="button"
+          aria-label="Fast options"
+          aria-expanded={expanded}
+          title={
+            subagentsChecked
+              ? 'Fast options — Subagents Fast is on'
+              : 'Fast options and higher usage'
+          }
+          style={{
+            ...control,
+            display: 'block',
+            listStyle: 'none',
+            whiteSpace: 'nowrap',
+            borderTopLeftRadius: 0,
+            borderBottomLeftRadius: 0,
+            marginLeft: -1,
+            ...(subagentsChecked ? { borderColor: 'var(--dsw-alias-brand-primary)' } : {}),
+          }}
         >
-          Refresh Fast status
-        </button>
+          {subagentsChecked ? 'Subagents On ' : ''}▾
+        </summary>
+        <section
+          ref={panel}
+          aria-label="Fast options"
+          style={{
+            ...box,
+            display: 'block',
+            position: 'fixed',
+            ...panelPosition,
+            zIndex: 1100,
+            boxSizing: 'border-box',
+            width: 'min(320px, calc(100vw - 32px))',
+            maxHeight: 'calc(100vh - 120px)',
+            overflowY: 'auto',
+            padding: 14,
+            borderRadius: 10,
+            border: '1px solid var(--dsw-alias-border-l1)',
+            background: 'var(--dsw-alias-bg-layer-1)',
+            boxShadow: 'var(--dsw-elevation-prominent)',
+            lineHeight: '18px',
+          }}
+        >
+          <button
+            type="button"
+            role="switch"
+            aria-label="Subagents Fast"
+            aria-checked={subagentsChecked}
+            disabled={busy || !state || (!state.subagentsRequested && integrationUnavailable)}
+            style={control}
+            onClick={() => {
+              void toggle('subagents')
+            }}
+          >
+            Subagents Fast {subagentsChecked ? 'On' : 'Off'}
+          </button>
+          <p>
+            Independent of this session’s Fast switch. Applies to eligible Codex subagents,
+            including nested subagents. Other models stay unchanged.
+          </p>
+          <strong>Higher usage</strong>
+          <p>{COST_NOTICE}</p>
+          <p>
+            Changes affect new requests. A request whose body is already prepared may still use
+            Fast.
+          </p>
+          <p>
+            {unavailable ??
+              state?.notice ??
+              'Fast requests priority service; OpenAI’s effective tier is not confirmed.'}
+          </p>
+          <button
+            type="button"
+            style={control}
+            onClick={() => window.dispatchEvent(new Event('dsh-codex-fast-changed'))}
+          >
+            Refresh Fast status
+          </button>
+          {state?.sessionOffPending || state?.subagentsOffPending ? (
+            <div>
+              <p>Off applies in this process. Persist Off before restarting.</p>
+              {state.sessionOffPending ? (
+                <button
+                  type="button"
+                  style={control}
+                  disabled={busy}
+                  onClick={() => {
+                    void toggle('session', false)
+                  }}
+                >
+                  Retry session Off
+                </button>
+              ) : null}
+              {state.subagentsOffPending ? (
+                <button
+                  type="button"
+                  style={control}
+                  disabled={busy}
+                  onClick={() => {
+                    void toggle('subagents', false)
+                  }}
+                >
+                  Retry Subagents Off
+                </button>
+              ) : null}
+            </div>
+          ) : null}
+          {error ? (
+            <p role="alert" style={{ color: 'var(--dsw-alias-state-error-primary)' }}>
+              {error}
+            </p>
+          ) : null}
+        </section>
       </details>
-      {error ? (
-        <span role="alert" style={{ color: 'var(--dsw-alias-state-error-primary)' }}>
+      {error && !expanded ? (
+        <span role="alert" style={{ color: 'var(--dsw-alias-state-error-primary)', marginLeft: 8 }}>
           {error}
         </span>
       ) : null}
@@ -296,9 +481,11 @@ function IntegrationForm({ rpc }: { rpc: RpcTransport }) {
       </p>
       <p>{COST_NOTICE}</p>
       <p>
-        New sessions start on Standard. Fast selections survive resume, stay tied to the exact
-        selected model, and are not inherited by forks or subagents. Title, summary, and compaction
-        calls stay unchanged.
+        New sessions start on Standard with Subagents Fast off. This session’s Fast selection stays
+        tied to the exact selected model. Its independent Subagents Fast setting covers eligible
+        Codex descendants, even when this session uses Standard or another provider. Both choices
+        survive resume but are not copied to new top-level sessions or forks. Title, summary, and
+        compaction calls stay unchanged.
       </p>
       <p>
         Diagnostics report that Fast was requested—not that OpenAI confirmed the effective tier. No

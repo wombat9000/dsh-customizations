@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { mkdtemp, realpath, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { z } from 'zod'
 import { HostConnectionService } from '@deepseek-ai/dsh-client-connection'
 import { installed } from '../../dsh-google-auth/test/profile-fixture.js'
 import { mountCodexFast } from '../dist/src/fast/runtime.js'
@@ -35,6 +36,35 @@ test('real Cordis mount, Connection lifetime and JSON domain survive plugin unlo
   await ctx.plugin(Storage).await()
   await ctx.plugin(StorageJson, { root }).await()
   await ctx.plugin(StorageDomain, { backend: 'json' }).await()
+  // Real persisted v1 fixture predates the additive subagents table. Opening the new
+  // plugin must preserve existing choices and initialize child policy to off.
+  const legacy = await ctx.storageDomain.open(
+    StorageDomain.defineDomain({
+      name: 'local_codex_fast',
+      version: 1,
+      global: {
+        schema: z.object({ enabled: z.boolean(), revision: z.number() }),
+        initial: { enabled: true, revision: 0 },
+      },
+      tables: {
+        sessions: StorageDomain.domainTable(
+          z.object({
+            provider: z.string(),
+            model: z.string(),
+            enabled: z.boolean(),
+            revision: z.number(),
+          }),
+        ),
+      },
+    }),
+  )
+  await legacy.table('sessions').put('legacy-session', {
+    provider: 'openai-codex',
+    model: 'gpt-6-sol',
+    enabled: true,
+    revision: 7,
+  })
+  await legacy.close()
   await ctx
     .plugin({
       apply(owner) {
@@ -54,6 +84,24 @@ test('real Cordis mount, Connection lifetime and JSON domain survive plugin unlo
   const first = mount()
   await first.await()
   const signal = new AbortController().signal
+  const oldChoice = runtime.sessionStatus('legacy-session')
+  assert.equal(oldChoice.requested, true)
+  assert.equal(oldChoice.sessionRevision, 7)
+  assert.equal(oldChoice.subagentsRequested, false)
+  assert.equal(
+    (
+      await runtime.rpc(
+        'subagents-set',
+        {
+          sessionId: 'fixture-session',
+          enabled: true,
+          revision: 0,
+        },
+        signal,
+      )
+    ).ok,
+    true,
+  )
   assert.equal(
     (
       await runtime.rpc(
@@ -83,6 +131,10 @@ test('real Cordis mount, Connection lifetime and JSON domain survive plugin unlo
   assert.equal(status.value.requested, true)
   assert.equal(status.value.enabled, false)
   assert.equal(status.value.sessionRevision, 1)
+  assert.equal(status.value.subagentsRequested, true)
+  assert.equal(status.value.subagentsRevision, 1)
+  assert.equal(runtime.sessionStatus('legacy-session').requested, true)
+  assert.equal(runtime.sessionStatus('legacy-session').subagentsRequested, false)
   await second.dispose()
   // Exercise the packaged exported plugin, not just its cohesive mount operation.
   const exported = ctx.plugin(plugin)

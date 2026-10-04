@@ -42,7 +42,7 @@ function isIntegrationStatus(value) {
 	return isObject(value) && typeof value.enabled === "boolean" && Number.isSafeInteger(value.revision) && typeof value.available === "boolean" && (value.error === null || typeof value.error === "string");
 }
 function isFastStatus(value) {
-	return isIntegrationStatus(value) && isObject(value) && typeof value.sessionId === "string" && typeof value.provider === "string" && typeof value.model === "string" && typeof value.requested === "boolean" && typeof value.supported === "boolean" && Number.isSafeInteger(value.sessionRevision) && [
+	return isIntegrationStatus(value) && isObject(value) && typeof value.sessionId === "string" && typeof value.provider === "string" && typeof value.model === "string" && typeof value.requested === "boolean" && typeof value.supported === "boolean" && Number.isSafeInteger(value.sessionRevision) && typeof value.subagentsRequested === "boolean" && Number.isSafeInteger(value.subagentsRevision) && typeof value.sessionOffPending === "boolean" && typeof value.subagentsOffPending === "boolean" && [
 		"none",
 		"requested",
 		"error"
@@ -75,7 +75,9 @@ const box = {
 const control = {
 	padding: "5px 8px",
 	borderRadius: 6,
-	border: "1px solid var(--dsw-alias-border-l1)",
+	borderWidth: 1,
+	borderStyle: "solid",
+	borderColor: "var(--dsw-alias-border-l1)",
 	background: "var(--dsw-alias-bg-layer-1)",
 	color: "var(--dsw-alias-label-primary)",
 	font: "inherit",
@@ -86,15 +88,69 @@ function FastToggle({ rpc, sessionId, useProjection }) {
 	const [state, setState] = (0, react.useState)(null);
 	const [busy, setBusy] = (0, react.useState)(false);
 	const [error, setError] = (0, react.useState)("");
+	const [expanded, setExpanded] = (0, react.useState)(false);
+	const details = (0, react.useRef)(null);
+	const anchor = (0, react.useRef)(null);
+	const panel = (0, react.useRef)(null);
+	const [panelPosition, setPanelPosition] = (0, react.useState)({
+		left: 16,
+		top: 16
+	});
 	const generation = (0, react.useRef)(0);
 	const readSequence = (0, react.useRef)(0);
 	const mutating = (0, react.useRef)(false);
+	(0, react.useLayoutEffect)(() => {
+		if (!expanded || !anchor.current || !panel.current) return;
+		const position = () => {
+			if (!anchor.current || !panel.current) return;
+			const trigger = anchor.current.getBoundingClientRect();
+			const content = panel.current.getBoundingClientRect();
+			const left = Math.max(16, Math.min(trigger.right - content.width, window.innerWidth - content.width - 16));
+			const above = trigger.top - content.height - 8;
+			const below = trigger.bottom + 8;
+			const top = above >= 16 ? above : below + content.height <= window.innerHeight - 16 ? below : Math.max(16, window.innerHeight - content.height - 16);
+			setPanelPosition((previous) => previous.left === left && previous.top === top ? previous : {
+				left,
+				top
+			});
+		};
+		position();
+		const observer = new ResizeObserver(position);
+		observer.observe(anchor.current);
+		observer.observe(panel.current);
+		window.addEventListener("resize", position);
+		window.addEventListener("scroll", position, true);
+		return () => {
+			observer.disconnect();
+			window.removeEventListener("resize", position);
+			window.removeEventListener("scroll", position, true);
+		};
+	}, [expanded]);
+	(0, react.useEffect)(() => {
+		if (!expanded) return;
+		const closeOutside = (event) => {
+			if (event.target instanceof Node && !details.current?.contains(event.target)) setExpanded(false);
+		};
+		const closeOnEscape = (event) => {
+			if (event.key !== "Escape") return;
+			event.preventDefault();
+			setExpanded(false);
+			details.current?.querySelector("summary")?.focus();
+		};
+		document.addEventListener("pointerdown", closeOutside);
+		document.addEventListener("keydown", closeOnEscape);
+		return () => {
+			document.removeEventListener("pointerdown", closeOutside);
+			document.removeEventListener("keydown", closeOnEscape);
+		};
+	}, [expanded]);
 	(0, react.useEffect)(() => {
 		const current = ++generation.current;
 		mutating.current = false;
 		setState(null);
 		setError("");
 		setBusy(false);
+		setExpanded(false);
 		const refresh = () => {
 			if (mutating.current) return;
 			const sequence = ++readSequence.current;
@@ -123,25 +179,31 @@ function FastToggle({ rpc, sessionId, useProjection }) {
 		sessionId,
 		projection
 	]);
-	const toggle = async () => {
-		if (!state || busy) return;
+	const toggle = async (scope, desired) => {
+		if (!state || busy || mutating.current) return;
+		const enabled = desired ?? !(scope === "subagents" ? state.subagentsRequested : state.requested);
 		const current = generation.current;
 		++readSequence.current;
 		mutating.current = true;
 		setBusy(true);
 		setError("");
 		try {
-			const result = await call(rpc, "session-set", {
+			const result = scope === "subagents" ? await call(rpc, "subagents-set", {
 				sessionId,
-				provider: state.provider,
+				enabled,
+				revision: state.subagentsRevision
+			}, isFastStatus) : await call(rpc, "session-set", {
+				sessionId,
+				provider: enabled ? state.provider : "openai-codex",
 				model: state.model,
-				enabled: !state.requested,
+				enabled,
 				revision: state.sessionRevision
 			}, isFastStatus);
 			if (current === generation.current) setState(result);
 		} catch (failure) {
 			if (current === generation.current) {
 				setError(failure instanceof Error ? failure.message : "Fast setting failed.");
+				setExpanded(true);
 				try {
 					const fresh = await call(rpc, "session-status", { sessionId }, isFastStatus);
 					if (current === generation.current) setState(fresh);
@@ -158,8 +220,16 @@ function FastToggle({ rpc, sessionId, useProjection }) {
 	};
 	const unavailable = !state?.enabled ? "Fast integration is disabled. Enable it in Plugins → Codex Fast." : !state.available ? state.error : !state.supported ? state.notice : null;
 	const checked = !!state?.requested && !!state.enabled && !!state.available && state.supported;
+	const subagentsChecked = !!state?.subagentsRequested && !!state.enabled && !!state.available;
+	const integrationUnavailable = !state?.enabled || !state.available;
 	return /* @__PURE__ */ react.default.createElement("div", {
-		style: box,
+		ref: anchor,
+		style: {
+			...box,
+			flexWrap: "nowrap",
+			gap: 0,
+			position: "relative"
+		},
 		"data-codex-fast-control": true
 	}, /* @__PURE__ */ react.default.createElement("button", {
 		type: "button",
@@ -169,19 +239,91 @@ function FastToggle({ rpc, sessionId, useProjection }) {
 		disabled: busy || !state || !state.requested && !!unavailable,
 		style: {
 			...control,
+			borderTopRightRadius: 0,
+			borderBottomRightRadius: 0,
+			whiteSpace: "nowrap",
 			...checked ? { borderColor: "var(--dsw-alias-brand-primary)" } : {}
 		},
 		title: unavailable ?? "Fast mode uses subscription limits at a higher rate (currently 2.5× included usage). Availability depends on your OpenAI plan and model.",
 		onClick: () => {
-			toggle();
+			toggle("session");
 		}
-	}, "Fast ", checked ? "On" : "Off"), /* @__PURE__ */ react.default.createElement("details", { style: { maxWidth: 320 } }, /* @__PURE__ */ react.default.createElement("summary", { style: { cursor: "pointer" } }, "Higher usage"), /* @__PURE__ */ react.default.createElement("p", null, COST_NOTICE), /* @__PURE__ */ react.default.createElement("p", null, "Changes affect new requests. A request whose body is already prepared may still use Fast."), /* @__PURE__ */ react.default.createElement("p", null, unavailable ?? state?.notice ?? "Only this session’s ordinary Codex requests use Fast. Other calls stay unchanged."), /* @__PURE__ */ react.default.createElement("button", {
+	}, "Fast ", checked ? "On" : "Off"), /* @__PURE__ */ react.default.createElement("details", {
+		ref: details,
+		open: expanded,
+		onToggle: () => setExpanded(details.current?.open ?? false)
+	}, /* @__PURE__ */ react.default.createElement("summary", {
+		role: "button",
+		"aria-label": "Fast options",
+		"aria-expanded": expanded,
+		title: subagentsChecked ? "Fast options — Subagents Fast is on" : "Fast options and higher usage",
+		style: {
+			...control,
+			display: "block",
+			listStyle: "none",
+			whiteSpace: "nowrap",
+			borderTopLeftRadius: 0,
+			borderBottomLeftRadius: 0,
+			marginLeft: -1,
+			...subagentsChecked ? { borderColor: "var(--dsw-alias-brand-primary)" } : {}
+		}
+	}, subagentsChecked ? "Subagents On " : "", "▾"), /* @__PURE__ */ react.default.createElement("section", {
+		ref: panel,
+		"aria-label": "Fast options",
+		style: {
+			...box,
+			display: "block",
+			position: "fixed",
+			...panelPosition,
+			zIndex: 1100,
+			boxSizing: "border-box",
+			width: "min(320px, calc(100vw - 32px))",
+			maxHeight: "calc(100vh - 120px)",
+			overflowY: "auto",
+			padding: 14,
+			borderRadius: 10,
+			border: "1px solid var(--dsw-alias-border-l1)",
+			background: "var(--dsw-alias-bg-layer-1)",
+			boxShadow: "var(--dsw-elevation-prominent)",
+			lineHeight: "18px"
+		}
+	}, /* @__PURE__ */ react.default.createElement("button", {
+		type: "button",
+		role: "switch",
+		"aria-label": "Subagents Fast",
+		"aria-checked": subagentsChecked,
+		disabled: busy || !state || !state.subagentsRequested && integrationUnavailable,
+		style: control,
+		onClick: () => {
+			toggle("subagents");
+		}
+	}, "Subagents Fast ", subagentsChecked ? "On" : "Off"), /* @__PURE__ */ react.default.createElement("p", null, "Independent of this session’s Fast switch. Applies to eligible Codex subagents, including nested subagents. Other models stay unchanged."), /* @__PURE__ */ react.default.createElement("strong", null, "Higher usage"), /* @__PURE__ */ react.default.createElement("p", null, COST_NOTICE), /* @__PURE__ */ react.default.createElement("p", null, "Changes affect new requests. A request whose body is already prepared may still use Fast."), /* @__PURE__ */ react.default.createElement("p", null, unavailable ?? state?.notice ?? "Fast requests priority service; OpenAI’s effective tier is not confirmed."), /* @__PURE__ */ react.default.createElement("button", {
 		type: "button",
 		style: control,
 		onClick: () => window.dispatchEvent(new Event("dsh-codex-fast-changed"))
-	}, "Refresh Fast status")), error ? /* @__PURE__ */ react.default.createElement("span", {
+	}, "Refresh Fast status"), state?.sessionOffPending || state?.subagentsOffPending ? /* @__PURE__ */ react.default.createElement("div", null, /* @__PURE__ */ react.default.createElement("p", null, "Off applies in this process. Persist Off before restarting."), state.sessionOffPending ? /* @__PURE__ */ react.default.createElement("button", {
+		type: "button",
+		style: control,
+		disabled: busy,
+		onClick: () => {
+			toggle("session", false);
+		}
+	}, "Retry session Off") : null, state.subagentsOffPending ? /* @__PURE__ */ react.default.createElement("button", {
+		type: "button",
+		style: control,
+		disabled: busy,
+		onClick: () => {
+			toggle("subagents", false);
+		}
+	}, "Retry Subagents Off") : null) : null, error ? /* @__PURE__ */ react.default.createElement("p", {
 		role: "alert",
 		style: { color: "var(--dsw-alias-state-error-primary)" }
+	}, error) : null)), error && !expanded ? /* @__PURE__ */ react.default.createElement("span", {
+		role: "alert",
+		style: {
+			color: "var(--dsw-alias-state-error-primary)",
+			marginLeft: 8
+		}
 	}, error) : null);
 }
 function IntegrationSettings({ rpc, view }) {
@@ -259,7 +401,7 @@ function IntegrationForm({ rpc }) {
 		},
 		disabled: busy,
 		onClick: refresh
-	}, "Refresh integration status"), /* @__PURE__ */ react.default.createElement("p", null, "Off stops new Fast requests and pending payload construction. A request whose body is already prepared may still use Fast, even while its connection is opening."), /* @__PURE__ */ react.default.createElement("p", null, COST_NOTICE), /* @__PURE__ */ react.default.createElement("p", null, "New sessions start on Standard. Fast selections survive resume, stay tied to the exact selected model, and are not inherited by forks or subagents. Title, summary, and compaction calls stay unchanged."), /* @__PURE__ */ react.default.createElement("p", null, "Diagnostics report that Fast was requested—not that OpenAI confirmed the effective tier. No credentials or prompts are inspected."), state?.error || error ? /* @__PURE__ */ react.default.createElement("p", {
+	}, "Refresh integration status"), /* @__PURE__ */ react.default.createElement("p", null, "Off stops new Fast requests and pending payload construction. A request whose body is already prepared may still use Fast, even while its connection is opening."), /* @__PURE__ */ react.default.createElement("p", null, COST_NOTICE), /* @__PURE__ */ react.default.createElement("p", null, "New sessions start on Standard with Subagents Fast off. This session’s Fast selection stays tied to the exact selected model. Its independent Subagents Fast setting covers eligible Codex descendants, even when this session uses Standard or another provider. Both choices survive resume but are not copied to new top-level sessions or forks. Title, summary, and compaction calls stay unchanged."), /* @__PURE__ */ react.default.createElement("p", null, "Diagnostics report that Fast was requested—not that OpenAI confirmed the effective tier. No credentials or prompts are inspected."), state?.error || error ? /* @__PURE__ */ react.default.createElement("p", {
 		role: "alert",
 		style: { color: "var(--dsw-alias-state-error-primary)" }
 	}, error || state?.error) : null);
@@ -268,8 +410,8 @@ function IntegrationForm({ rpc }) {
 //#endregion
 //#region client/index.ts
 function apply(ctx) {
-	ctx.slots.inject("conversation.input.left", () => ctx.slots.register({
-		name: "conversation.input.left",
+	ctx.slots.inject("conversation.input.right", () => ctx.slots.register({
+		name: "conversation.input.right",
 		id: "local-codex-fast",
 		order: 10,
 		inject: () => ({ rpc: ctx.get("connection").rpc })

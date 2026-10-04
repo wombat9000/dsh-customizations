@@ -15,6 +15,10 @@ export interface FastStatus extends IntegrationStatus {
   requested: boolean
   supported: boolean
   sessionRevision: number
+  subagentsRequested: boolean
+  subagentsRevision: number
+  sessionOffPending: boolean
+  subagentsOffPending: boolean
   observation: 'none' | 'requested' | 'error'
   notice: string | null
 }
@@ -22,6 +26,10 @@ export interface RpcEndpoints {
   'integration-status': { input: Record<string, never>; result: IntegrationStatus }
   'integration-set': { input: { enabled: boolean; revision: number }; result: IntegrationStatus }
   'session-status': { input: { sessionId: string }; result: FastStatus }
+  'subagents-set': {
+    input: { sessionId: string; enabled: boolean; revision: number }
+    result: FastStatus
+  }
   'session-set': {
     input: {
       sessionId: string
@@ -62,6 +70,10 @@ export function isFastStatus(value: unknown): value is FastStatus {
     typeof value.requested === 'boolean' &&
     typeof value.supported === 'boolean' &&
     Number.isSafeInteger(value.sessionRevision) &&
+    typeof value.subagentsRequested === 'boolean' &&
+    Number.isSafeInteger(value.subagentsRevision) &&
+    typeof value.sessionOffPending === 'boolean' &&
+    typeof value.subagentsOffPending === 'boolean' &&
     ['none', 'requested', 'error'].includes(String(value.observation)) &&
     (value.notice === null || typeof value.notice === 'string')
   )
