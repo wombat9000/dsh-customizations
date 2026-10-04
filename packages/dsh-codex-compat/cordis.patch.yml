@@ -1,0 +1,10 @@
+# Two Host components; native pi-ai still owns provider configuration and OAuth.
+# Stable row ids replace older local helpers during an explicitly approved migration.
+# Never override llm-pi-ai Config: doing so replaces the entire provider map.
+- insert:
+    - id: local-codex-oauth
+      name: '@local/dsh-codex-compat/oauth'
+    # RC2 discovers Client halves only from bare package Loader names.
+    # The root export is the Fast component; /fast is its explicit Host alias.
+    - id: local-codex-fast
+      name: '@local/dsh-codex-compat'

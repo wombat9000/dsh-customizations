@@ -11,8 +11,8 @@ artifacts/
 
 # Package-manager and build-generated files have their own writers/checks.
 /pnpm-lock.yaml
-/packages/dsh-codex-fast/client.js
-/packages/dsh-codex-fast/dist/
+/packages/dsh-codex-compat/client.js
+/packages/dsh-codex-compat/dist/
 /packages/dsh-openrouter/client.js
 /packages/dsh-openrouter/dist/
 /packages/dsh-jev/client.js

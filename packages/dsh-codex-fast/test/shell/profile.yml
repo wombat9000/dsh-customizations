@@ -1,9 +1,0 @@
-# Isolated fixture configuration: discovery only, no keys or inference.
-- id: llm-pi-ai
-  config:
-    providers:
-      openai-codex: {}
-- id: agent-default-model
-  config:
-    provider: openai-codex
-    model: gpt-6-sol

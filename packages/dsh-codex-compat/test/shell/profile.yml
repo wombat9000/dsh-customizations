@@ -1,0 +1,12 @@
+# Isolated Fast fixture: never start automatic login or use credentials/inference.
+# OAuth is validated separately with native services and a synthetic flow.
+- id: local-codex-oauth
+  disabled: true
+- id: llm-pi-ai
+  config:
+    providers:
+      openai-codex: {}
+- id: agent-default-model
+  config:
+    provider: openai-codex
+    model: gpt-6-sol
