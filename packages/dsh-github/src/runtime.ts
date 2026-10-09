@@ -486,6 +486,16 @@ function connection(input: unknown) {
     fail('INVALID_RESPONSE')
   return value as Record<string, unknown> & { nodes: unknown[]; pageInfo: Record<string, unknown> }
 }
+// Only bulk free text can be shortened. Identity, display and control metadata
+// stays intact after sanitization; oversized metadata fails the final byte bound.
+const bulkTextFields = new Set([
+  'body',
+  'readme',
+  'patch',
+  'text',
+  'description',
+  'shortDescription',
+])
 interface BoundOptions {
   maxResultBytes?: number
   maxTextChars?: number
@@ -505,7 +515,7 @@ export function boundedResult(
   function visit(value: unknown, path = 'data', key = ''): unknown {
     if (typeof value === 'string') {
       const clean = sanitize(value)
-      if (/Cursor$/.test(key) || ['id', 'url'].includes(key)) return clean
+      if (!bulkTextFields.has(key)) return clean
       const size = Math.max(0, Math.min(maxTextChars, textBudget))
       textBudget -= Math.min(clean.length, size)
       if (clean.length > size)

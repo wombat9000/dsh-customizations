@@ -1,4 +1,5 @@
 import { object, text, id } from './validation.ts'
+import { cardResultEnvelope, cardResultFailure } from '../shared/read-result.ts'
 import {
   inspectCollections,
   collectionModel,
@@ -73,24 +74,15 @@ export function readCardModel(toolName: string, block: unknown): ReadCardModel {
   if (!object(block) || block.kind !== 'tool-result') return { ...base, state: 'running' }
   let envelope: Record<string, unknown>
   try {
-    const parts = Array.isArray(block.content)
-      ? block.content.filter(
-          (part: unknown): part is Record<string, unknown> & { text: string } =>
-            object(part) && part.type === 'text' && typeof part.text === 'string',
-        )
-      : []
-    const part = parts[0]
-    if (parts.length !== 1 || !part || part.text.length > 524288) throw new Error()
-    const parsed: unknown = JSON.parse(part.text)
+    const parsed = cardResultEnvelope(toolName, block)
     if (!object(parsed) || parsed.host !== 'github.com' || parsed.untrusted !== true)
       throw new Error()
     envelope = parsed
-  } catch {
+  } catch (error) {
     return {
       ...base,
       state: 'unknown',
-      error:
-        'Readable result unavailable. Inspect raw tool details; no success or completeness is inferred.',
+      error: cardResultFailure(error),
     }
   }
   const inspection = inspectCollections(envelope, toolName),

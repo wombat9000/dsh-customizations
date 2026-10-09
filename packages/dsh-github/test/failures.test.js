@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { boundedResult, createGitHubRuntime, GitHubError } from '../dist/src/runtime.js'
+import { createGitHubPullRequestRuntime } from '../dist/src/pull-request-runtime.js'
+import { file, restPull, target as pullTarget } from './pull-request-api-fixtures.js'
 import { createGitHubTools } from '../dist/src/tools.js'
 import { fakeSubprocess, json, connection, exec } from './fixtures.js'
 import { repository, detailedIssue, detailedProject } from './payloads.js'
@@ -248,16 +250,121 @@ test('large text and non-paginated project options expose precise non-continuabl
   )
 })
 
-test('sanitized cursor text cannot reappear raw in nextCursor or truncation metadata', () => {
-  const result = boundedResult(connection([], true, 'ghp_SYNTHETIC_SECRET'))
-  assert.doesNotMatch(JSON.stringify(result), /ghp_SYNTHETIC_SECRET/)
+test('managed file reads bound large patches without erasing late metadata or warnings', async () => {
+  const files = Array.from({ length: 15 }, (_, i) => ({
+    ...file,
+    filename: `src/file-${i}.js`,
+    previous_filename: `src/previous-${i}.js`,
+    status: 'renamed',
+    patch: 'x'.repeat(9000),
+  }))
+  const subprocess = fakeSubprocess([json(restPull(7, { changed_files: 3001 })), json(files)])
+  const result = await createGitHubPullRequestRuntime(subprocess).getPullRequestFiles(
+    { ...pullTarget, limit: 50, page: 3 },
+    exec,
+  )
+  assert.equal(subprocess.specs.length, 2)
+  assert.ok(
+    subprocess.specs[1].argv.includes('/repos/octocat/example/pulls/7/files?per_page=50&page=3'),
+  )
+  assert.equal(result.data.files.nodes.length, 15)
+  for (const [i, node] of result.data.files.nodes.entries()) {
+    assert.equal(node.path, `src/file-${i}.js`)
+    assert.equal(node.previousPath, `src/previous-${i}.js`)
+    assert.equal(node.status, 'renamed')
+    assert.equal(node.sha, file.sha)
+    assert.equal(node.patchAvailable, true)
+    assert.equal(node.patchCompleteness, 'unverified')
+    assert.ok(node.patch.length <= 8192)
+  }
+  assert.equal(result.data.files.totalCount, 3001)
+  assert.deepEqual(result.data.files.pageInfo, {
+    page: 3,
+    hasNextPage: true,
+    nextPage: 4,
+    completeness: 'known',
+  })
+  assert.equal(result.data.files.nextPage, 4)
+  assert.equal(result.data.files.truncated, true)
+  assert.deepEqual(result.data.warnings, [
+    'Patches may be unavailable or truncated. GitHub returns at most 3,000 files.',
+  ])
+  assert.equal(result.data.truncated, true)
+  assert.deepEqual(result.data.truncations, ['files: GitHub 3,000-file maximum'])
+  assert.equal(result.truncated, true)
+  const patchNotices = result.truncations.filter((row) => row.kind === 'text')
+  assert.deepEqual(
+    patchNotices,
+    files.map((_, i) => ({
+      path: `data.files.nodes[${i}].patch`,
+      kind: 'text',
+      returnedCharacters: result.data.files.nodes[i].patch.length,
+      totalCharacters: 9000,
+      continuation: null,
+      reason: 'Output text bound; GitHub has no text cursor.',
+    })),
+  )
+  assert.equal(
+    result.data.files.nodes.reduce(
+      (total, node) => total + node.patch.length,
+      result.data.pullRequest.body.length,
+    ),
+    65536,
+  )
+  assert.deepEqual(
+    result.truncations.filter((row) => row.kind === 'connection'),
+    [
+      {
+        path: 'data.files',
+        kind: 'connection',
+        nextPage: 4,
+        continuation:
+          'Repeat the same explicit target using pageInfo.nextPage in the matching page parameter documented by the tool.',
+      },
+    ],
+  )
+  assert.ok(Buffer.byteLength(JSON.stringify(result), 'utf8') <= 196608)
+})
+
+test('text limits preserve sanitized display, warning and cursor metadata', () => {
+  const result = boundedResult(
+    {
+      ...connection([], true, 'ghp_SYNTHETIC_SECRET'),
+      title: 'Issue ghp_SYNTHETIC_SECRET',
+      name: 'Release field',
+      state: 'OPEN',
+      warnings: ['Untrusted github_pat_SYNTHETIC_SECRET'],
+      body: 'Long body',
+    },
+    { maxTextChars: 1 },
+  )
+  assert.doesNotMatch(JSON.stringify(result), /ghp_SYNTHETIC_SECRET|github_pat_SYNTHETIC_SECRET/)
+  assert.equal(result.data.title, 'Issue [REDACTED]')
+  assert.equal(result.data.name, 'Release field')
+  assert.equal(result.data.state, 'OPEN')
+  assert.deepEqual(result.data.warnings, ['Untrusted [REDACTED]'])
+  assert.equal(result.data.body, 'L')
   assert.equal(result.data.nextCursor, result.data.pageInfo.endCursor)
-  assert.equal(result.truncations[0].nextCursor, result.data.nextCursor)
+  assert.equal(
+    result.truncations.find((row) => row.kind === 'connection').nextCursor,
+    result.data.nextCursor,
+  )
 })
 
 test('result byte bounds fail closed and issue body secrets are sanitized', async () => {
+  for (const [data, options] of [
+    [{ id: 'x'.repeat(2000) }, { maxResultBytes: 256 }],
+    [Array.from({ length: 8 }, () => ({ body: '\u0800'.repeat(8192) })), {}],
+    [Array.from({ length: 8 }, () => ({ body: '\u0000'.repeat(8192) })), {}],
+    [{ unknownMetadata: 'x'.repeat(200000) }, {}],
+  ]) {
+    assert.throws(() => boundedResult(data, options), safeError('OUTPUT_TOO_LARGE'))
+  }
+  const escaped = { title: '雪\u0000"\\' }
+  const exactBytes = Buffer.byteLength(JSON.stringify(boundedResult(escaped)), 'utf8')
+  assert.deepEqual(boundedResult(escaped, { maxResultBytes: exactBytes }).data, escaped)
   assert.throws(
-    () => boundedResult({ id: 'x'.repeat(2000) }, { maxResultBytes: 256 }),
+    () => boundedResult(escaped, { maxResultBytes: exactBytes - 1 }),
     safeError('OUTPUT_TOO_LARGE'),
   )
   const subprocess = fakeSubprocess([

@@ -1,5 +1,6 @@
 import type { ToolBlock } from '../shared/contracts.ts'
 import { object, text } from './validation.ts'
+import { cardResultEnvelope, cardResultFailure } from '../shared/read-result.ts'
 import {
   inspectCollections,
   supplied,
@@ -71,10 +72,7 @@ export function pullRequestCardModel(toolName: string, block?: ToolBlock): PRCar
               : 'Reading…',
     }
   try {
-    const parts = block.content?.filter((part) => part.type === 'text')
-    if (parts?.length !== 1 || typeof parts[0]?.text !== 'string' || parts[0].text.length > 524288)
-      throw new Error()
-    const envelope: unknown = JSON.parse(parts[0].text)
+    const envelope = cardResultEnvelope(toolName, block)
     if (!object(envelope) || envelope.host !== 'github.com') throw new Error()
     if (object(envelope.error))
       return {
@@ -191,11 +189,10 @@ export function pullRequestCardModel(toolName: string, block?: ToolBlock): PRCar
         : {}),
       ...(Number.isSafeInteger(total) && Number(total) >= 0 ? { total: Number(total) } : {}),
     }
-  } catch {
+  } catch (error) {
     return {
       ...base,
-      error:
-        'Readable result unavailable. Inspect raw tool details; no success or completeness is inferred.',
+      error: cardResultFailure(error),
     }
   }
 }

@@ -142,7 +142,7 @@ async function reviewItems(app, testInfo, theme, narrow) {
   await fields.press('Enter')
 }
 
-async function reviewPullRequests(app) {
+async function reviewPullRequests(app, testInfo, theme) {
   for (const title of [
     'Pull requests',
     'Pull request details',
@@ -160,6 +160,18 @@ async function reviewPullRequests(app) {
     await test.step(title, async () => {
       const card = app.getByRole('region', { name: `GitHub ${title}`, exact: true })
       await expect(card).toBeVisible()
+      if (title === 'Changed files') {
+        await expect(card).toContainText('1 entries returned')
+        await expect(card).toContainText('src/change.ts')
+        await expect(card).not.toContainText('Result unavailable')
+        if (theme === 'dark')
+          await capture(
+            card,
+            testInfo,
+            'changed-files-spill-safe-dark',
+            'Spill-safe historical card diagnostic (not baseline)',
+          )
+      }
       await card.evaluate((node) => {
         node.style.width = '320px'
         node.style.maxWidth = '100%'
@@ -255,7 +267,8 @@ test('review historical GitHub cards across themes and compact layouts', async (
         }
         await test.step('Project items', () => reviewItems(app, testInfo, theme, narrow))
         if (!narrow)
-          await test.step('All twelve PR tool views at narrow width', () => reviewPullRequests(app))
+          await test.step('All twelve PR tool views at narrow width', () =>
+            reviewPullRequests(app, testInfo, theme))
         expect(requests).toBe(0)
       })
     }

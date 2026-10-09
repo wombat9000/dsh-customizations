@@ -124,6 +124,15 @@ export function githubItemsSeed(cwd) {
       type: 'tool/call',
       data: { turn: 1, step, callId, name, arguments: argumentsRaw },
     })
+    const readEnvelope = {
+      host: 'github.com',
+      untrusted: true,
+      data,
+      truncated: false,
+      truncations: [],
+      ...envelope,
+    }
+    const spilledFiles = name === 'github_get_pull_request_files'
     events.push({
       seq: events.length,
       time,
@@ -132,6 +141,16 @@ export function githubItemsSeed(cwd) {
       data: {
         turn: 1,
         step,
+        ...(spilledFiles
+          ? {
+              meta: {
+                kind: 'github-read-card',
+                version: 1,
+                toolName: name,
+                envelope: readEnvelope,
+              },
+            }
+          : {}),
         message: {
           id: `${callId}-result`,
           role: 'tool',
@@ -140,14 +159,9 @@ export function githubItemsSeed(cwd) {
           content: [
             {
               type: 'text',
-              text: JSON.stringify({
-                host: 'github.com',
-                untrusted: true,
-                data,
-                truncated: false,
-                truncations: [],
-                ...envelope,
-              }),
+              text: spilledFiles
+                ? '{"host":"github.com",[...]\n\n(Omitted 300 bytes. Full formatted result stored at: /fixture/result.txt. Use read to inspect it.)'
+                : JSON.stringify(readEnvelope),
             },
           ],
         },

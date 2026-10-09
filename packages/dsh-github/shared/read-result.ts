@@ -1,0 +1,136 @@
+const object = (value: unknown): value is Record<string, unknown> =>
+  value !== null && typeof value === 'object' && !Array.isArray(value)
+const META_KIND = 'github-read-card'
+const MAX_META_BYTES = 65536
+const MAX_RESULT_CHARS = 524288
+export const UNAVAILABLE_RESULT =
+  'Readable result unavailable. Inspect raw tool details; no success or completeness is inferred.'
+export const SHORTENED_RESULT =
+  'Summary unavailable: DSH shortened this result. Inspect raw tool details for the saved full result; no success or completeness is inferred.'
+
+// RC2 Tools calls output.presentationMeta before post-execute retention, persists
+// it as tool/result data.meta, and passes it to tool.call.toolview as block.meta. Only read
+// tools use this snapshot; it never establishes approval or write authority.
+// A projector must return lossless JSON, so absent snapshots use null, not undefined.
+export function readPresentationMeta(toolName: string, value: string): unknown {
+  try {
+    if (!/^github_(get|list|search)_/.test(toolName) || value.length > MAX_RESULT_CHARS) return null
+    const envelope: unknown = JSON.parse(value)
+    if (
+      !object(envelope) ||
+      envelope.host !== 'github.com' ||
+      envelope.untrusted !== true ||
+      !object(envelope.data)
+    )
+      return null
+    const wrap = (result: Record<string, unknown>) => ({
+      kind: META_KIND,
+      version: 1,
+      toolName,
+      envelope: result,
+    })
+    const bytes = (result: unknown) => new TextEncoder().encode(JSON.stringify(result)).length
+    const full = wrap(envelope)
+    if (bytes(full) <= 32768) return full
+
+    // Keep collection/identity/pagination evidence intact. Large content is a
+    // separately disclosed card preview, not another copy of the full diff.
+    const truncations: Record<string, unknown>[] = []
+    let budget = 12000
+    let visits = 10000
+    function preview(input: unknown, path: string, key = '', depth = 0): unknown {
+      if (--visits < 0 || depth > 20) throw new Error('Snapshot bound')
+      if (typeof input === 'string') {
+        if (!['body', 'readme', 'patch', 'text', 'description', 'shortDescription'].includes(key))
+          return input
+        const size = key === 'patch' ? 0 : Math.min(1200, budget)
+        const retained = input.slice(0, size)
+        budget -= retained.length
+        if (retained.length < input.length)
+          truncations.push({
+            path,
+            kind: 'text',
+            returnedCharacters: retained.length,
+            totalCharacters: input.length,
+            continuation: null,
+            reason: 'Card preview text bound; inspect raw tool details or the saved full result',
+          })
+        return retained
+      }
+      if (Array.isArray(input))
+        return input.map((entry, index) => preview(entry, `${path}[${index}]`, '', depth + 1))
+      if (object(input))
+        return Object.fromEntries(
+          Object.entries(input).map(([name, entry]) => [
+            name,
+            preview(entry, `${path}.${name}`, name, depth + 1),
+          ]),
+        )
+      return input
+    }
+    const data = preview(envelope.data, 'data')
+    const summary = wrap({
+      ...envelope,
+      data,
+      ...(truncations.length
+        ? {
+            truncated: true,
+            truncations: [
+              ...(Array.isArray(envelope.truncations) ? envelope.truncations : []),
+              ...truncations,
+            ],
+          }
+        : {}),
+    })
+    // Oversized metadata fails closed instead of corrupting IDs or cursors.
+    return bytes(summary) <= MAX_META_BYTES ? summary : null
+  } catch {
+    return null
+  }
+}
+
+export function cardResultEnvelope(toolName: string, block: unknown): Record<string, unknown> {
+  if (!object(block)) throw new Error()
+  const meta = block.meta
+  if (
+    /^github_(get|list|search)_/.test(toolName) &&
+    block.isError !== true &&
+    object(meta) &&
+    meta.kind === META_KIND &&
+    meta.version === 1 &&
+    meta.toolName === toolName &&
+    object(meta.envelope) &&
+    meta.envelope.host === 'github.com' &&
+    meta.envelope.untrusted === true &&
+    new TextEncoder().encode(JSON.stringify(meta)).length <= MAX_META_BYTES
+  )
+    return meta.envelope
+  const parts = Array.isArray(block.content)
+    ? block.content.filter((part: unknown) => object(part) && part.type === 'text')
+    : []
+  if (parts.length !== 1 || !object(parts[0]) || typeof parts[0].text !== 'string')
+    throw new Error()
+  const text = parts[0].text
+  if (text.length > MAX_RESULT_CHARS) throw new Error()
+  try {
+    const parsed: unknown = JSON.parse(text)
+    if (!object(parsed)) throw new Error()
+    return parsed
+  } catch {
+    // Recognize the persisted RC2 spill footer only after JSON parsing fails.
+    // Never reconstruct missing JSON, read an arbitrary locator, or refetch.
+    if (
+      /(?:^|\n\n)\((?:Omitted \d+ bytes\.|More bytes were omitted\.)[^\n]* Full formatted result stored at: [^\n]+\)$/.test(
+        text,
+      )
+    )
+      throw new Error(SHORTENED_RESULT)
+    throw new Error()
+  }
+}
+
+export function cardResultFailure(error: unknown): string {
+  return error instanceof Error && error.message === SHORTENED_RESULT
+    ? SHORTENED_RESULT
+    : UNAVAILABLE_RESULT
+}

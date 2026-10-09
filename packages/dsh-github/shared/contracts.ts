@@ -9,6 +9,7 @@ export interface ToolBlock {
   call?: { argsRaw?: string | undefined } | undefined
   argsRaw?: string | undefined
   content?: readonly ToolPart[] | undefined
+  meta?: unknown
   error?: { name?: unknown; code?: unknown } | undefined
   isError?: boolean | undefined
 }

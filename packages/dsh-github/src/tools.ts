@@ -2,6 +2,7 @@ import type { Tool, Execution } from './host-types.js'
 import type { GitHubReadOptions, GitHubReadResult } from './contracts.js'
 import { OPERATIONS, GitHubError } from './runtime.js'
 import { PR_READ_OPERATIONS } from './pull-requests.js'
+import { readPresentationMeta } from '../shared/read-result.js'
 const READ_OPERATIONS = { ...OPERATIONS, ...PR_READ_OPERATIONS }
 
 export const TOOL_NAMES = Object.freeze({
@@ -33,6 +34,7 @@ export function createGitHubTools(runtime: object): Tool[] {
     output: {
       schema: { type: 'string' },
       render: (_args, value) => [{ type: 'text', text: value }],
+      presentationMeta: (_args, value) => readPresentationMeta(name, value),
     },
     timeoutMs: 120000,
     isConcurrencySafe: () => true,

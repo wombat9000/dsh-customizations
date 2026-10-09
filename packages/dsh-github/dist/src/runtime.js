@@ -405,13 +405,23 @@ function connection(input) {
         fail('INVALID_RESPONSE');
     return value;
 }
+// Only bulk free text can be shortened. Identity, display and control metadata
+// stays intact after sanitization; oversized metadata fails the final byte bound.
+const bulkTextFields = new Set([
+    'body',
+    'readme',
+    'patch',
+    'text',
+    'description',
+    'shortDescription',
+]);
 export function boundedResult(data, { maxResultBytes = 196608, maxTextChars = 8192 } = {}) {
     const truncations = [];
     let textBudget = Math.floor(maxResultBytes / 3);
     function visit(value, path = 'data', key = '') {
         if (typeof value === 'string') {
             const clean = sanitize(value);
-            if (/Cursor$/.test(key) || ['id', 'url'].includes(key))
+            if (!bulkTextFields.has(key))
                 return clean;
             const size = Math.max(0, Math.min(maxTextChars, textBudget));
             textBudget -= Math.min(clean.length, size);

@@ -33,7 +33,7 @@ let react = require("react");
 react = __toESM(react, 1);
 
 //#region client/validation.ts
-const object = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
+const object$1 = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
 const text = (value) => typeof value === "string" ? value : "";
 const id = (value) => typeof value === "string" && value.length > 0 && value.length <= 4096;
 function safeUrl(value) {
@@ -73,15 +73,15 @@ function fieldValueModel(change, side) {
 		available: false,
 		label: side === "before" ? "Previous value unavailable" : "Proposed value unavailable"
 	};
-	if (!object(change) || !object(change.field) || !id(change.field.id) || !fieldType(change.field.dataType)) return missing;
+	if (!object$1(change) || !object$1(change.field) || !id(change.field.id) || !fieldType(change.field.dataType)) return missing;
 	const value = change[side], type = change.field.dataType;
 	if (side === "before" && value === null) return {
 		available: true,
 		label: "Not set"
 	};
-	if (!object(value)) return missing;
+	if (!object$1(value)) return missing;
 	if (side === "before" && value.field) {
-		if (!object(value.field) || value.field.id !== change.field.id || value.field.dataType && value.field.dataType !== type) return missing;
+		if (!object$1(value.field) || value.field.id !== change.field.id || value.field.dataType && value.field.dataType !== type) return missing;
 	}
 	const key = side === "before" && type === "SINGLE_SELECT" ? "optionId" : fieldKeys[type];
 	if (side === "after" && (Object.keys(value).length !== 1 || !Object.hasOwn(value, key))) return missing;
@@ -99,7 +99,7 @@ function fieldValueModel(change, side) {
 		label: leaf
 	} : missing;
 	if (!id(leaf)) return missing;
-	const selected = side === "before" ? value : object(change.selectedOption) && change.selectedOption.id === leaf ? change.selectedOption : null;
+	const selected = side === "before" ? value : object$1(change.selectedOption) && change.selectedOption.id === leaf ? change.selectedOption : null;
 	return {
 		available: true,
 		label: text(type === "SINGLE_SELECT" ? selected?.name : selected?.title) || leaf,
@@ -108,12 +108,12 @@ function fieldValueModel(change, side) {
 	};
 }
 function validFieldStatus(value, callId) {
-	if (!object(value) || value.version !== 1 || !id(value.phase)) return false;
+	if (!object$1(value) || value.version !== 1 || !id(value.phase)) return false;
 	if (value.toolName === void 0 && value.callId === void 0) return value.phase === "expired" && value.change === void 0 && value.targets === void 0;
-	return value.toolName === "github_set_project_item_field" && value.callId === callId && (value.exactPreview === void 0 || typeof value.exactPreview === "string") && (value.change === void 0 || object(value.change)) && (value.targets === void 0 || object(value.targets));
+	return value.toolName === "github_set_project_item_field" && value.callId === callId && (value.exactPreview === void 0 || typeof value.exactPreview === "string") && (value.change === void 0 || object$1(value.change)) && (value.targets === void 0 || object$1(value.targets));
 }
 function isFieldResult(value) {
-	if (!object(value) || value.host !== "github.com" || !(value.operation === "setProjectItemField" || value.operation === void 0 && value.outcome === "failed" && object(value.error))) return false;
+	if (!object$1(value) || value.host !== "github.com" || !(value.operation === "setProjectItemField" || value.operation === void 0 && value.outcome === "failed" && object$1(value.error))) return false;
 	const outcome = value.outcome;
 	if (outcome === "no-change") return value.dispatched === false && value.reason === "FIELD_VALUE_ALREADY_SET";
 	return outcome === "failed" || outcome === "confirmed" || outcome === "uncertain";
@@ -125,14 +125,14 @@ function fieldSafeText(value) {
 	return text(value).slice(0, 4096).replace(/\b(?:gh[pousr]_[A-Za-z0-9_]+|github_pat_[A-Za-z0-9_]+)\b/g, "[REDACTED]").replace(/\bBearer\s+[^\s"'<>]+/gi, "[REDACTED]").replace(/\bAuthorization\s*:\s*token\s+[^\s"'<>]+/gi, "[REDACTED]").replace(/(https?:\/\/)[^\s/@]+(?::[^\s/@]*)?@/gi, "$1[REDACTED]@").replace(/([?&](?:access_token|token|auth|key)=)[^&#\s]+/gi, "$1[REDACTED]");
 }
 function fieldFailureReason(block, result) {
-	if (result?.outcome === "failed") return fieldSafeText((object(result.error) ? result.error.message : void 0) || result.message);
+	if (result?.outcome === "failed") return fieldSafeText((object$1(result.error) ? result.error.message : void 0) || result.message);
 	if (block?.isError === true && !result && Array.isArray(block.content)) return fieldSafeText(block.content.filter((part) => part?.type === "text").map((part) => text(part.text)).join("\n"));
 	return "";
 }
 function fieldRequestedTarget(block) {
 	try {
 		const args = JSON.parse(block?.call?.argsRaw ?? block?.argsRaw ?? "");
-		if (!object(args)) return "";
+		if (!object$1(args)) return "";
 		return [
 			typeof args.owner === "string" && `Owner: ${fieldSafeText(args.owner)}`,
 			typeof args.projectNumber === "number" && Number.isSafeInteger(args.projectNumber) && args.projectNumber > 0 && `Project number: ${args.projectNumber}`,
@@ -194,15 +194,15 @@ const positive$1 = (value) => typeof value === "number" && Number.isSafeInteger(
 const sha = (value) => typeof value === "string" && /^[a-f0-9]{40}$/i.test(value);
 const keys = (value, allowed) => Object.keys(value).length === allowed.length && Object.keys(value).every((key) => allowed.includes(key));
 const same$1 = (left, right) => JSON.stringify(left) === JSON.stringify(right);
-const branch = (value) => object(value) && typeof value.ref === "string" && value.ref.length > 0 && sha(value.sha);
+const branch = (value) => object$1(value) && typeof value.ref === "string" && value.ref.length > 0 && sha(value.sha);
 function repository(value) {
-	return object(value) && id(value.id) && typeof value.nameWithOwner === "string" && /^[^/\s]+\/[^/\s]+$/.test(value.nameWithOwner) && safeUrl(value.url)?.toLowerCase() === `https://github.com/${value.nameWithOwner}`.toLowerCase();
+	return object$1(value) && id(value.id) && typeof value.nameWithOwner === "string" && /^[^/\s]+\/[^/\s]+$/.test(value.nameWithOwner) && safeUrl(value.url)?.toLowerCase() === `https://github.com/${value.nameWithOwner}`.toLowerCase();
 }
 function pullRequest(value, repo) {
-	return object(value) && id(value.id) && positive$1(value.number) && safeUrl(value.url)?.toLowerCase() === `https://github.com/${repo.nameWithOwner}/pull/${value.number}`.toLowerCase() && object(value.repository) && value.repository.id === repo.id && value.repository.nameWithOwner === repo.nameWithOwner && value.state === "OPEN" && typeof value.isDraft === "boolean" && typeof value.title === "string" && typeof value.body === "string" && branch(value.head) && branch(value.base);
+	return object$1(value) && id(value.id) && positive$1(value.number) && safeUrl(value.url)?.toLowerCase() === `https://github.com/${repo.nameWithOwner}/pull/${value.number}`.toLowerCase() && object$1(value.repository) && value.repository.id === repo.id && value.repository.nameWithOwner === repo.nameWithOwner && value.state === "OPEN" && typeof value.isDraft === "boolean" && typeof value.title === "string" && typeof value.body === "string" && branch(value.head) && branch(value.base);
 }
 function inlineComment(value) {
-	if (!object(value) || typeof value.path !== "string" || !value.path || value.path.startsWith("/") || value.path.includes("\\") || value.path.split("/").some((part) => !part || part === ".." || part === ".") || typeof value.body !== "string" || !value.body.trim() || !positive$1(value.line) || typeof value.side !== "string" || !["LEFT", "RIGHT"].includes(value.side)) return false;
+	if (!object$1(value) || typeof value.path !== "string" || !value.path || value.path.startsWith("/") || value.path.includes("\\") || value.path.split("/").some((part) => !part || part === ".." || part === ".") || typeof value.body !== "string" || !value.body.trim() || !positive$1(value.line) || typeof value.side !== "string" || !["LEFT", "RIGHT"].includes(value.side)) return false;
 	const multiline = Object.hasOwn(value, "start_line") || Object.hasOwn(value, "start_side");
 	return keys(value, [
 		"path",
@@ -222,7 +222,7 @@ function pullRequestApprovalPayloadKeys(operation, targets, change, payload) {
 		if (!pullRequest(targets.pullRequest, repo)) return null;
 		const pr = targets.pullRequest;
 		if (operation === "updatePullRequest") {
-			if (!object(change.before) || !object(change.after) || !keys(change, ["before", "after"])) return null;
+			if (!object$1(change.before) || !object$1(change.after) || !keys(change, ["before", "after"])) return null;
 			if (Object.hasOwn(payload, "pullRequestId")) return payload.pullRequestId === pr.id && keys(payload, ["pullRequestId"]) && keys(change.before, ["draft"]) && keys(change.after, ["draft"]) && change.before.draft === pr.isDraft && typeof change.after.draft === "boolean" && change.before.draft !== change.after.draft ? ["pullRequestId"] : null;
 			const before = change.before;
 			const edited = Object.keys(payload);
@@ -234,7 +234,7 @@ function pullRequestApprovalPayloadKeys(operation, targets, change, payload) {
 			"event",
 			...Object.hasOwn(payload, "comments") ? ["comments"] : []
 		];
-		return keys(payload, expected) && keys(change, ["before", "after"]) && change.before === null && same$1(change.after, payload) && object(pr.head) && payload.commit_id === pr.head.sha && typeof payload.body === "string" && typeof payload.event === "string" && [
+		return keys(payload, expected) && keys(change, ["before", "after"]) && change.before === null && same$1(change.after, payload) && object$1(pr.head) && payload.commit_id === pr.head.sha && typeof payload.body === "string" && typeof payload.event === "string" && [
 			"COMMENT",
 			"APPROVE",
 			"REQUEST_CHANGES"
@@ -247,15 +247,15 @@ function pullRequestApprovalPayloadKeys(operation, targets, change, payload) {
 	if (new Set(prs.map((pr) => pr.id)).size !== prs.length || !prs.every((pr, index) => pr.number === after[index])) return null;
 	for (let index = 1; index < prs.length; index++) {
 		const previous = prs[index - 1], next = prs[index];
-		if (!previous || !next || !object(previous.head) || !object(next.base) || previous.head.ref !== next.base.ref || previous.head.sha !== next.base.sha) return null;
+		if (!previous || !next || !object$1(previous.head) || !object$1(next.base) || previous.head.ref !== next.base.ref || previous.head.sha !== next.base.sha) return null;
 	}
 	if (operation === "createPullRequestStack") return change.before === null && targets.stack === void 0 && same$1(payload.pull_requests, change.after) ? ["pull_requests"] : null;
-	if (!Array.isArray(change.before) || change.before.length !== change.after.length - 1 || !same$1(change.before, change.after.slice(0, -1)) || !same$1(payload.pull_requests, change.after.slice(-1)) || !object(targets.stack)) return null;
+	if (!Array.isArray(change.before) || change.before.length !== change.after.length - 1 || !same$1(change.before, change.after.slice(0, -1)) || !same$1(payload.pull_requests, change.after.slice(-1)) || !object$1(targets.stack)) return null;
 	const stack = targets.stack;
-	if (!id(stack.id) || !positive$1(stack.number) || stack.open !== true || stack.apiUrl !== `https://api.github.com/repos/${repo.nameWithOwner}/stacks/${stack.number}` || !object(stack.pullRequests) || !Array.isArray(stack.pullRequests.nodes) || stack.pullRequests.totalCount !== change.before.length || stack.pullRequests.nodes.length !== change.before.length || !object(stack.pullRequests.pageInfo) || stack.pullRequests.pageInfo.hasNextPage !== false || stack.pullRequests.pageInfo.nextPage !== null) return null;
+	if (!id(stack.id) || !positive$1(stack.number) || stack.open !== true || stack.apiUrl !== `https://api.github.com/repos/${repo.nameWithOwner}/stacks/${stack.number}` || !object$1(stack.pullRequests) || !Array.isArray(stack.pullRequests.nodes) || stack.pullRequests.totalCount !== change.before.length || stack.pullRequests.nodes.length !== change.before.length || !object$1(stack.pullRequests.pageInfo) || stack.pullRequests.pageInfo.hasNextPage !== false || stack.pullRequests.pageInfo.nextPage !== null) return null;
 	for (const [index, member] of stack.pullRequests.nodes.entries()) {
 		const pr = prs[index];
-		if (!object(member) || !pr || member.id !== pr.id || member.number !== pr.number || !object(member.head) || !object(member.base) || !object(pr.head) || !object(pr.base) || member.head.ref !== pr.head.ref || member.head.sha !== pr.head.sha || member.base.ref !== pr.base.ref || member.base.sha !== pr.base.sha || member.isDraft !== pr.isDraft || member.state !== "open" || member.mergedAt !== null) return null;
+		if (!object$1(member) || !pr || member.id !== pr.id || member.number !== pr.number || !object$1(member.head) || !object$1(member.base) || !object$1(pr.head) || !object$1(pr.base) || member.head.ref !== pr.head.ref || member.head.sha !== pr.head.sha || member.base.ref !== pr.base.ref || member.base.sha !== pr.base.sha || member.isDraft !== pr.isDraft || member.state !== "open" || member.mergedAt !== null) return null;
 	}
 	return ["pull_requests"];
 }
@@ -280,7 +280,7 @@ function operationName(value) {
 	return typeof value === "string" && Object.hasOwn(APPROVAL_OPERATIONS, value);
 }
 function entity(value) {
-	return object(value) && id(value.id);
+	return object$1(value) && id(value.id);
 }
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 function approvalModel(toolName, reason) {
@@ -289,15 +289,15 @@ function approvalModel(toolName, reason) {
 	if (!match || match[1] === void 0 || match.index === void 0) return null;
 	try {
 		const value = JSON.parse(match[1]);
-		if (!object(value)) return null;
+		if (!object$1(value)) return null;
 		const { operation, targets: t, change: c, exactPayload: p } = value;
-		if (!operationName(operation) || toolName !== `github_${operation.replace(/[A-Z]/g, (x) => `_${x.toLowerCase()}`)}` || value.host !== "github.com" || !object(t) || !object(c) || !object(p)) return null;
+		if (!operationName(operation) || toolName !== `github_${operation.replace(/[A-Z]/g, (x) => `_${x.toLowerCase()}`)}` || value.host !== "github.com" || !object$1(t) || !object$1(c) || !object$1(p)) return null;
 		if (operation === "createIssue" && !(entity(t.repository) && p.repositoryId === t.repository.id && typeof p.title === "string" && typeof p.body === "string" && c.title === p.title && c.body === p.body)) return null;
 		if (operation === "createPullRequest") {
 			const branch = (value, name) => entity(value) && typeof name === "string" && name.length > 0 && value.name === name && value.prefix === "refs/heads/" && typeof value.sha === "string" && /^[a-f0-9]{40}$/i.test(value.sha);
 			if (!entity(t.repository) || !branch(t.head, p.head) || !branch(t.base, p.base) || typeof p.title !== "string" || typeof p.body !== "string" || p.draft !== true || c.before !== null || !same(c.after, p)) return null;
 		}
-		if (operation === "createProject" && !(entity(t.destination) && p.ownerId === t.destination.id && typeof p.title === "string" && c.title === p.title && (value.mutation === "createProject" || value.mutation === "copyProject" && entity(t.template) && p.projectId === t.template.id && object(c.copyBehavior) && typeof p.includeDraftIssues === "boolean" && c.copyBehavior.includeDraftIssues === p.includeDraftIssues))) return null;
+		if (operation === "createProject" && !(entity(t.destination) && p.ownerId === t.destination.id && typeof p.title === "string" && c.title === p.title && (value.mutation === "createProject" || value.mutation === "copyProject" && entity(t.template) && p.projectId === t.template.id && object$1(c.copyBehavior) && typeof p.includeDraftIssues === "boolean" && c.copyBehavior.includeDraftIssues === p.includeDraftIssues))) return null;
 		if ([
 			"updateProject",
 			"linkProjectRepository",
@@ -308,10 +308,10 @@ function approvalModel(toolName, reason) {
 			"title",
 			"shortDescription",
 			"readme"
-		].includes(key) && object(v) && (v.before === null || typeof v.before === "string") && typeof v.after === "string" && p[key] === v.after) || Object.keys(p).some((key) => key !== "projectId" && !Object.hasOwn(c, key)))) return null;
+		].includes(key) && object$1(v) && (v.before === null || typeof v.before === "string") && typeof v.after === "string" && p[key] === v.after) || Object.keys(p).some((key) => key !== "projectId" && !Object.hasOwn(c, key)))) return null;
 		if (operation === "linkProjectRepository" && !(entity(t.repository) && p.repositoryId === t.repository.id && same(c.link, t.repository))) return null;
 		if (operation === "addProjectItem" && !(entity(t.issue) && p.contentId === t.issue.id && same(c.addIssue, t.issue))) return null;
-		if (operation === "setProjectItemField" && !(entity(t.item) && entity(c.field) && p.itemId === t.item.id && p.fieldId === c.field.id && object(c.after) && same(p.value, c.after) && (c.before === null || object(c.before)))) return null;
+		if (operation === "setProjectItemField" && !(entity(t.item) && entity(c.field) && p.itemId === t.item.id && p.fieldId === c.field.id && object$1(c.after) && same(p.value, c.after) && (c.before === null || object$1(c.before)))) return null;
 		if (operation === "addIssueDependency" && !(entity(t.blockedIssue) && entity(t.blockingIssue) && p.issueId === t.blockedIssue.id && p.blockingIssueId === t.blockingIssue.id && same(c.addBlockedBy, t.blockingIssue))) return null;
 		const payloadKeys = {
 			createProject: value.mutation === "copyProject" ? [
@@ -352,7 +352,7 @@ function approvalModel(toolName, reason) {
 		if (operation === "createProject") {
 			if (c.creationPermission !== void 0 && typeof c.creationPermission !== "string") return null;
 			if (value.mutation === "createProject" && (t.template !== void 0 || c.copyBehavior !== void 0)) return null;
-			if (value.mutation === "copyProject" && !(object(c.copyBehavior) && object(t.template) && c.copyBehavior.sourceTemplate === t.template.id && c.copyBehavior.ordinaryNewProject === true && typeof c.copyBehavior.copied === "string" && typeof c.copyBehavior.notCopied === "string")) return null;
+			if (value.mutation === "copyProject" && !(object$1(c.copyBehavior) && object$1(t.template) && c.copyBehavior.sourceTemplate === t.template.id && c.copyBehavior.ordinaryNewProject === true && typeof c.copyBehavior.copied === "string" && typeof c.copyBehavior.notCopied === "string")) return null;
 		}
 		if (operation === "setProjectItemField" && (!fieldValueModel(c, "before").available || !fieldValueModel(c, "after").available)) return null;
 		if (operation !== "createProject" && value.mutation !== operation) return null;
@@ -373,7 +373,7 @@ function approvalModel(toolName, reason) {
 	}
 }
 function selectApproval({ pendingInteraction, callId }) {
-	if (!object(pendingInteraction) || pendingInteraction.kind !== "approval" || pendingInteraction.callId !== callId) return null;
+	if (!object$1(pendingInteraction) || pendingInteraction.kind !== "approval" || pendingInteraction.callId !== callId) return null;
 	return approvalModel(pendingInteraction.toolName, pendingInteraction.reason);
 }
 
@@ -401,11 +401,11 @@ function NativeApprovalDetail({ sessionId, callId, useSessionStatus, useChat }) 
 	const pendingInteraction = typeof useSessionStatus === "function" ? useSessionStatus((map) => map.get(sessionId)?.pendingInteraction) : void 0;
 	const command = typeof useChat === "function" ? useChat((snapshot) => {
 		for (const node of snapshot.nodes.values()) {
-			const root = object(node) && node.kind === "tool-call" && object(node.data) ? node.data.root : void 0;
-			if (object(root) && root.callId === callId && !("kind" in root)) try {
+			const root = object$1(node) && node.kind === "tool-call" && object$1(node.data) ? node.data.root : void 0;
+			if (object$1(root) && root.callId === callId && !("kind" in root)) try {
 				if (typeof root.argsRaw !== "string") return void 0;
 				const args = JSON.parse(root.argsRaw);
-				return object(args) && typeof args.command === "string" ? args.command : void 0;
+				return object$1(args) && typeof args.command === "string" ? args.command : void 0;
 			} catch {
 				return;
 			}
@@ -473,9 +473,9 @@ function ApprovalText({ label, value, markdown = false, exact = false }) {
 	}, JSON.stringify(value))));
 }
 function ApprovalResource({ label, value }) {
-	const resource = object(value) ? value : void 0;
-	const repository = object(resource?.repository) ? resource.repository : void 0;
-	const owner = object(resource?.owner) ? resource.owner : void 0;
+	const resource = object$1(value) ? value : void 0;
+	const repository = object$1(resource?.repository) ? resource.repository : void 0;
+	const owner = object$1(resource?.owner) ? resource.owner : void 0;
 	const identity = [text(resource?.nameWithOwner) || text(repository?.nameWithOwner) || text(owner?.login) || text(resource?.login), typeof resource?.number === "number" && Number.isSafeInteger(resource.number) ? `#${resource.number}` : ""].filter(Boolean).join(" · ");
 	const title = text(resource?.title) || text(resource?.name) || identity || "Name unavailable — see technical details";
 	return /* @__PURE__ */ react.default.createElement("div", { className: "gh-approval-resource" }, /* @__PURE__ */ react.default.createElement("small", null, label), /* @__PURE__ */ react.default.createElement(Link, { url: resource?.url }, title, safeUrl(resource?.url) && /* @__PURE__ */ react.default.createElement("span", { "aria-hidden": true }, " ↗")), identity && identity !== title && /* @__PURE__ */ react.default.createElement("small", null, identity));
@@ -484,7 +484,7 @@ function ApprovalPreview({ model }) {
 	if (!model) return null;
 	const { value: { operation, targets: t, change: c, exactPayload: p }, reason, extra } = model;
 	const rows = [];
-	const field = object(c.field) ? c.field : void 0;
+	const field = object$1(c.field) ? c.field : void 0;
 	const resource = (label, value) => rows.push(/* @__PURE__ */ react.default.createElement(ApprovalResource, {
 		key: label,
 		label,
@@ -507,9 +507,9 @@ function ApprovalPreview({ model }) {
 		].includes(label) || operation === "updateProject" || operation === "setProjectItemField" && field?.dataType === "TEXT" && ["Before", "After"].includes(label)
 	}));
 	const branches = (value, prefix = "") => {
-		if (!object(value)) return;
+		if (!object$1(value)) return;
 		for (const [key, label] of [["head", "Head branch (source)"], ["base", "Base branch (destination)"]]) {
-			const branch = object(value[key]) ? value[key] : void 0;
+			const branch = object$1(value[key]) ? value[key] : void 0;
 			rows.push(/* @__PURE__ */ react.default.createElement("div", {
 				key: `${prefix}${key}`,
 				className: "gh-approval-resource"
@@ -523,7 +523,7 @@ function ApprovalPreview({ model }) {
 		if (t.template) {
 			resource("Source template", t.template);
 			content("Copy draft issues", String(p.includeDraftIssues));
-			const copy = object(c.copyBehavior) ? c.copyBehavior : void 0;
+			const copy = object$1(c.copyBehavior) ? c.copyBehavior : void 0;
 			for (const key of ["copied", "notCopied"]) content(key === "copied" ? "Copied" : "Not copied / visibility", copy?.[key] ?? "Not supplied");
 			content("Template behavior", "Creates an ordinary new project, not a template.");
 		}
@@ -544,8 +544,8 @@ function ApprovalPreview({ model }) {
 	} else if (operation === "updatePullRequest") {
 		resource("Destination repository", t.repository);
 		resource("Pull request", t.pullRequest);
-		const before = object(c.before) ? c.before : void 0;
-		const after = object(c.after) ? c.after : void 0;
+		const before = object$1(c.before) ? c.before : void 0;
+		const after = object$1(c.after) ? c.after : void 0;
 		if (Object.hasOwn(p, "pullRequestId")) {
 			content("State before", readiness(before?.draft));
 			content("State after", readiness(after?.draft));
@@ -556,7 +556,7 @@ function ApprovalPreview({ model }) {
 				content(`Current ${title}`, before?.[key], key === "body");
 				content(`Proposed ${title}`, p[key], key === "body");
 			}
-			content("Current state", readiness(object(t.pullRequest) ? t.pullRequest.isDraft : void 0));
+			content("Current state", readiness(object$1(t.pullRequest) ? t.pullRequest.isDraft : void 0));
 			content("Unchanged", "Only the selected title/body fields change. Readiness, branches and merge state stay unchanged.");
 		}
 		branches(t.pullRequest);
@@ -567,7 +567,7 @@ function ApprovalPreview({ model }) {
 		content("Head commit", p.commit_id);
 		content("Review body", p.body, true);
 		if (Array.isArray(p.comments)) rows.push(/* @__PURE__ */ react.default.createElement("section", { key: "comments" }, /* @__PURE__ */ react.default.createElement("h4", null, "Inline review comments (", p.comments.length, ")"), p.comments.map((comment, index) => {
-			if (!object(comment)) return null;
+			if (!object$1(comment)) return null;
 			const side = comment.side === "LEFT" ? "LEFT (old/deleted)" : "RIGHT (new/context)";
 			const range = comment.start_line === void 0 ? String(comment.line) : `${String(comment.start_line)}–${String(comment.line)}`;
 			return /* @__PURE__ */ react.default.createElement("details", { key: index }, /* @__PURE__ */ react.default.createElement("summary", null, text(comment.path), " · ", side, " · Lines ", range), /* @__PURE__ */ react.default.createElement(ApprovalText, {
@@ -598,7 +598,7 @@ function ApprovalPreview({ model }) {
 	} else {
 		resource("Destination project", t.project);
 		if (operation === "updateProject") for (const [key, change] of Object.entries(c)) {
-			if (!object(change)) continue;
+			if (!object$1(change)) continue;
 			content(`${key} — Before`, change.before, key === "readme");
 			content(`${key} — After`, change.after, key === "readme");
 		}
@@ -611,7 +611,7 @@ function ApprovalPreview({ model }) {
 			content("Change", "Add this existing issue as a project item. The issue body and project README are not changed.");
 		}
 		if (operation === "setProjectItemField") {
-			resource("Item", object(t.item) ? t.item.content : void 0);
+			resource("Item", object$1(t.item) ? t.item.content : void 0);
 			content("Board field", `${text(field?.name) || "Name unavailable"} (${text(field?.dataType)})`);
 			for (const side of ["before", "after"]) {
 				const shown = fieldValueModel(c, side);
@@ -650,7 +650,7 @@ const api = async (action, body, signal) => {
 	});
 	if (!response.ok) throw new Error("GitHub access status is unavailable. No new access was requested.");
 	const result = await response.json();
-	if (!object(result) || result.ok !== true) throw new Error("GitHub access status is unavailable. No new access was requested.");
+	if (!object$1(result) || result.ok !== true) throw new Error("GitHub access status is unavailable. No new access was requested.");
 	return result.value;
 };
 
@@ -665,10 +665,10 @@ const exclusions = "No deletion, transfer, new issues, issues outside this grant
 const unavailable = "Issue title/description editing, labels, assignees, closing/reopening, and dependency removal are not available through this integration.";
 const expiry = "Access applies only to this live requesting session and account. It does not transfer to other sessions or subagents. Restart, session restoration, account change, or service disposal requires fresh approval. Revocation prevents future dispatch, not writes already dispatched.";
 function validScope(scope) {
-	return object(scope) && object(scope.account) && id(scope.account.id) && id(scope.account.login) && Array.isArray(scope.operations) && scope.operations.length > 0 && scope.operations.length <= 2 && scope.operations.every((op) => typeof op === "string" && Object.hasOwn(labels, op)) && Array.isArray(scope.issues) && scope.issues.length > 0 && scope.issues.length <= 50 && scope.issues.every((issue) => object(issue) && id(issue.id) && id(issue.repositoryId) && id(issue.repositoryOwnerId) && id(issue.nameWithOwner) && typeof issue.issueNumber === "number" && Number.isSafeInteger(issue.issueNumber) && issue.issueNumber > 0) && Array.isArray(scope.projects) && scope.projects.length <= 20 && scope.projects.every((project) => object(project) && id(project.id) && id(project.ownerId) && id(project.owner) && typeof project.projectNumber === "number" && Number.isSafeInteger(project.projectNumber) && project.projectNumber > 0) && Array.isArray(scope.memberships) && scope.memberships.length <= 5e3 && scope.memberships.every((item) => object(item) && id(item.id) && id(item.issueId) && id(item.projectId));
+	return object$1(scope) && object$1(scope.account) && id(scope.account.id) && id(scope.account.login) && Array.isArray(scope.operations) && scope.operations.length > 0 && scope.operations.length <= 2 && scope.operations.every((op) => typeof op === "string" && Object.hasOwn(labels, op)) && Array.isArray(scope.issues) && scope.issues.length > 0 && scope.issues.length <= 50 && scope.issues.every((issue) => object$1(issue) && id(issue.id) && id(issue.repositoryId) && id(issue.repositoryOwnerId) && id(issue.nameWithOwner) && typeof issue.issueNumber === "number" && Number.isSafeInteger(issue.issueNumber) && issue.issueNumber > 0) && Array.isArray(scope.projects) && scope.projects.length <= 20 && scope.projects.every((project) => object$1(project) && id(project.id) && id(project.ownerId) && id(project.owner) && typeof project.projectNumber === "number" && Number.isSafeInteger(project.projectNumber) && project.projectNumber > 0) && Array.isArray(scope.memberships) && scope.memberships.length <= 5e3 && scope.memberships.every((item) => object$1(item) && id(item.id) && id(item.issueId) && id(item.projectId));
 }
 function validStatus(value, callId) {
-	return object(value) && value.version === 1 && id(value.phase) && (value.callId === void 0 || value.callId === callId) && (value.toolName === void 0 || value.toolName === "github_request_issue_management") && (value.scope === void 0 || validScope(value.scope)) && (value.exactPreview === void 0 || typeof value.exactPreview === "string") && Array.isArray(value.grants) && value.grants.length <= 100 && value.grants.every((grant) => object(grant) && id(grant.id) && id(grant.state) && validScope(grant.scope)) && Array.isArray(value.history) && value.history.length <= 1e3 && value.history.every((row) => object(row) && id(row.id) && id(row.operation) && id(row.outcome));
+	return object$1(value) && value.version === 1 && id(value.phase) && (value.callId === void 0 || value.callId === callId) && (value.toolName === void 0 || value.toolName === "github_request_issue_management") && (value.scope === void 0 || validScope(value.scope)) && (value.exactPreview === void 0 || typeof value.exactPreview === "string") && Array.isArray(value.grants) && value.grants.length <= 100 && value.grants.every((grant) => object$1(grant) && id(grant.id) && id(grant.state) && validScope(grant.scope)) && Array.isArray(value.history) && value.history.length <= 1e3 && value.history.every((row) => object$1(row) && id(row.id) && id(row.operation) && id(row.outcome));
 }
 const phases = {
 	prepared: "Verified scope prepared",
@@ -805,7 +805,7 @@ function useGitHubCallPresentation(domain, { sessionId, callId, block, useSessio
 				if (continueObserving) observation.timer = setTimeout(load, 1500);
 			} catch (failure) {
 				if (generation.current !== token || observation.controller.signal.aborted) return;
-				update(null, domain === "field" ? "Prepared change details are unavailable. See the native approval preview and raw tool details; no previous value or outcome is inferred." : object(failure) && typeof failure.message === "string" && failure.message ? failure.message : "GitHub status is unavailable. Access is not confirmed.");
+				update(null, domain === "field" ? "Prepared change details are unavailable. See the native approval preview and raw tool details; no previous value or outcome is inferred." : object$1(failure) && typeof failure.message === "string" && failure.message ? failure.message : "GitHub status is unavailable. Access is not confirmed.");
 				if (++failures <= 3) observation.timer = setTimeout(load, 1500);
 			}
 		}
@@ -911,8 +911,8 @@ function GrantCard(props) {
 function FieldChangeCard(props) {
 	const { block, inspect } = props;
 	const { status, pending, error } = useGitHubCallPresentation("field", props);
-	const change = status?.change, field = object(change?.field) ? change.field : void 0, project = object(status?.targets?.project) ? status.targets.project : void 0, item = object(status?.targets?.item) ? status.targets.item : void 0;
-	const content = object(item?.content) ? item.content : void 0, before = fieldValueModel(change, "before"), after = fieldValueModel(change, "after");
+	const change = status?.change, field = object$1(change?.field) ? change.field : void 0, project = object$1(status?.targets?.project) ? status.targets.project : void 0, item = object$1(status?.targets?.item) ? status.targets.item : void 0;
+	const content = object$1(item?.content) ? item.content : void 0, before = fieldValueModel(change, "before"), after = fieldValueModel(change, "after");
 	const phase = fieldPhase(status, block, pending), result = fieldResult(block) ?? validatedFieldResult(status?.result);
 	const reason = fieldFailureReason(block, result), requested = fieldRequestedTarget(block);
 	const showValues = phase !== "no-change" && (before.available || after.available);
@@ -938,10 +938,39 @@ function FieldChangeCard(props) {
 }
 
 //#endregion
+//#region shared/read-result.ts
+const object = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
+const META_KIND = "github-read-card";
+const MAX_META_BYTES = 65536;
+const MAX_RESULT_CHARS = 524288;
+const UNAVAILABLE_RESULT = "Readable result unavailable. Inspect raw tool details; no success or completeness is inferred.";
+const SHORTENED_RESULT = "Summary unavailable: DSH shortened this result. Inspect raw tool details for the saved full result; no success or completeness is inferred.";
+function cardResultEnvelope(toolName, block) {
+	if (!object(block)) throw new Error();
+	const meta = block.meta;
+	if (/^github_(get|list|search)_/.test(toolName) && block.isError !== true && object(meta) && meta.kind === META_KIND && meta.version === 1 && meta.toolName === toolName && object(meta.envelope) && meta.envelope.host === "github.com" && meta.envelope.untrusted === true && new TextEncoder().encode(JSON.stringify(meta)).length <= MAX_META_BYTES) return meta.envelope;
+	const parts = Array.isArray(block.content) ? block.content.filter((part) => object(part) && part.type === "text") : [];
+	if (parts.length !== 1 || !object(parts[0]) || typeof parts[0].text !== "string") throw new Error();
+	const text = parts[0].text;
+	if (text.length > MAX_RESULT_CHARS) throw new Error();
+	try {
+		const parsed = JSON.parse(text);
+		if (!object(parsed)) throw new Error();
+		return parsed;
+	} catch {
+		if (/(?:^|\n\n)\((?:Omitted \d+ bytes\.|More bytes were omitted\.)[^\n]* Full formatted result stored at: [^\n]+\)$/.test(text)) throw new Error(SHORTENED_RESULT);
+		throw new Error();
+	}
+}
+function cardResultFailure(error) {
+	return error instanceof Error && error.message === "Summary unavailable: DSH shortened this result. Inspect raw tool details for the saved full result; no success or completeness is inferred." ? SHORTENED_RESULT : UNAVAILABLE_RESULT;
+}
+
+//#endregion
 //#region client/collection-completeness.ts
 /** Read a property only after narrowing untrusted supplied data. */
 function supplied(value, key) {
-	return object(value) ? value[key] : void 0;
+	return object$1(value) ? value[key] : void 0;
 }
 function combineCompleteness(states) {
 	return states.includes("unknown") ? "unknown" : states.includes("partial") ? "partial" : "complete";
@@ -970,9 +999,9 @@ function paginationEvidence(value, protocol) {
 	const nextCursor = supplied(value, "nextCursor"), endCursor = supplied(pageInfo, "endCursor");
 	const count = supplied(value, "totalCount"), page = supplied(pageInfo, "page"), nextPage = supplied(pageInfo, "nextPage");
 	const hasNextPage = supplied(pageInfo, "hasNextPage");
-	let valid = Array.isArray(nodes) && object(pageInfo) && typeof hasNextPage === "boolean" && optionalCursor(nextCursor) && optionalCursor(endCursor) && (count == null || typeof count === "number" && Number.isSafeInteger(count) && count >= nodes.length);
+	let valid = Array.isArray(nodes) && object$1(pageInfo) && typeof hasNextPage === "boolean" && optionalCursor(nextCursor) && optionalCursor(endCursor) && (count == null || typeof count === "number" && Number.isSafeInteger(count) && count >= nodes.length);
 	if (protocol === "rest") valid = valid && positiveInteger(page) && (hasNextPage === true ? positiveInteger(nextPage) && nextPage === page + 1 : nextPage == null);
-	else valid = valid && !Object.hasOwn(object(pageInfo) ? pageInfo : {}, "page") && (hasNextPage !== true || id(nextCursor) || id(endCursor));
+	else valid = valid && !Object.hasOwn(object$1(pageInfo) ? pageInfo : {}, "page") && (hasNextPage !== true || id(nextCursor) || id(endCursor));
 	const cursor = id(nextCursor) ? nextCursor : hasNextPage === true && id(endCursor) ? endCursor : void 0;
 	return {
 		valid,
@@ -1025,7 +1054,7 @@ function inspectCollections(envelope, toolName) {
 	const data = supplied(envelope, "data");
 	visit(data, "data", 0);
 	function requireCollection(value, path) {
-		if (object(value) && Object.hasOwn(value, "nodes")) return;
+		if (object$1(value) && Object.hasOwn(value, "nodes")) return;
 		connections.push({
 			value,
 			path
@@ -1039,13 +1068,13 @@ function inspectCollections(envelope, toolName) {
 	if (toolName === "github_get_project") for (const key of ["fields", "repositories"]) requireCollection(supplied(data, key), `data.${key}`);
 	else if (toolName === "github_list_project_items") if (supplied(data, "nodes") === void 0 && id(supplied(data, "id"))) requireCollection(supplied(data, "fieldValues"), "data.fieldValues");
 	else requireNested(data, "data", "fieldValues");
-	else if (toolName === "github_get_pull_request_threads") if (object(supplied(data, "thread"))) requireCollection(supplied(supplied(data, "thread"), "comments"), "data.thread.comments");
+	else if (toolName === "github_get_pull_request_threads") if (object$1(supplied(data, "thread"))) requireCollection(supplied(supplied(data, "thread"), "comments"), "data.thread.comments");
 	else requireNested(supplied(data, "threads"), "data.threads", "comments");
 	const truncated = supplied(envelope, "truncated") === true, truncations = supplied(envelope, "truncations");
 	const localized = Array.isArray(truncations) && truncations.length > 0 && truncations.length <= 100 && truncations.every((notice) => text(supplied(notice, "path")).startsWith("data."));
 	if (truncated) add("truncation", null, localized ? "complete" : "partial", "GitHub returned bounded or incomplete output. See all continuation notices and raw details.");
 	if (Array.isArray(truncations)) {
-		for (const notice of truncations.slice(0, 100)) if (object(notice)) {
+		for (const notice of truncations.slice(0, 100)) if (object$1(notice)) {
 			const path = text(notice.path);
 			add("truncation", path === "data" || path.startsWith("data.") ? path : null, "partial", `${path || "Output"}: ${text(notice.reason) || text(notice.kind) || "truncated"}. ${text(notice.continuation)}`);
 		}
@@ -1066,7 +1095,7 @@ function collectionModel(value, path, inspection, protocol = "graphql") {
 	const count = supplied(value, "totalCount");
 	const total = typeof count === "number" && Number.isSafeInteger(count) && count >= 0 ? count : void 0;
 	const pagination = paginationEvidence(value, protocol);
-	const malformed = !object(value) || !Array.isArray(nodes);
+	const malformed = !object$1(value) || !Array.isArray(nodes);
 	const returnedCount = Array.isArray(nodes) ? nodes.length : 0;
 	let own = "complete";
 	if (!pagination.valid) own = "unknown";
@@ -1146,27 +1175,24 @@ function readCardModel(toolName, block) {
 		...base,
 		error: "Unsupported card. Use raw tool details."
 	};
-	if (!object(block) || block.kind !== "tool-result") return {
+	if (!object$1(block) || block.kind !== "tool-result") return {
 		...base,
 		state: "running"
 	};
 	let envelope;
 	try {
-		const parts = Array.isArray(block.content) ? block.content.filter((part) => object(part) && part.type === "text" && typeof part.text === "string") : [];
-		const part = parts[0];
-		if (parts.length !== 1 || !part || part.text.length > 524288) throw new Error();
-		const parsed = JSON.parse(part.text);
-		if (!object(parsed) || parsed.host !== "github.com" || parsed.untrusted !== true) throw new Error();
+		const parsed = cardResultEnvelope(toolName, block);
+		if (!object$1(parsed) || parsed.host !== "github.com" || parsed.untrusted !== true) throw new Error();
 		envelope = parsed;
-	} catch {
+	} catch (error) {
 		return {
 			...base,
 			state: "unknown",
-			error: "Readable result unavailable. Inspect raw tool details; no success or completeness is inferred."
+			error: cardResultFailure(error)
 		};
 	}
 	const inspection = inspectCollections(envelope, toolName), warnings = inspection.notices.map((notice) => notice.message), data = envelope.data;
-	if (!object(data)) return {
+	if (!object$1(data)) return {
 		...base,
 		warnings,
 		state: "unknown",
@@ -1181,7 +1207,7 @@ function readCardModel(toolName, block) {
 	const kind = toolName.includes("project_items") ? "items" : toolName.includes("project") ? "projects" : "issues";
 	const singular = toolName === "github_get_project" || toolName === "github_get_issue" || kind === "items" && data.nodes === void 0 && id(data.id);
 	const entries = singular ? [data] : data.nodes;
-	const validEntry = (entry) => object(entry) && id(entry.id) && (kind === "items" ? (entry.content == null || object(entry.content)) && (entry.fieldValues === void 0 || object(entry.fieldValues) && Array.isArray(entry.fieldValues.nodes)) : typeof entry.title === "string" && typeof entry.number === "number" && Number.isSafeInteger(entry.number) && entry.number > 0);
+	const validEntry = (entry) => object$1(entry) && id(entry.id) && (kind === "items" ? (entry.content == null || object$1(entry.content)) && (entry.fieldValues === void 0 || object$1(entry.fieldValues) && Array.isArray(entry.fieldValues.nodes)) : typeof entry.title === "string" && typeof entry.number === "number" && Number.isSafeInteger(entry.number) && entry.number > 0);
 	if (!Array.isArray(entries) || !entries.every(validEntry)) return {
 		...base,
 		warnings,
@@ -1225,12 +1251,12 @@ const connectionTitles = {
 	pullRequests: "Pull requests"
 };
 function itemFieldModel(value) {
-	if (!object(value)) return {
+	if (!object$1(value)) return {
 		label: "Malformed field",
 		value: "See technical details"
 	};
 	const label = text(supplied(value.field, "name")) || "Unnamed field";
-	const leaf = object(value.issueFieldValue) ? value.issueFieldValue : value;
+	const leaf = object$1(value.issueFieldValue) ? value.issueFieldValue : value;
 	const connections = [
 		"labels",
 		"users",
@@ -1312,9 +1338,9 @@ function TextSection({ title, value }) {
 	return typeof value === "string" && value.length > 0 ? /* @__PURE__ */ react.default.createElement("details", null, /* @__PURE__ */ react.default.createElement("summary", null, title), /* @__PURE__ */ react.default.createElement("pre", { tabIndex: 0 }, value)) : null;
 }
 function SuppliedList({ title, connection }) {
-	if (!object(connection)) return null;
+	if (!object$1(connection)) return null;
 	if (!Array.isArray(connection.nodes)) return /* @__PURE__ */ react.default.createElement("p", null, `${title}: malformed supplied details; inspect raw data.`);
-	return /* @__PURE__ */ react.default.createElement("details", null, /* @__PURE__ */ react.default.createElement("summary", null, `${title} (${connection.nodes.length} returned${Number.isSafeInteger(connection.totalCount) ? `; ${connection.totalCount} total reported` : ""})`), /* @__PURE__ */ react.default.createElement("ul", null, connection.nodes.slice(0, 50).map((entry, index) => /* @__PURE__ */ react.default.createElement("li", { key: index }, object(entry) ? /* @__PURE__ */ react.default.createElement(Link, { url: entry.url }, `${Number.isSafeInteger(entry.number) ? `#${entry.number} — ` : ""}${shortIdentity(entry)}`) : "Malformed entry — see raw details"))));
+	return /* @__PURE__ */ react.default.createElement("details", null, /* @__PURE__ */ react.default.createElement("summary", null, `${title} (${connection.nodes.length} returned${Number.isSafeInteger(connection.totalCount) ? `; ${connection.totalCount} total reported` : ""})`), /* @__PURE__ */ react.default.createElement("ul", null, connection.nodes.slice(0, 50).map((entry, index) => /* @__PURE__ */ react.default.createElement("li", { key: index }, object$1(entry) ? /* @__PURE__ */ react.default.createElement(Link, { url: entry.url }, `${Number.isSafeInteger(entry.number) ? `#${entry.number} — ` : ""}${shortIdentity(entry)}`) : "Malformed entry — see raw details"))));
 }
 function FieldValue({ value }) {
 	const model = itemFieldModel(value);
@@ -1354,11 +1380,11 @@ function IssueCollection({ title, model, compact }) {
 	return /* @__PURE__ */ react.default.createElement("div", { className: "gh-issue-collection" }, /* @__PURE__ */ react.default.createElement("strong", null, `${title}: `), /* @__PURE__ */ react.default.createElement("span", { className: compact ? "gh-issue-chips" : "" }, model.entries.map((entry, index) => /* @__PURE__ */ react.default.createElement("span", {
 		key: index,
 		className: compact ? "gh-issue-chip" : "gh-issue-related"
-	}, object(entry) ? /* @__PURE__ */ react.default.createElement(Link, { url: entry.url }, `${text(supplied(entry.repository, "nameWithOwner")) ? `${supplied(entry.repository, "nameWithOwner")} ` : ""}${Number.isSafeInteger(entry.number) ? `#${entry.number} — ` : ""}${text(entry.name) || text(entry.login) || text(entry.title) || "Name unavailable"}`) : "Malformed entry — see raw details"))), !complete && /* @__PURE__ */ react.default.createElement("small", null, `${title}: completeness unknown; inspect pagination and raw details.`));
+	}, object$1(entry) ? /* @__PURE__ */ react.default.createElement(Link, { url: entry.url }, `${text(supplied(entry.repository, "nameWithOwner")) ? `${supplied(entry.repository, "nameWithOwner")} ` : ""}${Number.isSafeInteger(entry.number) ? `#${entry.number} — ` : ""}${text(entry.name) || text(entry.login) || text(entry.title) || "Name unavailable"}`) : "Malformed entry — see raw details"))), !complete && /* @__PURE__ */ react.default.createElement("small", null, `${title}: completeness unknown; inspect pagination and raw details.`));
 }
 function IssueDetail({ entry, model }) {
 	const body = entry.body, long = typeof body === "string" && body.length > 400;
-	return /* @__PURE__ */ react.default.createElement(react.default.Fragment, null, /* @__PURE__ */ react.default.createElement(IssueRow, { entry }), typeof body !== "string" ? /* @__PURE__ */ react.default.createElement("p", { role: "note" }, "Description unavailable.") : body === "" ? /* @__PURE__ */ react.default.createElement("p", { className: "gh-note" }, "No description.") : /* @__PURE__ */ react.default.createElement("div", { className: "gh-issue-description" }, /* @__PURE__ */ react.default.createElement("p", { style: { whiteSpace: "pre-wrap" } }, long ? `${body.slice(0, 400)}…` : body), long && /* @__PURE__ */ react.default.createElement("details", null, /* @__PURE__ */ react.default.createElement("summary", null, "Full description — preview shortened"), /* @__PURE__ */ react.default.createElement("div", { style: { whiteSpace: "pre-wrap" } }, body))), entry.parent === null ? null : object(entry.parent) ? /* @__PURE__ */ react.default.createElement("p", null, "Parent: ", /* @__PURE__ */ react.default.createElement(Link, { url: entry.parent.url }, `${text(supplied(entry.parent.repository, "nameWithOwner")) ? `${supplied(entry.parent.repository, "nameWithOwner")} ` : ""}${Number.isSafeInteger(entry.parent.number) ? `#${entry.parent.number} — ` : ""}${text(entry.parent.title) || "Title unavailable"}`)) : /* @__PURE__ */ react.default.createElement("p", { role: "note" }, "Parent: details missing or malformed."), issueCollections.map(({ title, key, compact }) => /* @__PURE__ */ react.default.createElement(IssueCollection, {
+	return /* @__PURE__ */ react.default.createElement(react.default.Fragment, null, /* @__PURE__ */ react.default.createElement(IssueRow, { entry }), typeof body !== "string" ? /* @__PURE__ */ react.default.createElement("p", { role: "note" }, "Description unavailable.") : body === "" ? /* @__PURE__ */ react.default.createElement("p", { className: "gh-note" }, "No description.") : /* @__PURE__ */ react.default.createElement("div", { className: "gh-issue-description" }, /* @__PURE__ */ react.default.createElement("p", { style: { whiteSpace: "pre-wrap" } }, long ? `${body.slice(0, 400)}…` : body), long && /* @__PURE__ */ react.default.createElement("details", null, /* @__PURE__ */ react.default.createElement("summary", null, "Full description — preview shortened"), /* @__PURE__ */ react.default.createElement("div", { style: { whiteSpace: "pre-wrap" } }, body))), entry.parent === null ? null : object$1(entry.parent) ? /* @__PURE__ */ react.default.createElement("p", null, "Parent: ", /* @__PURE__ */ react.default.createElement(Link, { url: entry.parent.url }, `${text(supplied(entry.parent.repository, "nameWithOwner")) ? `${supplied(entry.parent.repository, "nameWithOwner")} ` : ""}${Number.isSafeInteger(entry.parent.number) ? `#${entry.parent.number} — ` : ""}${text(entry.parent.title) || "Title unavailable"}`)) : /* @__PURE__ */ react.default.createElement("p", { role: "note" }, "Parent: details missing or malformed."), issueCollections.map(({ title, key, compact }) => /* @__PURE__ */ react.default.createElement(IssueCollection, {
 		key,
 		title,
 		model: model.collections?.[key],
@@ -1380,7 +1406,7 @@ function ReadEntry({ entry, kind }) {
 	}), project ? /* @__PURE__ */ react.default.createElement(react.default.Fragment, null, /* @__PURE__ */ react.default.createElement(SuppliedList, {
 		title: "Linked repositories",
 		connection: entry.repositories
-	}), entry.fields !== void 0 && /* @__PURE__ */ react.default.createElement("details", null, /* @__PURE__ */ react.default.createElement("summary", null, "Project field definitions"), Array.isArray(fields) ? fields.slice(0, 50).map((field, index) => object(field) ? /* @__PURE__ */ react.default.createElement(FieldDefinition, {
+	}), entry.fields !== void 0 && /* @__PURE__ */ react.default.createElement("details", null, /* @__PURE__ */ react.default.createElement("summary", null, "Project field definitions"), Array.isArray(fields) ? fields.slice(0, 50).map((field, index) => object$1(field) ? /* @__PURE__ */ react.default.createElement(FieldDefinition, {
 		key: index,
 		field
 	}) : /* @__PURE__ */ react.default.createElement("p", { key: index }, "Malformed field — inspect raw details")) : /* @__PURE__ */ react.default.createElement("p", null, "Field definitions unavailable."))) : /* @__PURE__ */ react.default.createElement(react.default.Fragment, null, Boolean(entry.parent) && /* @__PURE__ */ react.default.createElement("p", null, "Parent: ", /* @__PURE__ */ react.default.createElement(Link, { url: supplied(entry.parent, "url") }, `#${supplied(entry.parent, "number") ?? "?"} — ${shortIdentity(entry.parent)}`)), issueCollections.map(({ title, key }) => /* @__PURE__ */ react.default.createElement(SuppliedList, {
@@ -1451,7 +1477,7 @@ function pullRequestCardModel(toolName, block) {
 		const raw = block?.call?.argsRaw ?? block?.argsRaw;
 		if (raw && raw.length <= 65536) {
 			const args = JSON.parse(raw);
-			if (object(args) && typeof args.owner === "string" && typeof args.repo === "string") base.target = `${args.owner}/${args.repo}${Number.isSafeInteger(args.pullNumber) ? ` #${args.pullNumber}` : ""}`;
+			if (object$1(args) && typeof args.owner === "string" && typeof args.repo === "string") base.target = `${args.owner}/${args.repo}${Number.isSafeInteger(args.pullNumber) ? ` #${args.pullNumber}` : ""}`;
 		}
 	} catch {}
 	if (block?.kind !== "tool-result") return {
@@ -1459,11 +1485,9 @@ function pullRequestCardModel(toolName, block) {
 		status: toolName === "github_create_pull_request" ? "Pending or running · draft creation" : toolName === "github_update_pull_request" ? "Pending or running · PR update" : writeTool(toolName) ? "Pending or running · approval required" : "Reading…"
 	};
 	try {
-		const parts = block.content?.filter((part) => part.type === "text");
-		if (parts?.length !== 1 || typeof parts[0]?.text !== "string" || parts[0].text.length > 524288) throw new Error();
-		const envelope = JSON.parse(parts[0].text);
-		if (!object(envelope) || envelope.host !== "github.com") throw new Error();
-		if (object(envelope.error)) return {
+		const envelope = cardResultEnvelope(toolName, block);
+		if (!object$1(envelope) || envelope.host !== "github.com") throw new Error();
+		if (object$1(envelope.error)) return {
 			...base,
 			status: "Failed",
 			error: text(envelope.error.message) || "Inspect raw tool details."
@@ -1480,11 +1504,11 @@ function pullRequestCardModel(toolName, block) {
 			error: "The tool reported an error. Inspect raw tool details; success is not inferred."
 		};
 		if (writeTool(toolName)) {
-			if (envelope.outcome !== "confirmed" || !object(envelope.resource)) throw new Error();
+			if (envelope.outcome !== "confirmed" || !object$1(envelope.resource)) throw new Error();
 			const resource = envelope.resource;
 			if (typeof resource.id !== "string" || !resource.id) throw new Error();
 			if (toolName.includes("stack")) {
-				if (!Number.isSafeInteger(resource.number) || !object(resource.pullRequests) || !Array.isArray(resource.pullRequests.nodes) || resource.pullRequests.nodes.length < 2 || !resource.pullRequests.nodes.every((member) => object(member) && Number.isSafeInteger(member.number))) throw new Error();
+				if (!Number.isSafeInteger(resource.number) || !object$1(resource.pullRequests) || !Array.isArray(resource.pullRequests.nodes) || resource.pullRequests.nodes.length < 2 || !resource.pullRequests.nodes.every((member) => object$1(member) && Number.isSafeInteger(member.number))) throw new Error();
 			} else if (toolName === "github_submit_pull_request_review") {
 				if (![
 					"COMMENTED",
@@ -1496,11 +1520,11 @@ function pullRequestCardModel(toolName, block) {
 				...base,
 				status: "Confirmed",
 				entries: [envelope.resource],
-				...object(envelope.change) ? { change: envelope.change } : {},
+				...object$1(envelope.change) ? { change: envelope.change } : {},
 				warnings: []
 			};
 		}
-		if (!object(envelope.data)) throw new Error();
+		if (!object$1(envelope.data)) throw new Error();
 		const data = envelope.data;
 		const key = {
 			github_list_pull_requests: "pullRequests",
@@ -1516,7 +1540,7 @@ function pullRequestCardModel(toolName, block) {
 			const runs = supplied(data.checkRuns, "nodes"), statuses = supplied(data.statuses, "nodes");
 			if (!Array.isArray(runs) || !Array.isArray(statuses)) throw new Error();
 			collection = [...runs, ...statuses];
-		} else if (toolName === "github_get_pull_request_threads" && object(data.thread)) collection = [data.thread];
+		} else if (toolName === "github_get_pull_request_threads" && object$1(data.thread)) collection = [data.thread];
 		else {
 			const connection = key ? data[key] : void 0;
 			const nodes = supplied(connection, "nodes");
@@ -1524,7 +1548,7 @@ function pullRequestCardModel(toolName, block) {
 			collection = nodes;
 			total = supplied(connection, "totalCount");
 		}
-		if (!collection.every(object)) throw new Error();
+		if (!collection.every(object$1)) throw new Error();
 		const inspection = inspectCollections(envelope, toolName);
 		const warnings = inspection.notices.map((notice) => notice.message);
 		if (Array.isArray(data.warnings)) warnings.push(...data.warnings.filter((warning) => typeof warning === "string"));
@@ -1537,13 +1561,13 @@ function pullRequestCardModel(toolName, block) {
 			warnings,
 			inspection,
 			completeness: inspection.completeness,
-			...toolName !== "github_get_pull_request" && object(data.pullRequest) ? { pullRequest: data.pullRequest } : {},
+			...toolName !== "github_get_pull_request" && object$1(data.pullRequest) ? { pullRequest: data.pullRequest } : {},
 			...Number.isSafeInteger(total) && Number(total) >= 0 ? { total: Number(total) } : {}
 		};
-	} catch {
+	} catch (error) {
 		return {
 			...base,
-			error: "Readable result unavailable. Inspect raw tool details; no success or completeness is inferred."
+			error: cardResultFailure(error)
 		};
 	}
 }
@@ -1571,15 +1595,15 @@ function pullRequestEntryContext(entry) {
 //#region client/pull-request-card.tsx
 function Entry({ entry }) {
 	const memberConnection = entry.pullRequests ?? entry.pull_requests;
-	const members = object(memberConnection) ? memberConnection.nodes : memberConnection;
+	const members = object$1(memberConnection) ? memberConnection.nodes : memberConnection;
 	const position = entry.position;
-	const pr = object(entry.pullRequest) ? entry.pullRequest : entry;
-	return /* @__PURE__ */ react.default.createElement("article", { className: "gh-pr-row" }, /* @__PURE__ */ react.default.createElement("strong", null, /* @__PURE__ */ react.default.createElement(Link, { url: pr.url ?? pr.html_url ?? pr.detailsUrl ?? pr.targetUrl }, Array.isArray(members) ? `Stack #${entry.number} · ${supplied(memberConnection, "totalCount") ?? members.length} layers · trunk ${text(supplied(entry.base, "ref")) || "unavailable"}` : pullRequestEntryLabel(pr))), typeof position === "number" && /* @__PURE__ */ react.default.createElement("small", null, `Layer ${position}`), /* @__PURE__ */ react.default.createElement("p", null, pullRequestEntryContext(pr).join(" · ")), Array.isArray(members) && /* @__PURE__ */ react.default.createElement(react.default.Fragment, null, /* @__PURE__ */ react.default.createElement("ol", { "aria-label": "Stack layers, bottom to top" }, members.slice(0, 5).map((member, index) => /* @__PURE__ */ react.default.createElement("li", { key: index }, object(member) ? /* @__PURE__ */ react.default.createElement(Link, { url: member.url ?? member.html_url }, pullRequestEntryLabel(member), " · ", pullRequestEntryContext(member).join(" · ")) : "Layer unavailable"))), members.length > 5 && /* @__PURE__ */ react.default.createElement("details", null, /* @__PURE__ */ react.default.createElement("summary", null, `Remaining returned layers (${members.length - 5})`), /* @__PURE__ */ react.default.createElement("ol", { start: 6 }, members.slice(5, 50).map((member, index) => /* @__PURE__ */ react.default.createElement("li", { key: index }, object(member) ? /* @__PURE__ */ react.default.createElement(Link, { url: member.url ?? member.html_url }, pullRequestEntryLabel(member), " ·", " ", pullRequestEntryContext(member).join(" · ")) : "Layer unavailable"))))), members === void 0 && typeof entry.baseRefName === "string" && typeof entry.size === "number" && /* @__PURE__ */ react.default.createElement("p", null, `${entry.size} layers · trunk ${entry.baseRefName}`), entry.stack === null && /* @__PURE__ */ react.default.createElement("small", null, "No native stack membership"), object(entry.stack) && /* @__PURE__ */ react.default.createElement("small", null, `Stack #${text(String(entry.stack.number ?? ""))}${Number.isSafeInteger(supplied(entry.stackEntry, "position")) ? ` · layer ${supplied(entry.stackEntry, "position")}` : ""}`));
+	const pr = object$1(entry.pullRequest) ? entry.pullRequest : entry;
+	return /* @__PURE__ */ react.default.createElement("article", { className: "gh-pr-row" }, /* @__PURE__ */ react.default.createElement("strong", null, /* @__PURE__ */ react.default.createElement(Link, { url: pr.url ?? pr.html_url ?? pr.detailsUrl ?? pr.targetUrl }, Array.isArray(members) ? `Stack #${entry.number} · ${supplied(memberConnection, "totalCount") ?? members.length} layers · trunk ${text(supplied(entry.base, "ref")) || "unavailable"}` : pullRequestEntryLabel(pr))), typeof position === "number" && /* @__PURE__ */ react.default.createElement("small", null, `Layer ${position}`), /* @__PURE__ */ react.default.createElement("p", null, pullRequestEntryContext(pr).join(" · ")), Array.isArray(members) && /* @__PURE__ */ react.default.createElement(react.default.Fragment, null, /* @__PURE__ */ react.default.createElement("ol", { "aria-label": "Stack layers, bottom to top" }, members.slice(0, 5).map((member, index) => /* @__PURE__ */ react.default.createElement("li", { key: index }, object$1(member) ? /* @__PURE__ */ react.default.createElement(Link, { url: member.url ?? member.html_url }, pullRequestEntryLabel(member), " · ", pullRequestEntryContext(member).join(" · ")) : "Layer unavailable"))), members.length > 5 && /* @__PURE__ */ react.default.createElement("details", null, /* @__PURE__ */ react.default.createElement("summary", null, `Remaining returned layers (${members.length - 5})`), /* @__PURE__ */ react.default.createElement("ol", { start: 6 }, members.slice(5, 50).map((member, index) => /* @__PURE__ */ react.default.createElement("li", { key: index }, object$1(member) ? /* @__PURE__ */ react.default.createElement(Link, { url: member.url ?? member.html_url }, pullRequestEntryLabel(member), " ·", " ", pullRequestEntryContext(member).join(" · ")) : "Layer unavailable"))))), members === void 0 && typeof entry.baseRefName === "string" && typeof entry.size === "number" && /* @__PURE__ */ react.default.createElement("p", null, `${entry.size} layers · trunk ${entry.baseRefName}`), entry.stack === null && /* @__PURE__ */ react.default.createElement("small", null, "No native stack membership"), object$1(entry.stack) && /* @__PURE__ */ react.default.createElement("small", null, `Stack #${text(String(entry.stack.number ?? ""))}${Number.isSafeInteger(supplied(entry.stackEntry, "position")) ? ` · layer ${supplied(entry.stackEntry, "position")}` : ""}`));
 }
 function Changes({ change }) {
 	const { before, after } = change;
 	const format = (key, value) => key === "draft" && typeof value === "boolean" ? value ? "Draft" : "Ready for review" : typeof value === "string" ? value : JSON.stringify(value, null, 2);
-	return /* @__PURE__ */ react.default.createElement("details", null, /* @__PURE__ */ react.default.createElement("summary", null, "Approved changes"), object(after) ? Object.entries(after).map(([key, value]) => /* @__PURE__ */ react.default.createElement("div", { key }, /* @__PURE__ */ react.default.createElement("strong", null, key === "draft" ? "Readiness" : key), object(before) && Object.hasOwn(before, key) && /* @__PURE__ */ react.default.createElement(react.default.Fragment, null, /* @__PURE__ */ react.default.createElement("pre", null, format(key, before[key])), /* @__PURE__ */ react.default.createElement("span", null, " → ")), /* @__PURE__ */ react.default.createElement("pre", null, format(key, value)))) : Array.isArray(after) && after.every(Number.isSafeInteger) ? /* @__PURE__ */ react.default.createElement(react.default.Fragment, null, /* @__PURE__ */ react.default.createElement("p", null, `Before: ${Array.isArray(before) ? before.map((number) => `#${number}`).join(" → ") : "No stack"}`), /* @__PURE__ */ react.default.createElement("p", null, `After: ${after.map((number) => `#${number}`).join(" → ")}`)) : /* @__PURE__ */ react.default.createElement("pre", null, JSON.stringify(change, null, 2)));
+	return /* @__PURE__ */ react.default.createElement("details", null, /* @__PURE__ */ react.default.createElement("summary", null, "Approved changes"), object$1(after) ? Object.entries(after).map(([key, value]) => /* @__PURE__ */ react.default.createElement("div", { key }, /* @__PURE__ */ react.default.createElement("strong", null, key === "draft" ? "Readiness" : key), object$1(before) && Object.hasOwn(before, key) && /* @__PURE__ */ react.default.createElement(react.default.Fragment, null, /* @__PURE__ */ react.default.createElement("pre", null, format(key, before[key])), /* @__PURE__ */ react.default.createElement("span", null, " → ")), /* @__PURE__ */ react.default.createElement("pre", null, format(key, value)))) : Array.isArray(after) && after.every(Number.isSafeInteger) ? /* @__PURE__ */ react.default.createElement(react.default.Fragment, null, /* @__PURE__ */ react.default.createElement("p", null, `Before: ${Array.isArray(before) ? before.map((number) => `#${number}`).join(" → ") : "No stack"}`), /* @__PURE__ */ react.default.createElement("p", null, `After: ${after.map((number) => `#${number}`).join(" → ")}`)) : /* @__PURE__ */ react.default.createElement("pre", null, JSON.stringify(change, null, 2)));
 }
 function PullRequestCard({ toolName, block, inspect }) {
 	const model = pullRequestCardModel(toolName, block);
@@ -1637,19 +1661,19 @@ function parseArgs(block) {
 		const raw = block.call?.argsRaw ?? block.argsRaw;
 		if (typeof raw !== "string" || raw.length > 65536) return {};
 		const value = JSON.parse(raw);
-		return object(value) ? value : {};
+		return object$1(value) ? value : {};
 	} catch {
 		return {};
 	}
 }
 function envelope(block) {
 	if (block.kind !== "tool-result") return void 0;
-	const parts = Array.isArray(block.content) ? block.content.filter((part) => object(part) && part.type === "text") : void 0;
+	const parts = Array.isArray(block.content) ? block.content.filter((part) => object$1(part) && part.type === "text") : void 0;
 	const raw = parts?.[0]?.text;
 	if (parts?.length !== 1 || typeof raw !== "string" || raw.length > 524288) return void 0;
 	try {
 		const value = JSON.parse(raw);
-		return object(value) && value.host === "github.com" ? value : void 0;
+		return object$1(value) && value.host === "github.com" ? value : void 0;
 	} catch {
 		return;
 	}
@@ -1734,8 +1758,8 @@ function resourceFor(name, args, result, callId) {
 function confirmedWrite(name, block, result) {
 	if (PR_TOOLS.includes(name)) return pullRequestCardModel(name, block).status === "Confirmed";
 	const resource = result.resource;
-	if (!object(resource)) return false;
-	const entity = (value) => object(value) && id(value.id) && !!safeUrl(value.url);
+	if (!object$1(resource)) return false;
+	const entity = (value) => object$1(value) && id(value.id) && !!safeUrl(value.url);
 	switch (name) {
 		case "github_create_project":
 		case "github_update_project": return result.operation === (name === "github_create_project" ? "createProject" : "updateProject") && entity(resource) && positive(resource.number) && typeof resource.title === "string" && linkedResource(resource.url)?.key.startsWith("project:") === true;
@@ -1752,10 +1776,10 @@ function inspectedRead(name, block, data) {
 	if (PR_TOOLS.includes(name)) return !pullRequestCardModel(name, block).error;
 	switch (name) {
 		case "github_connection_status": return typeof data.cliAvailable === "boolean" && (typeof data.authenticated === "boolean" || data.authenticated === "unknown");
-		case "github_detect_repositories": return typeof data.gitRepository === "boolean" && Array.isArray(data.candidates) && data.candidates.every((candidate) => object(candidate) && segment(candidate.owner) && segment(candidate.repo) && candidate.nameWithOwner === `${candidate.owner}/${candidate.repo}` && safeUrl(candidate.url) === `https://github.com/${candidate.owner}/${candidate.repo}`) && typeof data.ambiguous === "boolean";
+		case "github_detect_repositories": return typeof data.gitRepository === "boolean" && Array.isArray(data.candidates) && data.candidates.every((candidate) => object$1(candidate) && segment(candidate.owner) && segment(candidate.repo) && candidate.nameWithOwner === `${candidate.owner}/${candidate.repo}` && safeUrl(candidate.url) === `https://github.com/${candidate.owner}/${candidate.repo}`) && typeof data.ambiguous === "boolean";
 		case "github_get_repository": return id(data.id) && typeof data.nameWithOwner === "string" && !!safeUrl(data.url);
-		case "github_list_repositories": return Array.isArray(data.nodes) && data.nodes.every((entry) => object(entry) && id(entry.id) && typeof entry.nameWithOwner === "string" && !!safeUrl(entry.url)) && object(data.pageInfo);
-		case "github_get_issue_comments": return Array.isArray(data.nodes) && data.nodes.every((entry) => object(entry) && id(entry.id) && typeof entry.body === "string" && !!safeUrl(entry.url)) && object(data.pageInfo);
+		case "github_list_repositories": return Array.isArray(data.nodes) && data.nodes.every((entry) => object$1(entry) && id(entry.id) && typeof entry.nameWithOwner === "string" && !!safeUrl(entry.url)) && object$1(data.pageInfo);
+		case "github_get_issue_comments": return Array.isArray(data.nodes) && data.nodes.every((entry) => object$1(entry) && id(entry.id) && typeof entry.body === "string" && !!safeUrl(entry.url)) && object$1(data.pageInfo);
 		default: return false;
 	}
 }
@@ -1771,26 +1795,26 @@ function actionFor(name, block, result) {
 	].includes(raw);
 	if (result?.outcome === "uncertain") outcome = "uncertain";
 	else if (denied || block.error?.code === "ABORTED_BEFORE_DISPATCH" || block.error?.code === "TOOL_NOT_STARTED") outcome = "denied";
-	else if (object(result?.error) || result?.outcome === "failed") outcome = "failed";
+	else if (object$1(result?.error) || result?.outcome === "failed") outcome = "failed";
 	else if (block.isError === true) outcome = mode === "write" ? "uncertain" : "failed";
-	else if (mode === "read" && result?.untrusted === true && object(result.data) && Object.keys(result.data).length > 0) outcome = inspectedRead(name, block, result.data) ? "inspected" : "uncertain";
+	else if (mode === "read" && result?.untrusted === true && object$1(result.data) && Object.keys(result.data).length > 0) outcome = inspectedRead(name, block, result.data) ? "inspected" : "uncertain";
 	else if (mode === "write" && result?.untrusted === true && result.outcome === "confirmed" && confirmedWrite(name, block, result)) outcome = "confirmed";
 	else if (name === "github_set_project_item_field" && fieldResult(block)?.outcome === "no-change") outcome = "no-change";
-	else if (mode === "access" && result?.untrusted === true && result.outcome === "granted" && object(result.grant) && id(result.grant.id) && result.grant.state === "active" && validScope(result.grant.scope)) outcome = "confirmed";
+	else if (mode === "access" && result?.untrusted === true && result.outcome === "granted" && object$1(result.grant) && id(result.grant.id) && result.grant.state === "active" && validScope(result.grant.scope)) outcome = "confirmed";
 	if (block.isError === true && mode === "write" && outcome === "uncertain") label += " · tool reported an error";
 	if (name === "github_set_project_item_field") {
 		const args = parseArgs(block);
 		if (typeof args.itemId === "string") label += ` · item ${args.itemId.slice(0, 80)}`;
 		if (typeof args.fieldId === "string") label += ` · field ${args.fieldId.slice(0, 80)}`;
 	}
-	if (name === "github_set_project_item_field" && object(result?.change)) {
+	if (name === "github_set_project_item_field" && object$1(result?.change)) {
 		const before = fieldValueModel(result.change, "before"), after = fieldValueModel(result.change, "after");
 		const field = text(supplied(result.change.field, "name"));
 		if (before.available && after.available) label += ` · ${field || "field"}: ${before.label} → ${after.label}`;
 	}
 	if (outcome === "confirmed" && name === "github_update_pull_request") {
 		const after = supplied(result?.change, "after");
-		if (object(after)) {
+		if (object$1(after)) {
 			const changes = ["title", "body"].filter((key) => Object.hasOwn(after, key));
 			if (typeof after.draft === "boolean") changes.push(after.draft ? "draft" : "ready for review");
 			if (changes.length) label += ` · ${changes.join(", ")}`;
@@ -1821,7 +1845,7 @@ function githubActivityModel(data, turn) {
 	let budget = 5e3, calls = 0;
 	while (pending.length && budget-- > 0) {
 		const candidate = pending.pop();
-		if (!object(candidate) || seenObjects.has(candidate)) continue;
+		if (!object$1(candidate) || seenObjects.has(candidate)) continue;
 		seenObjects.add(candidate);
 		if (Array.isArray(candidate.subCalls)) {
 			const available = Math.max(0, 5e3 - pending.length);
@@ -1832,12 +1856,12 @@ function githubActivityModel(data, turn) {
 			kind: text(candidate.kind),
 			argsRaw: typeof candidate.argsRaw === "string" ? candidate.argsRaw : void 0,
 			call: { argsRaw: typeof supplied(candidate.call, "argsRaw") === "string" ? text(supplied(candidate.call, "argsRaw")) : void 0 },
-			content: Array.isArray(candidate.content) ? candidate.content.map((part) => object(part) ? {
+			content: Array.isArray(candidate.content) ? candidate.content.map((part) => object$1(part) ? {
 				type: text(part.type),
 				text: part.text
 			} : {}) : void 0,
 			isError: candidate.isError === true,
-			error: object(candidate.error) ? {
+			error: object$1(candidate.error) ? {
 				name: candidate.error.name,
 				code: candidate.error.code
 			} : void 0

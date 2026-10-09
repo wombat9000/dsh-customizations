@@ -10,6 +10,7 @@ export interface ToolBlock {
     } | undefined;
     argsRaw?: string | undefined;
     content?: readonly ToolPart[] | undefined;
+    meta?: unknown;
     error?: {
         name?: unknown;
         code?: unknown;

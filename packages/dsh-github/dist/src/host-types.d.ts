@@ -45,6 +45,7 @@ export interface Tool {
     output: {
         schema: Schema;
         render(args: unknown, value: string): TextContent[];
+        presentationMeta?(args: unknown, value: string): unknown;
     };
     timeoutMs: number;
     isConcurrencySafe(): boolean;

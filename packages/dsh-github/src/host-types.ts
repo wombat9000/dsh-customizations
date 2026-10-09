@@ -39,7 +39,11 @@ export interface Tool {
   name: string
   description: string
   parameters: Schema
-  output: { schema: Schema; render(args: unknown, value: string): TextContent[] }
+  output: {
+    schema: Schema
+    render(args: unknown, value: string): TextContent[]
+    presentationMeta?(args: unknown, value: string): unknown
+  }
   timeoutMs: number
   isConcurrencySafe(): boolean
   execute(args: unknown, exec: Execution): Promise<string>
