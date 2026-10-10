@@ -179,20 +179,27 @@ test('follow native session environment through global pages, Files and restored
       await expect(card.getByText('PR #42', { exact: true })).toBeVisible()
       await expect(card.getByText('Default · trunk', { exact: true })).toBeVisible()
       await expect(card.getByText('running', { exact: true })).toBeVisible()
-      await expect(card.getByText('success', { exact: true })).toBeVisible()
+      await expect(card.getByText('success', { exact: true })).toHaveCount(0)
       await expect(
         card.getByText('Local HEAD differs · checks cover remote code', { exact: true }),
-      ).toBeVisible()
-      await expect(
-        card.getByRole('link', { name: 'PR #42 checks at aaaaaaa', exact: true }),
-      ).toHaveAttribute('href', 'https://github.com/ci-fixture/repo/pull/42/checks')
+      ).toHaveCount(0)
+      const commit = card.getByRole('link', {
+        name: 'PR #42 checks at aaaaaaa · CI covers another commit',
+        exact: true,
+      })
+      await expect(commit.getByText('≠', { exact: true })).toBeVisible()
+      await expect(commit).toHaveAttribute('title', 'CI covers another commit')
+      await expect(commit).toHaveAttribute(
+        'href',
+        'https://github.com/ci-fixture/repo/pull/42/checks',
+      )
       await expect(
         card.getByRole('link', { name: 'Default · trunk checks at bbbbbbb', exact: true }),
       ).toHaveAttribute(
         'href',
         `https://github.com/ci-fixture/repo/commit/${'b'.repeat(40)}/checks`,
       )
-      await expect(card).toContainText(/\d+s ago/)
+      await expect(card).not.toContainText(/\d+s ago/)
       const currentBar = card.getByRole('list', { name: 'PR #42 check statuses', exact: true })
       const defaultBar = card.getByRole('list', {
         name: 'Default · trunk check statuses',

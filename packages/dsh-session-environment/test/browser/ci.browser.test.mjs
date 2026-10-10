@@ -56,18 +56,22 @@ const value = (checkoutKey = key) => ({
     },
   ],
 })
-test('compact rows expose immutable SHA links, age, no-checks and local mismatch', async () => {
+test('compact rows expose immutable SHA links and warnings without refresh-age text', async () => {
   await render(React.createElement(CIRows, { snapshot: value(), available: true }))
   await expect.element(page.getByText('PR #42', { exact: true })).toBeVisible()
   await expect.element(page.getByText('Default · trunk', { exact: true })).toBeVisible()
   await expect.element(page.getByText('No checks', { exact: true })).toBeVisible()
+  await expect.element(page.getByText('≠', { exact: true })).toBeVisible()
+  const commit = page.getByRole('link', {
+    name: 'PR #42 checks at aaaaaaa · CI covers another commit',
+    exact: true,
+  })
   await expect
-    .element(page.getByText('Local HEAD differs · checks cover remote code', { exact: true }))
-    .toBeVisible()
-  await expect
-    .element(page.getByRole('link', { name: 'PR #42 checks at aaaaaaa' }))
+    .element(commit)
     .toHaveAttribute('href', 'https://github.com/acme/repo/pull/42/checks')
-  expect(container.textContent).toMatch(/9s ago/)
+  await expect.element(commit).toHaveAttribute('title', 'CI covers another commit')
+  expect(container.textContent).not.toContain('Local HEAD differs')
+  expect(container.textContent).not.toMatch(/\d+s ago/)
   const stale = value()
   stale.stale = true
   stale.error = 'CI unavailable (RATE_LIMITED)'
@@ -83,6 +87,36 @@ test('compact rows expose immutable SHA links, age, no-checks and local mismatch
   const bar = container.querySelector('[role="list"]')
   expect(bar.getAttribute('aria-label')).toContain('stale · partial')
   expect(getComputedStyle(bar).opacity).toBe('0.55')
+  const matched = value()
+  matched.rows[0].mismatch = false
+  await render(React.createElement(CIRows, { snapshot: matched, available: true }))
+  await expect.element(page.getByText('≠', { exact: true })).not.toBeInTheDocument()
+  await expect
+    .element(page.getByRole('link', { name: 'PR #42 checks at aaaaaaa', exact: true }))
+    .not.toHaveAttribute('title')
+})
+
+test('success bars omit redundant status text but partial and aggregate-only results keep it', async () => {
+  const snapshot = value()
+  const row = snapshot.rows[0]
+  row.state = 'success'
+  row.checks = [{ name: 'Tests', state: 'success' }]
+  await render(React.createElement(CIRows, { snapshot, available: true }))
+  expect(container.textContent).not.toContain('success')
+  await expect
+    .element(page.getByRole('listitem', { name: 'Tests: success', exact: true }))
+    .toBeVisible()
+  row.complete = false
+  await render(React.createElement(CIRows, { snapshot: { ...snapshot }, available: true }))
+  await expect.element(page.getByText('success · partial', { exact: true })).toBeVisible()
+  row.complete = true
+  for (const checks of [[], undefined]) {
+    if (checks) row.checks = checks
+    else delete row.checks
+    await render(React.createElement(CIRows, { snapshot: { ...snapshot }, available: true }))
+    await expect.element(page.getByText('success', { exact: true })).toBeVisible()
+    expect(container.querySelector('[role="list"]')).toBeNull()
+  }
 })
 
 test('check partitions keep fixed total width, equal shares, GitHub colors and safe hover labels', async () => {
@@ -193,7 +227,12 @@ test('one keyboard stop exposes each check without an expanded panel and dismiss
   await expect.element(tooltip).toHaveTextContent('Tests: running · 2/3 (←/→)')
   await act(async () => userEvent.keyboard('{Tab}'))
   expect(document.activeElement).toBe(
-    page.getByRole('link', { name: 'PR #42 checks at aaaaaaa' }).element(),
+    page
+      .getByRole('link', {
+        name: 'PR #42 checks at aaaaaaa · CI covers another commit',
+        exact: true,
+      })
+      .element(),
   )
   await expect.element(tooltip).not.toBeInTheDocument()
 })
@@ -206,14 +245,13 @@ test('cached success uses stable expiry rather than remaining refresh delay and 
   cached.freshUntil = 61000
   cached.refreshAfterMs = 15000
   cached.rows[0].state = 'success'
+  cached.rows[0].checks = [{ name: 'Tests', state: 'success' }]
   await render(React.createElement(CIRows, { snapshot: cached, available: true }))
-  expect(container.textContent).toContain('59s ago')
   expect(container.textContent).not.toContain('stale')
   cached.stale = true
   cached.error = 'CI unavailable (RATE_LIMITED)'
   await render(React.createElement(CIRows, { snapshot: { ...cached }, available: true }))
   expect(container.textContent).toContain('stale')
-  expect(container.textContent).toContain('59s ago')
   cached.stale = false
   vi.setSystemTime(72000)
   await render(React.createElement(CIRows, { snapshot: { ...cached }, available: true }))

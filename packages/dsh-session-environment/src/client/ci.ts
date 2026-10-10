@@ -289,7 +289,6 @@ export function CIRows({
   snapshot: SessionCISnapshot | null
   available: boolean
 }): React.ReactElement {
-  const age = snapshot ? Math.max(0, Math.floor((Date.now() - snapshot.checkedAt) / 1000)) : 0
   const stale = snapshot && (snapshot.stale || Date.now() > snapshot.freshUntil + 10000)
   const muted = 'var(--dsw-alias-label-secondary)'
   return React.createElement(
@@ -324,11 +323,13 @@ export function CIRows({
                 },
                 row.label,
               ),
-              React.createElement(
-                'span',
-                { style: { flexShrink: 0 } },
-                `${row.state === 'no-checks' ? 'No checks' : row.state}${row.complete || !row.sha ? '' : ' · partial'}`,
-              ),
+              row.state === 'success' && row.complete && row.checks?.length
+                ? null
+                : React.createElement(
+                    'span',
+                    { style: { flexShrink: 0 } },
+                    `${row.state === 'no-checks' ? 'No checks' : row.state}${row.complete || !row.sha ? '' : ' · partial'}`,
+                  ),
             ),
             React.createElement(CICheckBar, { row, stale: Boolean(stale) }),
             React.createElement(
@@ -342,20 +343,24 @@ export function CIRows({
                       target: '_blank',
                       rel: 'noopener noreferrer',
                       style: { color: 'inherit', fontFamily: 'monospace' },
-                      'aria-label': `${row.label} checks at ${row.sha.slice(0, 7)}`,
+                      'aria-label': `${row.label} checks at ${row.sha.slice(0, 7)}${row.mismatch ? ' · CI covers another commit' : ''}`,
+                      title: row.mismatch ? 'CI covers another commit' : undefined,
                     },
                     row.sha.slice(0, 7),
+                    row.mismatch
+                      ? React.createElement(
+                          'span',
+                          {
+                            'aria-hidden': true,
+                            style: { display: 'inline-block', marginLeft: 5, fontSize: 13 },
+                          },
+                          '≠',
+                        )
+                      : null,
                   )
                 : '—',
-              ` · ${stale ? 'stale · ' : ''}${age}s ago`,
+              stale ? ' · stale' : null,
             ),
-            row.mismatch
-              ? React.createElement(
-                  'div',
-                  { style: { color: muted, fontSize: 11 } },
-                  'Local HEAD differs · checks cover remote code',
-                )
-              : null,
             row.warning
               ? React.createElement('div', { style: { color: muted, fontSize: 11 } }, row.warning)
               : null,
