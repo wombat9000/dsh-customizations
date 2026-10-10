@@ -200,6 +200,7 @@ test('follow native session environment through global pages, Files and restored
         `https://github.com/ci-fixture/repo/commit/${'b'.repeat(40)}/checks`,
       )
       await expect(card).not.toContainText(/\d+s ago/)
+      await expect(card.getByText('Started 3m ago', { exact: true })).toBeVisible()
       const currentBar = card.getByRole('list', { name: 'PR #42 check statuses', exact: true })
       const defaultBar = card.getByRole('list', {
         name: 'Default · trunk check statuses',

@@ -332,7 +332,7 @@ test('CI wire codecs reject arbitrary targets, unsafe links, wrong SHAs and unbo
     url: 'https://github.com/acme/repo/pull/42/checks',
     state: 'success',
     count: 1,
-    checks: [{ name: 'Tests', state: 'success' }],
+    checks: [{ name: 'Tests', state: 'success', startedAt: 120 }],
     complete: true,
     mismatch: false,
     warning: null,
@@ -347,6 +347,13 @@ test('CI wire codecs reject arbitrary targets, unsafe links, wrong SHAs and unbo
     stale: false,
   }
   assert.deepEqual(sessionCISnapshotSchema.parse(snapshot), snapshot)
+  const queued = {
+    ...snapshot,
+    rows: [
+      { ...row, state: 'pending', checks: [{ name: 'Tests', state: 'pending', startedAt: null }] },
+    ],
+  }
+  assert.deepEqual(sessionCISnapshotSchema.parse(queued), queued)
   const { checks, ...aggregateOnly } = row
   const legacy = { ...snapshot, rows: [aggregateOnly] }
   assert.deepEqual(sessionCISnapshotSchema.parse(legacy), legacy)
@@ -366,6 +373,9 @@ test('CI wire codecs reject arbitrary targets, unsafe links, wrong SHAs and unbo
       [{ name: 'Tests', state: 'no-checks' }],
       [{ name: 'Tests', state: 'invented' }],
       [{ name: 'Tests', state: 'success', command: 'unsafe' }],
+      ...[-1, 0.5, Infinity, 8640000000000001, '2026-01-01T12:00:00Z'].map((startedAt) => [
+        { name: 'Tests', state: 'running', startedAt },
+      ]),
       Array.from({ length: 401 }, () => checks[0]),
     ].map((checks) => ({ ...snapshot, rows: [{ ...row, checks }] })),
     { ...snapshot, freshUntil: -1 },

@@ -282,14 +282,68 @@ function CICheckBar({ row, stale }: { row: CIRow; stale: boolean }): React.React
   )
 }
 
+function checkTiming(
+  row: CIRow,
+  now: number,
+):
+  | { kind: 'started'; label: string; startedAt: number; refreshAfterMs: number }
+  | { kind: 'queued' }
+  | null {
+  const checks = row.checks
+  if (
+    !row.complete ||
+    !checks?.some((check) => check.state === 'running' || check.state === 'pending')
+  )
+    return null
+  const starts = checks.flatMap((check) =>
+    typeof check.startedAt === 'number' &&
+    Number.isSafeInteger(check.startedAt) &&
+    check.startedAt >= 0 &&
+    check.startedAt <= now
+      ? [check.startedAt]
+      : [],
+  )
+  if (!starts.length)
+    return checks.every((check) => check.state === 'pending' && check.startedAt === null)
+      ? { kind: 'queued' }
+      : null
+  // Completed earlier sections still establish the start of an active bar.
+  const startedAt = Math.min(...starts)
+  const elapsed = now - startedAt
+  const unit = elapsed < 3600000 ? 60000 : elapsed < 86400000 ? 3600000 : 86400000
+  const suffix = unit === 60000 ? 'm' : unit === 3600000 ? 'h' : 'd'
+  return {
+    kind: 'started',
+    startedAt,
+    label:
+      elapsed < 60000 ? 'Started just now' : `Started ${Math.floor(elapsed / unit)}${suffix} ago`,
+    refreshAfterMs: unit - (elapsed % unit),
+  }
+}
+
 export function CIRows({
   snapshot,
   available,
+  visible = true,
 }: {
   snapshot: SessionCISnapshot | null
   available: boolean
+  visible?: boolean
 }): React.ReactElement {
-  const stale = snapshot && (snapshot.stale || Date.now() > snapshot.freshUntil + 10000)
+  const [, refreshClock] = React.useReducer((value: number) => value + 1, 0)
+  const now = Date.now()
+  const timings = snapshot?.rows.map((row) => checkTiming(row, now)) ?? []
+  const delays = timings.flatMap((timing) =>
+    timing?.kind === 'started' ? [timing.refreshAfterMs] : [],
+  )
+  const nextUpdate = delays.length ? Math.min(...delays) : null
+  React.useEffect(() => {
+    if (!visible || nextUpdate === null) return
+    // This local label clock makes no GitHub request and stops with the card.
+    const timer = window.setTimeout(refreshClock, nextUpdate)
+    return () => window.clearTimeout(timer)
+  }, [visible, now, nextUpdate])
+  const stale = snapshot && (snapshot.stale || now > snapshot.freshUntil + 10000)
   const muted = 'var(--dsw-alias-label-secondary)'
   return React.createElement(
     'div',
@@ -308,8 +362,15 @@ export function CIRows({
           { style: { color: muted } },
           snapshot?.error ?? (available ? 'CI · Checking…' : 'CI · Unavailable'),
         )
-      : snapshot.rows.map((row) =>
-          React.createElement(
+      : snapshot.rows.map((row, index) => {
+          const timing = timings[index]
+          const state =
+            timing?.kind === 'queued' && row.state === 'pending'
+              ? 'Queued'
+              : row.state === 'no-checks'
+                ? 'No checks'
+                : row.state
+          return React.createElement(
             'div',
             { key: row.kind, style: { marginBottom: 5 } },
             React.createElement(
@@ -328,44 +389,67 @@ export function CIRows({
                 : React.createElement(
                     'span',
                     { style: { flexShrink: 0 } },
-                    `${row.state === 'no-checks' ? 'No checks' : row.state}${row.complete || !row.sha ? '' : ' · partial'}`,
+                    `${state}${row.complete || !row.sha ? '' : ' · partial'}`,
                   ),
             ),
             React.createElement(CICheckBar, { row, stale: Boolean(stale) }),
             React.createElement(
               'div',
-              { style: { color: muted, fontSize: 11 } },
-              row.url && row.sha
+              {
+                style: {
+                  color: muted,
+                  fontSize: 11,
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  flexWrap: 'wrap',
+                  gap: 8,
+                },
+              },
+              React.createElement(
+                'span',
+                null,
+                row.url && row.sha
+                  ? React.createElement(
+                      'a',
+                      {
+                        href: row.url,
+                        target: '_blank',
+                        rel: 'noopener noreferrer',
+                        style: { color: 'inherit', fontFamily: 'monospace' },
+                        'aria-label': `${row.label} checks at ${row.sha.slice(0, 7)}${row.mismatch ? ' · CI covers another commit' : ''}`,
+                        title: row.mismatch ? 'CI covers another commit' : undefined,
+                      },
+                      row.sha.slice(0, 7),
+                      row.mismatch
+                        ? React.createElement(
+                            'span',
+                            {
+                              'aria-hidden': true,
+                              style: { display: 'inline-block', marginLeft: 5, fontSize: 13 },
+                            },
+                            '≠',
+                          )
+                        : null,
+                    )
+                  : '—',
+                stale ? ' · stale' : null,
+              ),
+              timing?.kind === 'started'
                 ? React.createElement(
-                    'a',
+                    'span',
                     {
-                      href: row.url,
-                      target: '_blank',
-                      rel: 'noopener noreferrer',
-                      style: { color: 'inherit', fontFamily: 'monospace' },
-                      'aria-label': `${row.label} checks at ${row.sha.slice(0, 7)}${row.mismatch ? ' · CI covers another commit' : ''}`,
-                      title: row.mismatch ? 'CI covers another commit' : undefined,
+                      title: `First reported section start: ${new Date(timing.startedAt).toISOString()}`,
+                      style: { whiteSpace: 'nowrap' },
                     },
-                    row.sha.slice(0, 7),
-                    row.mismatch
-                      ? React.createElement(
-                          'span',
-                          {
-                            'aria-hidden': true,
-                            style: { display: 'inline-block', marginLeft: 5, fontSize: 13 },
-                          },
-                          '≠',
-                        )
-                      : null,
+                    timing.label,
                   )
-                : '—',
-              stale ? ' · stale' : null,
+                : null,
             ),
             row.warning
               ? React.createElement('div', { style: { color: muted, fontSize: 11 } }, row.warning)
               : null,
-          ),
-        ),
+          )
+        }),
     snapshot?.error && snapshot.rows.length
       ? React.createElement('div', { style: { color: muted, fontSize: 11 } }, snapshot.error)
       : null,

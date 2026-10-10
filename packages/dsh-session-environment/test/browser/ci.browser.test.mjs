@@ -119,6 +119,133 @@ test('success bars omit redundant status text but partial and aggregate-only res
   }
 })
 
+test('elapsed build time starts at the earliest section and updates locally only while visible', async () => {
+  vi.useFakeTimers()
+  const now = Date.UTC(2026, 0, 1, 12)
+  vi.setSystemTime(now)
+  const snapshot = value()
+  snapshot.freshUntil = now + 86400000
+  snapshot.rows[0].count = 3
+  snapshot.rows[0].checks = [
+    { name: 'Tests', state: 'running', startedAt: now - 60000 },
+    { name: 'Lint', state: 'success', startedAt: now - 150000 },
+    { name: 'Build', state: 'pending', startedAt: null },
+  ]
+  const view = (visible = true) =>
+    React.createElement(CIRows, { snapshot: { ...snapshot }, available: true, visible })
+  await render(view())
+  expect(container.textContent).toContain('Started 2m ago')
+  expect(vi.getTimerCount()).toBe(1)
+  await act(async () => vi.advanceTimersByTime(29999))
+  expect(container.textContent).toContain('Started 2m ago')
+  await act(async () => vi.advanceTimersByTime(1))
+  expect(container.textContent).toContain('Started 3m ago')
+  snapshot.rows[0].checks[0].state = 'success'
+  snapshot.rows[0].checks[2] = { name: 'Build', state: 'running', startedAt: Date.now() }
+  await render(view())
+  expect(container.textContent).toContain('Started 3m ago')
+  await render(view(false))
+  expect(vi.getTimerCount()).toBe(0)
+  await act(async () => vi.advanceTimersByTime(60000))
+  expect(container.textContent).toContain('Started 3m ago')
+  await render(view())
+  expect(container.textContent).toContain('Started 4m ago')
+  expect(vi.getTimerCount()).toBe(1)
+  snapshot.rows[0].state = 'success'
+  for (const check of snapshot.rows[0].checks) check.state = 'success'
+  await render(view())
+  expect(container.textContent).not.toContain('Started')
+  expect(vi.getTimerCount()).toBe(0)
+  snapshot.rows[0].state = 'running'
+  snapshot.rows[0].checks[2].state = 'running'
+  snapshot.rows[1].state = 'running'
+  snapshot.rows[1].count = 1
+  snapshot.rows[1].checks = [{ name: 'Deploy', state: 'running', startedAt: Date.now() - 45000 }]
+  await render(view())
+  expect(container.textContent).toContain('Started 4m ago')
+  expect(container.textContent).toContain('Started just now')
+  expect(vi.getTimerCount()).toBe(1)
+  await act(async () => vi.advanceTimersByTime(15000))
+  expect(container.textContent).toContain('Started 4m ago')
+  expect(container.textContent).toContain('Started 1m ago')
+  await act(async () => vi.advanceTimersByTime(45000))
+  expect(container.textContent).toContain('Started 5m ago')
+  expect(container.textContent).toContain('Started 1m ago')
+  await act(async () => root.unmount())
+  root = undefined
+  expect(vi.getTimerCount()).toBe(0)
+})
+
+test('timing distinguishes known queued sections from missing, partial, future and completed data', async () => {
+  vi.useFakeTimers()
+  const now = Date.UTC(2026, 0, 1, 12)
+  vi.setSystemTime(now)
+  for (const scenario of [
+    {
+      state: 'pending',
+      checks: [{ name: 'Build', state: 'pending', startedAt: null }],
+      queued: true,
+    },
+    { state: 'pending', checks: [{ name: 'External CI', state: 'pending' }] },
+    { state: 'running', checks: [{ name: 'Tests', state: 'running' }] },
+    { state: 'running', checks: [{ name: 'Tests', state: 'running', startedAt: now + 60000 }] },
+    {
+      state: 'running',
+      checks: [{ name: 'Tests', state: 'running', startedAt: now - 180000 }],
+      complete: false,
+    },
+    {
+      state: 'pending',
+      checks: [{ name: 'Build', state: 'pending', startedAt: null }],
+      complete: false,
+    },
+    { state: 'success', checks: [{ name: 'Tests', state: 'success', startedAt: now - 180000 }] },
+    {
+      state: 'running',
+      checks: [{ name: 'Tests', state: 'running', startedAt: now - 30000 }],
+      label: 'Started just now',
+    },
+    {
+      state: 'running',
+      checks: [{ name: 'Tests', state: 'running', startedAt: now - 3600000 }],
+      label: 'Started 1h ago',
+    },
+    {
+      state: 'running',
+      checks: [{ name: 'Tests', state: 'running', startedAt: now - 86400000 }],
+      label: 'Started 1d ago',
+    },
+    {
+      state: 'pending',
+      checks: [
+        { name: 'Lint', state: 'success', startedAt: now - 180000 },
+        { name: 'Build', state: 'pending', startedAt: null },
+      ],
+      label: 'Started 3m ago',
+    },
+    {
+      state: 'failure',
+      checks: [
+        { name: 'Lint', state: 'failure', startedAt: now - 180000 },
+        { name: 'Tests', state: 'running', startedAt: now - 60000 },
+      ],
+      label: 'Started 3m ago',
+    },
+  ]) {
+    const snapshot = value()
+    Object.assign(snapshot.rows[0], {
+      state: scenario.state,
+      checks: scenario.checks,
+      count: scenario.checks.length,
+      complete: scenario.complete ?? true,
+    })
+    await render(React.createElement(CIRows, { snapshot, available: true }))
+    if (scenario.label) expect(container.textContent).toContain(scenario.label)
+    else expect(container.textContent).not.toContain('Started')
+    expect(container.textContent.includes('Queued')).toBe(Boolean(scenario.queued))
+  }
+})
+
 test('check partitions keep fixed total width, equal shares, GitHub colors and safe hover labels', async () => {
   const snapshot = value()
   await render(React.createElement(CIRows, { snapshot, available: true }))

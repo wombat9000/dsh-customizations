@@ -634,6 +634,7 @@ export function createEnvironmentCard(
       React.createElement(CIRows, {
         snapshot: ci,
         available: Boolean(ciRequest && sessionEnvironment.readCI),
+        visible,
       }),
     )
   }

@@ -132,7 +132,13 @@ for (const [status, conclusion, expected] of [
     const owner = createGitHubLiveCI({}, fixture({ status, conclusion }))
     const result = await owner.service.readCheckout(checkout, signal())
     assert.equal(result.rows[0].state, expected)
-    assert.deepEqual(result.rows[0].checks, [{ name: 'check-1', state: expected }])
+    assert.deepEqual(result.rows[0].checks, [
+      {
+        name: 'check-1',
+        state: expected,
+        ...(expected === 'pending' ? { startedAt: null } : {}),
+      },
+    ])
     owner.dispose()
   })
 
@@ -155,26 +161,58 @@ test('commit statuses contribute pending, failure, error and success independent
 test('mixed check partitions retain individual states and bounded plain-text names without extra requests', async () => {
   const fx = fixture({
     runs: [
-      { name: 'Lint', status: 'completed', conclusion: 'success' },
-      { name: 'Tests', status: 'in_progress', conclusion: null },
-      { name: 'Build', status: 'queued', conclusion: null },
+      {
+        name: 'Lint',
+        status: 'completed',
+        conclusion: 'success',
+        started_at: '2026-01-01T12:00:00Z',
+      },
+      {
+        name: 'Tests',
+        status: 'in_progress',
+        conclusion: null,
+        started_at: '2026-01-01T12:02:00.123Z',
+      },
+      { name: 'Build', status: 'queued', conclusion: null, started_at: '2026-01-01T11:00:00Z' },
       { name: 'Deploy\n' + 'x'.repeat(300), status: 'completed', conclusion: 'failure' },
     ],
-    contexts: [{ context: '<external-ci>', state: 'pending' }],
+    contexts: [{ context: '<external-ci>', state: 'pending', created_at: '2026-01-01T10:00:00Z' }],
   })
   const owner = createGitHubLiveCI({}, fx)
   const result = await owner.service.readCheckout({ ...checkout, branch: 'trunk' }, signal())
   assert.equal(result.rows[0].state, 'failure')
   assert.equal(result.rows[0].count, 5)
   assert.deepEqual(result.rows[0].checks, [
-    { name: 'Lint', state: 'success' },
-    { name: 'Tests', state: 'running' },
-    { name: 'Build', state: 'pending' },
+    { name: 'Lint', state: 'success', startedAt: Date.UTC(2026, 0, 1, 12) },
+    { name: 'Tests', state: 'running', startedAt: Date.UTC(2026, 0, 1, 12, 2, 0, 123) },
+    { name: 'Build', state: 'pending', startedAt: null },
     { name: 'Deploy ' + 'x'.repeat(249), state: 'failure' },
     { name: '<external-ci>', state: 'pending' },
   ])
   assert.equal(fx.calls.length, 4)
   owner.dispose()
+})
+
+test('missing or invalid optional start times never invalidate check states or invent a start', async () => {
+  for (const started_at of [
+    undefined,
+    null,
+    123,
+    '',
+    'invalid',
+    '2026-02-30T12:00:00Z',
+    '2026-01-01T25:00:00Z',
+    '1969-01-01T12:00:00Z',
+  ]) {
+    const fx = fixture({ runs: [{ status: 'in_progress', conclusion: null, started_at }] })
+    const owner = createGitHubLiveCI({}, fx)
+    const result = await owner.service.readCheckout({ ...checkout, branch: 'trunk' }, signal())
+    assert.equal(result.error, null)
+    assert.equal(result.rows[0].state, 'running')
+    assert.deepEqual(result.rows[0].checks, [{ name: 'check-1', state: 'running' }])
+    assert.equal(fx.calls.length, 4)
+    owner.dispose()
+  }
 })
 
 test('invalid names and non-string states cannot become valid CI checks', async () => {

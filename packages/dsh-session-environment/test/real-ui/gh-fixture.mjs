@@ -34,9 +34,19 @@ else if (
   const checks =
     sha === current
       ? [
-          { name: 'Lint', status: 'completed', conclusion: 'success' },
-          { name: 'Tests', status: 'in_progress', conclusion: null },
-          { name: 'Build', status: 'queued', conclusion: null },
+          {
+            name: 'Lint',
+            status: 'completed',
+            conclusion: 'success',
+            started_at: new Date(Date.now() - 180000).toISOString(),
+          },
+          {
+            name: 'Tests',
+            status: 'in_progress',
+            conclusion: null,
+            started_at: new Date(Date.now() - 60000).toISOString(),
+          },
+          { name: 'Build', status: 'queued', conclusion: null, started_at: null },
         ]
       : ['Lint', 'Typecheck', 'Tests', 'Build', 'Deploy'].map((name) => ({
           name,

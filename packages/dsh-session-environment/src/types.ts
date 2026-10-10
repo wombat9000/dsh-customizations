@@ -24,6 +24,8 @@ export interface CICheckout {
 export interface CICheck {
   name: string
   state: Exclude<CIState, 'no-checks'>
+  // Epoch milliseconds; null means not started, omission means unavailable.
+  startedAt?: number | null
 }
 export interface CIRow {
   kind: 'current' | 'default'

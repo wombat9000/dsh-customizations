@@ -30,6 +30,8 @@ export type CIState =
 export interface CICheck {
   name: string
   state: Exclude<CIState, 'no-checks'>
+  // Epoch milliseconds; null means not started, omission means unavailable.
+  startedAt?: number | null
 }
 export interface CIRow {
   kind: 'current' | 'default'
@@ -96,6 +98,20 @@ function aggregate(states: CIState[], complete: boolean): CIState {
   return 'success'
 }
 
+// Optional timing metadata must never invalidate otherwise valid check states.
+function checkStartedAt(value: unknown): number | undefined {
+  if (
+    typeof value !== 'string' ||
+    !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(value)
+  )
+    return undefined
+  const time = Date.parse(value)
+  const canonical = value.includes('.') ? value : value.replace(/Z$/, '.000Z')
+  return Number.isFinite(time) && time >= 0 && new Date(time).toISOString() === canonical
+    ? time
+    : undefined
+}
+
 // Each REST page is explicitly tied to the requested immutable commit. Bounded
 // pagination never upgrades an incomplete collection to success.
 async function commitChecks(read: APIReader, root: string, commit: string) {
@@ -160,7 +176,17 @@ async function commitChecks(read: APIReader, root: string, commit: string) {
             }
           }
         }
-        checks.push({ name, state })
+        const check: CICheck = { name, state }
+        if (source === 'check-runs') {
+          // Queue timestamps are not evidence that work has begun. Legacy commit
+          // statuses also have no actual start time; never use created_at instead.
+          if (entry.status !== 'in_progress' && entry.status !== 'completed') check.startedAt = null
+          else {
+            const startedAt = checkStartedAt(entry.started_at)
+            if (startedAt !== undefined) check.startedAt = startedAt
+          }
+        }
+        checks.push(check)
       }
       if (entries.length !== Math.min(100, Math.max(0, total - (page - 1) * 100))) complete = false
       if (page * 100 >= total) break

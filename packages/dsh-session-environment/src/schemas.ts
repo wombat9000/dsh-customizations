@@ -59,6 +59,13 @@ export const sessionCISnapshotSchema = z
                   .object({
                     name: z.string().min(1).max(256),
                     state: ciStateSchema.exclude(['no-checks']),
+                    startedAt: z
+                      .number()
+                      .int()
+                      .nonnegative()
+                      .max(8640000000000000)
+                      .nullable()
+                      .optional(),
                   })
                   .strict(),
               )

@@ -12,6 +12,7 @@ export type CIState = 'pending' | 'running' | 'failure' | 'success' | 'cancelled
 export interface CICheck {
     name: string;
     state: Exclude<CIState, 'no-checks'>;
+    startedAt?: number | null;
 }
 export interface CIRow {
     kind: 'current' | 'default';
