@@ -96,26 +96,28 @@ test('compact rows expose immutable SHA links and warnings without refresh-age t
     .not.toHaveAttribute('title')
 })
 
-test('success bars omit redundant status text but partial and aggregate-only results keep it', async () => {
-  const snapshot = value()
-  const row = snapshot.rows[0]
-  row.state = 'success'
-  row.checks = [{ name: 'Tests', state: 'success' }]
-  await render(React.createElement(CIRows, { snapshot, available: true }))
-  expect(container.textContent).not.toContain('success')
-  await expect
-    .element(page.getByRole('listitem', { name: 'Tests: success', exact: true }))
-    .toBeVisible()
-  row.complete = false
-  await render(React.createElement(CIRows, { snapshot: { ...snapshot }, available: true }))
-  await expect.element(page.getByText('success · partial', { exact: true })).toBeVisible()
-  row.complete = true
-  for (const checks of [[], undefined]) {
-    if (checks) row.checks = checks
-    else delete row.checks
+test('success and running bars omit redundant text but retain accessible status and fallback labels', async () => {
+  for (const state of ['success', 'running']) {
+    const snapshot = value()
+    const row = snapshot.rows[0]
+    row.state = state
+    row.checks = [{ name: 'Tests', state }]
+    await render(React.createElement(CIRows, { snapshot, available: true }))
+    expect(container.textContent).not.toContain(state)
+    const section = page.getByRole('listitem', { name: `Tests: ${state}`, exact: true })
+    await expect.element(section).toBeVisible()
+    await expect.element(section).toHaveAttribute('title', `Tests: ${state}`)
+    row.complete = false
     await render(React.createElement(CIRows, { snapshot: { ...snapshot }, available: true }))
-    await expect.element(page.getByText('success', { exact: true })).toBeVisible()
-    expect(container.querySelector('[role="list"]')).toBeNull()
+    await expect.element(page.getByText(`${state} · partial`, { exact: true })).toBeVisible()
+    row.complete = true
+    for (const checks of [[], undefined]) {
+      if (checks) row.checks = checks
+      else delete row.checks
+      await render(React.createElement(CIRows, { snapshot: { ...snapshot }, available: true }))
+      await expect.element(page.getByText(state, { exact: true })).toBeVisible()
+      expect(container.querySelector('[role="list"]')).toBeNull()
+    }
   }
 })
 

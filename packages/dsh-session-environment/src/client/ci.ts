@@ -384,7 +384,9 @@ export function CIRows({
                 },
                 row.label,
               ),
-              row.state === 'success' && row.complete && row.checks?.length
+              (row.state === 'success' || row.state === 'running') &&
+                row.complete &&
+                row.checks?.length
                 ? null
                 : React.createElement(
                     'span',

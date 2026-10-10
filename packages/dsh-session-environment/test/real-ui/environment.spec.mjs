@@ -178,7 +178,7 @@ test('follow native session environment through global pages, Files and restored
       const card = environmentCard(app)
       await expect(card.getByText('PR #42', { exact: true })).toBeVisible()
       await expect(card.getByText('Default · trunk', { exact: true })).toBeVisible()
-      await expect(card.getByText('running', { exact: true })).toBeVisible()
+      await expect(card.getByText('running', { exact: true })).toHaveCount(0)
       await expect(card.getByText('success', { exact: true })).toHaveCount(0)
       await expect(
         card.getByText('Local HEAD differs · checks cover remote code', { exact: true }),
