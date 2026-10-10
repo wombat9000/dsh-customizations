@@ -2,6 +2,10 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { createRequire } from 'node:module'
 import { pathToFileURL } from 'node:url'
+import { execFileSync } from 'node:child_process'
+import { mkdtemp, mkdir, rm, symlink, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { TYPERT_REMOTE } from '../lib/types/remote.js'
 
 // Use the approved launcher's actual loader, not a permissive manifest mock.
@@ -13,6 +17,7 @@ const { validateTypertManifest } = await import(
 import {
   DEFAULT_STDOUT_MAX_BYTES,
   DEFAULT_TIMEOUT_MS,
+  GIT_ENVIRONMENT_COMMAND,
   parseGitEnvironmentResult,
   readSessionEnvironment,
   resolveConfig,
@@ -87,6 +92,75 @@ test('parses branch, upstream divergence, dirty file count, and tracked line tot
     additions: 3,
     deletions: 2,
   })
+})
+
+test('real Git counts untracked text lines without staging, following links or reading ignored files', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'dsh-environment-untracked-'))
+  t.after(() => rm(directory, { recursive: true, force: true }))
+  // Root pathnames, not just leaf filenames, may contain trailing newlines.
+  const repo = join(directory, 'repo\n')
+  await mkdir(repo)
+  const env = { ...process.env, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null' }
+  const git = (...args) => execFileSync('git', args, { cwd: repo, env, encoding: 'utf8' })
+  git('init', '-b', 'main')
+  git('config', 'user.name', 'Environment fixture')
+  git('config', 'user.email', 'environment@example.invalid')
+  await writeFile(join(repo, '.gitignore'), 'ignored/\n')
+  await writeFile(join(repo, '.gitattributes'), '*.opaque -diff\n')
+  await writeFile(join(repo, 'tracked.txt'), 'old\nkeep\n')
+  git('add', '.')
+  git('commit', '-m', 'fixture')
+  await writeFile(join(repo, 'tracked.txt'), 'keep\nstaged\n')
+  git('add', 'tracked.txt')
+  await writeFile(join(repo, 'tracked.txt'), 'keep\nstaged\nworking\n')
+
+  const unusualName = "- odd 'quoted'\tline\n$(touch injected).txt"
+  await writeFile(join(repo, 'loose.txt'), 'one\ntwo')
+  await mkdir(join(repo, 'new dir'))
+  await writeFile(join(repo, 'new dir', 'a.txt'), 'alpha\n')
+  await writeFile(join(repo, 'new dir', 'b.txt'), 'beta\ngamma\n')
+  await writeFile(join(repo, unusualName), 'one\n')
+  await writeFile(join(repo, 'binary.dat'), Buffer.from([0, 10, 65, 10]))
+  await writeFile(join(repo, 'empty.txt'), '')
+  await writeFile(join(repo, 'forced.opaque'), 'text\nmarked binary\n')
+  await mkdir(join(repo, 'ignored'))
+  await writeFile(join(repo, 'ignored', 'hidden.txt'), 'not\npart\nof totals\n')
+  await writeFile(join(directory, 'outside.txt'), 'outside\nrepository\n')
+  await symlink(join(directory, 'outside.txt'), join(repo, 'link.txt'))
+  await symlink('missing.txt', join(repo, 'broken-link.txt'))
+
+  const read = (cwd) =>
+    parseGitEnvironmentResult({
+      cwd,
+      home: directory,
+      result: shellResult(
+        execFileSync('bash', ['-c', GIT_ENVIRONMENT_COMMAND], {
+          cwd,
+          env,
+          encoding: 'utf8',
+          timeout: DEFAULT_TIMEOUT_MS,
+          maxBuffer: DEFAULT_STDOUT_MAX_BYTES,
+        }),
+      ),
+    })
+  const indexBefore = git('ls-files', '--stage')
+  for (const cwd of [repo, join(repo, 'new dir')]) {
+    const snapshot = read(cwd)
+    assert.equal(snapshot.error, undefined)
+    assert.equal(snapshot.additions, 8, 'tracked edits plus all six untracked text lines')
+    assert.equal(snapshot.deletions, 1)
+    assert.equal(snapshot.dirtyFiles, 10, 'count individual files, not collapsed directories')
+    assert.equal(git('ls-files', '--stage'), indexBefore, 'sampling never changes the index')
+  }
+
+  // Staging a previously untracked text file must not double-count its lines.
+  git('add', '--', 'loose.txt', 'new dir/a.txt', 'new dir/b.txt', unusualName)
+  const staged = read(repo)
+  assert.equal(staged.error, undefined)
+  assert.equal(staged.additions, 8)
+  assert.equal(staged.deletions, 1)
+  assert.equal(staged.dirtyFiles, 10)
+  assert.equal(git('status', '--porcelain', '--', 'injected'), '')
 })
 
 test('parses synced, ahead, behind, diverged, and no-upstream states', () => {

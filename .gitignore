@@ -16,13 +16,8 @@ oauth.env
 lib/
 coverage/
 .vitest/
-artifacts/browser/
-artifacts/real-ui/
-artifacts/draft-pr-approval/
-artifacts/global-guidance/
-artifacts/codex-fast/
-artifacts/codex-compat/
-artifacts/worktrees-before/
+# Diagnostic captures and run metadata; visual baselines live under packages/.
+/artifacts/
 
 # Backups created by the profile apply script
 *.bak

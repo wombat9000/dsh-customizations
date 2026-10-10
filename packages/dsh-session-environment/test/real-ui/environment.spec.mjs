@@ -176,6 +176,10 @@ test('follow native session environment through global pages, Files and restored
       await closeSidebar(app)
       await expect(app.getByText(environmentCIPrompt, { exact: true })).toBeVisible()
       const card = environmentCard(app)
+      // Real Git totals reach the UI through managed Shell and strict Remote codecs.
+      await expect(card.getByText('1 file', { exact: true })).toBeVisible()
+      await expect(card.getByText('+3', { exact: true })).toBeVisible()
+      await expect(card.getByText('−0', { exact: true })).toBeVisible()
       await expect(card.getByText('PR #42', { exact: true })).toBeVisible()
       await expect(card.getByText('Default · trunk', { exact: true })).toBeVisible()
       await expect(card.getByText('running', { exact: true })).toHaveCount(0)

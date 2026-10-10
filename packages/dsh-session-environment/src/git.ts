@@ -22,9 +22,25 @@ else
   printf '__DSH_NO_UPSTREAM__\\n'
 fi
 printf '__DSH_STATUS__\\n'
-git status --porcelain=v1 --untracked-files=normal || exit 6
+git status --porcelain=v1 --untracked-files=all || exit 6
 printf '__DSH_NUMSTAT__\\n'
-git diff --numstat HEAD -- || exit 7`
+git diff --numstat --no-ext-diff --no-textconv HEAD -- || exit 7
+# Count untracked text with Git's own binary detection and line semantics.
+# NUL-delimited paths preserve whitespace; no index writes or symlink reads.
+(
+  set -o pipefail
+  # Only ./ and ../ segments, so command substitution cannot alter pathnames.
+  to_root=$(git rev-parse --show-cdup) || exit 8
+  cd "./$to_root" || exit 8
+  git ls-files --others --exclude-standard -z |
+    while IFS= read -r -d '' file; do
+      [ -f "$file" ] && [ ! -L "$file" ] || continue
+      git diff --no-index --numstat --no-ext-diff --no-textconv -- /dev/null "./$file"
+      status=$?
+      # A no-index diff returns 1 for ordinary differences, not an error.
+      [ "$status" -le 1 ] || exit 8
+    done
+) || exit 8`
 
 function baseSnapshot(cwd: string | null, home: string): SessionEnvironmentSnapshot {
   return {

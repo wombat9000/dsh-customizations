@@ -22,6 +22,7 @@ export async function seedEnvironmentCI(ctx, { prepareFixtureSession, persistSes
     '-m',
     'fixture',
   )
+  await writeFile(join(cwd, 'untracked.txt'), 'first line\nsecond line\nthird line\n')
   const time = Date.UTC(2026, 0, 2, 3, 4, 5)
   const session = prepareFixtureSession(ctx, 'visual-test-environment-live-ci', {
     meta: { cwd, createdAt: time },

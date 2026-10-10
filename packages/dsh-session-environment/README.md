@@ -16,7 +16,7 @@ A local DSH Web bundle that shows the selected session's working directory and c
 - Displays the home-relative, middle-truncated CWD with the full native path in a tooltip.
 - Displays the current branch (or detached short SHA), its tracked upstream, and local commit divergence (`↑` ahead, `↓` behind).
 - Upstream divergence uses the locally cached remote-tracking ref and never runs `git fetch`; tooltips identify it as the last-fetched state.
-- Displays the dirty-file count and tracked added/deleted line totals. Untracked and binary files count as dirty but do not add line totals.
+- Displays the dirty-file count and added/deleted line totals, including untracked text files as additions. Counts individual files inside new directories and excludes ignored files. Binary files and untracked symlinks count as dirty but do not add line totals; the probe does not follow those symlinks or stage files.
 - Handles non-repositories and repositories without a first commit explicitly.
 - Bounds each Git probe to 4 seconds and 1 MiB of captured stdout by default.
 
