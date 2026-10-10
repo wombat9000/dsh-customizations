@@ -24,7 +24,8 @@ function fixture({
   status = 'completed',
   pulls = [pull()],
   defaultHead = remote,
-  total = 1,
+  runs,
+  total = runs?.length ?? 1,
   returned = 1,
   wrongSha = false,
   contexts = [],
@@ -41,14 +42,20 @@ function fixture({
       const commit = path.split('/')[5]
       data = {
         total_count: total,
-        check_runs: Array.from({ length: returned }, () => ({
-          head_sha: wrongSha ? 'c'.repeat(40) : commit,
-          status,
-          conclusion,
-        })),
+        check_runs: (runs ?? Array.from({ length: returned }, () => ({ status, conclusion }))).map(
+          (run, index) => ({
+            name: `check-${index + 1}`,
+            head_sha: wrongSha ? 'c'.repeat(40) : commit,
+            ...run,
+          }),
+        ),
       }
     } else if (path.includes('/status?'))
-      data = { sha: path.split('/')[5], total_count: contexts.length, statuses: contexts }
+      data = {
+        sha: path.split('/')[5],
+        total_count: contexts.length,
+        statuses: contexts.map((entry) => ({ context: 'legacy-ci', ...entry })),
+      }
     else throw new Error(`Unexpected fixture path ${path}`)
     return { exitCode: 0, stdout: JSON.stringify(data), stderr: '' }
   }
@@ -125,6 +132,7 @@ for (const [status, conclusion, expected] of [
     const owner = createGitHubLiveCI({}, fixture({ status, conclusion }))
     const result = await owner.service.readCheckout(checkout, signal())
     assert.equal(result.rows[0].state, expected)
+    assert.deepEqual(result.rows[0].checks, [{ name: 'check-1', state: expected }])
     owner.dispose()
   })
 
@@ -134,11 +142,42 @@ test('commit statuses contribute pending, failure, error and success independent
     const result = await owner.service.readCheckout(checkout, signal())
     assert.equal(result.rows[0].state, state === 'error' ? 'failure' : state)
     assert.equal(result.rows[0].count, 1)
+    assert.deepEqual(result.rows[0].checks, [
+      {
+        name: 'legacy-ci',
+        state: state === 'error' ? 'failure' : state,
+      },
+    ])
     owner.dispose()
   }
 })
 
-test('non-string status and check-run states cannot become valid CI conclusions', async () => {
+test('mixed check partitions retain individual states and bounded plain-text names without extra requests', async () => {
+  const fx = fixture({
+    runs: [
+      { name: 'Lint', status: 'completed', conclusion: 'success' },
+      { name: 'Tests', status: 'in_progress', conclusion: null },
+      { name: 'Build', status: 'queued', conclusion: null },
+      { name: 'Deploy\n' + 'x'.repeat(300), status: 'completed', conclusion: 'failure' },
+    ],
+    contexts: [{ context: '<external-ci>', state: 'pending' }],
+  })
+  const owner = createGitHubLiveCI({}, fx)
+  const result = await owner.service.readCheckout({ ...checkout, branch: 'trunk' }, signal())
+  assert.equal(result.rows[0].state, 'failure')
+  assert.equal(result.rows[0].count, 5)
+  assert.deepEqual(result.rows[0].checks, [
+    { name: 'Lint', state: 'success' },
+    { name: 'Tests', state: 'running' },
+    { name: 'Build', state: 'pending' },
+    { name: 'Deploy ' + 'x'.repeat(249), state: 'failure' },
+    { name: '<external-ci>', state: 'pending' },
+  ])
+  assert.equal(fx.calls.length, 4)
+  owner.dispose()
+})
+
+test('invalid names and non-string states cannot become valid CI checks', async () => {
   for (const config of [
     ...['failure', 'error', 'pending', 'success'].map((state) => ({
       total: 0,
@@ -147,6 +186,10 @@ test('non-string status and check-run states cannot become valid CI conclusions'
     })),
     { status: ['completed'], conclusion: 'success' },
     { status: ['in_progress'], conclusion: null },
+    ...[null, 12, '', '\u0000'].map((name) => ({
+      runs: [{ name, status: 'completed', conclusion: 'success' }],
+    })),
+    { total: 0, returned: 0, contexts: [{ context: null, state: 'success' }] },
   ]) {
     const owner = createGitHubLiveCI({}, fixture(config))
     const result = await owner.service.readCheckout(checkout, signal())

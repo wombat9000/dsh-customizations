@@ -193,6 +193,21 @@ test('follow native session environment through global pages, Files and restored
         `https://github.com/ci-fixture/repo/commit/${'b'.repeat(40)}/checks`,
       )
       await expect(card).toContainText(/\d+s ago/)
+      const currentBar = card.getByRole('list', { name: 'PR #42 check statuses', exact: true })
+      const defaultBar = card.getByRole('list', {
+        name: 'Default · trunk check statuses',
+        exact: true,
+      })
+      await expect(currentBar.getByRole('listitem')).toHaveCount(3)
+      await expect(defaultBar.getByRole('listitem')).toHaveCount(5)
+      await expect(
+        currentBar.getByRole('listitem', { name: 'Tests: running', exact: true }),
+      ).toHaveAttribute('title', 'Tests: running')
+      const currentBounds = await currentBar.boundingBox()
+      const defaultBounds = await defaultBar.boundingBox()
+      expect(currentBounds.width).toBe(defaultBounds.width)
+      expect(currentBounds.width).toBe(268)
+      expect(currentBounds.height).toBe(defaultBounds.height)
       const screenshot = testInfo.outputPath('environment-live-ci.png')
       await card.screenshot({ path: screenshot })
       await testInfo.attach('Live checkout CI (isolated shell, fixture GitHub)', {

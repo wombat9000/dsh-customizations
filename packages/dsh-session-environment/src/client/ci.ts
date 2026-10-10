@@ -1,6 +1,10 @@
 import React from 'react'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
-import type { SessionCIRequest, SessionCISnapshot } from '@local/dsh-session-environment/types'
+import type {
+  CIRow,
+  SessionCIRequest,
+  SessionCISnapshot,
+} from '@local/dsh-session-environment/types'
 
 export interface CIRemote {
   readCI?(request: SessionCIRequest, signal?: AbortSignal): Promise<RemoteResult<SessionCISnapshot>>
@@ -147,6 +151,137 @@ export function useLiveCI(
     : null
 }
 
+// Equal partitions show reported check states, not a percentage or time estimate.
+// The bar fills the fixed-width Environment card; names never affect its layout.
+function CICheckBar({ row, stale }: { row: CIRow; stale: boolean }): React.ReactElement | null {
+  const [focusedIndex, setFocusedIndex] = React.useState<number | null>(null)
+  const tooltipId = React.useId()
+  const checks = row.checks
+  if (!checks?.length) return null
+  const colors: Partial<Record<CIRow['state'], string>> = {
+    success: '#3fb950',
+    running: '#d29922',
+    failure: '#f85149',
+    pending: '#6e7681',
+  }
+  const qualifiers = `${stale ? ' · stale' : ''}${row.complete ? '' : ' · partial'}`
+  const selectedIndex = focusedIndex === null ? null : Math.min(focusedIndex, checks.length - 1)
+  const selected = selectedIndex === null ? undefined : checks[selectedIndex]
+  const bar = React.createElement(
+    'span',
+    {
+      role: 'list',
+      'aria-label': `${row.label} check statuses${qualifiers}`,
+      style: {
+        display: 'flex',
+        width: '100%',
+        height: 8,
+        overflow: 'hidden',
+        borderRadius: 3,
+        opacity: stale || !row.complete ? 0.55 : 1,
+      },
+    },
+    checks.map((check, index) =>
+      React.createElement(
+        'span',
+        {
+          key: index,
+          role: 'listitem',
+          'aria-label': `${check.name}: ${check.state}`,
+          title: `${check.name}: ${check.state}${qualifiers}`,
+          style: {
+            position: 'relative',
+            flex: '1 1 0',
+            minWidth: 0,
+            backgroundColor: colors[check.state] ?? '#6e7681',
+            backgroundImage: colors[check.state]
+              ? undefined
+              : 'repeating-linear-gradient(135deg, transparent 0 2px, rgba(0, 0, 0, 0.3) 2px 4px)',
+          },
+        },
+        index < checks.length - 1
+          ? React.createElement('span', {
+              'aria-hidden': true,
+              style: {
+                position: 'absolute',
+                top: 0,
+                right: 0,
+                height: '100%',
+                // Preserve the color even when a partition is narrower than 1px.
+                width: 'min(1px, 10%)',
+                backgroundColor: 'var(--dsw-alias-bg-layer-1)',
+                pointerEvents: 'none',
+              },
+            })
+          : null,
+      ),
+    ),
+  )
+  return React.createElement(
+    row.url ? 'a' : 'div',
+    {
+      ...(row.url
+        ? {
+            href: row.url,
+            target: '_blank',
+            rel: 'noopener noreferrer',
+            'aria-label': `Open ${row.label} checks on GitHub${qualifiers}`,
+          }
+        : {}),
+      tabIndex: row.url ? undefined : 0,
+      'aria-describedby': selected ? tooltipId : undefined,
+      onFocus: () => setFocusedIndex(0),
+      onBlur: () => setFocusedIndex(null),
+      onKeyDown: (event: React.KeyboardEvent<HTMLElement>) => {
+        if (event.altKey || event.ctrlKey || event.metaKey) return
+        const index = selectedIndex ?? 0
+        const destinations: Record<string, number | null> = {
+          ArrowLeft: (index + checks.length - 1) % checks.length,
+          ArrowRight: (index + 1) % checks.length,
+          Home: 0,
+          End: checks.length - 1,
+          Escape: null,
+        }
+        const next = Object.hasOwn(destinations, event.key) ? destinations[event.key] : undefined
+        if (next !== undefined) {
+          event.preventDefault()
+          setFocusedIndex(next)
+        }
+      },
+      style: { position: 'relative', display: 'block', width: '100%', margin: '5px 0' },
+    },
+    bar,
+    selected
+      ? React.createElement(
+          'span',
+          {
+            id: tooltipId,
+            role: 'tooltip',
+            'aria-live': 'polite',
+            style: {
+              position: 'absolute',
+              top: '100%',
+              left: 0,
+              zIndex: 1,
+              width: '100%',
+              boxSizing: 'border-box',
+              marginTop: 4,
+              padding: 6,
+              border: '1px solid var(--dsw-alias-border-l1)',
+              borderRadius: 4,
+              backgroundColor: 'var(--dsw-alias-bg-layer-1)',
+              color: 'var(--dsw-alias-label-primary)',
+              fontSize: 11,
+              overflowWrap: 'anywhere',
+              pointerEvents: 'none',
+            },
+          },
+          `${selected.name}: ${selected.state}${qualifiers} · ${(selectedIndex ?? 0) + 1}/${checks.length} (←/→)`,
+        )
+      : null,
+  )
+}
+
 export function CIRows({
   snapshot,
   available,
@@ -195,6 +330,7 @@ export function CIRows({
                 `${row.state === 'no-checks' ? 'No checks' : row.state}${row.complete || !row.sha ? '' : ' · partial'}`,
               ),
             ),
+            React.createElement(CICheckBar, { row, stale: Boolean(stale) }),
             React.createElement(
               'div',
               { style: { color: muted, fontSize: 11 } },

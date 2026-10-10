@@ -13,6 +13,19 @@ export const sessionCIRequestSchema = z
   })
   .strict()
 
+const ciStateSchema = z.enum([
+  'pending',
+  'running',
+  'failure',
+  'success',
+  'cancelled',
+  'skipped',
+  'neutral',
+  'stale',
+  'unknown',
+  'no-checks',
+])
+
 export const sessionCISnapshotSchema = z
   .object({
     checkoutKey: z.string().regex(/^[a-f0-9]{64}$/),
@@ -37,20 +50,20 @@ export const sessionCISnapshotSchema = z
                 /^https:\/\/github\.com\/[A-Za-z0-9][A-Za-z0-9-]*\/[A-Za-z0-9_.-]+\/(?:pull\/\d+|commit\/[a-f0-9]{40})\/checks$/,
               )
               .nullable(),
-            state: z.enum([
-              'pending',
-              'running',
-              'failure',
-              'success',
-              'cancelled',
-              'skipped',
-              'neutral',
-              'stale',
-              'unknown',
-              'no-checks',
-            ]),
+            state: ciStateSchema,
             complete: z.boolean(),
             count: z.number().int().nonnegative().max(400),
+            checks: z
+              .array(
+                z
+                  .object({
+                    name: z.string().min(1).max(256),
+                    state: ciStateSchema.exclude(['no-checks']),
+                  })
+                  .strict(),
+              )
+              .max(400)
+              .optional(),
             mismatch: z.boolean(),
             warning: z.string().max(300).nullable(),
           })

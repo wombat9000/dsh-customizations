@@ -31,15 +31,21 @@ else if (
   )
 ) {
   const sha = path.split('/')[5]
+  const checks =
+    sha === current
+      ? [
+          { name: 'Lint', status: 'completed', conclusion: 'success' },
+          { name: 'Tests', status: 'in_progress', conclusion: null },
+          { name: 'Build', status: 'queued', conclusion: null },
+        ]
+      : ['Lint', 'Typecheck', 'Tests', 'Build', 'Deploy'].map((name) => ({
+          name,
+          status: 'completed',
+          conclusion: 'success',
+        }))
   data = {
-    total_count: 1,
-    check_runs: [
-      {
-        head_sha: sha,
-        status: sha === current ? 'in_progress' : 'completed',
-        conclusion: sha === current ? null : 'success',
-      },
-    ],
+    total_count: checks.length,
+    check_runs: checks.map((check) => ({ head_sha: sha, ...check })),
   }
 } else if (
   valid &&

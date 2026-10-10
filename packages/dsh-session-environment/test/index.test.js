@@ -332,6 +332,7 @@ test('CI wire codecs reject arbitrary targets, unsafe links, wrong SHAs and unbo
     url: 'https://github.com/acme/repo/pull/42/checks',
     state: 'success',
     count: 1,
+    checks: [{ name: 'Tests', state: 'success' }],
     complete: true,
     mismatch: false,
     warning: null,
@@ -346,6 +347,9 @@ test('CI wire codecs reject arbitrary targets, unsafe links, wrong SHAs and unbo
     stale: false,
   }
   assert.deepEqual(sessionCISnapshotSchema.parse(snapshot), snapshot)
+  const { checks, ...aggregateOnly } = row
+  const legacy = { ...snapshot, rows: [aggregateOnly] }
+  assert.deepEqual(sessionCISnapshotSchema.parse(legacy), legacy)
   for (const invalid of [
     ...[
       'javascript:alert(1)',
@@ -356,6 +360,14 @@ test('CI wire codecs reject arbitrary targets, unsafe links, wrong SHAs and unbo
       'https://github.com/acme/repo/pull/42/checks?token=secret',
       'https://github.com/acme/repo/pull/42/checks#secret',
     ].map((url) => ({ ...snapshot, rows: [{ ...row, url }] })),
+    ...[
+      [{ name: '', state: 'success' }],
+      [{ name: 'x'.repeat(257), state: 'success' }],
+      [{ name: 'Tests', state: 'no-checks' }],
+      [{ name: 'Tests', state: 'invented' }],
+      [{ name: 'Tests', state: 'success', command: 'unsafe' }],
+      Array.from({ length: 401 }, () => checks[0]),
+    ].map((checks) => ({ ...snapshot, rows: [{ ...row, checks }] })),
     { ...snapshot, freshUntil: -1 },
     { ...snapshot, rows: [{ ...row, sha: 'not-a-commit' }] },
     { ...snapshot, rows: [{ ...row, credentials: 'secret' }] },

@@ -21,6 +21,10 @@ export interface CICheckout {
   head: string | null
   remotes: string[]
 }
+export interface CICheck {
+  name: string
+  state: Exclude<CIState, 'no-checks'>
+}
 export interface CIRow {
   kind: 'current' | 'default'
   label: string
@@ -29,6 +33,8 @@ export interface CIRow {
   state: CIState
   complete: boolean
   count: number
+  // Older optional GitHub providers may supply only the aggregate status.
+  checks?: CICheck[]
   mismatch: boolean
   warning: string | null
 }

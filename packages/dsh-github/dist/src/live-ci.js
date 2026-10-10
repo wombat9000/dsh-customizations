@@ -52,7 +52,7 @@ function aggregate(states, complete) {
 // Each REST page is explicitly tied to the requested immutable commit. Bounded
 // pagination never upgrades an incomplete collection to success.
 async function commitChecks(read, root, commit) {
-    const states = [];
+    const checks = [];
     let complete = true;
     for (const source of ['check-runs', 'status']) {
         for (let page = 1; page <= 2; page++) {
@@ -66,11 +66,21 @@ async function commitChecks(read, root, commit) {
             const entries = array(source === 'status' ? data.statuses : data.check_runs);
             for (const input of entries) {
                 const entry = record(input);
+                const rawName = source === 'status' ? entry.context : entry.name;
+                if (typeof rawName !== 'string' || !rawName.trim())
+                    invalid();
+                const name = rawName
+                    .replace(/[\u0000-\u001f\u007f]/g, ' ')
+                    .trim()
+                    .slice(0, 256);
+                if (!name)
+                    invalid();
+                let state;
                 if (source === 'status') {
                     if (typeof entry.state !== 'string' ||
                         !['pending', 'success', 'failure', 'error'].includes(entry.state))
                         invalid();
-                    states.push(entry.state === 'error' ? 'failure' : entry.state);
+                    state = entry.state === 'error' ? 'failure' : entry.state;
                 }
                 else {
                     if (sha(entry.head_sha) !== commit)
@@ -79,7 +89,7 @@ async function commitChecks(read, root, commit) {
                         !['queued', 'in_progress', 'completed', 'waiting', 'requested', 'pending'].includes(entry.status))
                         invalid();
                     if (entry.status !== 'completed')
-                        states.push(entry.status === 'in_progress' ? 'running' : 'pending');
+                        state = entry.status === 'in_progress' ? 'running' : 'pending';
                     else {
                         switch (entry.conclusion) {
                             case 'success':
@@ -87,19 +97,20 @@ async function commitChecks(read, root, commit) {
                             case 'neutral':
                             case 'skipped':
                             case 'stale':
-                                states.push(entry.conclusion);
+                                state = entry.conclusion;
                                 break;
                             case 'failure':
                             case 'timed_out':
                             case 'action_required':
                             case 'startup_failure':
-                                states.push('failure');
+                                state = 'failure';
                                 break;
                             default:
-                                states.push('unknown');
+                                state = 'unknown';
                         }
                     }
                 }
+                checks.push({ name, state });
             }
             if (entries.length !== Math.min(100, Math.max(0, total - (page - 1) * 100)))
                 complete = false;
@@ -111,7 +122,12 @@ async function commitChecks(read, root, commit) {
             }
         }
     }
-    return { state: aggregate(states, complete), count: states.length, complete };
+    return {
+        state: aggregate(checks.map((check) => check.state), complete),
+        count: checks.length,
+        checks,
+        complete,
+    };
 }
 function emptyRow(kind, label, warning) {
     return {
@@ -122,6 +138,7 @@ function emptyRow(kind, label, warning) {
         state: 'unknown',
         complete: false,
         count: 0,
+        checks: [],
         mismatch: false,
         warning,
     };

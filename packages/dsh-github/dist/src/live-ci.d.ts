@@ -9,6 +9,10 @@ export interface CICheckout {
     remotes: string[];
 }
 export type CIState = 'pending' | 'running' | 'failure' | 'success' | 'cancelled' | 'skipped' | 'neutral' | 'stale' | 'unknown' | 'no-checks';
+export interface CICheck {
+    name: string;
+    state: Exclude<CIState, 'no-checks'>;
+}
 export interface CIRow {
     kind: 'current' | 'default';
     label: string;
@@ -17,6 +21,7 @@ export interface CIRow {
     state: CIState;
     complete: boolean;
     count: number;
+    checks: CICheck[];
     mismatch: boolean;
     warning: string | null;
 }
