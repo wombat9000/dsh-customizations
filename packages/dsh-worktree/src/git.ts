@@ -30,20 +30,24 @@ function gitEnvironment() {
   return { ...env, GIT_TERMINAL_PROMPT: '0', GIT_OPTIONAL_LOCKS: '0', LC_ALL: 'C' }
 }
 
-function git(
+export function git(
   cwd: string,
   args: string[],
-  { signal, accept = [0] }: SignalOptions & { accept?: number[] } = {},
+  { signal, accept = [0], input }: SignalOptions & { accept?: number[]; input?: string } = {},
 ): Promise<{ stdout: string; code: number | null }> {
   checkAbort(signal)
   return new Promise((resolveResult, reject) => {
     const grouped = process.platform !== 'win32'
     const child = spawn('git', ['-c', 'core.fsmonitor=false', '-C', cwd, ...args], {
       env: gitEnvironment(),
-      stdio: ['ignore', 'pipe', 'pipe'],
+      stdio: ['pipe', 'pipe', 'pipe'],
       detached: grouped,
     })
     let failure: unknown
+    child.stdin.on('error', (error) => {
+      failure ??= error
+    })
+    child.stdin.end(input)
     let bytes = 0
     const stdout: Buffer[] = []
     const stderr: Buffer[] = []
@@ -98,7 +102,7 @@ function git(
   })
 }
 
-function singleLine(value: string) {
+export function singleLine(value: string) {
   // Git terminates path/ref output with exactly one LF. Do not trim path whitespace.
   return value.endsWith('\n') ? value.slice(0, -1) : value
 }
@@ -139,14 +143,14 @@ function parseWorktrees(output: string) {
   return rows
 }
 
-async function canonical(path: string) {
+export async function canonical(path: string) {
   const result = await realpath(path)
   const stat = await lstat(result)
   if (!stat.isDirectory()) throw new Error(`Not a directory: ${path}`)
   return result
 }
 
-async function context(cwd: string, signal: AbortSignal | undefined) {
+export async function context(cwd: string, signal: AbortSignal | undefined) {
   checkAbort(signal)
   const directory = await canonical(cwd)
   const common = singleLine(
@@ -281,7 +285,7 @@ async function ensureDirectory(path: string, signal: AbortSignal | undefined) {
   }
 }
 
-async function validateManagedRoot(repository: string, root: string) {
+export async function validateManagedRoot(repository: string, root: string) {
   for (const path of [join(repository, '.dsh'), root]) {
     const stat = await lstat(path)
     if (stat.isSymbolicLink() || !stat.isDirectory() || (await realpath(path)) !== path) {
@@ -290,7 +294,7 @@ async function validateManagedRoot(repository: string, root: string) {
   }
 }
 
-async function refuseCheckoutFilters(cwd: string, signal: AbortSignal | undefined) {
+export async function refuseCheckoutFilters(cwd: string, signal: AbortSignal | undefined) {
   const result = await git(
     cwd,
     ['config', '--null', '--get-regexp', '^filter\\..*\\.(smudge|process)$'],

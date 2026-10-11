@@ -24,16 +24,20 @@ function gitEnvironment() {
     const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_')));
     return { ...env, GIT_TERMINAL_PROMPT: '0', GIT_OPTIONAL_LOCKS: '0', LC_ALL: 'C' };
 }
-function git(cwd, args, { signal, accept = [0] } = {}) {
+export function git(cwd, args, { signal, accept = [0], input } = {}) {
     checkAbort(signal);
     return new Promise((resolveResult, reject) => {
         const grouped = process.platform !== 'win32';
         const child = spawn('git', ['-c', 'core.fsmonitor=false', '-C', cwd, ...args], {
             env: gitEnvironment(),
-            stdio: ['ignore', 'pipe', 'pipe'],
+            stdio: ['pipe', 'pipe', 'pipe'],
             detached: grouped,
         });
         let failure;
+        child.stdin.on('error', (error) => {
+            failure ??= error;
+        });
+        child.stdin.end(input);
         let bytes = 0;
         const stdout = [];
         const stderr = [];
@@ -91,7 +95,7 @@ function git(cwd, args, { signal, accept = [0] } = {}) {
         });
     });
 }
-function singleLine(value) {
+export function singleLine(value) {
     // Git terminates path/ref output with exactly one LF. Do not trim path whitespace.
     return value.endsWith('\n') ? value.slice(0, -1) : value;
 }
@@ -141,14 +145,14 @@ function parseWorktrees(output) {
         throw new Error('Git returned no registered worktrees');
     return rows;
 }
-async function canonical(path) {
+export async function canonical(path) {
     const result = await realpath(path);
     const stat = await lstat(result);
     if (!stat.isDirectory())
         throw new Error(`Not a directory: ${path}`);
     return result;
 }
-async function context(cwd, signal) {
+export async function context(cwd, signal) {
     checkAbort(signal);
     const directory = await canonical(cwd);
     const common = singleLine((await git(directory, ['rev-parse', '--git-common-dir'], { signal })).stdout);
@@ -262,7 +266,7 @@ async function ensureDirectory(path, signal) {
         throw new Error(`Managed worktree directory must not contain symlinks: ${path}`);
     }
 }
-async function validateManagedRoot(repository, root) {
+export async function validateManagedRoot(repository, root) {
     for (const path of [join(repository, '.dsh'), root]) {
         const stat = await lstat(path);
         if (stat.isSymbolicLink() || !stat.isDirectory() || (await realpath(path)) !== path) {
@@ -270,7 +274,7 @@ async function validateManagedRoot(repository, root) {
         }
     }
 }
-async function refuseCheckoutFilters(cwd, signal) {
+export async function refuseCheckoutFilters(cwd, signal) {
     const result = await git(cwd, ['config', '--null', '--get-regexp', '^filter\\..*\\.(smudge|process)$'], { signal, accept: [0, 1] });
     for (const entry of result.stdout.split('\0')) {
         if (!entry)

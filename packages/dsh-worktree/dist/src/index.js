@@ -5,6 +5,7 @@ import * as git from './git.js';
 import { startRegisteredWorker } from './worker.js';
 import { CHANNEL, createSnapshotRpcHandler } from './snapshot.js';
 import { registerWorktreeTools } from './tools.js';
+import { mountSessionWorktrees } from './session-host.js';
 export const name = 'worktree-workers';
 const MAX_REPORTS = 100;
 const MAX_TEXT = 32000;
@@ -27,6 +28,7 @@ export class WorktreeManager {
     settleRun;
     active;
     creating;
+    checkoutOperations = new Set();
     history;
     constructor(ctx, dependencies = {}) {
         this.ctx = ctx;
@@ -115,6 +117,8 @@ export class WorktreeManager {
         const { worktree } = await this.git.resolveWorktree(cwd, requiredText(args.worktree, 'worktree', 8192), { signal });
         signal?.throwIfAborted();
         this.cwd(parent);
+        if (this.checkoutOperations.has(worktree.path))
+            throw new Error('This checkout is being cleaned up or restored; retry after it finishes');
         if (this.activeWorktrees().has(worktree.path))
             throw new Error('This worktree already has an active assignment; collect or cancel its job before dispatching another');
         let history = this.history.get(parent);
@@ -240,6 +244,11 @@ export default class WorktreeService extends Service {
         // Preset-neutral inherited contributions, owned by this service's Fiber.
         // DSH applies each agent's restrictions before lookup or execution.
         registerWorktreeTools(ctx, this);
+        ctx.inject(['sessionController', 'workspaceRegistry', 'storageDomain'], async (scope) => {
+            // Cordis initializers return void, not the runtime instance. Returning
+            // that object prevents the injected scope's registrations from activating.
+            await mountSessionWorktrees(scope, this.manager);
+        });
         ctx.inject(['connection', 'webServer'], (connectionCtx) => {
             connectionCtx.effect(() => connectionCtx.connection.rpc.handle(CHANNEL, createSnapshotRpcHandler(ctx, this.manager)));
         });
