@@ -96,6 +96,41 @@ test('compact rows expose immutable SHA links and warnings without refresh-age t
     .not.toHaveAttribute('title')
 })
 
+test('row failures appear once without hiding distinct or snapshot-only errors', async () => {
+  const error = 'CI unavailable (OUTPUT_TOO_LARGE)'
+  const snapshot = value()
+  snapshot.error = error
+  snapshot.rows = [
+    {
+      ...snapshot.rows[1],
+      sha: null,
+      url: null,
+      state: 'unknown',
+      complete: false,
+      count: 0,
+      checks: [],
+      warning: error,
+    },
+  ]
+  await render(React.createElement(CIRows, { snapshot, available: true }))
+  expect(container.textContent.split(error)).toHaveLength(2)
+  await expect.element(page.getByText('unknown', { exact: true })).toBeVisible()
+  expect(container.querySelector('[role="list"]')).toBeNull()
+
+  snapshot.error = 'CI unavailable (RATE_LIMITED)'
+  await render(React.createElement(CIRows, { snapshot: { ...snapshot }, available: true }))
+  await expect.element(page.getByText(error, { exact: true })).toBeVisible()
+  await expect.element(page.getByText(snapshot.error, { exact: true })).toBeVisible()
+
+  snapshot.rows[0].warning = null
+  await render(React.createElement(CIRows, { snapshot: { ...snapshot }, available: true }))
+  await expect.element(page.getByText(snapshot.error, { exact: true })).toBeVisible()
+  snapshot.rows = []
+  await render(React.createElement(CIRows, { snapshot: { ...snapshot }, available: true }))
+  await expect.element(page.getByText(snapshot.error, { exact: true })).toBeVisible()
+  expect(container.textContent.split(snapshot.error)).toHaveLength(2)
+})
+
 test('success and running bars omit redundant text but retain accessible status and fallback labels', async () => {
   for (const state of ['success', 'running']) {
     const snapshot = value()

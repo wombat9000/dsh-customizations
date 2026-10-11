@@ -24,6 +24,7 @@ function fixture({
   status = 'completed',
   pulls = [pull()],
   defaultHead = remote,
+  defaultRef = { ref: 'refs/heads/trunk', object: { type: 'commit', sha: defaultHead } },
   runs,
   total = runs?.length ?? 1,
   returned = 1,
@@ -36,7 +37,7 @@ function fixture({
     const path = request.path
     let data
     if (path === '/repos/acme/repo') data = { full_name: 'acme/repo', default_branch: 'trunk' }
-    else if (path === '/repos/acme/repo/commits/trunk') data = { sha: defaultHead }
+    else if (path === '/repos/acme/repo/git/ref/heads/trunk') data = defaultRef
     else if (path.includes('/pulls?')) data = pulls
     else if (path.includes('/check-runs?')) {
       const commit = path.split('/')[5]
@@ -83,6 +84,69 @@ test('current OPEN PR and actual default branch checks bind separate immutable S
   owner.dispose()
 })
 
+test('large commit patches do not prevent CI reads through the bounded managed backend', async () => {
+  const defaultBranch = 'release/v2+qa'
+  const responses = new Map([
+    ['/repos/acme/repo', { full_name: 'acme/repo', default_branch: defaultBranch }],
+    [
+      `/repos/acme/repo/commits/${encodeURIComponent(defaultBranch)}`,
+      {
+        sha: remote,
+        files: [{ filename: 'large.txt', patch: 'x'.repeat(1048576) }],
+      },
+    ],
+    [
+      `/repos/acme/repo/git/ref/heads/${encodeURIComponent(defaultBranch)}`,
+      {
+        ref: `refs/heads/${defaultBranch}`,
+        object: { type: 'commit', sha: remote },
+      },
+    ],
+    [
+      `/repos/acme/repo/commits/${remote}/check-runs?per_page=100&page=1&filter=latest`,
+      {
+        total_count: 1,
+        check_runs: [
+          { name: 'Tests', head_sha: remote, status: 'completed', conclusion: 'success' },
+        ],
+      },
+    ],
+    [
+      `/repos/acme/repo/commits/${remote}/status?per_page=100&page=1`,
+      {
+        sha: remote,
+        total_count: 0,
+        statuses: [],
+      },
+    ],
+  ])
+  const subprocess = fakeSubprocess((spec) => {
+    const path = spec.argv[2]
+    assert.ok(responses.has(path), `unexpected API path ${path}`)
+    return json(responses.get(path))
+  })
+  const owner = createGitHubLiveCI(subprocess)
+  try {
+    const result = await owner.service.readCheckout(
+      { ...checkout, branch: defaultBranch },
+      signal(),
+    )
+    assert.equal(result.error, null)
+    assert.equal(result.rows.length, 1)
+    assert.equal(result.rows[0].label, `Default · ${defaultBranch}`)
+    assert.equal(result.rows[0].sha, remote)
+    assert.equal(result.rows[0].state, 'success')
+    assert.equal(result.rows[0].complete, true)
+    assert.equal(result.rows[0].count, 1)
+    assert.equal(result.rows[0].mismatch, true)
+    assert.equal(result.rows[0].url, `https://github.com/acme/repo/commit/${remote}/checks`)
+    assert.equal(subprocess.specs.length, 4)
+    assert.ok(subprocess.specs.every((spec) => spec.stdio.stdout.maxBytes === 1048576))
+  } finally {
+    owner.dispose()
+  }
+})
+
 test('default checkout deduplicates the PR row and same-commit checks deduplicate within a read', async () => {
   for (const local of [{ ...checkout, branch: 'trunk' }, checkout]) {
     const fx = fixture({ defaultHead: head, pulls: local.branch === 'trunk' ? [] : [pull()] })
@@ -95,6 +159,37 @@ test('default checkout deduplicates the PR row and same-commit checks deduplicat
       local.branch === 'trunk' ? 0 : 1,
     )
     owner.dispose()
+  }
+})
+
+test('malformed or mismatched branch refs stay unknown while verified PR checks remain usable', async () => {
+  const valid = { ref: 'refs/heads/trunk', object: { type: 'commit', sha: remote } }
+  for (const defaultRef of [
+    null,
+    [],
+    {},
+    [valid],
+    { ...valid, ref: 'refs/heads/trunk-other' },
+    { ...valid, ref: 'refs/tags/trunk' },
+    { ...valid, object: { type: 'tag', sha: remote } },
+    { ...valid, object: { type: 'commit', sha: 'invalid' } },
+    { ...valid, object: { sha: remote } },
+  ]) {
+    const fx = fixture({ defaultRef })
+    const owner = createGitHubLiveCI({}, fx)
+    try {
+      const result = await owner.service.readCheckout(checkout, signal())
+      assert.match(result.error, /INVALID_RESPONSE/)
+      assert.equal(result.rows[1].state, 'unknown')
+      assert.equal(result.rows[1].sha, null)
+      assert.equal(result.rows[1].complete, false)
+      assert.equal(result.rows[0].sha, head)
+      assert.equal(result.rows[0].state, 'success')
+      assert.equal(result.rows[0].complete, true)
+      assert.equal(result.refreshAfterMs, 30000)
+    } finally {
+      owner.dispose()
+    }
   }
 })
 

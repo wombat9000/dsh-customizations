@@ -452,7 +452,9 @@ export function CIRows({
               : null,
           )
         }),
-    snapshot?.error && snapshot.rows.length
+    snapshot?.error &&
+      snapshot.rows.length &&
+      !snapshot.rows.some((row) => row.warning === snapshot.error)
       ? React.createElement('div', { style: { color: muted, fontSize: 11 } }, snapshot.error)
       : null,
   )

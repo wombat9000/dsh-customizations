@@ -9,7 +9,8 @@ const valid = args[0] === 'api' && args.includes('GET') && args.includes('github
 let data
 if (valid && path === '/repos/ci-fixture/repo')
   data = { full_name: 'ci-fixture/repo', default_branch: 'trunk' }
-else if (valid && path === '/repos/ci-fixture/repo/commits/trunk') data = { sha: main }
+else if (valid && path === '/repos/ci-fixture/repo/git/ref/heads/trunk')
+  data = { ref: 'refs/heads/trunk', object: { type: 'commit', sha: main } }
 else if (
   valid &&
   path ===

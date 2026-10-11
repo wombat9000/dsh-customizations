@@ -211,7 +211,16 @@ async function observe(checkout, read) {
         return commits.get(commit);
     };
     const defaultRow = await attempt('default', `Default · ${defaultBranch}`, async () => {
-        const defaultCommit = sha(record(await read({ method: 'GET', path: `${root}/commits/${encodeURIComponent(defaultBranch)}` })).sha);
+        // Resolve only the branch tip. The full commit endpoint embeds file patches
+        // and can exceed the managed output bound even when CI itself is small.
+        const ref = record(await read({
+            method: 'GET',
+            path: `${root}/git/ref/heads/${encodeURIComponent(defaultBranch)}`,
+        }));
+        const object = record(ref.object);
+        if (ref.ref !== `refs/heads/${defaultBranch}` || object.type !== 'commit')
+            invalid();
+        const defaultCommit = sha(object.sha);
         const row = {
             kind: 'default',
             label: `Default · ${defaultBranch}`,
