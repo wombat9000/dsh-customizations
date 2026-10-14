@@ -1461,6 +1461,8 @@ const PR_TOOL_TITLES = {
 	github_add_pull_request_to_stack: "Append to stack"
 };
 const PR_TOOLS = Object.keys(PR_TOOL_TITLES);
+/** Tools whose entries render as one compact row each, all visible without expanding. */
+const COMPACT_LIST_TOOLS = /* @__PURE__ */ new Set(["github_get_pull_request_files"]);
 const knownTool = (name) => Object.hasOwn(PR_TOOL_TITLES, name);
 const writeTool = (name) => /^github_(create|update|submit|add)_/.test(name);
 function pullRequestCardModel(toolName, block) {
@@ -1550,9 +1552,9 @@ function pullRequestCardModel(toolName, block) {
 		}
 		if (!collection.every(object$1)) throw new Error();
 		const inspection = inspectCollections(envelope, toolName);
-		const warnings = inspection.notices.map((notice) => notice.message);
+		const warnings = summarizeNotices(inspection.notices);
 		if (Array.isArray(data.warnings)) warnings.push(...data.warnings.filter((warning) => typeof warning === "string"));
-		if (collection.length > 5) warnings.push(`Showing 5 of ${collection.length} returned entries. Expand remaining entries or raw tool details.`);
+		if (collection.length > 5 && !COMPACT_LIST_TOOLS.has(toolName)) warnings.push(`Showing 5 of ${collection.length} returned entries. Expand remaining entries or raw tool details.`);
 		if (collection.length > 100) warnings.push("Only the first 100 combined entries can be displayed. Additional entries are in raw tool details.");
 		return {
 			...base,
@@ -1570,6 +1572,25 @@ function pullRequestCardModel(toolName, block) {
 			error: cardResultFailure(error)
 		};
 	}
+}
+function summarizeNotices(notices) {
+	const groups = /* @__PURE__ */ new Map();
+	for (const notice of notices) {
+		const prefix = `${notice.path}: `;
+		const pattern = notice.path?.replace(/\[\d+\]/g, "[*]") ?? "";
+		const indexed = pattern !== "" && pattern !== notice.path && notice.message.startsWith(prefix);
+		const detail = indexed ? notice.message.slice(prefix.length).trim() : "";
+		const key = indexed ? `${pattern}\n${detail}` : `\n${notice.message}`;
+		const group = groups.get(key) ?? {
+			pattern,
+			detail,
+			first: notice.message,
+			count: 0
+		};
+		group.count++;
+		groups.set(key, group);
+	}
+	return [...groups.values()].map(({ pattern, detail, first, count }) => count === 1 ? first : `${pattern === "data.files.nodes[*].patch" ? `Patches of ${count} files` : `${pattern} (${count} entries)`}: ${detail}`);
 }
 function pullRequestEntryLabel(entry) {
 	return (Number.isSafeInteger(entry.number) ? `#${entry.number} ` : "") + (text(entry.title) || text(entry.path) || text(entry.filename) || text(entry.name) || text(entry.context) || text(entry.state) || text(entry.body).slice(0, 120) || text(supplied(entry.head, "ref")) || "Details");
@@ -1618,13 +1639,17 @@ function PullRequestCard({ toolName, block, inspect }) {
       .gh-pr-row small { margin-left:6px; }
       .gh-pr pre { white-space:pre-wrap; overflow-wrap:anywhere; max-height:300px; overflow:auto; }
       .gh-pr [role="note"] { font-size:0.9em; }
-    `), /* @__PURE__ */ react.default.createElement("h3", null, `GitHub · ${model.title}`), model.target && /* @__PURE__ */ react.default.createElement("small", null, model.target), /* @__PURE__ */ react.default.createElement("p", { role: "status" }, model.status, model.total === void 0 ? "" : ` · ${model.total} total reported`), model.error && /* @__PURE__ */ react.default.createElement("p", { role: "alert" }, model.error), model.warnings.map((warning, index) => /* @__PURE__ */ react.default.createElement("p", {
+      .gh-pr-files { list-style:none; padding:0; margin:8px 0; }
+      .gh-pr-files li { display:flex; flex-wrap:wrap; justify-content:space-between; gap:0 12px; margin:0; padding:3px 0; border-top:1px solid var(--border-color,#8884); }
+      .gh-pr-files code { min-width:0; overflow-wrap:anywhere; font-size:12px; }
+      .gh-pr-files span { color:var(--dsw-alias-label-secondary); font-size:12px; white-space:nowrap; }
+    `), /* @__PURE__ */ react.default.createElement("h3", null, `GitHub · ${model.title}`), model.target && /* @__PURE__ */ react.default.createElement("small", null, model.target), model.pullRequest && /* @__PURE__ */ react.default.createElement("small", null, /* @__PURE__ */ react.default.createElement(Link, { url: model.pullRequest.url }, pullRequestEntryLabel(model.pullRequest)), " ·", " ", pullRequestEntryContext(model.pullRequest).join(" · ")), /* @__PURE__ */ react.default.createElement("p", { role: "status" }, model.status, model.total === void 0 ? "" : ` · ${model.total} total reported`), model.error && /* @__PURE__ */ react.default.createElement("p", { role: "alert" }, model.error), model.warnings.map((warning, index) => /* @__PURE__ */ react.default.createElement("p", {
 		role: "note",
 		key: index
-	}, warning)), model.pullRequest && /* @__PURE__ */ react.default.createElement("small", null, /* @__PURE__ */ react.default.createElement(Link, { url: model.pullRequest.url }, pullRequestEntryLabel(model.pullRequest)), " ·", " ", pullRequestEntryContext(model.pullRequest).join(" · ")), model.entries.slice(0, 5).map((entry, index) => /* @__PURE__ */ react.default.createElement(Entry, {
+	}, warning)), COMPACT_LIST_TOOLS.has(toolName) && model.entries.length > 0 && /* @__PURE__ */ react.default.createElement("ul", { className: "gh-pr-files" }, model.entries.map((entry, index) => /* @__PURE__ */ react.default.createElement("li", { key: index }, /* @__PURE__ */ react.default.createElement("code", null, pullRequestEntryLabel(entry)), /* @__PURE__ */ react.default.createElement("span", null, pullRequestEntryContext(entry).join(" · "))))), !COMPACT_LIST_TOOLS.has(toolName) && model.entries.slice(0, 5).map((entry, index) => /* @__PURE__ */ react.default.createElement(Entry, {
 		key: index,
 		entry
-	})), model.entries.length > 5 && /* @__PURE__ */ react.default.createElement("details", null, /* @__PURE__ */ react.default.createElement("summary", null, `Remaining entries (${model.entries.length - 5})`), model.entries.slice(5).map((entry, index) => /* @__PURE__ */ react.default.createElement(Entry, {
+	})), !COMPACT_LIST_TOOLS.has(toolName) && model.entries.length > 5 && /* @__PURE__ */ react.default.createElement("details", null, /* @__PURE__ */ react.default.createElement("summary", null, `Remaining entries (${model.entries.length - 5})`), model.entries.slice(5).map((entry, index) => /* @__PURE__ */ react.default.createElement(Entry, {
 		key: index,
 		entry
 	}))), model.change && /* @__PURE__ */ react.default.createElement(Changes, { change: model.change }), /* @__PURE__ */ react.default.createElement("details", null, /* @__PURE__ */ react.default.createElement("summary", null, "Raw tool details"), /* @__PURE__ */ react.default.createElement("pre", { tabIndex: 0 }, rawDetails(block) || "No raw tool result is available yet."), inspect && /* @__PURE__ */ react.default.createElement("button", {
