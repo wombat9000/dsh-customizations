@@ -203,21 +203,24 @@ export function pullRequestCardModel(toolName: string, block?: ToolBlock): PRCar
 // Per-entry notices that repeat one message (one per file patch, say) collapse
 // into a single line naming the field and how many entries it affects.
 function summarizeNotices(notices: CompletenessNotice[]): string[] {
-  const groups = new Map<string, { pattern: string; detail: string; messages: string[] }>()
+  const groups = new Map<
+    string,
+    { pattern: string; detail: string; first: string; count: number }
+  >()
   for (const notice of notices) {
     const prefix = `${notice.path}: `
     const pattern = notice.path?.replace(/\[\d+\]/g, '[*]') ?? ''
     const indexed = pattern !== '' && pattern !== notice.path && notice.message.startsWith(prefix)
     const detail = indexed ? notice.message.slice(prefix.length).trim() : ''
     const key = indexed ? `${pattern}\n${detail}` : `\n${notice.message}`
-    const group = groups.get(key) ?? { pattern, detail, messages: [] }
-    group.messages.push(notice.message)
+    const group = groups.get(key) ?? { pattern, detail, first: notice.message, count: 0 }
+    group.count++
     groups.set(key, group)
   }
-  return [...groups.values()].map(({ pattern, detail, messages }) =>
-    messages.length === 1
-      ? messages[0]
-      : `${pattern === 'data.files.nodes[*].patch' ? `Patches of ${messages.length} files` : `${pattern} (${messages.length} entries)`}: ${detail}`,
+  return [...groups.values()].map(({ pattern, detail, first, count }) =>
+    count === 1
+      ? first
+      : `${pattern === 'data.files.nodes[*].patch' ? `Patches of ${count} files` : `${pattern} (${count} entries)`}: ${detail}`,
   )
 }
 
