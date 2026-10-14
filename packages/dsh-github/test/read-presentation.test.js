@@ -79,8 +79,8 @@ test('real Tools retention preserves a bounded GitHub card snapshot without refe
   assert.equal(model.completeness, 'partial')
   assert.match(model.warnings.join(' '), /not complete/)
   const previewNotices = model.warnings.filter((warning) => /Card preview text bound/.test(warning))
-  assert.equal(previewNotices.length, 2, 'per-file patch notices collapse into one line')
-  assert.match(previewNotices.join('\n'), /^Patches of 15 files: /m)
+  assert.equal(previewNotices.length, 1, 'per-file patch notices collapse into one line')
+  assert.match(previewNotices[0], /^Patches of 15 files: /)
   assert.equal(calls, 1, 'card parsing must not execute another GitHub call')
 })
 
