@@ -5,6 +5,7 @@ import { css } from './styles.ts'
 import { object, text, rawDetails } from './validation.ts'
 import { supplied } from './read-models.ts'
 import {
+  COMPACT_LIST_TOOLS,
   pullRequestCardModel,
   pullRequestEntryLabel,
   pullRequestEntryContext,
@@ -125,10 +126,20 @@ export function PullRequestCard({ toolName, block, inspect }: CardProps & { tool
       .gh-pr-row small { margin-left:6px; }
       .gh-pr pre { white-space:pre-wrap; overflow-wrap:anywhere; max-height:300px; overflow:auto; }
       .gh-pr [role="note"] { font-size:0.9em; }
+      .gh-pr-files { list-style:none; padding:0; margin:8px 0; }
+      .gh-pr-files li { display:flex; flex-wrap:wrap; justify-content:space-between; gap:0 12px; margin:0; padding:3px 0; border-top:1px solid var(--border-color,#8884); }
+      .gh-pr-files code { min-width:0; overflow-wrap:anywhere; font-size:12px; }
+      .gh-pr-files span { color:var(--dsw-alias-label-secondary); font-size:12px; white-space:nowrap; }
     `}
       </style>
       <h3>{`GitHub · ${model.title}`}</h3>
       {model.target && <small>{model.target}</small>}
+      {model.pullRequest && (
+        <small>
+          <Link url={model.pullRequest.url}>{pullRequestEntryLabel(model.pullRequest)}</Link> ·{' '}
+          {pullRequestEntryContext(model.pullRequest).join(' · ')}
+        </small>
+      )}
       <p role="status">
         {model.status}
         {model.total === undefined ? '' : ` · ${model.total} total reported`}
@@ -139,16 +150,19 @@ export function PullRequestCard({ toolName, block, inspect }: CardProps & { tool
           {warning}
         </p>
       ))}
-      {model.pullRequest && (
-        <small>
-          <Link url={model.pullRequest.url}>{pullRequestEntryLabel(model.pullRequest)}</Link> ·{' '}
-          {pullRequestEntryContext(model.pullRequest).join(' · ')}
-        </small>
+      {COMPACT_LIST_TOOLS.has(toolName) && model.entries.length > 0 && (
+        <ul className="gh-pr-files">
+          {model.entries.map((entry, index) => (
+            <li key={index}>
+              <code>{pullRequestEntryLabel(entry)}</code>
+              <span>{pullRequestEntryContext(entry).join(' · ')}</span>
+            </li>
+          ))}
+        </ul>
       )}
-      {model.entries.slice(0, 5).map((entry, index) => (
-        <Entry key={index} entry={entry} />
-      ))}
-      {model.entries.length > 5 && (
+      {!COMPACT_LIST_TOOLS.has(toolName) &&
+        model.entries.slice(0, 5).map((entry, index) => <Entry key={index} entry={entry} />)}
+      {!COMPACT_LIST_TOOLS.has(toolName) && model.entries.length > 5 && (
         <details>
           <summary>{`Remaining entries (${model.entries.length - 5})`}</summary>
           {model.entries.slice(5).map((entry, index) => (

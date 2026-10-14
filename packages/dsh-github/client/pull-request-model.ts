@@ -6,6 +6,7 @@ import {
   supplied,
   type Completeness,
   type BoundedInspection,
+  type CompletenessNotice,
 } from './collection-completeness.ts'
 
 export const PR_TOOL_TITLES = {
@@ -37,6 +38,8 @@ export interface PRCardModel {
   pullRequest?: Record<string, unknown>
   total?: number
 }
+/** Tools whose entries render as one compact row each, all visible without expanding. */
+export const COMPACT_LIST_TOOLS: ReadonlySet<string> = new Set(['github_get_pull_request_files'])
 const knownTool = (name: string): name is PRToolName => Object.hasOwn(PR_TOOL_TITLES, name)
 const writeTool = (name: string) => /^github_(create|update|submit|add)_/.test(name)
 export function pullRequestCardModel(toolName: string, block?: ToolBlock): PRCardModel {
@@ -164,12 +167,12 @@ export function pullRequestCardModel(toolName: string, block?: ToolBlock): PRCar
     }
     if (!collection.every(object)) throw new Error()
     const inspection = inspectCollections(envelope, toolName)
-    const warnings = inspection.notices.map((notice) => notice.message)
+    const warnings = summarizeNotices(inspection.notices)
     if (Array.isArray(data.warnings))
       warnings.push(
         ...data.warnings.filter((warning): warning is string => typeof warning === 'string'),
       )
-    if (collection.length > 5)
+    if (collection.length > 5 && !COMPACT_LIST_TOOLS.has(toolName))
       warnings.push(
         `Showing 5 of ${collection.length} returned entries. Expand remaining entries or raw tool details.`,
       )
@@ -195,6 +198,27 @@ export function pullRequestCardModel(toolName: string, block?: ToolBlock): PRCar
       error: cardResultFailure(error),
     }
   }
+}
+
+// Per-entry notices that repeat one message (one per file patch, say) collapse
+// into a single line naming the field and how many entries it affects.
+function summarizeNotices(notices: CompletenessNotice[]): string[] {
+  const groups = new Map<string, { pattern: string; detail: string; messages: string[] }>()
+  for (const notice of notices) {
+    const prefix = `${notice.path}: `
+    const pattern = notice.path?.replace(/\[\d+\]/g, '[*]') ?? ''
+    const indexed = pattern !== '' && pattern !== notice.path && notice.message.startsWith(prefix)
+    const detail = indexed ? notice.message.slice(prefix.length).trim() : ''
+    const key = indexed ? `${pattern}\n${detail}` : `\n${notice.message}`
+    const group = groups.get(key) ?? { pattern, detail, messages: [] }
+    group.messages.push(notice.message)
+    groups.set(key, group)
+  }
+  return [...groups.values()].map(({ pattern, detail, messages }) =>
+    messages.length === 1
+      ? messages[0]
+      : `${pattern === 'data.files.nodes[*].patch' ? `Patches of ${messages.length} files` : `${pattern} (${messages.length} entries)`}: ${detail}`,
+  )
 }
 
 export function pullRequestEntryLabel(entry: Record<string, unknown>): string {
