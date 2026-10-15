@@ -126,10 +126,10 @@ export function PullRequestCard({ toolName, block, inspect }: CardProps & { tool
       .gh-pr-row small { margin-left:6px; }
       .gh-pr pre { white-space:pre-wrap; overflow-wrap:anywhere; max-height:300px; overflow:auto; }
       .gh-pr [role="note"] { font-size:0.9em; }
-      .gh-pr-files { list-style:none; padding:0; margin:8px 0; }
-      .gh-pr-files li { display:flex; flex-wrap:wrap; justify-content:space-between; gap:0 12px; margin:0; padding:3px 0; border-top:1px solid var(--border-color,#8884); }
-      .gh-pr-files code { min-width:0; overflow-wrap:anywhere; font-size:12px; }
-      .gh-pr-files span { color:var(--dsw-alias-label-secondary); font-size:12px; white-space:nowrap; }
+      .gh-grant .gh-pr-files { list-style:none; padding:0; margin:8px 0; }
+      .gh-grant .gh-pr-files li { display:flex; flex-wrap:wrap; justify-content:space-between; gap:0 12px; margin:0; padding:3px 0; border-top:1px solid var(--border-color,#8884); }
+      .gh-grant .gh-pr-files code { min-width:0; overflow-wrap:anywhere; font-size:12px; }
+      .gh-grant .gh-pr-files span { color:var(--dsw-alias-label-secondary); font-size:12px; white-space:nowrap; }
     `}
       </style>
       <h3>{`GitHub · ${model.title}`}</h3>
