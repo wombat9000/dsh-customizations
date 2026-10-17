@@ -171,11 +171,16 @@ test('exact target Standard baseline retains only intended coordinator customiza
     if (original.config === undefined) delete target.config
     else target.config = structuredClone(original.config)
   }
-  // Ralph remains deliberately enabled with the existing maxRounds: 64 budget.
+  // Standard no longer carries Ralph; the coordinator keeps it enabled with maxRounds: 64.
   const ralph = flatten(normalized).find((row) => row.id === 'tool-ralph')
   assert.equal(ralph.disabled, undefined)
   assert.equal(ralph.config.maxRounds, 64)
-  ralph.disabled = true
+  assert.equal(
+    flatten(baseline).find((row) => row.id === 'tool-ralph'),
+    undefined,
+  )
+  const delegation = normalized.find((row) => row.group && flatten(row.config).includes(ralph))
+  delegation.config = delegation.config.filter((row) => row !== ralph)
   assert.deepEqual(normalized, baseline)
   assert.deepEqual(actual.find((row) => row.id === 'tool-jobs').config, {
     completionDelivery: 'wakeup',
