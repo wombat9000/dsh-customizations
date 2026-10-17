@@ -2,6 +2,7 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-jobs-local'
 import type {} from '@deepseek-ai/dsh-sandbox-policy'
 import type {} from '@deepseek-ai/dsh-client-connection'
+import type {} from '@deepseek-ai/dsh-working-directory'
 import type { DispatchArgs, WorkerMode } from '../shared/contracts.js'
 import { Service, type Context } from '@deepseek-ai/cordis'
 import * as git from './git.js'
@@ -77,7 +78,11 @@ export class WorktreeManager {
     if (!parent || this.ctx.agents.get(parent.session.id) !== parent) {
       throw new Error('Worktree tools require their exact live calling agent')
     }
-    return requiredText(parent.session.header.cwd, 'Session working directory', 8192)
+    return requiredText(
+      this.ctx.workingDirectory.get(parent.session),
+      'Session working directory',
+      8192,
+    )
   }
 
   activeWorktrees() {
@@ -115,7 +120,7 @@ export class WorktreeManager {
       )
     this.creating.add(commonDir)
     try {
-      this.cwd(parent)
+      if (this.cwd(parent) !== cwd) throw new Error('Session working directory changed')
       signal?.throwIfAborted()
       if (
         this.ctx.sandboxPolicy.resolve({ session: parent.session }).mode !== 'danger-full-access'
@@ -129,7 +134,9 @@ export class WorktreeManager {
   }
 
   async list(parent: Agent, signal?: AbortSignal) {
-    const result = await this.git.listWorktrees(this.cwd(parent), { signal })
+    const cwd = this.cwd(parent)
+    const result = await this.git.listWorktrees(cwd, { signal })
+    if (this.cwd(parent) !== cwd) throw new Error('Session working directory changed')
     const history = this.history.get(parent)
     const activeWorktrees = this.activeWorktrees()
     return {
@@ -162,7 +169,7 @@ export class WorktreeManager {
       { signal },
     )
     signal?.throwIfAborted()
-    this.cwd(parent)
+    if (this.cwd(parent) !== cwd) throw new Error('Session working directory changed')
     if (this.activeWorktrees().has(worktree.path))
       throw new Error(
         'This worktree already has an active assignment; collect or cancel its job before dispatching another',
@@ -280,7 +287,15 @@ export class WorktreeManager {
 
 export default class WorktreeService extends Service {
   manager: WorktreeManager
-  static inject = ['agents', 'sessions', 'jobs', 'sandboxPolicy', 'tools', 'subagents']
+  static inject = [
+    'agents',
+    'sessions',
+    'jobs',
+    'sandboxPolicy',
+    'tools',
+    'subagents',
+    'workingDirectory',
+  ]
   constructor(ctx: Context) {
     super(ctx, 'worktreeWorkers')
     this.manager = new WorktreeManager(ctx)

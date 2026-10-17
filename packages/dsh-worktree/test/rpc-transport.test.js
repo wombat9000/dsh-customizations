@@ -225,6 +225,7 @@ test('mounted service and installed host/browser RPC register the tab and load t
     },
   })
   ctx.provide('jobs', { list: () => [] })
+  ctx.provide('workingDirectory', { get: (session) => session.header.cwd })
   for (const service of ['sessions', 'sandboxPolicy', 'subagents']) ctx.provide(service, {})
   ctx.provide('webServer', {})
   let f

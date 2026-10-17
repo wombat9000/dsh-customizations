@@ -19,10 +19,12 @@ function fixture() {
   const jobs = new Map()
   const starts = []
   let mode = 'danger-full-access'
+  let directory = '/repo'
   let admissionError
   let creates = 0
   const ctx = {
     agents: { get: (id) => agents.get(id), list: () => [...agents.values()] },
+    workingDirectory: { get: () => directory },
     sandboxPolicy: { resolve: () => ({ mode, workspaceRoot: '/repo' }) },
     jobs: {
       start(spec) {
@@ -100,6 +102,9 @@ function fixture() {
     setMode(v) {
       mode = v
     },
+    setDirectory(v) {
+      directory = v
+    },
     deny(v) {
       admissionError = v
     },
@@ -128,6 +133,24 @@ test('create requires exact live parent and Full access, without automatic escal
   f.setMode('danger-full-access')
   await f.manager.create(f.parent, 'a')
   assert.equal(f.creates, 1)
+})
+
+test('directory changes during Git admission abort create, list and dispatch without mutations or jobs', async () => {
+  for (const method of ['create', 'list', 'dispatch']) {
+    const f = fixture()
+    const boundary = method === 'dispatch' ? 'resolveWorktree' : 'listWorktrees'
+    const original = f.git[boundary]
+    f.git[boundary] = async (...args) => {
+      const result = await original(...args)
+      f.setDirectory('/changed-repository')
+      return result
+    }
+    const args = method === 'create' ? ['a'] : method === 'dispatch' ? [task()] : []
+    await assert.rejects(f.manager[method](f.parent, ...args), /working directory changed/)
+    assert.equal(f.creates, 0)
+    assert.equal(f.jobs.size, 0)
+    assert.equal(f.starts.length, 0)
+  }
 })
 
 test('background dispatch permits different worktrees, locks same worktree across parents until cleanup', async () => {

@@ -60,17 +60,19 @@ export function createSnapshotHandler(ctx, manager) {
         if (method === 'capability')
             return { sessionId, state: 'ready' };
         try {
-            // Coalesce expensive Git work per exact live owner. Selection is projected
-            // after the shared read; assignments and reports never enter shared caches.
-            let read = pending.get(agent);
+            // Coalesce only reads for the same live owner and effective directory.
+            // Selection, assignments and reports never enter shared caches.
+            const cwd = manager.cwd(agent);
+            const current = pending.get(agent);
+            let read = current?.cwd === cwd ? current.read : undefined;
             if (!read) {
-                read = manager.git.inspectWorktrees(manager.cwd(agent), {
+                read = manager.git.inspectWorktrees(cwd, {
                     signal: AbortSignal.timeout(15000),
                 });
-                pending.set(agent, read);
+                pending.set(agent, { cwd, read });
                 read
                     .finally(() => {
-                    if (pending.get(agent) === read)
+                    if (pending.get(agent)?.read === read)
                         pending.delete(agent);
                 })
                     .catch(() => { });
@@ -78,7 +80,8 @@ export function createSnapshotHandler(ctx, manager) {
             const git = await read;
             if (!capable())
                 return { sessionId, state: 'disabled' };
-            manager.cwd(agent);
+            if (manager.cwd(agent) !== cwd)
+                throw new Error('Session working directory changed');
             const active = manager.activeWorktrees();
             const history = [...(manager.history.get(agent)?.values() ?? [])].reverse().slice(0, 100);
             const selected = git.worktrees.find((row) => row.path === args.path) ??

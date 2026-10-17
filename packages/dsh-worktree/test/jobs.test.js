@@ -20,6 +20,7 @@ async function fixture(t, { controller = true } = {}) {
   const owners = new Map()
   ctx.provide('agents', { get: (id) => owners.get(id), list: () => [...owners.values()] })
   ctx.provide('sessions', {})
+  ctx.provide('workingDirectory', { get: (session) => session.header.cwd })
   for (const Plugin of [SessionProjections, SystemPrompt, Tools])
     await ctx.plugin(Plugin, {}).await()
   ctx.provide('subagents', {})
