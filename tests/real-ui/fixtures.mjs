@@ -31,14 +31,21 @@ export async function dismissOnboarding(
       await notice.click()
       await expect(notice).toBeHidden()
     }
-    await expect(page.getByRole('button', { name: 'Settings', exact: true })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Account menu', exact: true })).toBeVisible()
     return
   }
-  const configureLater = page.getByRole('button', { name: 'Configure later', exact: true })
-  await expect(notice.or(configureLater)).toBeVisible()
+  const getStarted = page.getByRole('dialog', { name: 'Get started', exact: true })
+  await expect(notice.or(getStarted)).toBeVisible()
   if (await notice.isVisible()) await notice.click()
-  await configureLater.click()
-  await expect(page.getByRole('button', { name: 'Settings', exact: true })).toBeVisible()
+  await closeGetStarted(page)
+  await expect(page.getByRole('button', { name: 'Account menu', exact: true })).toBeVisible()
+}
+
+// Target DSH replaces "Configure later" with a closable "Get started" dialog.
+export async function closeGetStarted(page) {
+  const getStarted = page.getByRole('dialog', { name: 'Get started', exact: true })
+  await getStarted.getByRole('button', { name: 'Close', exact: true }).click()
+  await expect(getStarted).toBeHidden()
 }
 
 export async function expandTurnProcesses(page) {
@@ -51,8 +58,15 @@ export async function expandTurnProcesses(page) {
   while (await steps.count()) await steps.first().click()
 }
 
+// Target DSH moves Settings from a sidebar button into the account menu.
+export async function openSettings(page) {
+  await page.getByRole('button', { name: 'Account menu', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'Settings', exact: true }).click()
+  await expect(page.getByRole('dialog', { name: 'Settings', exact: true })).toBeVisible()
+}
+
 export async function setTheme(page, scheme, unfoldedWork = false) {
-  await page.getByRole('button', { name: 'Settings', exact: true }).click()
+  await openSettings(page)
   await page.getByRole('button', { name: 'General', exact: true }).click()
   const choice = page.getByRole('button', {
     name: scheme === 'dark' ? 'Dark' : 'Light',

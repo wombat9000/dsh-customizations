@@ -1,4 +1,4 @@
-import { test, expect } from '../../../../tests/real-ui/fixtures.mjs'
+import { test, expect, closeGetStarted } from '../../../../tests/real-ui/fixtures.mjs'
 
 test('navigate sessionless Projects and persist local configuration through reload', async ({
   app,
@@ -38,7 +38,7 @@ test('navigate sessionless Projects and persist local configuration through relo
       await app.getByRole('button', { name: 'Save local settings', exact: true }).click()
       await expect(app.getByRole('status')).toContainText('Local settings saved')
       await app.reload()
-      await app.getByRole('button', { name: 'Configure later', exact: true }).click()
+      await closeGetStarted(app)
       await app.getByRole('button', { name: 'Projects', exact: true }).click()
       await app
         .getByRole('combobox', { name: 'Project', exact: true })

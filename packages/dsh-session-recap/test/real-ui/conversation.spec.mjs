@@ -1,4 +1,10 @@
-import { test, expect, setTheme, openSeededSession } from '../../../../tests/real-ui/fixtures.mjs'
+import {
+  test,
+  expect,
+  setTheme,
+  openSeededSession,
+  closeGetStarted,
+} from '../../../../tests/real-ui/fixtures.mjs'
 import { cardSelectionDiagnostics, CARD_LABELS } from '../../dist/src/cards.js'
 
 test('selection diagnostics expand and copy in the real shell without another evaluation', async ({
@@ -295,7 +301,7 @@ test('unconfigured native recap follows persisted and blank sessions in both the
         // A blank session hides the dock but does not clear the prior session's
         // error. Reload the real shell to exercise a fresh unconfigured action.
         await app.reload()
-        await app.getByRole('button', { name: 'Configure later', exact: true }).click()
+        await closeGetStarted(app)
       }
       await setTheme(app, theme)
       const prefix = theme === 'light' ? 'recap' : 'recap-dark'
