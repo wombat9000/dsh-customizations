@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtemp, mkdir, rm, symlink } from 'node:fs/promises'
+import { mkdtemp, mkdir, rm, stat, symlink } from 'node:fs/promises'
 import { registerHooks } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -12,10 +12,15 @@ import SandboxPolicy, { setSandboxMode } from '@deepseek-ai/dsh-sandbox-policy'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import SessionProjections from '@deepseek-ai/dsh-session-projection'
 import { scopeOf } from '@deepseek-ai/dsh-scope'
-import SubagentRuntime, { foldSubagentDescriptor, settleRun } from '@deepseek-ai/dsh-subagent'
+import SubagentRuntime, { foldSubagentDescriptor } from '@deepseek-ai/dsh-subagent'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import Tools from '@deepseek-ai/dsh-tools'
-import { startRegisteredWorker, startWorker } from '../dist/src/worker.js'
+import WorkingDirectory from '@deepseek-ai/dsh-working-directory'
+import {
+  settleWorker as settleRun,
+  startRegisteredWorker,
+  startWorker,
+} from '../dist/src/worker.js'
 import WorktreeService from '../dist/src/index.js'
 import * as LegacyTools from '../dist/src/tools.js'
 import { hasWorktreeCapability } from '../dist/src/capability.js'
@@ -77,15 +82,24 @@ async function runtime(
     SystemPrompt,
     Tools,
     LlmRuntime,
-    SubagentRuntime,
   ]) {
     await ctx.plugin(Plugin, {}).await()
   }
   await ctx.plugin(SandboxPolicy, { mode: policyMode, workspaceRoot: directory }).await()
   // Public enforcement capability facts. The fixture's write body never touches
   // disk; negative tests verify that restricted calls cannot reach that body.
-  ctx.provide('fs', { sandboxMode: 'workspace-write' })
+  ctx.provide('fs', {
+    sandboxMode: 'workspace-write',
+    // Read-only facts the working-directory owner checks before each turn.
+    resolve: async (path) => path,
+    stat: async (path) =>
+      (await stat(path)).isDirectory() ? { type: 'directory' } : { type: 'file' },
+    processPath: (path) => path,
+  })
   ctx.provide('shell', { sandboxMode: 'workspace-write' })
+  // Target subagents inject the Session working-directory owner; every start here is absolute.
+  await ctx.plugin(WorkingDirectory, { defaultDirectory: directory }).await()
+  await ctx.plugin(SubagentRuntime, {}).await()
   const executed = []
   for (const name of tools) {
     ctx.get('tools').register({

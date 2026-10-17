@@ -5,7 +5,7 @@ import { isAbsolute, relative, sep } from 'node:path';
 import { foldConsumedWork } from '@deepseek-ai/dsh-agent';
 import { createUserMessage } from '@deepseek-ai/dsh-llm';
 import { SessionId, SessionLogOffset } from '@deepseek-ai/dsh-session';
-import { appendDelegatedPolicyOverrides, applyChildComposition, captureDelegatedPolicyOverrides, childSessionMeta, finalAssistantOutput, resolveChildAgentOptions, resolveChildDepth, snapshotSubagentDescriptor, } from '@deepseek-ai/dsh-subagent';
+import { appendDelegatedPolicyOverrides, applyChildComposition, captureDelegatedPolicyOverrides, childSessionMeta, finalAssistantOutput, resolveChildAgentOptions, resolveChildDepth, SUBAGENT_DESCRIPTOR_VERSION, } from '@deepseek-ai/dsh-subagent';
 const MODES = new Set(['read-only', 'workspace-write', 'danger-full-access']);
 const READ_TOOLS = ['read', 'read_image', 'glob', 'grep', 'bash'];
 const WRITE_TOOLS = [...READ_TOOLS, 'write', 'edit'];
@@ -66,7 +66,7 @@ function resultOf(child, cancelled) {
  * Git worktree membership/leases are the manager's responsibility; this boundary
  * independently checks path authority and narrows the inherited tool surface.
  */
-export async function startWorker(ctx, { parent, cwd, mode, task, handoff, signal, descriptor: suppliedDescriptor }) {
+export async function startWorker(ctx, { parent, cwd, mode, task, handoff, signal, provider, label }) {
     if (!signal || typeof signal.throwIfAborted !== 'function')
         throw new TypeError('signal must be an AbortSignal');
     signal.throwIfAborted();
@@ -130,13 +130,13 @@ export async function startWorker(ctx, { parent, cwd, mode, task, handoff, signa
     }
     signal.throwIfAborted();
     const id = SessionId(randomUUID());
-    if (suppliedDescriptor !== undefined && suppliedDescriptor.mode !== 'one-shot')
-        throw new Error('worktree workers require a one-shot descriptor');
-    const descriptor = snapshotSubagentDescriptor({
+    // DSH 0.2.1 snapshots only continuable descriptors; a worker stays a terminal one-shot child.
+    const descriptor = {
+        version: SUBAGENT_DESCRIPTOR_VERSION,
         mode: 'one-shot',
-        provider: suppliedDescriptor?.provider ?? 'worktree',
-        label: suppliedDescriptor?.label ?? `Worktree ${mode} assignment`,
-    });
+        provider: provider ?? 'worktree',
+        label: label ?? `Worktree ${mode} assignment`,
+    };
     const handle = await agents.create({
         sessionId: id,
         meta: { ...meta, cwd: root },
@@ -262,9 +262,11 @@ export async function startWorker(ctx, { parent, cwd, mode, task, handoff, signa
     };
 }
 /**
- * Start through DSH's public one-shot registry so native start/end observers
- * receive canonical lifecycle events. The temporary provider is single-use;
- * unregistering it after startup never revokes an already accepted run.
+ * Start through DSH's activation registry so native start/end observers receive
+ * canonical lifecycle events. The temporary provider only implements start, so
+ * DSH runs it as a terminal execution that never accepts follow-up messages.
+ * It is single-use; unregistering it after startup never revokes an accepted run.
+ * The supplied signal owns startup and, once published, cancels the child.
  */
 export async function startRegisteredWorker(ctx, args) {
     const { parent, cwd, mode, signal } = args;
@@ -279,38 +281,48 @@ export async function startRegisteredWorker(ctx, args) {
     const providerName = `worktree-${randomUUID()}`;
     const label = `Worktree ${mode} assignment`;
     const prompt = [{ type: 'text', text: task }];
-    let claimed = false;
+    let worker;
     const unregister = subagents.registerProvider({
         name: providerName,
         inheritsParentContext: false,
         capabilities: {
             agentOptions: false,
+            agentPreset: false,
             outputSchema: false,
             depthLimit: false,
-            toolFilter: false,
-            persona: false,
         },
         async start(request) {
-            if (request.parent !== parent || request.signal !== signal || request.prompt !== prompt) {
+            if (request.parent !== parent || request.prompt !== prompt) {
                 throw new Error('worktree provider belongs to a different dispatch');
             }
-            if (claimed)
+            if (worker !== undefined)
                 throw new Error('worktree provider has already been claimed');
-            claimed = true;
-            return startWorker(ctx, {
+            const started = await startWorker(ctx, {
                 parent,
                 cwd,
                 mode,
                 task,
                 handoff,
-                signal: request.signal,
-                descriptor: request.descriptor,
+                // DSH aborts its signal only during startup; the dispatch signal cancels a published run.
+                signal: AbortSignal.any([request.signal, signal]),
+                provider: providerName,
+                label,
             });
+            // DSH reserves local Session ids for continuable children, so the terminal
+            // run publishes under its own id while the worker keeps its child Session.
+            worker = { ...started, id: SessionId(`worktree-run-${randomUUID()}`) };
+            return worker;
         },
     });
-    let run;
+    let activation;
     try {
-        run = await subagents.start(providerName, { parent, prompt, label, signal });
+        activation = await subagents.startActivation({
+            provider: providerName,
+            label,
+            request: { parent, prompt, cwd },
+            signal,
+            delivery: 'caller',
+        });
     }
     catch (error) {
         try {
@@ -328,12 +340,61 @@ export async function startRegisteredWorker(ctx, args) {
         // If registration cleanup fails after a run was returned, we still own its
         // handle: never lose that handle merely because startup cannot fulfill.
         try {
-            await run.dispose();
+            await activation.dispose();
         }
         catch (cleanupError) {
             throw new AggregateError([error, cleanupError], 'provider cleanup and worker disposal failed');
         }
         throw error;
     }
-    return run;
+    if (worker === undefined) {
+        await activation.dispose();
+        throw new Error('worktree provider was not started');
+    }
+    return {
+        id: activation.childId,
+        localAgent: worker.localAgent,
+        result: activation.result,
+        dispose: () => activation.dispose(),
+    };
+}
+function finalText(output) {
+    return output
+        .filter((block) => block.type === 'text')
+        .map((block) => block.text)
+        .join('');
+}
+function outcomeOf(result) {
+    const detail = result.diagnostic === undefined
+        ? result.stopReason
+        : `${result.stopReason}; diagnostic: ${result.diagnostic}`;
+    if (result.stopReason === 'completed')
+        return { status: 'completed', result: finalText(result.output) };
+    // Local cancellation is killed; a provider-diagnosed abort is a failure.
+    if (result.stopReason === 'aborted' && result.diagnostic === undefined)
+        return { status: 'killed' };
+    return { status: 'failed', detail };
+}
+/**
+ * Await the worker result, release the run, then return its job outcome.
+ * Result and disposal failures become failed; when both fail, both details survive.
+ */
+export async function settleWorker(run) {
+    let outcome;
+    try {
+        outcome = outcomeOf(await run.result);
+    }
+    catch (error) {
+        outcome = { status: 'failed', detail: String(error) };
+    }
+    try {
+        await run.dispose();
+    }
+    catch (error) {
+        return {
+            status: 'failed',
+            detail: `${outcome.detail === undefined ? '' : `${outcome.detail}; `}dispose failed: ${String(error)}`,
+        };
+    }
+    return outcome;
 }

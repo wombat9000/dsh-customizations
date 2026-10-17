@@ -15,7 +15,7 @@ const require = createRequire(import.meta.url)
 const cli = createRequire(require.resolve('@deepseek-ai/dsh/package.json'))
 const hostEntry = pathToFileURL(cli.resolve('@deepseek-ai/dsh-client-connection'))
 const { HostConnectionService } = await import(hostEntry)
-const browserSource = await readFile(new URL('./client.js', hostEntry), 'utf8')
+const browserSource = await readFile(new URL('./client.browser.js', hostEntry), 'utf8')
 const pluginSource = await readFile(new URL('../client.js', import.meta.url), 'utf8')
 
 // Execute the entire installed browser bundle, unmodified, through its public
