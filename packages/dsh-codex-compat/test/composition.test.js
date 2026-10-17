@@ -183,7 +183,7 @@ async function composition(t, legacy) {
         return () => {}
       },
     })
-    root.provide('webRuntime', { trustedHosts: [] })
+    root.provide('webStartup', { trustedHosts: [] })
     root.provide('webServer', {
       register(route) {
         routes.add(route)
@@ -249,15 +249,17 @@ for (const legacy of [false, true]) {
       assert.deepEqual(forms.find((form) => form.ns === 'llm-pi-ai').user, { providers })
       assert.deepEqual(forms.find((form) => form.ns === 'agent-default-model').user, selection)
       assert.ok((await f.ctx.llm.listModels('openai-codex')).length > 0)
+      // The target lists no models for a provider without a resolvable key, so check the provider row.
       assert.ok(
-        (await f.ctx.llm.listModels('openai')).length > 0,
+        f.ctx.llm.listProviders().some((provider) => provider.id === 'openai'),
         'unrelated saved provider survives',
       )
       assert.equal(await readFile(f.profile.patchPath, 'utf8'), f.savedBytes)
       const routes = [...f.routes]
       assert.deepEqual(
         routes.map((route) => route.path).sort(),
-        ['/api', '/codex-fast-integration'],
+        // Target Connection also owns the browser /connect handshake route.
+        ['/api', '/codex-fast-integration', '/connect'],
         'native Connection and Fast register their distinct inert routes',
       )
       await entries.find((entry) => entry.options.id === 'local-codex-oauth').fiber.dispose()
