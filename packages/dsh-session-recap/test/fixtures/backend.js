@@ -13,14 +13,15 @@ const require = createRequire(import.meta.url)
 const cli = createRequire(require.resolve('@deepseek-ai/dsh/package.json'))
 const installed = (name) => {
   const manifest = require(cli.resolve(`@deepseek-ai/${name}/package.json`))
-  assert.equal(manifest.version, name === 'cordis' ? '4.0.4' : '0.2.0-rc.2')
+  assert.equal(manifest.version, name === 'cordis' ? '4.0.5' : '0.2.1-rc.1')
   return import(pathToFileURL(cli.resolve(`@deepseek-ai/${name}`)).href)
 }
 const { Service } = await installed('cordis')
 const { HostConnectionService } = await installed('dsh-client-connection')
 const profiles = new Map()
 const { default: SessionStore } = await installed('dsh-session')
-const { default: JsonlSessionPersistence } = await installed('dsh-session-persistence-jsonl')
+const JsonlSessionPersistence = await installed('dsh-session-persistence-jsonl')
+const { SessionPersistence } = await installed('dsh-session-persistence')
 export const version = require(cli.resolve('@deepseek-ai/dsh/package.json')).version
 
 export function deferred() {
@@ -148,7 +149,8 @@ export async function backend(t, directory, llm = model()) {
   }
   contexts.get(directory).push(ctx)
   assert.ok(ctx.sessions instanceof SessionStore)
-  assert.ok(ctx.sessionPersistence instanceof JsonlSessionPersistence)
+  assert.ok(ctx.sessionPersistence instanceof SessionPersistence)
+  assert.equal(ctx.sessionPersistence.constructor.name, 'JsonlSessionPersistence')
   const entry = () => ctx.configEditor.entries().find((row) => row.options.id === recap.name)
   async function mount() {
     await ctx.loader.update(entry().id, { disabled: false })

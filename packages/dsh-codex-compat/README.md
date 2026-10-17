@@ -2,7 +2,7 @@
 
 `@local/dsh-codex-compat` is one repository-owned bundle with two Host components: a reviewed Codex sign-in helper and optional Fast mode. Native DSH/pi-ai still owns OAuth, credentials, token refresh, provider configuration and inference. This package does not install community plugins or replace the native Codex adapter.
 
-The bundle is opt-in and is not included in `personal-web`. Source review, build and merge do not install it. A retained-profile migration requires separate approval, backups and the repository’s [migration checks](../../MIGRATION-0.2.0-rc.2.md).
+The bundle is opt-in and is not included in `personal-web`. Source review, build and merge do not install it. A retained-profile migration requires separate approval, backups and the repository’s [migration checks](../../MIGRATION-0.2.1-rc.1.md).
 
 ## Components and controls
 
@@ -77,7 +77,7 @@ Fast controls use authenticated DSH Connection RPC. No agent tool can enable thi
 
 ## Compatibility bridge and diagnostics
 
-**Fast uses a version-specific workaround, not a public DSH adapter extension.** This bundle targets DSH `0.2.0-rc.2`; the bridge verifies pi-ai `0.87.1`. Unreviewed versions disable Fast without modifying Standard requests.
+**Fast uses a version-specific workaround, not a public DSH adapter extension.** This bundle targets DSH `0.2.1-rc.1`; the bridge verifies pi-ai `0.87.1`. Unreviewed versions disable Fast without modifying Standard requests.
 
 The Fast bridge owns:
 

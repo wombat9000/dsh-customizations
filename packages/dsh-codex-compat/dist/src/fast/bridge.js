@@ -16,7 +16,7 @@ const verifiedRuntime = (() => {
             return false;
         const pi = JSON.parse(readFileSync(piPath, 'utf8'));
         return (isObject(adapter) &&
-            adapter.version === '0.2.0-rc.2' &&
+            adapter.version === '0.2.1-rc.1' &&
             isObject(pi) &&
             pi.version === '0.87.1');
     }
@@ -69,7 +69,7 @@ export class CodexFastBridge {
     adapter() {
         if (!verifiedRuntime)
             throw new FastBridgeError();
-        // DSH 0.2.0-rc.2 has no public adapter lookup. Validate before touching this private map.
+        // DSH 0.2.1-rc.1 has no public adapter lookup. Validate before touching this private map.
         const registry = Reflect.get(this.llm, 'adapters');
         if (!(registry instanceof Map))
             throw new FastBridgeError();

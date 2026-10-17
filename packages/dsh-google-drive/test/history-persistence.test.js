@@ -14,7 +14,7 @@ const cli = createRequire(require.resolve('@deepseek-ai/dsh/package.json'))
 const installed = (name) => import(pathToFileURL(cli.resolve(name)).href)
 const { Context } = await installed('@deepseek-ai/cordis')
 const { default: SessionStore, Session } = await installed('@deepseek-ai/dsh-session')
-const { default: JsonlPersistence } = await installed('@deepseek-ai/dsh-session-persistence-jsonl')
+const JsonlPersistence = await installed('@deepseek-ai/dsh-session-persistence-jsonl')
 const time = Date.UTC(2026, 0, 2, 3, 4, 5)
 const user = {
   id: 'synthetic-user',
