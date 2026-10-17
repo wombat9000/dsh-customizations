@@ -3,7 +3,7 @@ import type { GitHubReads, Schema, Subprocess } from './contracts.js'
 import type { GrantCaller } from './grant-contracts.js'
 import type { GitHubLiveCI } from './live-ci.js'
 
-// Narrow consumed DSH 0.2.0-rc.2 host surface. Tool execution arguments and
+// Narrow consumed DSH 0.2.1-rc.1 host surface. Tool execution arguments and
 // event payloads stay unknown; host-owned object identity is never reconstructed.
 export interface Session {
   id: string

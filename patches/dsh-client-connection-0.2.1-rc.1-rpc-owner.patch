@@ -10,7 +10,7 @@ diff --git a/lib/index.js b/lib/index.js
  import { z as z$1 } from "zod";
  import { createScope } from "@deepseek-ai/dsh-scope";
  //#region lib/types/api-path.js
-@@ -571,7 +571,7 @@
+@@ -722,7 +722,7 @@
  	}
  	/** Generic channel registry scoped to the Context reading this service. */
  	get rpc() {

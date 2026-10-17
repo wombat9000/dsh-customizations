@@ -4,7 +4,7 @@
 
 ## Prerequisites and security boundary
 
-This bundle targets DSH `0.2.0-rc.2` only. See the [migration handoff](../../MIGRATION-0.2.0-rc.2.md) for validation results and retained-state cautions.
+This bundle targets DSH `0.2.1-rc.1` only. See the [migration handoff](../../MIGRATION-0.2.1-rc.1.md) for validation results and retained-state cautions.
 
 - Compose the updated [Google auth provider](../dsh-google-auth/README.md) before Drive. Authentication, credentials, client configuration, and OAuth remain in that provider.
 - Enable the Google Drive API in the Cloud project owning the configured Desktop OAuth client.
