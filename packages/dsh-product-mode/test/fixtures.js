@@ -65,6 +65,7 @@ export async function fixture(t, id = presetId) {
       '@deepseek-ai/dsh-agent-preset-registry',
       '@deepseek-ai/dsh-agent-preset',
       '@deepseek-ai/dsh-session-projection',
+      '@deepseek-ai/dsh-working-directory',
       ...declarations([standardPatch, join(packaged, 'cordis.patch.yml')]).flatMap((row) =>
         flatten(row.config.plugins).map((plugin) => plugin.name),
       ),
@@ -174,6 +175,15 @@ export async function host(t, fixture, rows, { full = true, selectedDefault } = 
   // Loader applies volatile selectedDefault and preserves nested !!js expressions.
   await tree.root.update([
     { id: 'session-projections', name: '@deepseek-ai/dsh-session-projection' },
+    ...(full
+      ? [
+          {
+            id: 'working-directory',
+            name: '@deepseek-ai/dsh-working-directory',
+            config: { defaultDirectory: fixture.directory },
+          },
+        ]
+      : []),
     registry,
     ...rows,
   ])
