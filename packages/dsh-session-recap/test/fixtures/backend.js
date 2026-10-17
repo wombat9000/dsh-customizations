@@ -128,6 +128,8 @@ export async function backend(t, directory, llm = model()) {
       apply(connectionOwner) {
         new HostConnectionService(connectionOwner, [], {
           isAuthenticated: (req) => req.headers.authorization === 'fixture',
+          // No API-only Peers: unauthenticated requests stay rejected.
+          authenticateApi: () => undefined,
         })
       },
     })
