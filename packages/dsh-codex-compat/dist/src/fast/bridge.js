@@ -18,7 +18,7 @@ const verifiedRuntime = (() => {
         return (isObject(adapter) &&
             adapter.version === '0.2.1-rc.1' &&
             isObject(pi) &&
-            pi.version === '0.87.1');
+            pi.version === '1.3.0');
     }
     catch {
         return false;

@@ -77,7 +77,7 @@ Fast controls use authenticated DSH Connection RPC. No agent tool can enable thi
 
 ## Compatibility bridge and diagnostics
 
-**Fast uses a version-specific workaround, not a public DSH adapter extension.** This bundle targets DSH `0.2.1-rc.1`; the bridge verifies pi-ai `0.87.1`. Unreviewed versions disable Fast without modifying Standard requests.
+**Fast uses a version-specific workaround, not a public DSH adapter extension.** This bundle targets DSH `0.2.1-rc.1`; the bridge verifies pi-ai `1.3.0`. Unreviewed versions disable Fast without modifying Standard requests.
 
 The Fast bridge owns:
 
