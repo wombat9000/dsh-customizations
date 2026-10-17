@@ -166,6 +166,30 @@ test('coalesces bounded reads and discards results after capability removal or a
   assert.equal((await two).state, 'disabled')
 })
 
+test('directory changes separate pending snapshots and discard results from the previous directory', async () => {
+  const f = fixture()
+  let cwd = '/original'
+  const reads = []
+  f.manager.cwd = () => cwd
+  f.manager.git.inspectWorktrees = (directory) =>
+    new Promise((resolve) => reads.push({ directory, resolve }))
+  const old = f.call('snapshot', { sessionId: 'a' })
+  cwd = '/changed'
+  const current = f.call('snapshot', { sessionId: 'a' })
+  const sameDirectory = f.call('snapshot', { sessionId: 'a' })
+  for (const read of reads) read.resolve({ repository: read.directory, worktrees: [] })
+  const [previous, changed, shared] = await Promise.all([old, current, sameDirectory])
+  assert.deepEqual(
+    reads.map((read) => read.directory),
+    ['/original', '/changed'],
+  )
+  assert.equal(previous.state, 'error')
+  assert.equal(previous.repository, undefined)
+  assert.equal(changed.state, 'ready')
+  assert.equal(changed.repository, '/changed')
+  assert.deepEqual(shared, changed)
+})
+
 test('empty history, bounded history and Git errors have explicit snapshots', async () => {
   const f = fixture()
   f.manager.history.delete(f.a)

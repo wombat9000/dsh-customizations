@@ -8,6 +8,7 @@ import { Context } from '@deepseek-ai/cordis'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import LlmRuntime, { LlmAdapter, ToolCallId } from '@deepseek-ai/dsh-llm'
+import LocalJobRegistry from '@deepseek-ai/dsh-jobs-local'
 import SandboxPolicy, { setSandboxMode } from '@deepseek-ai/dsh-sandbox-policy'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import SessionProjections from '@deepseek-ai/dsh-session-projection'
@@ -216,6 +217,55 @@ test('real agent-loop runs a fresh child in its worktree and settleRun disposes 
   assert.match(jobOutcome.result, /Finished the assignment/)
   assert.equal(f.ctx.get('agents').get(run.id), undefined)
   await run.dispose()
+})
+
+test('worktree operations follow directory changes without rewriting the original session directory', async (t) => {
+  const f = await runtime(t, { tools: ['read', 'write'] })
+  const directory = join(f.directory, 'other-repository')
+  const worktree = join(directory, '.dsh', 'worktrees', 'changed-directory')
+  await mkdir(worktree, { recursive: true })
+  await f.ctx.plugin(LocalJobRegistry, {}).await()
+  const jobs = f.ctx.get('jobs')
+  jobs.attachController('directory-regression')
+  await f.ctx.plugin(WorktreeService).await()
+  const service = f.ctx.get('worktreeWorkers')
+  const calls = []
+  const row = { path: worktree, branch: 'worktree/changed-directory' }
+  // Git is the controlled effect boundary; directory projections, agents, jobs,
+  // worker startup and cleanup use the real native services and fixture model.
+  service.manager.git = {
+    async listWorktrees(cwd) {
+      calls.push(['list', cwd])
+      return { repository: cwd, commonDir: join(cwd, '.git'), worktrees: [row] }
+    },
+    async createWorktree(cwd) {
+      calls.push(['create', cwd])
+      return { worktree: row }
+    },
+    async resolveWorktree(cwd) {
+      calls.push(['resolve', cwd])
+      return { worktree: row }
+    },
+  }
+  await f.ctx.get('workingDirectory').set(f.parent, directory)
+  assert.equal(f.parent.session.header.cwd, f.directory)
+  assert.equal(f.ctx.get('workingDirectory').get(f.parent.session), directory)
+  await service.create(f.parent, 'changed-directory')
+  assert.equal((await service.list(f.parent)).repository, directory)
+  const run = await service.dispatch(f.parent, {
+    worktree,
+    task: 'Review the changed repository.',
+    mode: 'read-only',
+  })
+  assert.equal((await jobs.wait(run.jobId, 2000, f.parent.id)).status, 'completed')
+  assert.deepEqual(calls, [
+    ['list', directory],
+    ['create', directory],
+    ['list', directory],
+    ['resolve', directory],
+  ])
+  await f.ctx.get('workingDirectory').set(f.parent, f.directory)
+  assert.equal((await service.list(f.parent)).repository, f.directory)
 })
 
 test('read-only worker excludes writes, delegation, and later child-local capabilities', async (t) => {

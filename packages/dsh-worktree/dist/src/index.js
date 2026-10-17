@@ -40,7 +40,7 @@ export class WorktreeManager {
         if (!parent || this.ctx.agents.get(parent.session.id) !== parent) {
             throw new Error('Worktree tools require their exact live calling agent');
         }
-        return requiredText(parent.session.header.cwd, 'Session working directory', 8192);
+        return requiredText(this.ctx.workingDirectory.get(parent.session), 'Session working directory', 8192);
     }
     activeWorktrees() {
         const active = new Map(this.active);
@@ -73,7 +73,8 @@ export class WorktreeManager {
             throw new Error('Another worktree creation is active for this repository; retry after it finishes');
         this.creating.add(commonDir);
         try {
-            this.cwd(parent);
+            if (this.cwd(parent) !== cwd)
+                throw new Error('Session working directory changed');
             signal?.throwIfAborted();
             if (this.ctx.sandboxPolicy.resolve({ session: parent.session }).mode !== 'danger-full-access') {
                 throw new Error('Session permissions changed before worktree creation');
@@ -85,7 +86,10 @@ export class WorktreeManager {
         }
     }
     async list(parent, signal) {
-        const result = await this.git.listWorktrees(this.cwd(parent), { signal });
+        const cwd = this.cwd(parent);
+        const result = await this.git.listWorktrees(cwd, { signal });
+        if (this.cwd(parent) !== cwd)
+            throw new Error('Session working directory changed');
         const history = this.history.get(parent);
         const activeWorktrees = this.activeWorktrees();
         return {
@@ -113,7 +117,8 @@ export class WorktreeManager {
             throw new Error('mode must be write or read-only');
         const { worktree } = await this.git.resolveWorktree(cwd, requiredText(args.worktree, 'worktree', 8192), { signal });
         signal?.throwIfAborted();
-        this.cwd(parent);
+        if (this.cwd(parent) !== cwd)
+            throw new Error('Session working directory changed');
         if (this.activeWorktrees().has(worktree.path))
             throw new Error('This worktree already has an active assignment; collect or cancel its job before dispatching another');
         let history = this.history.get(parent);
@@ -231,7 +236,15 @@ export class WorktreeManager {
 }
 export default class WorktreeService extends Service {
     manager;
-    static inject = ['agents', 'sessions', 'jobs', 'sandboxPolicy', 'tools', 'subagents'];
+    static inject = [
+        'agents',
+        'sessions',
+        'jobs',
+        'sandboxPolicy',
+        'tools',
+        'subagents',
+        'workingDirectory',
+    ];
     constructor(ctx) {
         super(ctx, 'worktreeWorkers');
         this.manager = new WorktreeManager(ctx);
