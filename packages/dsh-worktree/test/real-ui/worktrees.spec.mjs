@@ -1,4 +1,10 @@
-import { test, expect, setTheme, openSeededSession } from '../../../../tests/real-ui/fixtures.mjs'
+import {
+  test,
+  expect,
+  setTheme,
+  openSeededSession,
+  closeGetStarted,
+} from '../../../../tests/real-ui/fixtures.mjs'
 import { execFileSync } from 'node:child_process'
 import { realpathSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -181,7 +187,7 @@ test('review Worktrees layout across native themes and narrow slot', async ({ ap
       } else await route.fulfill({ response })
     })
     await app.reload()
-    await app.getByRole('button', { name: 'Configure later', exact: true }).click()
+    await closeGetStarted(app)
   }
   for (const [theme, narrow] of [
     ['light', false],
