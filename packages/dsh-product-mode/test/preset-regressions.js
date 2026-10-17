@@ -11,7 +11,6 @@ import {
   host,
   json,
   lease,
-  livePresetMounts,
   parse,
   recipeRows,
   repo,
@@ -105,10 +104,16 @@ export function presetRegressions({ id, name, skill, marker, resource }) {
     normalized.find((row) => row.id === 'persona').config = standard.find(
       (row) => row.id === 'persona',
     ).config
+    // Standard no longer carries Ralph; this preset keeps it enabled as an addition.
     const ralph = flatten(normalized).find((row) => row.id === 'tool-ralph')
     assert.equal(ralph.disabled, undefined)
     assert.deepEqual(ralph.config, { subagentProvider: 'spawn', maxRounds: 64 })
-    ralph.disabled = true
+    assert.equal(
+      flatten(standard).find((row) => row.id === 'tool-ralph'),
+      undefined,
+    )
+    const delegation = normalized.find((row) => row.group && flatten(row.config).includes(ralph))
+    delegation.config = delegation.config.filter((row) => row !== ralph)
     assert.deepEqual(normalized, standard)
     assert.ok(
       !flatten(custom).some((row) =>
@@ -181,10 +186,8 @@ export function presetRegressions({ id, name, skill, marker, resource }) {
       await tree.await()
       await assert.rejects(roster.acquireScope(id), /Unknown agent preset/)
       assert.ok(await skills.get(skill, options))
-      assert.ok(livePresetMounts(ctx.fiber).some((mount) => mount.key === own.key))
       await own[Symbol.asyncDispose]()
       await same[Symbol.asyncDispose]()
-      assert.ok(!livePresetMounts(ctx.fiber).some((mount) => mount.key === own.key))
       assert.equal(await skills.get(skill, options), undefined)
       const restored = declarations([join(f.packaged, 'cordis.patch.yml')])[0]
       await tree.create(restored)

@@ -25,9 +25,7 @@ export const { Context } = await installed('@deepseek-ai/cordis')
 export const { default: Loader, EntryTree } = await installed('@deepseek-ai/cordis-plugin-loader')
 const { entryListSchema } = await installed('@deepseek-ai/cordis-plugin-include')
 export const { default: yaml } = await installed('js-yaml')
-export const { auditRows, livePresetMounts } = await installed(
-  '@deepseek-ai/dsh-agent-preset-registry',
-)
+export const { auditRows } = await installed('@deepseek-ai/dsh-agent-preset-registry')
 const { loadOverlayPatches, composeEntries } = await installed('@deepseek-ai/dsh-app-boot')
 export const packageRoot = fileURLToPath(new URL('../', import.meta.url))
 export const repo = fileURLToPath(new URL('../../../', import.meta.url))
