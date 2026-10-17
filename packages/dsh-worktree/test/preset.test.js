@@ -39,7 +39,7 @@ async function profile(t) {
   const names = new Set([
     '@deepseek-ai/dsh-agent-preset-registry',
     '@deepseek-ai/dsh-agent-preset',
-    ...flatten(standard().config.plugins)
+    ...[...flatten(standard().config.plugins), ...flatten(declaration().config.plugins)]
       .map((row) => row.name)
       .filter((name) => name.startsWith('@deepseek-ai/')),
   ])
@@ -77,6 +77,7 @@ async function host(t, fixture) {
     'shell-env',
     'fs-local',
     'jobs-local',
+    'working-directory',
     'subagent',
     'user-questions',
     'web',
@@ -86,7 +87,8 @@ async function host(t, fixture) {
     'tool-subagent/model-selection-settings',
   ]) {
     const module = await installed(`@deepseek-ai/dsh-${suffix}`)
-    await ctx.plugin(module.default ?? module, {}).await()
+    const config = suffix === 'working-directory' ? { defaultDirectory: fixture.directory } : {}
+    await ctx.plugin(module.default ?? module, config).await()
   }
   const { default: SandboxPolicy } = await installed('@deepseek-ai/dsh-sandbox-policy')
   await ctx.plugin(SandboxPolicy, { mode: 'read-only', workspaceRoot: fixture.directory }).await()

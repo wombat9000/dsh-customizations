@@ -4,9 +4,9 @@ import type {} from '@deepseek-ai/dsh-sandbox-policy'
 import type {} from '@deepseek-ai/dsh-client-connection'
 import type { DispatchArgs, WorkerMode } from '../shared/contracts.js'
 import { Service, type Context } from '@deepseek-ai/cordis'
-import { settleRun } from '@deepseek-ai/dsh-subagent'
 import * as git from './git.js'
-import { startRegisteredWorker } from './worker.js'
+import { settleWorker, startRegisteredWorker } from './worker.js'
+import type { WorkerOutcome } from './worker.js'
 import { CHANNEL, createSnapshotRpcHandler } from './snapshot.js'
 import { registerWorktreeTools } from './tools.js'
 
@@ -29,7 +29,7 @@ function requiredText(value: unknown, label: string, max = MAX_TEXT) {
 }
 
 /** Process-local coordination only; Git and DSH jobs remain the authorities. */
-type Outcome = Awaited<ReturnType<typeof settleRun>>
+type Outcome = WorkerOutcome
 export interface RunRecord {
   owner: Agent
   path: string
@@ -48,7 +48,7 @@ interface ActiveRun {
 interface Dependencies {
   git?: typeof git
   startWorker?: typeof startRegisteredWorker
-  settleRun?: typeof settleRun
+  settleRun?: typeof settleWorker
 }
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -59,7 +59,7 @@ export class WorktreeManager {
   ctx: Context
   git: typeof git
   startWorker: typeof startRegisteredWorker
-  settleRun: typeof settleRun
+  settleRun: typeof settleWorker
   active: Map<string, ActiveRun>
   creating: Set<string>
   history: WeakMap<Agent, Map<string, RunRecord>>
@@ -67,7 +67,7 @@ export class WorktreeManager {
     this.ctx = ctx
     this.git = dependencies.git ?? git
     this.startWorker = dependencies.startWorker ?? startRegisteredWorker
-    this.settleRun = dependencies.settleRun ?? settleRun
+    this.settleRun = dependencies.settleRun ?? settleWorker
     this.active = new Map()
     this.creating = new Set()
     this.history = new WeakMap()
@@ -203,7 +203,7 @@ export class WorktreeManager {
         outputLimitBytes: 48000,
         run: () => {
           // Tool-call cancellation ends at admission. Only the job owns the
-          // background signal, matching DSH's stock one-shot adapter.
+          // background signal, which also cancels the published worker.
           const controller = new AbortController()
           return {
             cancel: (reason) => controller.abort(reason ?? 'Worktree assignment cancelled'),
@@ -220,7 +220,6 @@ export class WorktreeManager {
                 })
                 outcome = await this.settleRun({
                   id: run.id,
-                  localAgent: run.localAgent,
                   result: run.result,
                   dispose: async () => {
                     try {
@@ -251,7 +250,7 @@ export class WorktreeManager {
               record.report = bounded(outcome.result ?? outcome.detail ?? '', MAX_TEXT)
               return outcome
             })().finally(() => {
-              // settleRun releases the child before this lease becomes reusable.
+              // settleWorker releases the child before this lease becomes reusable.
               if (!record.cleanupUncertain && this.active.get(worktree.path) === record)
                 this.active.delete(worktree.path)
             }),

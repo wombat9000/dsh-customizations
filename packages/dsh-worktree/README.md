@@ -107,9 +107,9 @@ A job owns cancellation independently of its dispatch tool call. Completion wait
 
 Jobs and report mappings are **process-local**. They do not survive a harness restart, and disposing the coordinating agent cancels its jobs. Completing the coordinator's current turn is not disposal. Durable worktrees and file changes remain; this package provides no automatic restart recovery or reusable worker inbox. Saved session history depends on the deployment's normal session persistence. Plugin reload clears its handoff-report cache, but active checkout fences are reconstructed from the existing job registry. Cleanup-failure fences last while their owner/job records remain; inspect uncertain resources before disposing that owner or restarting the host.
 
-Dispatch uses DSH's public one-shot subagent registry with a single-use provider, preserving native `subagent/start` and `subagent/end` events. The provider registration is removed after startup; the accepted run remains owned by the parent and job until disposal.
+Dispatch registers a single-use, start-only provider and runs it through DSH's public subagent activation API as an external, terminal execution, preserving native `subagent/start` and `subagent/end` events. The provider registration is removed after startup; the accepted run remains owned by the parent and job until disposal.
 
-No changes to the Environment plugin are necessary: it already reads the viewed live session's directory. Native subagent navigation is reused through parent lineage and one-shot descriptors; this package registers no top-level workspaces or persistent UI.
+No changes to the Environment plugin are necessary: it already reads the viewed live session's directory. Native subagent navigation is reused through parent lineage and the worker's one-shot session descriptor; this package registers no top-level workspaces or persistent UI.
 
 ## Development
 
