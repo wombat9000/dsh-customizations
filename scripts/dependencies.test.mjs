@@ -19,7 +19,7 @@ const directories = [
 ]
 
 test('DSH declarations and normal lockfile resolve the target release, including peers', () => {
-  assert.equal(version, '0.2.1-rc.1')
+  assert.equal(version, '0.2.1-rc.2')
   for (const directory of directories) {
     const pkg = json(join(directory, 'package.json'))
     if (directory !== root) {
