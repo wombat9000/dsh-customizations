@@ -29,9 +29,9 @@ Consumers must keep the returned key on the host, send it only to their intended
 
 ## Packaging and validation
 
-See the [DSH `0.2.1-rc.1` validation results](../../MIGRATION-0.2.1-rc.1.md#validation-results). The known message-only OpenRouter RPC failure is pre-existing and is not fixed by repinning.
+See the [DSH `0.2.1-rc.2` validation results](../../MIGRATION-0.2.1-rc.2.md#validation-results). The known message-only OpenRouter RPC failure is pre-existing and is not fixed by repinning.
 
-The bundle targets DSH `0.2.1-rc.1` only and uses its existing credentials, settings, and connection services. It adds no OpenRouter SDK or other third-party runtime dependency beyond the repository's pinned DSH/schema packages. Maintained host code uses strict TypeScript; the client uses modular TypeScript/TSX with shared RPC contracts. The package exports the checked ESM host under [dist](dist/) and serves the generated lazy-loader [client bundle](client.js).
+The bundle targets DSH `0.2.1-rc.2` only and uses its existing credentials, settings, and connection services. It adds no OpenRouter SDK or other third-party runtime dependency beyond the repository's pinned DSH/schema packages. Maintained host code uses strict TypeScript; the client uses modular TypeScript/TSX with shared RPC contracts. The package exports the checked ESM host under [dist](dist/) and serves the generated lazy-loader [client bundle](client.js).
 
 With the repository's pinned development dependencies already available, run these commands from the repository root:
 

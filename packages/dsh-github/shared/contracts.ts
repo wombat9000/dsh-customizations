@@ -20,7 +20,7 @@ export interface PendingInteraction {
   reason?: string | undefined
   key?: string | undefined
 }
-// DSH 0.2.1-rc.1 exposes pending interaction through the session-status map.
+// DSH 0.2.1-rc.2 exposes pending interaction through the session-status map.
 export interface SessionStatus {
   pendingInteraction: PendingInteraction | null
 }

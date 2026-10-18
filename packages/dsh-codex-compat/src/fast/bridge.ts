@@ -17,7 +17,7 @@ const verifiedRuntime = (() => {
     const pi: unknown = JSON.parse(readFileSync(piPath, 'utf8'))
     return (
       isObject(adapter) &&
-      adapter.version === '0.2.1-rc.1' &&
+      adapter.version === '0.2.1-rc.2' &&
       isObject(pi) &&
       pi.version === '1.3.0'
     )
@@ -100,7 +100,7 @@ export class CodexFastBridge {
 
   private adapter(): PiAiAdapter {
     if (!verifiedRuntime) throw new FastBridgeError()
-    // DSH 0.2.1-rc.1 has no public adapter lookup. Validate before touching this private map.
+    // DSH 0.2.1-rc.2 has no public adapter lookup. Validate before touching this private map.
     const registry: unknown = Reflect.get(this.llm, 'adapters')
     if (!(registry instanceof Map)) throw new FastBridgeError()
     const entry: unknown = registry.get('openai-codex')

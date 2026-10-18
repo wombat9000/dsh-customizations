@@ -1,8 +1,8 @@
 {
   "name": "@local/dsh-project-steward",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "private": true,
-  "description": "Project Steward v1: approved repository setup improvements with Standard coding tools for DSH 0.2.1-rc.1",
+  "description": "Project Steward v1: approved repository setup improvements with Standard coding tools for DSH 0.2.1-rc.2",
   "type": "module",
   "exports": {
     "./package.json": "./package.json"
@@ -25,6 +25,6 @@
   },
   "license": "UNLICENSED",
   "peerDependencies": {
-    "@deepseek-ai/dsh": "0.2.1-rc.1"
+    "@deepseek-ai/dsh": "0.2.1-rc.2"
   }
 }

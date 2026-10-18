@@ -19,7 +19,7 @@ export function watchCapability({
     offTab = undefined
   }
   function check() {
-    // DSH 0.2.1-rc.1 keeps selection outside the session catalog.
+    // DSH 0.2.1-rc.2 keeps selection outside the session catalog.
     // Match ui-layout's DocumentTitle: the retained main view owns selection.
     const selected = Object.values(sessions.list.getSnapshot().byId).filter(
       (session) => (session.retainedBy.mainView ?? 0) > 0,
