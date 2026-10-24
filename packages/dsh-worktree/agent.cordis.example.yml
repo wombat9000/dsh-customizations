@@ -1,9 +1,0 @@
-# Optional child rows for an explicit @deepseek-ai/dsh-agent-preset config.plugins.
-# The host @local/dsh-worktree bundle supplies tools to Standard and other presets.
-# This retained row is inert and does not register duplicate definitions.
-# Keep the declaration's existing tool-jobs row; add it only if absent.
-- id: local-worktree-tools
-  name: '@local/dsh-worktree/tools'
-# Required existing job controls:
-# - id: tool-jobs
-#   name: '@deepseek-ai/dsh-tool-jobs'
