@@ -391,7 +391,7 @@ function Link({ url, children }) {
 //#endregion
 //#region client/styles.ts
 const css$1 = `.gh-grant{color:var(--dsw-alias-label-primary);background:var(--dsw-alias-interactive-bg-tertiary,transparent);border:1px solid var(--dsw-alias-border-standard,#8885);border-radius:12px;padding:14px;margin:8px 0;min-width:0;font-size:14px;line-height:1.5;overflow-wrap:anywhere}.gh-grant h3,.gh-grant h4{margin:0 0 8px}.gh-grant p{margin:8px 0}.gh-grant ul{padding-left:22px;margin:8px 0}.gh-grant li{margin:6px 0}.gh-grant a{color:var(--dsw-alias-brand-primary,#486ed4);text-decoration:underline}.gh-grant button,.gh-grant summary{font:inherit;cursor:pointer}.gh-grant button{color:inherit;background:transparent;border:1px solid var(--dsw-alias-border-standard,#8888);border-radius:7px;padding:7px 12px;white-space:normal}.gh-grant button:disabled{opacity:.6;cursor:default}.gh-grant :is(button,summary,a):focus-visible{outline:2px solid var(--dsw-alias-brand-primary,#486ed4);outline-offset:3px}.gh-grant details{margin:10px 0}.gh-grant pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;max-height:320px;overflow:auto;padding:8px;background:var(--dsw-specific-input-major,transparent)}.gh-grant small{display:block;color:var(--dsw-alias-label-secondary);font-size:12px}.gh-grant [role=alert]{color:var(--dsw-alias-state-error-primary,#b33)}.gh-grant .gh-scroll{max-height:340px;overflow:auto;padding:2px 6px}.gh-grant section+section{border-top:1px solid var(--dsw-alias-border-standard,#8885);margin-top:12px;padding-top:12px}.gh-grant .gh-note{color:var(--dsw-alias-label-secondary)}`;
-const approvalCss = "[data-approval-scroll]:has(.gh-approval-valid)>div:first-child{display:none}.gh-approval-valid{max-width:100%;text-align:left;font-family:system-ui,sans-serif;word-break:normal;white-space:normal}.gh-approval-valid .gh-approval-main{max-height:48vh;overflow:auto;overflow-wrap:anywhere}.gh-approval-valid .gh-approval-markdown{white-space:normal}.gh-approval-valid pre{white-space:pre-wrap;word-break:break-word}.gh-approval-valid h4{margin-top:8px}.gh-grant.gh-approval-valid{border:0;padding:4px;margin:0;background:transparent;container-type:inline-size}.gh-approval-valid .gh-approval-main{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 16px}.gh-approval-valid .gh-approval-main>section{grid-column:1/-1;border:0;padding:0;margin:0}.gh-approval-valid .gh-approval-resource{min-width:0;padding:6px 0}.gh-approval-valid .gh-approval-resource a{display:inline-block;overflow-wrap:anywhere}@container(max-width:500px){.gh-approval-valid .gh-approval-main{grid-template-columns:minmax(0,1fr)}}";
+const approvalCss = "[data-approval-scroll]:has(.gh-approval-valid)>div:first-child{display:none}.gh-approval-valid{max-width:100%;text-align:left;font-family:system-ui,sans-serif;word-break:normal;white-space:normal}.gh-approval-valid .gh-approval-main{max-height:48vh;overflow:auto;overflow-wrap:anywhere}.gh-approval-valid .gh-approval-markdown{white-space:normal}.gh-approval-valid pre{white-space:pre-wrap;word-break:break-word}.gh-approval-valid h4{margin-top:8px}.gh-grant.gh-approval-valid{border:0;padding:4px;margin:0;background:transparent;container-type:inline-size}.gh-approval-valid .gh-approval-main{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 16px}.gh-approval-valid .gh-approval-main>section{grid-column:1/-1;border:0;padding:0;margin:0}.gh-approval-valid .gh-approval-resource{min-width:0;padding:6px 0}.gh-approval-valid .gh-approval-resource a{display:inline-block;overflow-wrap:anywhere}.gh-approval-valid .gh-approval-stack{list-style:none;margin:4px 0;padding:0}.gh-approval-valid .gh-approval-stack>li{display:flex;flex-direction:column;gap:2px;padding:6px 0 6px 10px;border-left:2px solid currentColor;border-left-color:color-mix(in srgb,currentColor 30%,transparent)}.gh-approval-valid .gh-approval-stack>li+li{margin-top:4px}.gh-approval-valid .gh-approval-stack a{overflow-wrap:anywhere}.gh-approval-valid .gh-approval-commit{opacity:.75}@container(max-width:500px){.gh-approval-valid .gh-approval-main{grid-template-columns:minmax(0,1fr)}}";
 const itemCss = `.gh-grant .gh-item{padding:8px 0;margin:0;border-top:1px solid var(--dsw-alias-border-standard,#8885);min-width:0}.gh-grant .gh-item-head{display:grid;grid-template-columns:minmax(0,1fr) minmax(100px,.32fr) minmax(100px,.32fr);gap:4px 16px;align-items:start}.gh-grant .gh-item h4{margin:0;font-size:14px}.gh-grant .gh-item p{margin:2px 0}.gh-grant .gh-item details{margin:4px 0 0}.gh-grant .gh-item summary{font-size:12px}.gh-grant .gh-item-pr{font-size:12px}.gh-grant .gh-item-fields{margin:4px 0;padding-left:20px}.gh-grant .gh-item-fields li{margin:2px 0}.gh-grant.gh-items{container-type:inline-size}@container (max-width:500px){.gh-grant .gh-item-head{grid-template-columns:minmax(0,1fr);gap:2px}}`;
 const issueCss = `.gh-grant.gh-issues{container-type:inline-size}.gh-grant .gh-issue{padding:8px 0;min-width:0}.gh-grant .gh-issue-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px 16px}.gh-grant .gh-issue-head h4{margin:0;min-width:0}.gh-grant .gh-issue-state{font-size:12px;border:1px solid var(--dsw-alias-border-standard,#8885);border-radius:12px;padding:1px 8px;flex-shrink:0}.gh-grant .gh-issue p{margin:4px 0}.gh-grant .gh-issue-collection{margin:6px 0}.gh-grant .gh-issue-chips{display:inline-flex;flex-wrap:wrap;gap:4px}.gh-grant .gh-issue-chip{border:1px solid var(--dsw-alias-border-standard,#8885);border-radius:10px;padding:0 7px}.gh-grant .gh-issue-related{display:block}@container(max-width:500px){.gh-grant .gh-issue-head{flex-direction:column;gap:4px}}`;
 
@@ -479,6 +479,23 @@ function ApprovalResource({ label, value }) {
 	const identity = [text(resource?.nameWithOwner) || text(repository?.nameWithOwner) || text(owner?.login) || text(resource?.login), typeof resource?.number === "number" && Number.isSafeInteger(resource.number) ? `#${resource.number}` : ""].filter(Boolean).join(" · ");
 	const title = text(resource?.title) || text(resource?.name) || identity || "Name unavailable — see technical details";
 	return /* @__PURE__ */ react.default.createElement("div", { className: "gh-approval-resource" }, /* @__PURE__ */ react.default.createElement("small", null, label), /* @__PURE__ */ react.default.createElement(Link, { url: resource?.url }, title, safeUrl(resource?.url) && /* @__PURE__ */ react.default.createElement("span", { "aria-hidden": true }, " ↗")), identity && identity !== title && /* @__PURE__ */ react.default.createElement("small", null, identity));
+}
+function ApprovalStack({ pullRequests, added }) {
+	const commit = (branch) => {
+		const sha = text(branch?.sha);
+		return /* @__PURE__ */ react.default.createElement("code", {
+			className: "gh-approval-commit",
+			title: sha
+		}, sha.slice(0, 7));
+	};
+	const last = pullRequests.length - 1;
+	return /* @__PURE__ */ react.default.createElement("section", null, /* @__PURE__ */ react.default.createElement("h4", null, "Stack order (top to bottom)"), /* @__PURE__ */ react.default.createElement("ol", { className: "gh-approval-stack" }, pullRequests.map((value, index) => {
+		const pr = object$1(value) ? value : void 0;
+		const head = object$1(pr?.head) ? pr.head : void 0;
+		const base = object$1(pr?.base) ? pr.base : void 0;
+		const position = index === 0 ? " (bottom)" : index === last ? " (top)" : "";
+		return /* @__PURE__ */ react.default.createElement("li", { key: index }, /* @__PURE__ */ react.default.createElement("small", null, "Layer ", index + 1, position, added && index === last && " · added by this change"), /* @__PURE__ */ react.default.createElement(Link, { url: pr?.url }, typeof pr?.number === "number" && `#${pr.number} `, text(pr?.title) || "Name unavailable — see technical details", safeUrl(pr?.url) && /* @__PURE__ */ react.default.createElement("span", { "aria-hidden": true }, " ↗")), /* @__PURE__ */ react.default.createElement("span", null, /* @__PURE__ */ react.default.createElement("code", null, text(head?.ref)), " ", commit(head), " → ", /* @__PURE__ */ react.default.createElement("code", null, text(base?.ref)), index === 0 && /* @__PURE__ */ react.default.createElement(react.default.Fragment, null, " ", commit(base))));
+	}).reverse()), /* @__PURE__ */ react.default.createElement("small", null, "Each layer is based on the head of the layer below it."));
 }
 function ApprovalPreview({ model }) {
 	if (!model) return null;
@@ -580,16 +597,12 @@ function ApprovalPreview({ model }) {
 		content("Review effect", "Submits one review on this exact head commit. It does not mark the PR ready or merge it.");
 	} else if (operation === "createPullRequestStack" || operation === "addPullRequestToStack") {
 		resource("Destination repository", t.repository);
-		if (operation === "addPullRequestToStack") {
-			resource("Existing stack", t.stack);
-			content("Before stack order", Array.isArray(c.before) ? c.before.map((number) => `#${String(number)}`).join(" → ") : "");
-		}
-		content(operation === "createPullRequestStack" ? "Proposed stack order (bottom to top)" : "After stack order", Array.isArray(c.after) ? c.after.map((number) => `#${String(number)}`).join(" → ") : "");
-		if (Array.isArray(t.pullRequests)) for (const [index, pr] of t.pullRequests.entries()) {
-			const label = `Layer ${index + 1}${index === 0 ? " (bottom)" : index === t.pullRequests.length - 1 ? " (top)" : ""}`;
-			resource(label, pr);
-			branches(pr, `${label} · `);
-		}
+		if (operation === "addPullRequestToStack") resource("Existing stack", t.stack);
+		if (Array.isArray(t.pullRequests)) rows.push(/* @__PURE__ */ react.default.createElement(ApprovalStack, {
+			key: "stack",
+			pullRequests: t.pullRequests,
+			added: operation === "addPullRequestToStack"
+		}));
 		content("Stack behavior", operation === "createPullRequestStack" ? "Creates a native stack in this bottom-to-top order. No branch base changes or merges." : "Appends the last listed PR to this existing stack. Existing members and their order stay unchanged; no branch base changes or merges.");
 	} else if (operation === "addIssueDependency") {
 		resource("Blocked issue", t.blockedIssue);

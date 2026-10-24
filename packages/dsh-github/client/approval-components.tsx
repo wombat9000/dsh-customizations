@@ -173,6 +173,54 @@ export function ApprovalResource({ label, value }: { label: string; value: unkno
     </div>
   )
 }
+// The model only accepts same-repository members whose base is the head of the
+// layer below, so each row shows the PR's own head and the shared repository is
+// not repeated. Full commits remain in the title and technical details.
+function ApprovalStack({ pullRequests, added }: { pullRequests: unknown[]; added: boolean }) {
+  const commit = (branch: Record<string, unknown> | undefined) => {
+    const sha = text(branch?.sha)
+    return (
+      <code className="gh-approval-commit" title={sha}>
+        {sha.slice(0, 7)}
+      </code>
+    )
+  }
+  const last = pullRequests.length - 1
+  return (
+    <section>
+      <h4>Stack order (top to bottom)</h4>
+      <ol className="gh-approval-stack">
+        {pullRequests
+          .map((value, index) => {
+            const pr = object(value) ? value : undefined
+            const head = object(pr?.head) ? pr.head : undefined
+            const base = object(pr?.base) ? pr.base : undefined
+            const position = index === 0 ? ' (bottom)' : index === last ? ' (top)' : ''
+            return (
+              <li key={index}>
+                <small>
+                  Layer {index + 1}
+                  {position}
+                  {added && index === last && ' · added by this change'}
+                </small>
+                <Link url={pr?.url}>
+                  {typeof pr?.number === 'number' && `#${pr.number} `}
+                  {text(pr?.title) || 'Name unavailable — see technical details'}
+                  {safeUrl(pr?.url) && <span aria-hidden={true}> ↗</span>}
+                </Link>
+                <span>
+                  <code>{text(head?.ref)}</code> {commit(head)} → <code>{text(base?.ref)}</code>
+                  {index === 0 && <> {commit(base)}</>}
+                </span>
+              </li>
+            )
+          })
+          .reverse()}
+      </ol>
+      <small>Each layer is based on the head of the layer below it.</small>
+    </section>
+  )
+}
 export function ApprovalPreview({ model }: { model: ApprovalModel | null | undefined }) {
   if (!model) return null
   const {
@@ -342,26 +390,15 @@ export function ApprovalPreview({ model }: { model: ApprovalModel | null | undef
     )
   } else if (operation === 'createPullRequestStack' || operation === 'addPullRequestToStack') {
     resource('Destination repository', t.repository)
-    if (operation === 'addPullRequestToStack') {
-      resource('Existing stack', t.stack)
-      content(
-        'Before stack order',
-        Array.isArray(c.before) ? c.before.map((number) => `#${String(number)}`).join(' → ') : '',
+    if (operation === 'addPullRequestToStack') resource('Existing stack', t.stack)
+    if (Array.isArray(t.pullRequests))
+      rows.push(
+        <ApprovalStack
+          key="stack"
+          pullRequests={t.pullRequests}
+          added={operation === 'addPullRequestToStack'}
+        />,
       )
-    }
-    content(
-      operation === 'createPullRequestStack'
-        ? 'Proposed stack order (bottom to top)'
-        : 'After stack order',
-      Array.isArray(c.after) ? c.after.map((number) => `#${String(number)}`).join(' → ') : '',
-    )
-    if (Array.isArray(t.pullRequests)) {
-      for (const [index, pr] of t.pullRequests.entries()) {
-        const label = `Layer ${index + 1}${index === 0 ? ' (bottom)' : index === t.pullRequests.length - 1 ? ' (top)' : ''}`
-        resource(label, pr)
-        branches(pr, `${label} · `)
-      }
-    }
     content(
       'Stack behavior',
       operation === 'createPullRequestStack'
