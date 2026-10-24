@@ -1,4 +1,4 @@
-// Consumed managed subprocess surface, matching DSH 0.2.1-rc.2's spawn,
+// Consumed managed subprocess surface, matching DSH 0.2.1-rc.3's spawn,
 // collected output, and range-quiescence contracts. No provider internals escape.
 export interface GitHubReadOptions {
   signal?: AbortSignal | undefined

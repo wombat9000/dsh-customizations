@@ -35,7 +35,7 @@ test('portable recipe selects the local environment bundle after base and Web', 
     ...manifest.dependencies,
     ...manifest.peerDependencies,
   })) {
-    if (name.startsWith('@deepseek-ai/dsh-')) assert.equal(version, '0.2.1-rc.2', name)
+    if (name.startsWith('@deepseek-ai/dsh-')) assert.equal(version, '0.2.1-rc.3', name)
   }
   const patch = await readFile(new URL('../cordis.patch.yml', import.meta.url), 'utf8')
   assert.match(
