@@ -127,10 +127,10 @@ async function key(t, ctx, id) {
 test('target-only declaration is additive and keeps stable identity and deployment default', async () => {
   assert.equal(
     JSON.parse(await readFile(cli.resolve('@deepseek-ai/dsh/package.json'), 'utf8')).version,
-    '0.2.1-rc.2',
+    '0.2.1-rc.3',
   )
   const manifest = JSON.parse(await readFile(join(packageRoot, 'package.json'), 'utf8'))
-  assert.equal(manifest.dependencies['@deepseek-ai/dsh-agent-preset'], '0.2.1-rc.2')
+  assert.equal(manifest.dependencies['@deepseek-ai/dsh-agent-preset'], '0.2.1-rc.3')
   assert.equal(manifest.dependencies['@deepseek-ai/dsh-agent-presets'], undefined)
   assert.equal(
     await readFile(join(packageRoot, 'presets/worktree-coordinator/LICENSE.standard'), 'utf8'),

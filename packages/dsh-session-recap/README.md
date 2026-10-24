@@ -6,7 +6,7 @@ While generation runs, a highlight shimmers across the fixed icon; it does not r
 
 ## Install and configure
 
-This bundle targets only DSH `0.2.1-rc.2` and requires the standard base and Web bundles. It ships compiled JavaScript with a committed client bundle; installation needs no build step. After editing source files, regenerate the affected outputs as described under [Development](#development). The RPC-owner patch remains required in each independent launcher and profile graph. Read the [migration handoff](../../MIGRATION-0.2.1-rc.2.md) and use the [repository launcher and profile setup](../../README.md#apply-the-starter-profile), not an unrelated global launcher.
+This bundle targets only DSH `0.2.1-rc.3` and requires the standard base and Web bundles. It ships compiled JavaScript with a committed client bundle; installation needs no build step. After editing source files, regenerate the affected outputs as described under [Development](#development). The RPC-owner patch remains required in each independent launcher and profile graph. Read the [migration handoff](../../MIGRATION-0.2.1-rc.3.md) and use the [repository launcher and profile setup](../../README.md#apply-the-starter-profile), not an unrelated global launcher.
 
 1. From this repository, validate and preview the profile:
 

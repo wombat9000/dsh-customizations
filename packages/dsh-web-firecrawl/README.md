@@ -1,6 +1,6 @@
 # Local DSH Firecrawl Web Provider
 
-Local DSH `0.2.1-rc.2` bundle that uses Firecrawl API v2 behind DSH's existing
+Local DSH `0.2.1-rc.3` bundle that uses Firecrawl API v2 behind DSH's existing
 `web_search` and `web_fetch` tools.
 
 The package registers one provider (`firecrawl`) for both operations and adds a
@@ -136,7 +136,7 @@ Profile updates and restarts still require separate approval.
 
 ## Test
 
-See the [DSH `0.2.1-rc.2` validation results](../../MIGRATION-0.2.1-rc.2.md#validation-results) for verified scope and deployment limits.
+See the [DSH `0.2.1-rc.3` validation results](../../MIGRATION-0.2.1-rc.3.md#validation-results) for verified scope and deployment limits.
 
 ```sh
 pnpm --filter @local/dsh-web-firecrawl test

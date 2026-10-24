@@ -1,6 +1,6 @@
 # Google accounts
 
-`@local/dsh-google-auth` is the shared Google authentication provider for DSH `0.2.1-rc.2`. It owns Desktop OAuth client configuration, account identity, consent, credential storage, and token refresh. Integrations such as [Google Drive](../dsh-google-drive/README.md) declare their required permissions and consume the host's `googleAuth` service instead of implementing login themselves.
+`@local/dsh-google-auth` is the shared Google authentication provider for DSH `0.2.1-rc.3`. It owns Desktop OAuth client configuration, account identity, consent, credential storage, and token refresh. Integrations such as [Google Drive](../dsh-google-drive/README.md) declare their required permissions and consume the host's `googleAuth` service instead of implementing login themselves.
 
 ## First-version boundaries
 
@@ -123,6 +123,6 @@ The normal Node suite compiles strict host/client contracts, checks committed ar
 
 ## Verification
 
-See the [DSH `0.2.1-rc.2` validation results](../../MIGRATION-0.2.1-rc.2.md#validation-results) for verified scope and deployment limits.
+See the [DSH `0.2.1-rc.3` validation results](../../MIGRATION-0.2.1-rc.3.md#validation-results) for verified scope and deployment limits.
 
 The automated suites use synthetic tokens, mock Google responses, real ephemeral loopback callbacks and TCP forwarding relays, mocked bridge clients, real DSH service/route lifecycle fixtures, and browser component tests. They do not authenticate a real account or deploy a live profile. A real consent and Drive listing test remains a post-deployment step.
