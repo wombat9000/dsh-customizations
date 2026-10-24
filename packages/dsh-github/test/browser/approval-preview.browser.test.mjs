@@ -203,27 +203,26 @@ test.each(prVariants)(
         ).toBe(true)
       }
     } else {
-      expect(main.textContent).toContain(
-        value.operation === 'createPullRequestStack'
-          ? 'Proposed stack order (bottom to top)'
-          : 'Before stack order',
-      )
-      if (value.operation === 'addPullRequestToStack')
-        expect(main.textContent).toContain('After stack order')
-      let previous = -1
-      for (const pr of value.targets.pullRequests) {
-        const position = main.textContent.indexOf(pr.title)
-        expect(position).toBeGreaterThan(previous)
-        previous = position
-        for (const identity of [
-          `#${pr.number}`,
-          pr.head.ref,
-          pr.head.sha,
-          pr.base.ref,
-          pr.base.sha,
-        ])
-          expect(main.textContent).toContain(identity)
+      expect(main.textContent).toContain('Stack order (top to bottom)')
+      const prs = value.targets.pullRequests
+      const layers = [...main.querySelectorAll('.gh-approval-stack > li')]
+      expect(layers).toHaveLength(prs.length)
+      for (const [row, layer] of layers.entries()) {
+        const index = prs.length - 1 - row
+        const pr = prs[index]
+        expect(layer.querySelector('a').textContent).toBe(`#${pr.number} ${pr.title} ↗`)
+        expect(layer.textContent).toContain(
+          `${pr.head.ref} ${pr.head.sha.slice(0, 7)} → ${pr.base.ref}`,
+        )
+        expect(layer.textContent).not.toContain(pr.head.sha)
+        const commits = [...layer.querySelectorAll('.gh-approval-commit')].map((node) => node.title)
+        expect(commits).toEqual(index === 0 ? [pr.head.sha, pr.base.sha] : [pr.head.sha])
+        expect(layer.textContent.includes('added by this change')).toBe(
+          value.operation === 'addPullRequestToStack' && index === prs.length - 1,
+        )
       }
+      expect(layers[0].textContent).toContain('(top)')
+      expect(layers.at(-1).textContent).toContain('(bottom)')
       expect(main.textContent).toMatch(/No branch base changes|no branch base changes/)
       expect(main.textContent).toMatch(/merge/i)
     }
