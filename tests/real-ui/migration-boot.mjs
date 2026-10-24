@@ -25,25 +25,24 @@ try {
   const cookie = `${name}=${value}`
   const page = await fetch(url, { headers: { cookie }, signal: AbortSignal.timeout(10000) })
   assert.equal(page.status, 200, 'authenticated shell')
-  for (const [channel, method, payload] of [
-    ['/session-recap', 'settings', {}],
-    ['/local-worktrees', 'capability', { sessionId: 'nonexistent-synthetic-session' }],
-  ]) {
-    const response = await fetch(new URL(`${channel}/${method}`, url), {
-      method: 'POST',
-      headers: { cookie, origin: url.origin, 'content-type': 'application/json' },
-      body: JSON.stringify({ type: 'client-request', rpcId: 'migration-check', method, payload }),
-      signal: AbortSignal.timeout(10000),
-    })
-    assert.equal(response.status, 200, `${channel} HTTP status`)
-    const result = await response.json()
-    assert.equal(result.type, 'server-response')
-    assert.equal(result.result?.ok, true, `${channel} success envelope`)
-    if (channel === '/session-recap') assert.equal(result.result.value.autoRecap, true)
-    if (channel === '/local-worktrees') assert.equal(result.result.value.state, 'unavailable')
-  }
+  const response = await fetch(new URL('/session-recap/settings', url), {
+    method: 'POST',
+    headers: { cookie, origin: url.origin, 'content-type': 'application/json' },
+    body: JSON.stringify({
+      type: 'client-request',
+      rpcId: 'migration-check',
+      method: 'settings',
+      payload: {},
+    }),
+    signal: AbortSignal.timeout(10000),
+  })
+  assert.equal(response.status, 200, 'session-recap HTTP status')
+  const result = await response.json()
+  assert.equal(result.type, 'server-response')
+  assert.equal(result.result?.ok, true, 'session-recap success envelope')
+  assert.equal(result.result.value.autoRecap, true)
   console.log(
-    'PASS: seventeen-plugin boot, V4 persisted fixtures, authentication, shell and read-only RPCs',
+    'PASS: plugin boot, V4 persisted fixtures, authentication, shell and read-only Recap RPC',
   )
 } finally {
   await cleanup()

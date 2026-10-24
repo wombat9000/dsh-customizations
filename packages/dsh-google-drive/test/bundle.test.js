@@ -26,11 +26,7 @@ test('personal-web retains Standard default without a Drive preset or directory 
   assert.match(patch, /default: standard/)
   assert.doesNotMatch(patch, /roots:|trust: system|google-drive/)
   const recipe = JSON.parse(await text('../../profiles/personal-web/recipe.json'))
-  for (const name of [
-    '@local/dsh-worktree',
-    '@local/dsh-project-steward',
-    '@local/dsh-product-mode',
-  ]) {
+  for (const name of ['@local/dsh-project-steward', '@local/dsh-product-mode']) {
     assert.equal(recipe.bundles.filter((bundle) => bundle.name === name).length, 1)
   }
 })

@@ -47,7 +47,6 @@ test('Drive adds no preset and personal-web preserves shipped and custom declara
     'project-steward',
     'ptc',
     'standard',
-    'worktree-coordinator',
   ])
   assert.equal(ids.includes('google-drive'), false)
 })

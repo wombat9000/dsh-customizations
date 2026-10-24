@@ -16,7 +16,7 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import * as GitHub from '../../dsh-github/dist/src/index.js'
 
-// Shared Product/Steward fixture; deliberately independent of Worktree tests.
+// Shared Product/Steward fixture.
 // Real dormant registries and Loader; subprocess/PTC execution is forbidden.
 const require = createRequire(import.meta.url)
 export const cli = createRequire(require.resolve('@deepseek-ai/dsh/package.json'))

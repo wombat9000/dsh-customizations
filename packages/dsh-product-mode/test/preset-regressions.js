@@ -59,7 +59,6 @@ export function presetRegressions({ id, name, skill, marker, resource }) {
       'ptc',
       'minimal',
       'cordis',
-      'worktree-coordinator',
       'project-steward',
       'product-mode',
     ])

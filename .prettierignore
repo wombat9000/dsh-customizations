@@ -19,8 +19,6 @@ artifacts/
 /packages/dsh-jev/dist/
 /packages/dsh-web-firecrawl/client.js
 /packages/dsh-web-firecrawl/dist/
-/packages/dsh-worktree/client.js
-/packages/dsh-worktree/dist/
 /packages/dsh-google-auth/client.js
 /packages/dsh-google-auth/dist/
 /packages/dsh-tool-trivy/client.js
