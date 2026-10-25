@@ -1,6 +1,8 @@
 export const CHANNEL = '/codex-fast-integration'
 export const COST_NOTICE =
-  'Fast mode uses subscription limits at a higher rate (currently 2.5× included usage). Availability depends on your OpenAI plan and model.'
+  'Fast currently uses 2.5× included usage. Availability depends on your OpenAI plan and model.'
+
+export type FastMode = 'off' | 'all' | 'main'
 
 export interface IntegrationStatus {
   enabled: boolean
@@ -26,6 +28,17 @@ export interface RpcEndpoints {
   'integration-status': { input: Record<string, never>; result: IntegrationStatus }
   'integration-set': { input: { enabled: boolean; revision: number }; result: IntegrationStatus }
   'session-status': { input: { sessionId: string }; result: FastStatus }
+  'mode-set': {
+    input: {
+      sessionId: string
+      provider: string
+      model: string
+      mode: FastMode
+      sessionRevision: number
+      subagentsRevision: number
+    }
+    result: FastStatus
+  }
   'subagents-set': {
     input: { sessionId: string; enabled: boolean; revision: number }
     result: FastStatus
