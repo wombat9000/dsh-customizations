@@ -2,6 +2,8 @@ import type { GitHubReads } from '../../dsh-github/dist/src/reads.js'
 import type { LinearReads } from '../../dsh-linear/dist/src/reads.js'
 import type {
   Catalog,
+  DiscoverPage,
+  DiscoverRequest,
   IssuesPage,
   IssuesRequest,
   ProjectsConfig,
@@ -18,6 +20,7 @@ import {
   revisionOf,
   text,
 } from './configuration.js'
+import { discoverPage } from './discovery.js'
 import { issuesPage } from './projections.js'
 
 export interface Providers {
@@ -74,15 +77,7 @@ export class ProjectsService {
     const source =
       project.sources.find((source) => source.id === request.sourceId) ?? fail('missing')
     const providers = this.dependencies.providers()
-    if (this.active >= 8) fail('failed')
-    const combined = AbortSignal.any([
-      this.lifetime.signal,
-      AbortSignal.timeout(35000),
-      ...(signal ? [signal] : []),
-    ])
-    if (combined.aborted) fail('cancelled')
-    this.active++
-    try {
+    return this.read(signal, async (combined) => {
       const page = { limit, ...(request.cursor ? { cursor: request.cursor } : {}) }
       let result: unknown
       switch (source.kind) {
@@ -114,10 +109,74 @@ export class ProjectsService {
             { signal: combined },
           )
       }
-      this.check()
-      if (combined.aborted) fail('cancelled')
       if (this.catalog().revision !== before.revision) fail('conflict')
       return issuesPage(source, request, result)
+    })
+  }
+  // Lists sources the connected accounts can see, for adding to local configuration.
+  // Discovery reads never change configuration; the operator saves explicitly.
+  async discover(input: unknown, signal?: AbortSignal): Promise<DiscoverPage> {
+    this.check()
+    const value = exact(input, ['kind', 'owner', 'cursor'])
+    const kinds = ['github-repository', 'github-project', 'linear-project', 'linear-team'] as const
+    const kind = kinds.find((kind) => kind === value.kind) ?? fail('invalid')
+    const github = kind.startsWith('github-')
+    const request: DiscoverRequest = {
+      kind,
+      ...(value.owner === undefined ? {} : { owner: text(value.owner, 100) }),
+      ...(value.cursor === undefined ? {} : { cursor: text(value.cursor, 4096) }),
+    }
+    if (
+      request.owner !== undefined &&
+      (!github || !/^[A-Za-z0-9][A-Za-z0-9-]*$/u.test(request.owner))
+    )
+      fail('invalid')
+    if (kind === 'linear-team' && request.cursor !== undefined) fail('invalid')
+    const providers = this.dependencies.providers()
+    return this.read(signal, async (combined) => {
+      const page = { limit: 50, ...(request.cursor ? { cursor: request.cursor } : {}) }
+      if (github) {
+        const provider = providers.github ?? fail('unavailable')
+        let owner = request.owner
+        if (owner === undefined) {
+          const status = await provider.connectionStatus({}, { signal: combined })
+          const account = status.data.account
+          if (typeof account !== 'string' || !account) fail('account')
+          owner = account
+        }
+        const result =
+          kind === 'github-repository'
+            ? await provider.listRepositories({ owner, ...page }, { signal: combined })
+            : await provider.listProjects({ owner, ...page }, { signal: combined })
+        return discoverPage(kind, owner, result)
+      }
+      const provider = providers.linear ?? fail('unavailable')
+      const result =
+        kind === 'linear-team'
+          ? await provider.listTeams({}, { signal: combined })
+          : await provider.listProjects(page, { signal: combined })
+      return discoverPage(kind, undefined, result)
+    })
+  }
+  // Bounds concurrency, applies the shared deadline and cancellation, and keeps provider
+  // diagnostics out of results.
+  private async read<T>(
+    signal: AbortSignal | undefined,
+    run: (signal: AbortSignal) => Promise<T>,
+  ): Promise<T> {
+    if (this.active >= 8) fail('failed')
+    const combined = AbortSignal.any([
+      this.lifetime.signal,
+      AbortSignal.timeout(35000),
+      ...(signal ? [signal] : []),
+    ])
+    if (combined.aborted) fail('cancelled')
+    this.active++
+    try {
+      const result = await run(combined)
+      this.check()
+      if (combined.aborted) fail('cancelled')
+      return result
     } catch (error) {
       if (combined.aborted) fail('cancelled')
       if (error instanceof ProjectsError) throw error

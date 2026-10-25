@@ -105,6 +105,9 @@ test('real pinned DSH registry exposes host tools across preset/session scopes a
   const plugin = ctx.plugin(GitHub, {})
   await plugin.await()
   assert.deepEqual(Object.keys(ctx.get('localGitHubReads')), [
+    'connectionStatus',
+    'listRepositories',
+    'listProjects',
     'listIssues',
     'getIssue',
     'listProjectItems',

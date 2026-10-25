@@ -55,7 +55,13 @@ export interface GitHubReadResult {
     truncated: boolean;
     truncations: Array<Record<string, unknown>>;
 }
+export interface GitHubOwnerPage extends GitHubPage {
+    owner: string;
+}
 export interface GitHubReads {
+    connectionStatus(args?: Record<string, never>, options?: GitHubReadOptions): Promise<GitHubReadResult>;
+    listRepositories(args: GitHubOwnerPage, options?: GitHubReadOptions): Promise<GitHubReadResult>;
+    listProjects(args: GitHubOwnerPage, options?: GitHubReadOptions): Promise<GitHubReadResult>;
     listIssues(args: GitHubListIssuesArgs, options?: GitHubReadOptions): Promise<GitHubReadResult>;
     getIssue(args: GitHubGetIssueArgs, options?: GitHubReadOptions): Promise<GitHubReadResult>;
     getProject(args: GitHubGetProjectArgs, options?: GitHubReadOptions): Promise<GitHubReadResult>;
@@ -137,11 +143,8 @@ export interface GitHubRuntimeConfig {
 }
 export type ReadMethod = (args?: unknown, exec?: GitHubReadOptions) => Promise<GitHubReadResult>;
 export interface GitHubRuntime extends GitHubReads {
-    connectionStatus: ReadMethod;
     detectRepositories: ReadMethod;
-    listRepositories: ReadMethod;
     getRepository: ReadMethod;
-    listProjects: ReadMethod;
     searchIssues: ReadMethod;
     getIssueComments: ReadMethod;
 }

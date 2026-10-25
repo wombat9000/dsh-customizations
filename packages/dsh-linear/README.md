@@ -36,7 +36,7 @@ All Linear content is treated as untrusted external data in the agent prompt.
 
 ## Host read service
 
-Host plugins can look up `ctx.get('localLinearReads')` at call time. If the bundle is absent or disposed, the lookup returns `undefined`. The service exposes only `listIssues`, `getIssue`, and `getProject`. The [typed contract](src/reads.ts) is also available through `@local/dsh-linear/reads`.
+Host plugins can look up `ctx.get('localLinearReads')` at call time. If the bundle is absent or disposed, the lookup returns `undefined`. The service exposes only `listTeams`, `listProjects`, `listIssues`, `getIssue`, and `getProject`. The [typed contract](src/reads.ts) is also available through `@local/dsh-linear/reads`.
 
 Each method takes the matching read tool's arguments and optional `{ signal }`. Calls reuse the same runtime, host credentials, and workspace binding as the tools; they need no session and expose no credential or write method. The service validates bounded arguments and enforces the configured timeout, clamped to 1–120,000 milliseconds (default 30,000). Disposal aborts service calls. Errors have static sanitized messages and codes `INVALID_ARGUMENT`, `CANCELLED`, `TIMEOUT`, or `READ_FAILED`.
 

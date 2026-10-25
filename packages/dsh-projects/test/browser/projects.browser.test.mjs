@@ -148,6 +148,114 @@ test('pending local save disables closing and does not retry', async () => {
   await act(async () => finish(catalog))
   expect(container.textContent).toContain('Local settings saved')
 })
+test('account picker adds discovered sources to the draft without saving', async () => {
+  const calls = []
+  const discovered = {
+    kind: 'github-repository',
+    owner: 'octo',
+    candidates: [
+      {
+        target: { kind: 'github-repository', owner: 'owner', repo: 'repo' },
+        name: 'repo',
+        suggestedId: 'repo',
+      },
+      {
+        target: { kind: 'github-repository', owner: 'octo', repo: 'web' },
+        name: 'web',
+        suggestedId: 'web',
+        description: '<b>Site</b>',
+        inactive: true,
+      },
+    ],
+    hasNextPage: true,
+    nextCursor: 'more',
+    untrusted: true,
+  }
+  await mount(async (endpoint, input) => {
+    calls.push([endpoint, input])
+    if (endpoint === 'catalog') return catalog
+    if (endpoint === 'discover')
+      return input.cursor
+        ? {
+            ...discovered,
+            candidates: [
+              {
+                target: { kind: 'github-repository', owner: 'octo', repo: 'api' },
+                name: 'api',
+                suggestedId: 'api',
+              },
+            ],
+            hasNextPage: false,
+            nextCursor: undefined,
+          }
+        : discovered
+    throw new Error(`unexpected ${endpoint}`)
+  })
+  await click('Configure projects')
+  expect(calls.map((call) => call[0])).toEqual(['catalog'])
+  await click('Find sources')
+  expect(calls.at(-1)).toEqual(['discover', { kind: 'github-repository' }])
+  expect(container.textContent).toContain('Owner: octo')
+  expect(container.textContent).toContain('Already in: Example')
+  expect(container.textContent).toContain('Closed or archived')
+  expect(container.querySelector('b')).toBeNull()
+  await click('Load more')
+  expect(calls.at(-1)).toEqual(['discover', { kind: 'github-repository', cursor: 'more' }])
+  const boxes = () => [...container.querySelectorAll('input[type=checkbox]')]
+  expect(boxes()).toHaveLength(3)
+  await act(async () => boxes()[1].click())
+  await act(async () => boxes()[2].click())
+  await select('Add as ', 'existing:p')
+  await click('Add selected to draft')
+  const draft = JSON.parse(container.querySelector('textarea').value)
+  expect(draft.projects[0].sources.slice(2)).toEqual([
+    { id: 'web', kind: 'github-repository', owner: 'octo', repo: 'web' },
+    { id: 'api', kind: 'github-repository', owner: 'octo', repo: 'api' },
+  ])
+  expect(container.textContent).toContain('Added to the draft: 2')
+  expect(calls.some((call) => call[0] === 'configure')).toBe(false)
+  await act(async () => boxes()[0].click())
+  await select('Add as ', 'separate')
+  await click('Add selected to draft')
+  const next = JSON.parse(container.querySelector('textarea').value)
+  expect(next.projects.at(-1)).toEqual({
+    id: 'repo',
+    name: 'repo',
+    conventions: {},
+    sources: [{ id: 'repo', kind: 'github-repository', owner: 'owner', repo: 'repo' }],
+  })
+})
+test('account picker keeps an invalid draft untouched and shows discovery errors', async () => {
+  await mount(async (endpoint, input) => {
+    if (endpoint === 'catalog') return catalog
+    if (input.kind === 'linear-team') throw new Error('Linear is not loaded')
+    return {
+      kind: input.kind,
+      candidates: [
+        { target: { kind: 'linear-project', project: 'x' }, name: 'Plan', suggestedId: 'plan' },
+      ],
+      hasNextPage: false,
+      untrusted: true,
+    }
+  })
+  await click('Configure projects')
+  await select('Source type ', 'linear-team')
+  expect(container.querySelector('input:not([type])')).toBeNull()
+  await click('Find sources')
+  expect(container.querySelector('[role=alert]').textContent).toContain('Linear is not loaded')
+  await select('Source type ', 'linear-project')
+  await click('Find sources')
+  const textarea = container.querySelector('textarea')
+  await act(async () => {
+    const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set
+    setter.call(textarea, '{ broken')
+    textarea.dispatchEvent(new Event('input', { bubbles: true }))
+  })
+  await act(async () => container.querySelector('input[type=checkbox]').click())
+  await click('Add selected to draft')
+  expect(textarea.value).toBe('{ broken')
+  expect(container.querySelector('[role=alert]').textContent).toContain('Fix the JSON draft')
+})
 test('empty and unavailable catalog remains actionable', async () => {
   await mount(async () => ({
     ...catalog,

@@ -2,7 +2,7 @@
 
 Projects adds a shared, read-only view of GitHub and Linear work to DSH `0.2.1-rc.3`. Open **Projects** in the left navigation, choose a local project, and select one of its linked sources. Agent tools read the same host service.
 
-A local project can link to GitHub repositories, GitHub Projects, Linear projects, or Linear teams. Links are explicit. Projects does not infer relationships, mirror issues, or write to either tracker. GitHub board fields remain separate from issue state; Linear workflow names retain their native values.
+A local project can link to GitHub repositories, GitHub Projects, Linear projects, or Linear teams. Links are explicit: you can pick them from your connected accounts, but nothing is linked until you save. Projects does not infer relationships, mirror issues, or write to either tracker. GitHub board fields remain separate from issue state; Linear workflow names retain their native values.
 
 ## Setup and boundaries
 
@@ -14,7 +14,14 @@ Projects reuses the GitHub integration's managed `gh` authentication and the Lin
 
 ## Configure local projects
 
-The first version uses a JSON editor. Start with an empty catalog, or use this synthetic example:
+**Configure projects** opens **Add from your accounts** above the JSON editor. Choose a source type and select **Find sources** to list what the connected accounts can see:
+
+- GitHub repositories or GitHub Projects for an owner. Leave **Owner** empty to use the account `gh` is signed in as, or enter an organization login.
+- Linear projects or teams in the Linear integration's bound workspace.
+
+Select sources and choose **Add as**: one new project per source, one new project combining the selection, or an existing project in the draft. The picker only edits the JSON draft. It fills in stable identifiers (including Linear UUIDs) and suggested local IDs, marks closed or archived sources, and shows which draft projects already link a source. Review the draft, then **Save local settings**. Discovery results are untrusted text and are never cached.
+
+You can also edit the JSON directly. Start with an empty catalog, or use this synthetic example:
 
 ```json
 {
@@ -57,7 +64,7 @@ The first version uses a JSON editor. Start with an empty catalog, or use this s
 }
 ```
 
-Replace the example targets with your explicit source identifiers. Use the existing GitHub or Linear read tools to discover identifiers if needed; this page does not automatically enumerate your account.
+Replace the example targets with your explicit source identifiers, or add them with the picker.
 
 Supported sources:
 
@@ -98,9 +105,9 @@ Agent tools ---------------------------------+       |
 
 The provider read services share the runtimes already used by their native tools. They retain native pagination, provider authentication, cancellation, and bounded deadlines. Projects does not invoke tools as its backend or duplicate provider clients.
 
-`ctx.projects` exposes `catalog`, `project`, `issues`, and local-only `configure`. Provider services are optional and resolved for each request. The service cancels active work on disposal and rejects results when project configuration changes during a read. It does not cache tracker data.
+`ctx.projects` exposes `catalog`, `project`, `issues`, `discover`, and local-only `configure`. `discover` reads one page (up to 50) of repositories, GitHub Projects, Linear projects, or Linear teams through the provider read services and returns only targets that pass configuration validation. Provider services are optional and resolved for each request. The service cancels active work on disposal and rejects results when project configuration changes during a read. It does not cache tracker data.
 
-The `/projects` Connection channel exposes the same operations to the authenticated operator UI. Tools expose only:
+The `/projects` Connection channel exposes the same operations to the authenticated operator UI. Discovery is UI-only; agents keep using the GitHub and Linear tools for account-wide listing. Tools expose only:
 
 - `projects_list`: configured project summaries and source links.
 - `projects_get`: one project's effective conventions and source links.

@@ -7,22 +7,52 @@ export interface LinearIssuePage {
   issues: LinearIssueRead[]
   pageInfo: { hasNextPage: boolean; nextCursor?: string }
 }
+export interface LinearTeamRead {
+  id: string
+  key: string
+  name: string
+  private: boolean
+}
+export interface LinearTeamList {
+  teams: LinearTeamRead[]
+}
+export interface LinearListProjectsArgs {
+  team?: string
+  query?: string
+  limit?: number
+  cursor?: string
+}
+export interface LinearProjectPage {
+  projects: LinearProjectRead[]
+  pageInfo: { hasNextPage: boolean; nextCursor?: string }
+}
 export interface LinearReads {
+  listTeams(args?: Record<string, never>, options?: LinearReadOptions): Promise<LinearTeamList>
+  listProjects(
+    args?: LinearListProjectsArgs,
+    options?: LinearReadOptions,
+  ): Promise<LinearProjectPage>
   listIssues(args?: LinearListIssuesArgs, options?: LinearReadOptions): Promise<LinearIssuePage>
   getIssue(args: { issue: string }, options?: LinearReadOptions): Promise<LinearIssueRead>
   getProject(args: { project: string }, options?: LinearReadOptions): Promise<LinearProjectRead>
 }
 export interface LinearReadRuntime {
+  listTeams(args: Record<string, never>, signal: AbortSignal): Promise<LinearTeamList>
+  listProjects(args: LinearListProjectsArgs, signal: AbortSignal): Promise<LinearProjectPage>
   listIssues(args: LinearListIssuesArgs, signal: AbortSignal): Promise<LinearIssuePage>
   getIssue(args: { issue: string }, signal: AbortSignal): Promise<LinearIssueRead>
   getProject(args: { project: string }, signal: AbortSignal): Promise<LinearProjectRead>
 }
 interface ReadArguments {
+  listTeams: Record<string, never>
+  listProjects: LinearListProjectsArgs
   listIssues: LinearListIssuesArgs
   getIssue: { issue: string }
   getProject: { project: string }
 }
 interface ReadResults {
+  listTeams: LinearTeamList
+  listProjects: LinearProjectPage
   listIssues: LinearIssuePage
   getIssue: LinearIssueRead
   getProject: LinearProjectRead
@@ -48,12 +78,33 @@ export class LinearReadError extends Error {
     this.code = code
   }
 }
-const strings = ['team', 'assignee', 'project', 'cycle', 'updatedAfter', 'createdAfter', 'cursor']
+const strings = [
+  'team',
+  'assignee',
+  'project',
+  'cycle',
+  'updatedAfter',
+  'createdAfter',
+  'cursor',
+  'query',
+]
+const allowedKeys: Record<keyof ReadArguments, string[]> = {
+  listTeams: [],
+  listProjects: ['team', 'query', 'limit', 'cursor'],
+  listIssues: [
+    ...strings.filter((key) => key !== 'query'),
+    'states',
+    'priorities',
+    'labels',
+    'orderBy',
+    'limit',
+    'includeArchived',
+  ],
+  getIssue: ['issue'],
+  getProject: ['project'],
+}
 function validate<M extends keyof ReadArguments>(method: M, input: unknown): ReadArguments[M] {
-  const keys =
-    method === 'listIssues'
-      ? [...strings, 'states', 'priorities', 'labels', 'orderBy', 'limit', 'includeArchived']
-      : [method === 'getIssue' ? 'issue' : 'project']
+  const keys = allowedKeys[method]
   const invalid = (): never => {
     throw new LinearReadError('INVALID_ARGUMENT')
   }
@@ -64,7 +115,7 @@ function validate<M extends keyof ReadArguments>(method: M, input: unknown): Rea
     typeof value === 'string' && value.trim().length > 0 && value.length <= 4096
   for (const key of [...strings, 'issue'])
     if (args[key] !== undefined && !nonempty(args[key])) invalid()
-  if (method !== 'listIssues' && !nonempty(args[keys[0]!])) invalid()
+  if ((method === 'getIssue' || method === 'getProject') && !nonempty(args[keys[0]!])) invalid()
   for (const key of ['states', 'labels']) {
     const value = args[key]
     if (
@@ -150,6 +201,10 @@ export function createLinearReads(runtime: LinearReadRuntime, { timeoutMs = 3000
     }
   }
   const service: Readonly<LinearReads> = Object.freeze({
+    listTeams: (args?: Record<string, never>, options?: LinearReadOptions) =>
+      run('listTeams', args, options),
+    listProjects: (args?: LinearListProjectsArgs, options?: LinearReadOptions) =>
+      run('listProjects', args, options),
     listIssues: (args?: LinearListIssuesArgs, options?: LinearReadOptions) =>
       run('listIssues', args, options),
     getIssue: (args: { issue: string }, options?: LinearReadOptions) =>

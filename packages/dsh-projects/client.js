@@ -75,7 +75,7 @@ const messages = {
 	"Choose a source to load issues": "Choose a source to load issues",
 	"Configure projects": "Configure projects",
 	"Local settings only. Saving never writes to GitHub or Linear and grants no permissions.": "Local settings only. Saving never writes to GitHub or Linear and grants no permissions.",
-	"Define teams and projects with stable IDs, names, conventions and explicit sources. Linear project and team references require UUIDs. An empty convention clears an inherited value.": "Define teams and projects with stable IDs, names, conventions and explicit sources. Linear project and team references require UUIDs. An empty convention clears an inherited value.",
+	"Define teams and projects with stable IDs, names, conventions and explicit sources. Add sources from your accounts, or edit the JSON directly; Linear references require UUIDs. An empty convention clears an inherited value.": "Define teams and projects with stable IDs, names, conventions and explicit sources. Add sources from your accounts, or edit the JSON directly; Linear references require UUIDs. An empty convention clears an inherited value.",
 	"Configuration example": "Configuration example",
 	"Teams and projects JSON": "Teams and projects JSON",
 	"Your draft is retained. Load current settings below to compare and reconcile before retrying.": "Your draft is retained. Load current settings below to compare and reconcile before retrying.",
@@ -100,8 +100,285 @@ const messages = {
 	"Saving local settings…": "Saving local settings…",
 	"Save local settings": "Save local settings",
 	"Close configuration": "Close configuration",
-	"Local settings saved. No tracker writes were made.": "Local settings saved. No tracker writes were made."
+	"Local settings saved. No tracker writes were made.": "Local settings saved. No tracker writes were made.",
+	"GitHub repositories": "GitHub repositories",
+	"GitHub Projects": "GitHub Projects",
+	"Linear projects": "Linear projects",
+	"Linear teams": "Linear teams",
+	"Added to the draft:": "Added to the draft:",
+	"Review the JSON, then save local settings.": "Review the JSON, then save local settings.",
+	"Add from your accounts": "Add from your accounts",
+	"Lists what your connected GitHub and Linear accounts can see. Selected sources are added to the draft below; nothing is saved until you save local settings.": "Lists what your connected GitHub and Linear accounts can see. Selected sources are added to the draft below; nothing is saved until you save local settings.",
+	"Source type": "Source type",
+	unavailable: "unavailable",
+	Owner: "Owner",
+	"Your account": "Your account",
+	"Finding sources…": "Finding sources…",
+	"Find sources": "Find sources",
+	"Owner:": "Owner:",
+	"No sources found.": "No sources found.",
+	"Available sources": "Available sources",
+	"Closed or archived": "Closed or archived",
+	"Already in:": "Already in:",
+	"Loading more…": "Loading more…",
+	"Load more": "Load more",
+	"Add as": "Add as",
+	"One new project per source": "One new project per source",
+	"One new project with all selected": "One new project with all selected",
+	"Add to": "Add to",
+	"Project name": "Project name",
+	"Add selected to draft": "Add selected to draft",
+	"Fix the JSON draft before adding sources.": "Fix the JSON draft before adding sources.",
+	"Enter an object with teams and projects arrays.": "Enter an object with teams and projects arrays.",
+	"Select at least one source.": "Select at least one source.",
+	"Name the new project.": "Name the new project.",
+	"Choose a project in the draft.": "Choose a project in the draft."
 };
+
+//#endregion
+//#region shared/slug.ts
+function slug(value, fallback) {
+	return value.normalize("NFKD").toLowerCase().replace(/[^a-z0-9_-]+/gu, "-").replace(/^[-_]+|[-_]+$/gu, "").slice(0, 60).replace(/[-_]+$/u, "") || fallback;
+}
+
+//#endregion
+//#region client/draft.ts
+const MAX_SOURCES = 10;
+const SHORT_IDS = {
+	"github-repository": "repo",
+	"github-project": "board",
+	"linear-project": "linear",
+	"linear-team": "team"
+};
+var DraftError = class extends Error {};
+function parseDraft(draft) {
+	let value;
+	try {
+		value = JSON.parse(draft);
+	} catch {
+		throw new DraftError("Fix the JSON draft before adding sources.");
+	}
+	if (!value || typeof value !== "object" || !("teams" in value) || !Array.isArray(value.teams) || !("projects" in value) || !Array.isArray(value.projects) || !value.projects.every((project) => !!project && typeof project === "object" && "sources" in project && Array.isArray(project.sources))) throw new DraftError("Enter an object with teams and projects arrays.");
+	return value;
+}
+function sameTarget(source, target) {
+	switch (target.kind) {
+		case "github-repository": return source.kind === target.kind && source.owner.toLowerCase() === target.owner.toLowerCase() && source.repo.toLowerCase() === target.repo.toLowerCase();
+		case "github-project": return source.kind === target.kind && source.owner.toLowerCase() === target.owner.toLowerCase() && source.projectNumber === target.projectNumber;
+		case "linear-project": return source.kind === target.kind && source.project === target.project;
+		case "linear-team": return source.kind === target.kind && source.team === target.team;
+	}
+}
+/** Names the projects in the draft that already link this target. */
+function linkedIn(config, target) {
+	return config.projects.filter((project) => project.sources.some((source) => sameTarget(source, target))).map((project) => project.name);
+}
+function unique(base, taken) {
+	let value = base;
+	for (let n = 2; taken.has(value); n++) value = `${base.slice(0, 70)}-${n}`;
+	taken.add(value);
+	return value;
+}
+/** Returns a new configuration with the picked candidates linked at the destination. */
+function addSources(config, picks, destination) {
+	if (!picks.length) throw new DraftError("Select at least one source.");
+	const projects = config.projects.map((project) => ({
+		...project,
+		sources: [...project.sources]
+	}));
+	const projectIds = new Set(projects.map((project) => project.id));
+	const link = (project, pick, preferShort) => {
+		if (project.sources.length >= MAX_SOURCES) throw new DraftError(`A project can link at most ${MAX_SOURCES} sources.`);
+		const ids = new Set(project.sources.map((source) => source.id));
+		const base = preferShort ? SHORT_IDS[pick.target.kind] : pick.suggestedId;
+		project.sources.push({
+			id: unique(base, ids),
+			...pick.target
+		});
+	};
+	if (destination.mode === "separate") for (const pick of picks) {
+		const project = {
+			id: unique(pick.suggestedId, projectIds),
+			name: pick.name.slice(0, 200),
+			...pick.description ? { description: pick.description.slice(0, 4e3) } : {},
+			conventions: {},
+			sources: []
+		};
+		link(project, pick, true);
+		projects.push(project);
+	}
+	else {
+		let project;
+		if (destination.mode === "combined") {
+			const name = destination.name.trim();
+			if (!name) throw new DraftError("Name the new project.");
+			project = {
+				id: unique(slug(name, "project"), projectIds),
+				name: name.slice(0, 200),
+				conventions: {},
+				sources: []
+			};
+			projects.push(project);
+		} else project = projects.find((project) => project.id === destination.projectId);
+		if (!project) throw new DraftError("Choose a project in the draft.");
+		for (const pick of picks) link(project, pick, false);
+	}
+	return {
+		...config,
+		projects
+	};
+}
+
+//#endregion
+//#region client/source-picker.tsx
+const KINDS = [
+	{
+		kind: "github-repository",
+		label: "GitHub repositories",
+		provider: "github"
+	},
+	{
+		kind: "github-project",
+		label: "GitHub Projects",
+		provider: "github"
+	},
+	{
+		kind: "linear-project",
+		label: "Linear projects",
+		provider: "linear"
+	},
+	{
+		kind: "linear-team",
+		label: "Linear teams",
+		provider: "linear"
+	}
+];
+const key = (candidate) => JSON.stringify(candidate.target);
+const message$1 = (error) => error instanceof Error ? error.message : "Sources are unavailable.";
+function SourcePicker({ request, catalog, draft, disabled, onDraft }) {
+	const t = useTranslation();
+	const [kind, setKind] = (0, react.useState)(catalog.providers.github || !catalog.providers.linear ? "github-repository" : "linear-project");
+	const [owner, setOwner] = (0, react.useState)("");
+	const [pages, setPages] = (0, react.useState)([]);
+	const [loading, setLoading] = (0, react.useState)(false);
+	const [error, setError] = (0, react.useState)("");
+	const [notice, setNotice] = (0, react.useState)("");
+	const [picked, setPicked] = (0, react.useState)(/* @__PURE__ */ new Set());
+	const [mode, setMode] = (0, react.useState)("separate");
+	const [name, setName] = (0, react.useState)("");
+	const controller = (0, react.useRef)();
+	(0, react.useEffect)(() => () => controller.current?.abort(), []);
+	const github = kind.startsWith("github-");
+	const candidates = pages.flatMap((page) => page.candidates);
+	const last = pages.at(-1);
+	let parsed;
+	try {
+		parsed = parseDraft(draft);
+	} catch {
+		parsed = void 0;
+	}
+	async function load(cursor) {
+		controller.current?.abort();
+		const current = controller.current = new AbortController();
+		setLoading(true);
+		setError("");
+		setNotice("");
+		try {
+			const page = await request("discover", {
+				kind,
+				...github && owner.trim() ? { owner: owner.trim() } : {},
+				...cursor ? { cursor } : {}
+			}, current.signal);
+			if (current.signal.aborted) return;
+			setPages((pages) => cursor ? [...pages, page] : [page]);
+			if (!cursor) setPicked(/* @__PURE__ */ new Set());
+		} catch (error) {
+			if (!current.signal.aborted) setError(message$1(error));
+		} finally {
+			if (!current.signal.aborted) setLoading(false);
+		}
+	}
+	function reset(next) {
+		controller.current?.abort();
+		setKind(next);
+		setPages([]);
+		setPicked(/* @__PURE__ */ new Set());
+		setError("");
+		setNotice("");
+		setLoading(false);
+	}
+	function add() {
+		setError("");
+		setNotice("");
+		try {
+			const config = parseDraft(draft);
+			const picks = candidates.filter((candidate) => picked.has(key(candidate)));
+			const destination = mode === "separate" ? { mode: "separate" } : mode === "combined" ? {
+				mode: "combined",
+				name
+			} : {
+				mode: "existing",
+				projectId: mode.slice(9)
+			};
+			onDraft(JSON.stringify(addSources(config, picks, destination), null, 2));
+			setPicked(/* @__PURE__ */ new Set());
+			setNotice(`${t("Added to the draft:")} ${picks.length.toLocaleString()}. ${t("Review the JSON, then save local settings.")}`);
+		} catch (error) {
+			setError(error instanceof DraftError ? t(error.message) : message$1(error));
+		}
+	}
+	return /* @__PURE__ */ react.default.createElement("details", { open: true }, /* @__PURE__ */ react.default.createElement("summary", null, t("Add from your accounts")), /* @__PURE__ */ react.default.createElement("p", null, t("Lists what your connected GitHub and Linear accounts can see. Selected sources are added to the draft below; nothing is saved until you save local settings.")), /* @__PURE__ */ react.default.createElement("nav", null, /* @__PURE__ */ react.default.createElement("label", null, t("Source type"), " ", /* @__PURE__ */ react.default.createElement("select", {
+		value: kind,
+		disabled,
+		onChange: (event) => reset(event.target.value)
+	}, KINDS.map((option) => /* @__PURE__ */ react.default.createElement("option", {
+		key: option.kind,
+		value: option.kind
+	}, t(option.label), !catalog.providers[option.provider] && ` (${t("unavailable")})`)))), github && /* @__PURE__ */ react.default.createElement("label", null, t("Owner"), " ", /* @__PURE__ */ react.default.createElement("input", {
+		value: owner,
+		disabled,
+		placeholder: t("Your account"),
+		onChange: (event) => setOwner(event.target.value),
+		spellCheck: false
+	})), /* @__PURE__ */ react.default.createElement("button", {
+		disabled: disabled || loading,
+		onClick: () => void load()
+	}, loading && !pages.length ? t("Finding sources…") : t("Find sources"))), error && /* @__PURE__ */ react.default.createElement("p", { role: "alert" }, error), notice && /* @__PURE__ */ react.default.createElement("p", { role: "status" }, notice), last && /* @__PURE__ */ react.default.createElement(react.default.Fragment, null, last.owner && /* @__PURE__ */ react.default.createElement("p", null, /* @__PURE__ */ react.default.createElement("small", null, t("Owner:"), " ", last.owner)), !candidates.length ? /* @__PURE__ */ react.default.createElement("p", null, t("No sources found.")) : /* @__PURE__ */ react.default.createElement("ul", {
+		className: "local-projects-candidates",
+		"aria-label": t("Available sources")
+	}, candidates.map((candidate) => {
+		const id = key(candidate);
+		const linked = parsed ? linkedIn(parsed, candidate.target) : [];
+		return /* @__PURE__ */ react.default.createElement("li", { key: id }, /* @__PURE__ */ react.default.createElement("label", null, /* @__PURE__ */ react.default.createElement("input", {
+			type: "checkbox",
+			disabled,
+			checked: picked.has(id),
+			onChange: (event) => setPicked((picked) => {
+				const next = new Set(picked);
+				if (event.target.checked) next.add(id);
+				else next.delete(id);
+				return next;
+			})
+		}), " ", candidate.name), candidate.inactive && /* @__PURE__ */ react.default.createElement("small", null, " · ", t("Closed or archived")), !!linked.length && /* @__PURE__ */ react.default.createElement("small", null, " ", "· ", t("Already in:"), " ", linked.join(", ")), candidate.description && /* @__PURE__ */ react.default.createElement(react.default.Fragment, null, /* @__PURE__ */ react.default.createElement("br", null), /* @__PURE__ */ react.default.createElement("small", null, candidate.description)));
+	})), last.hasNextPage && last.nextCursor && /* @__PURE__ */ react.default.createElement("button", {
+		disabled: disabled || loading,
+		onClick: () => void load(last.nextCursor)
+	}, loading ? t("Loading more…") : t("Load more")), !!candidates.length && /* @__PURE__ */ react.default.createElement("nav", null, /* @__PURE__ */ react.default.createElement("label", null, t("Add as"), " ", /* @__PURE__ */ react.default.createElement("select", {
+		value: mode,
+		disabled,
+		onChange: (event) => setMode(event.target.value)
+	}, /* @__PURE__ */ react.default.createElement("option", { value: "separate" }, t("One new project per source")), /* @__PURE__ */ react.default.createElement("option", { value: "combined" }, t("One new project with all selected")), parsed?.projects.map((project) => /* @__PURE__ */ react.default.createElement("option", {
+		key: project.id,
+		value: `existing:${project.id}`
+	}, t("Add to"), " ", project.name)))), mode === "combined" && /* @__PURE__ */ react.default.createElement("label", null, t("Project name"), " ", /* @__PURE__ */ react.default.createElement("input", {
+		value: name,
+		disabled,
+		onChange: (event) => setName(event.target.value)
+	})), /* @__PURE__ */ react.default.createElement("button", {
+		disabled: disabled || !picked.size,
+		onClick: add
+	}, t("Add selected to draft")))));
+}
 
 //#endregion
 //#region client/projects.tsx
@@ -114,7 +391,7 @@ function safeUrl(value) {
 	}
 }
 const message = (error) => error instanceof Error ? error.message : "Projects are unavailable.";
-const styles = `.local-projects{height:100%;overflow:auto;padding:24px;color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-layer-2);box-sizing:border-box;overflow-wrap:anywhere}.local-projects *{box-sizing:border-box}.local-projects h1{font-size:24px}.local-projects h2{font-size:20px}.local-projects h3{font-size:16px}.local-projects button,.local-projects select,.local-projects textarea{font:inherit;color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-layer-3);border:1px solid var(--dsw-alias-border-l2);border-radius:6px;padding:8px;max-width:100%}.local-projects button{cursor:pointer}.local-projects button:disabled{opacity:.6;cursor:default}.local-projects :focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:2px}.local-projects textarea{width:100%;min-height:260px;font-family:monospace}.local-projects article,.local-projects details{border:1px solid var(--dsw-alias-border-l2);border-radius:8px;padding:12px;margin:12px 0}.local-projects p{margin:10px 0}.local-projects small{color:var(--dsw-alias-label-secondary)}.local-projects a{color:var(--dsw-alias-label-primary);text-decoration:underline}.local-projects dl{display:grid;grid-template-columns:minmax(90px,auto) 1fr;gap:8px}.local-projects dd{margin:0;white-space:pre-wrap}.local-projects summary{cursor:pointer}.local-projects nav{display:flex;gap:8px;flex-wrap:wrap}`;
+const styles = `.local-projects{height:100%;overflow:auto;padding:24px;color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-layer-2);box-sizing:border-box;overflow-wrap:anywhere}.local-projects *{box-sizing:border-box}.local-projects h1{font-size:24px}.local-projects h2{font-size:20px}.local-projects h3{font-size:16px}.local-projects button,.local-projects input,.local-projects select,.local-projects textarea{font:inherit;color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-layer-3);border:1px solid var(--dsw-alias-border-l2);border-radius:6px;padding:8px;max-width:100%}.local-projects button{cursor:pointer}.local-projects button:disabled{opacity:.6;cursor:default}.local-projects :focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:2px}.local-projects textarea{width:100%;min-height:260px;font-family:monospace}.local-projects article,.local-projects details{border:1px solid var(--dsw-alias-border-l2);border-radius:8px;padding:12px;margin:12px 0}.local-projects p{margin:10px 0}.local-projects small{color:var(--dsw-alias-label-secondary)}.local-projects a{color:var(--dsw-alias-label-primary);text-decoration:underline}.local-projects dl{display:grid;grid-template-columns:minmax(90px,auto) 1fr;gap:8px}.local-projects dd{margin:0;white-space:pre-wrap}.local-projects summary{cursor:pointer}.local-projects nav{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.local-projects-candidates{list-style:none;padding:0;max-height:320px;overflow:auto}.local-projects-candidates li{padding:6px 0}`;
 function Issues({ request, project, sourceId }) {
 	const t = useTranslation();
 	const [cursor, setCursor] = (0, react.useState)();
@@ -209,7 +486,13 @@ function Editor({ catalog, request, saved, onBusy }) {
 			}
 		}
 	}
-	return /* @__PURE__ */ react.default.createElement("section", { "aria-label": t("Local project settings") }, /* @__PURE__ */ react.default.createElement("h2", null, t("Configure projects")), /* @__PURE__ */ react.default.createElement("p", null, t("Local settings only. Saving never writes to GitHub or Linear and grants no permissions.")), /* @__PURE__ */ react.default.createElement("p", null, t("Define teams and projects with stable IDs, names, conventions and explicit sources. Linear project and team references require UUIDs. An empty convention clears an inherited value.")), /* @__PURE__ */ react.default.createElement("details", null, /* @__PURE__ */ react.default.createElement("summary", null, t("Configuration example")), /* @__PURE__ */ react.default.createElement("pre", { style: { whiteSpace: "pre-wrap" } }, JSON.stringify({
+	return /* @__PURE__ */ react.default.createElement("section", { "aria-label": t("Local project settings") }, /* @__PURE__ */ react.default.createElement("h2", null, t("Configure projects")), /* @__PURE__ */ react.default.createElement("p", null, t("Local settings only. Saving never writes to GitHub or Linear and grants no permissions.")), /* @__PURE__ */ react.default.createElement("p", null, t("Define teams and projects with stable IDs, names, conventions and explicit sources. Add sources from your accounts, or edit the JSON directly; Linear references require UUIDs. An empty convention clears an inherited value.")), /* @__PURE__ */ react.default.createElement(SourcePicker, {
+		request,
+		catalog,
+		draft,
+		disabled: busy,
+		onDraft: setDraft
+	}), /* @__PURE__ */ react.default.createElement("details", null, /* @__PURE__ */ react.default.createElement("summary", null, t("Configuration example")), /* @__PURE__ */ react.default.createElement("pre", { style: { whiteSpace: "pre-wrap" } }, JSON.stringify({
 		teams: [{
 			id: "team",
 			name: "Team",

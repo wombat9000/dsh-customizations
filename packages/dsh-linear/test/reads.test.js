@@ -16,7 +16,7 @@ test('Linear read facade preserves native projected results and narrow surface',
   }
   const calls = []
   const runtime = Object.fromEntries(
-    ['listIssues', 'getIssue', 'getProject'].map((method) => [
+    ['listTeams', 'listProjects', 'listIssues', 'getIssue', 'getProject'].map((method) => [
       method,
       async (args, signal) => {
         calls.push({ method, args, signal })
@@ -25,8 +25,16 @@ test('Linear read facade preserves native projected results and narrow surface',
     ]),
   )
   const { service } = createLinearReads(runtime)
-  assert.deepEqual(Object.keys(service), ['listIssues', 'getIssue', 'getProject'])
+  assert.deepEqual(Object.keys(service), [
+    'listTeams',
+    'listProjects',
+    'listIssues',
+    'getIssue',
+    'getProject',
+  ])
   for (const [method, args] of [
+    ['listTeams', {}],
+    ['listProjects', { team: 'ENG', query: 'web', limit: 50, cursor: 'c' }],
     ['listIssues', { project: 'p', limit: 20 }],
     ['getIssue', { issue: 'ENG-1' }],
     ['getProject', { project: 'p' }],
@@ -44,7 +52,10 @@ test('Linear read facade preserves native projected results and narrow surface',
     await assert.rejects(service.listIssues(args), { code: 'INVALID_ARGUMENT' })
   }
   await assert.rejects(service.getIssue({}), { code: 'INVALID_ARGUMENT' })
-  assert.equal(calls.length, 3)
+  await assert.rejects(service.listTeams({ team: 'ENG' }), { code: 'INVALID_ARGUMENT' })
+  await assert.rejects(service.listProjects({ status: 'started' }), { code: 'INVALID_ARGUMENT' })
+  await assert.rejects(service.listIssues({ query: 'free text' }), { code: 'INVALID_ARGUMENT' })
+  assert.equal(calls.length, 5)
 })
 
 test('Linear cancellation and deadline cover uncooperative credential/runtime work', async (t) => {

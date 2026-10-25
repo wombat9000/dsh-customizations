@@ -40,8 +40,8 @@ export const messages = {
   'Configure projects': 'Configure projects',
   'Local settings only. Saving never writes to GitHub or Linear and grants no permissions.':
     'Local settings only. Saving never writes to GitHub or Linear and grants no permissions.',
-  'Define teams and projects with stable IDs, names, conventions and explicit sources. Linear project and team references require UUIDs. An empty convention clears an inherited value.':
-    'Define teams and projects with stable IDs, names, conventions and explicit sources. Linear project and team references require UUIDs. An empty convention clears an inherited value.',
+  'Define teams and projects with stable IDs, names, conventions and explicit sources. Add sources from your accounts, or edit the JSON directly; Linear references require UUIDs. An empty convention clears an inherited value.':
+    'Define teams and projects with stable IDs, names, conventions and explicit sources. Add sources from your accounts, or edit the JSON directly; Linear references require UUIDs. An empty convention clears an inherited value.',
   'Configuration example': 'Configuration example',
   'Teams and projects JSON': 'Teams and projects JSON',
   'Your draft is retained. Load current settings below to compare and reconcile before retrying.':
@@ -76,4 +76,38 @@ export const messages = {
   'Close configuration': 'Close configuration',
   'Local settings saved. No tracker writes were made.':
     'Local settings saved. No tracker writes were made.',
+  'GitHub repositories': 'GitHub repositories',
+  'GitHub Projects': 'GitHub Projects',
+  'Linear projects': 'Linear projects',
+  'Linear teams': 'Linear teams',
+  'Added to the draft:': 'Added to the draft:',
+  'Review the JSON, then save local settings.': 'Review the JSON, then save local settings.',
+  'Add from your accounts': 'Add from your accounts',
+  'Lists what your connected GitHub and Linear accounts can see. Selected sources are added to the draft below; nothing is saved until you save local settings.':
+    'Lists what your connected GitHub and Linear accounts can see. Selected sources are added to the draft below; nothing is saved until you save local settings.',
+  'Source type': 'Source type',
+  unavailable: 'unavailable',
+  Owner: 'Owner',
+  'Your account': 'Your account',
+  'Finding sources\u2026': 'Finding sources…',
+  'Find sources': 'Find sources',
+  'Owner:': 'Owner:',
+  'No sources found.': 'No sources found.',
+  'Available sources': 'Available sources',
+  'Closed or archived': 'Closed or archived',
+  'Already in:': 'Already in:',
+  'Loading more\u2026': 'Loading more…',
+  'Load more': 'Load more',
+  'Add as': 'Add as',
+  'One new project per source': 'One new project per source',
+  'One new project with all selected': 'One new project with all selected',
+  'Add to': 'Add to',
+  'Project name': 'Project name',
+  'Add selected to draft': 'Add selected to draft',
+  'Fix the JSON draft before adding sources.': 'Fix the JSON draft before adding sources.',
+  'Enter an object with teams and projects arrays.':
+    'Enter an object with teams and projects arrays.',
+  'Select at least one source.': 'Select at least one source.',
+  'Name the new project.': 'Name the new project.',
+  'Choose a project in the draft.': 'Choose a project in the draft.',
 }

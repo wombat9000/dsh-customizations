@@ -16,6 +16,9 @@ test('GitHub facade preserves envelope and paging through shared runtime without
   ])
   const { service } = createGitHubReads(createGitHubRuntime(subprocess))
   assert.deepEqual(Object.keys(service), [
+    'connectionStatus',
+    'listRepositories',
+    'listProjects',
     'listIssues',
     'getIssue',
     'listProjectItems',

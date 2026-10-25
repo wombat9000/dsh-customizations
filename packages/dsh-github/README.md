@@ -12,7 +12,7 @@ All subprocesses run through DSH’s managed backend. Do not assume a host proce
 
 ## Host read service
 
-Host plugins can look up `ctx.get('localGitHubReads')` at call time. If the bundle is absent or disposed, the lookup returns `undefined`. The service exposes only `listIssues`, `getIssue`, `listProjectItems`, and `getProject`; it exposes no discovery, writes, or grant authority. The [typed implementation and contract](src/reads.ts) is also available through `@local/dsh-github/reads`.
+Host plugins can look up `ctx.get('localGitHubReads')` at call time. If the bundle is absent or disposed, the lookup returns `undefined`. The service exposes only `connectionStatus`, `listRepositories`, `listProjects`, `listIssues`, `getIssue`, `listProjectItems`, and `getProject`; it exposes no session-directory repository detection, writes, or grant authority. The [typed implementation and contract](src/reads.ts) is also available through `@local/dsh-github/reads`.
 
 Each method takes the matching read tool's arguments and optional `{ signal, cwd }`. Explicit API reads default to `/` in the managed subprocess execution world. Only trusted host code should override `cwd`; no session is required. Calls reuse the tool runtime, CLI authentication, argument validation, output bounds, and 30-second deadline. Disposal aborts service calls. Errors carry sanitized `GitHubError` codes and messages.
 
