@@ -42,6 +42,8 @@ export interface PRCardModel {
 export const COMPACT_LIST_TOOLS: ReadonlySet<string> = new Set(['github_get_pull_request_files'])
 const knownTool = (name: string): name is PRToolName => Object.hasOwn(PR_TOOL_TITLES, name)
 const writeTool = (name: string) => /^github_(create|update|submit|add)_/.test(name)
+const stackWriteTool = (name: string) =>
+  ['github_create_pull_request_stack', 'github_add_pull_request_to_stack'].includes(name)
 export function pullRequestCardModel(toolName: string, block?: ToolBlock): PRCardModel {
   const base: PRCardModel = {
     title: knownTool(toolName) ? PR_TOOL_TITLES[toolName] : 'Pull request interaction',
@@ -70,9 +72,11 @@ export function pullRequestCardModel(toolName: string, block?: ToolBlock): PRCar
           ? 'Pending or running · draft creation'
           : toolName === 'github_update_pull_request'
             ? 'Pending or running · PR update'
-            : writeTool(toolName)
-              ? 'Pending or running · approval required'
-              : 'Reading…',
+            : stackWriteTool(toolName)
+              ? 'Pending or running · stack update'
+              : writeTool(toolName)
+                ? 'Pending or running · approval required'
+                : 'Reading…',
     }
   try {
     const envelope = cardResultEnvelope(toolName, block)
@@ -89,7 +93,8 @@ export function pullRequestCardModel(toolName: string, block?: ToolBlock): PRCar
         ...base,
         status: 'Outcome uncertain',
         warnings: [
-          ['github_create_pull_request', 'github_update_pull_request'].includes(toolName)
+          ['github_create_pull_request', 'github_update_pull_request'].includes(toolName) ||
+          stackWriteTool(toolName)
             ? 'The request may have succeeded. Inspect GitHub before making a new call; do not retry automatically.'
             : 'The request may have succeeded. Inspect GitHub before requesting fresh approval; do not retry automatically.',
           ...(envelope.backendFenced === true

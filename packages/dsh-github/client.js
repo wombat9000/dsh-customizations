@@ -1478,6 +1478,7 @@ const PR_TOOLS = Object.keys(PR_TOOL_TITLES);
 const COMPACT_LIST_TOOLS = /* @__PURE__ */ new Set(["github_get_pull_request_files"]);
 const knownTool = (name) => Object.hasOwn(PR_TOOL_TITLES, name);
 const writeTool = (name) => /^github_(create|update|submit|add)_/.test(name);
+const stackWriteTool = (name) => ["github_create_pull_request_stack", "github_add_pull_request_to_stack"].includes(name);
 function pullRequestCardModel(toolName, block) {
 	const base = {
 		title: knownTool(toolName) ? PR_TOOL_TITLES[toolName] : "Pull request interaction",
@@ -1497,7 +1498,7 @@ function pullRequestCardModel(toolName, block) {
 	} catch {}
 	if (block?.kind !== "tool-result") return {
 		...base,
-		status: toolName === "github_create_pull_request" ? "Pending or running · draft creation" : toolName === "github_update_pull_request" ? "Pending or running · PR update" : writeTool(toolName) ? "Pending or running · approval required" : "Reading…"
+		status: toolName === "github_create_pull_request" ? "Pending or running · draft creation" : toolName === "github_update_pull_request" ? "Pending or running · PR update" : stackWriteTool(toolName) ? "Pending or running · stack update" : writeTool(toolName) ? "Pending or running · approval required" : "Reading…"
 	};
 	try {
 		const envelope = cardResultEnvelope(toolName, block);
@@ -1511,7 +1512,7 @@ function pullRequestCardModel(toolName, block) {
 		if (envelope.outcome === "uncertain") return {
 			...base,
 			status: "Outcome uncertain",
-			warnings: [["github_create_pull_request", "github_update_pull_request"].includes(toolName) ? "The request may have succeeded. Inspect GitHub before making a new call; do not retry automatically." : "The request may have succeeded. Inspect GitHub before requesting fresh approval; do not retry automatically.", ...envelope.backendFenced === true ? ["GitHub backend fenced after unconfirmed process cleanup."] : []]
+			warnings: [["github_create_pull_request", "github_update_pull_request"].includes(toolName) || stackWriteTool(toolName) ? "The request may have succeeded. Inspect GitHub before making a new call; do not retry automatically." : "The request may have succeeded. Inspect GitHub before requesting fresh approval; do not retry automatically.", ...envelope.backendFenced === true ? ["GitHub backend fenced after unconfirmed process cleanup."] : []]
 		};
 		if (block.isError === true) return {
 			...base,
