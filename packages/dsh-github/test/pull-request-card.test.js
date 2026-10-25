@@ -10,14 +10,17 @@ import {
 registerTypeScript()
 const { pullRequestCardModel } = await import('../client/pull-request-model.ts')
 
-test('pending draft creation and unknown PR updates do not claim approval is required', () => {
-  const draft = pullRequestCardModel('github_create_pull_request')
-  assert.match(draft.status, /Pending or running/)
-  assert.doesNotMatch(draft.status, /approval required/)
-  assert.doesNotMatch(
-    pullRequestCardModel('github_update_pull_request').status,
-    /approval required/,
-  )
+test('pending approval-free PR writes and unknown PR updates do not claim approval is required', () => {
+  for (const name of [
+    'github_create_pull_request',
+    'github_update_pull_request',
+    'github_create_pull_request_stack',
+    'github_add_pull_request_to_stack',
+  ]) {
+    const model = pullRequestCardModel(name)
+    assert.match(model.status, /Pending or running/)
+    assert.doesNotMatch(model.status, /approval required/)
+  }
   assert.match(
     pullRequestCardModel('github_submit_pull_request_review').status,
     /approval required/,
@@ -39,19 +42,25 @@ test('PR cards never infer success from malformed, error-normalized or uncertain
       .status,
     'Failed',
   )
-  const uncertain = pullRequestCardModel(
+  for (const name of [
     tool,
-    cardBlock({
-      host: 'github.com',
-      untrusted: true,
-      outcome: 'uncertain',
-      observedConfirmedResource: cardPullRequest,
-    }),
-  )
-  assert.equal(uncertain.status, 'Outcome uncertain')
-  assert.equal(uncertain.entries.length, 0)
-  assert.match(uncertain.warnings.join(' '), /do not retry automatically/)
-  assert.doesNotMatch(uncertain.warnings.join(' '), /fresh approval/)
+    'github_create_pull_request_stack',
+    'github_add_pull_request_to_stack',
+  ]) {
+    const uncertain = pullRequestCardModel(
+      name,
+      cardBlock({
+        host: 'github.com',
+        untrusted: true,
+        outcome: 'uncertain',
+        observedConfirmedResource: cardPullRequest,
+      }),
+    )
+    assert.equal(uncertain.status, 'Outcome uncertain')
+    assert.equal(uncertain.entries.length, 0)
+    assert.match(uncertain.warnings.join(' '), /do not retry automatically/)
+    assert.doesNotMatch(uncertain.warnings.join(' '), /fresh approval/)
+  }
 })
 test('thread comments must be supplied before a PR card can establish completeness', () => {
   const comments = { nodes: [], totalCount: 0, pageInfo: { hasNextPage: false, endCursor: null } }

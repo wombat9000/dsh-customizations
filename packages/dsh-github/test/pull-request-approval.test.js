@@ -41,6 +41,65 @@ async function fixture(t, responses, answer = 'allowed-once') {
   return { ...host, subprocess }
 }
 
+function stackWriteCases(draftNumbers = []) {
+  const pull = (number = 7, changes = {}) =>
+    observed(number, { isDraft: draftNumbers.includes(number), ...changes })
+  const stackWithDrafts = (...args) => {
+    const value = stack(...args)
+    for (const pr of value.pull_requests) pr.draft = draftNumbers.includes(pr.number)
+    return value
+  }
+  return [
+    [
+      'create_pull_request_stack',
+      { owner: 'octocat', repo: 'example', pullNumbers: [7, 8] },
+      [graph(pull()), json([]), graph(pull(8)), json([])],
+      json(stackWithDrafts()),
+    ],
+    [
+      'add_pull_request_to_stack',
+      { ...target, pullNumber: 9, stackPullNumber: 7 },
+      [
+        graph(pull()),
+        json([stackWithDrafts()]),
+        json(stackWithDrafts()),
+        json([stackWithDrafts()]),
+        graph(pull(8)),
+        json([stackWithDrafts()]),
+        graph(
+          pull(9, {
+            headRefName: 'feature-final',
+            headRefOid: 'd'.repeat(40),
+            baseRefName: 'feature-top',
+            baseRefOid: 'c'.repeat(40),
+          }),
+        ),
+        json([]),
+      ],
+      json(
+        stackWithDrafts([7, 8, 9], {
+          pull_requests: [
+            ...stackWithDrafts().pull_requests,
+            {
+              ...stack([9]).pull_requests[0],
+              head: {
+                ...stack([9]).pull_requests[0].head,
+                ref: 'feature-final',
+                sha: 'd'.repeat(40),
+              },
+              base: {
+                ...stack([9]).pull_requests[0].base,
+                ref: 'feature-top',
+                sha: 'c'.repeat(40),
+              },
+            },
+          ],
+        }),
+      ),
+    ],
+  ]
+}
+
 test('draft creation skips approval in the real Tools pipeline even without an answerer', async (t) => {
   for (const options of [{}, { policy: 'never' }, { approval: false }]) {
     await t.test(JSON.stringify(options), async (t) => {
@@ -98,6 +157,59 @@ test('draft title/body edits skip approval without an answerer or approval servi
   }
 })
 
+test('stack operations skip plugin approval for ready, draft and mixed PRs without an answerer or approval service', async (t) => {
+  for (const draftNumbers of [[], [7, 9], [7, 8, 9]]) {
+    for (const [name, args, reads, response] of stackWriteCases(draftNumbers)) {
+      for (const options of [{}, { policy: 'never' }, { approval: false }]) {
+        await t.test(`${name}/drafts=${draftNumbers}/${JSON.stringify(options)}`, async (t) => {
+          const host = await approvalHost(t, options)
+          const subprocess = fakeSubprocess([...reads, ...reads, response])
+          registerGitHubWriteTools(host.ctx, createGitHubWriteRuntime(subprocess))
+          const result = await host.execute(`github_${name}`, args)
+          assert.equal(result.isError, false, JSON.stringify(result))
+          const value = JSON.parse(result.value)
+          assert.equal(value.outcome, 'confirmed')
+          for (const pr of value.resource.pullRequests.nodes)
+            assert.equal(pr.isDraft, draftNumbers.includes(pr.number))
+          assert.equal(host.requests.length, 0)
+          assert.deepEqual(host.audit(), [])
+          assert.equal(mutations(subprocess).length, 1)
+          assert.deepEqual(JSON.parse(mutations(subprocess)[0].stdio.stdin.data), {
+            pull_requests: name === 'create_pull_request_stack' ? [7, 8] : [9],
+          })
+        })
+      }
+    }
+  }
+})
+
+test('stack writes retain conflict checks and uncertain-outcome guidance without automatic retries', async (t) => {
+  for (const [name, args, reads] of stackWriteCases()) {
+    await t.test(`${name}/conflict`, async (t) => {
+      const changed = observed(7, { headRefOid: BASE })
+      const host = await fixture(t, [...reads, graph(changed), ...reads.slice(1)])
+      const result = await host.execute(`github_${name}`, args)
+      assert.equal(JSON.parse(result.value).outcome, 'failed')
+      assert.match(result.value, /CONFLICT/)
+      assert.equal(host.requests.length, 0)
+      assert.equal(mutations(host.subprocess).length, 0)
+    })
+    await t.test(`${name}/uncertain`, async (t) => {
+      const host = await fixture(t, [
+        ...reads,
+        ...reads,
+        { stdout: '', stderr: 'HTTP 503 github_pat_secret', exitCode: 1 },
+      ])
+      const result = await host.execute(`github_${name}`, args)
+      assert.equal(JSON.parse(result.value).outcome, 'uncertain')
+      assert.match(result.value, /Inspect.*read tools.*making a new call/)
+      assert.doesNotMatch(result.value, /github_pat_secret|fresh approval/)
+      assert.equal(host.requests.length, 0)
+      assert.equal(mutations(host.subprocess).length, 1)
+    })
+  }
+})
+
 test('uncertain draft edits retain reconciliation guidance without retrying or asking for fresh approval', async (t) => {
   const draft = () => graph(observed(7, { isDraft: true }))
   const host = await fixture(t, [
@@ -127,12 +239,12 @@ test('draft edits do not dispatch if the PR becomes ready before the final reche
   assert.equal(mutations(host.subprocess).length, 0)
 })
 
-function draftWriteCases() {
+function approvalFreeWriteCases() {
   return [
     {
       name: 'github_create_pull_request',
       args: createArgs,
-      preflight: graph(createObserved()),
+      reads: [graph(createObserved())],
       response: json(
         restPull(9, {
           title: createArgs.title,
@@ -146,24 +258,31 @@ function draftWriteCases() {
     {
       name: 'github_update_pull_request',
       args: { ...target, title: 'Updated draft title' },
-      preflight: graph(observed(7, { isDraft: true })),
+      reads: [graph(observed(7, { isDraft: true }))],
       response: json(restPull(7, { title: 'Updated draft title', draft: true })),
     },
+    ...stackWriteCases().map(([name, args, reads, response]) => ({
+      name: `github_${name}`,
+      args,
+      reads,
+      response,
+    })),
   ]
 }
 
-test('approval-free draft writes retain exact arguments and caller binding before dispatch', async (t) => {
-  for (const operation of draftWriteCases()) {
+test('approval-free PR writes retain exact arguments and caller binding before dispatch', async (t) => {
+  for (const operation of approvalFreeWriteCases()) {
     for (const change of ['arguments', 'caller']) {
       await t.test(`${operation.name}/${change}`, async (t) => {
-        const host = await fixture(t, [operation.preflight])
+        const host = await fixture(t, [...operation.reads])
         host.ctx.on('tools/pre-execute', (exec) => {
           if (change === 'arguments')
-            exec.arguments = { ...operation.args, title: 'Changed after preparation' }
+            exec.arguments = { ...operation.args, repo: 'changed-after-preparation' }
           else exec.agent = { ...exec.agent }
           return { kind: 'allow' }
         })
         const result = await host.execute(operation.name, operation.args)
+        assert.equal(typeof result.value, 'string', JSON.stringify(result))
         assert.equal(JSON.parse(result.value).outcome, 'failed')
         assert.match(result.value, /APPROVAL_REQUIRED/)
         assert.equal(host.requests.length, 0)
@@ -173,15 +292,11 @@ test('approval-free draft writes retain exact arguments and caller binding befor
   }
 })
 
-test('draft writes retain independent ask, deny and cancel policies', async (t) => {
-  for (const operation of draftWriteCases()) {
+test('approval-free PR writes retain independent ask, deny and cancel policies', async (t) => {
+  for (const operation of approvalFreeWriteCases()) {
     for (const kind of ['ask', 'deny', 'cancel']) {
       await t.test(`${operation.name}/${kind}`, async (t) => {
-        const host = await fixture(t, [
-          operation.preflight,
-          operation.preflight,
-          operation.response,
-        ])
+        const host = await fixture(t, [...operation.reads, ...operation.reads, operation.response])
         host.ctx.on('tools/pre-execute', () => ({ kind, reason: 'Independent policy' }))
         const result = await host.execute(operation.name, operation.args)
         if (kind === 'ask') {
@@ -201,7 +316,7 @@ test('draft writes retain independent ask, deny and cancel policies', async (t) 
   }
 })
 
-test('draft creation skips only its own approval while other PR writes ask once with exact payloads', async (t) => {
+test('draft creation and stack writes skip only plugin approval while other PR writes ask once', async (t) => {
   const cases = [
     [
       'create_pull_request',
@@ -241,53 +356,7 @@ test('draft creation skips only its own approval while other PR writes ask once 
       [graph(observed())],
       json(review()),
     ],
-    [
-      'create_pull_request_stack',
-      { owner: 'octocat', repo: 'example', pullNumbers: [7, 8] },
-      [graph(observed()), json([]), graph(observed(8)), json([])],
-      json(stack()),
-    ],
-    [
-      'add_pull_request_to_stack',
-      { ...target, pullNumber: 9, stackPullNumber: 7 },
-      [
-        graph(observed()),
-        json([stack()]),
-        json(stack()),
-        json([stack()]),
-        graph(observed(8)),
-        json([stack()]),
-        graph(
-          observed(9, {
-            headRefName: 'feature-final',
-            headRefOid: 'd'.repeat(40),
-            baseRefName: 'feature-top',
-            baseRefOid: 'c'.repeat(40),
-          }),
-        ),
-        json([]),
-      ],
-      json(
-        stack([7, 8, 9], {
-          pull_requests: [
-            ...stack().pull_requests,
-            {
-              ...stack([9]).pull_requests[0],
-              head: {
-                ...stack([9]).pull_requests[0].head,
-                ref: 'feature-final',
-                sha: 'd'.repeat(40),
-              },
-              base: {
-                ...stack([9]).pull_requests[0].base,
-                ref: 'feature-top',
-                sha: 'c'.repeat(40),
-              },
-            },
-          ],
-        }),
-      ),
-    ],
+    ...stackWriteCases(),
   ]
   for (const [name, args, reads, response] of cases)
     await t.test(name, async (t) => {
@@ -307,8 +376,13 @@ test('draft creation skips only its own approval while other PR writes ask once 
         )
         assert.match(html.replace(/<[^>]*>/g, ''), /Readiness\s*Draft\s*→\s*Ready for review/)
       }
-      assert.equal(host.requests.length, name === 'create_pull_request' ? 0 : 1)
-      if (name !== 'create_pull_request') assert.match(host.requests[0].reason, /exactPayload/)
+      const requiresApproval = ![
+        'create_pull_request',
+        'create_pull_request_stack',
+        'add_pull_request_to_stack',
+      ].includes(name)
+      assert.equal(host.requests.length, requiresApproval ? 1 : 0)
+      if (requiresApproval) assert.match(host.requests[0].reason, /exactPayload/)
       assert.equal(mutations(host.subprocess).length, 1)
       const spec = mutations(host.subprocess)[0]
       assert.ok(spec.argv.includes('X-GitHub-Api-Version: 2026-03-10'))
