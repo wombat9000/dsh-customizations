@@ -76,10 +76,15 @@ test('native Global Guidance switches control instructions and preserve the comp
     })
     await test.step('Re-enable the component, then cycle the enabled bundle', async () => {
       await component().click()
+      await expect(component()).toBeChecked()
       await expect.poll(() => sections(app)).toEqual(enabledSections)
       await bundle().click()
+      // Prompt disposal precedes the native inventory refresh. Wait for the
+      // switch to reflect off before clicking again, or it can request off twice.
+      await expect(bundle()).not.toBeChecked()
       await expect.poll(() => sections(app)).toEqual([])
       await bundle().click()
+      await expect(bundle()).toBeChecked()
       await expect.poll(() => sections(app)).toEqual(enabledSections)
       await app.reload()
       await dismissOnboarding(app)
