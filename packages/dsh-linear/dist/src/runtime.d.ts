@@ -40,6 +40,14 @@ export declare class LinearRuntime {
             private: boolean;
         }[];
     }>;
+    listTeams(_args?: Record<string, never>, signal?: AbortSignal): Promise<{
+        teams: {
+            id: string;
+            key: string;
+            name: string;
+            private: boolean;
+        }[];
+    }>;
     searchIssues(args: SearchIssuesArgs, signal?: AbortSignal): Promise<{
         totalCount: number;
     } & Record<"issues", {

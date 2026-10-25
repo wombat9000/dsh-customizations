@@ -59,6 +59,7 @@ export function apply(ctx, config) {
             catalog: (input) => service.catalog(input),
             project: (input) => service.project(input),
             issues: (input, signal) => service.issues(input, signal),
+            discover: (input, signal) => service.discover(input, signal),
             configure: (input) => service.configure(input),
         };
         scope.effect(() => connection.rpc.handle(CHANNEL, async (endpoint, input, signal) => {

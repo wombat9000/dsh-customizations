@@ -5,6 +5,7 @@ export type {
   GitHubRepositoryTarget,
   GitHubProjectTarget,
   GitHubPage,
+  GitHubOwnerPage,
   GitHubListIssuesArgs,
   GitHubGetIssueArgs,
   GitHubGetProjectArgs,
@@ -34,6 +35,9 @@ export function createGitHubReads(runtime: GitHubReads, { cwd = '/' } = {}) {
     }
   }
   const service: GitHubReads = {
+    connectionStatus: wrap((args, options) => runtime.connectionStatus(args, options)),
+    listRepositories: wrap((args, options) => runtime.listRepositories(args, options)),
+    listProjects: wrap((args, options) => runtime.listProjects(args, options)),
     listIssues: wrap((args, options) => runtime.listIssues(args, options)),
     getIssue: wrap((args, options) => runtime.getIssue(args, options)),
     listProjectItems: wrap((args, options) => runtime.listProjectItems(args, options)),

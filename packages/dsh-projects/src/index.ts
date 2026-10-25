@@ -84,6 +84,7 @@ export function apply(ctx: ProjectsContext, config: ReturnType<typeof Config>) {
       catalog: (input) => service.catalog(input),
       project: (input) => service.project(input),
       issues: (input, signal) => service.issues(input, signal),
+      discover: (input, signal) => service.discover(input, signal),
       configure: (input) => service.configure(input),
     }
     scope.effect(() =>

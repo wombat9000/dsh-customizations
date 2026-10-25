@@ -65,10 +65,38 @@ export interface IssuesPage {
   warnings: string[]
   untrusted: true
 }
+export type SourceKind = ProjectSource['kind']
+// A source target without its local id; discovery never chooses local identifiers.
+export type SourceTarget = ProjectSource extends infer S
+  ? S extends ProjectSource
+    ? Omit<S, 'id'>
+    : never
+  : never
+export interface SourceCandidate {
+  target: SourceTarget
+  name: string
+  suggestedId: string
+  description?: string
+  inactive?: boolean
+}
+export interface DiscoverRequest {
+  kind: SourceKind
+  owner?: string
+  cursor?: string
+}
+export interface DiscoverPage {
+  kind: SourceKind
+  owner?: string
+  candidates: SourceCandidate[]
+  hasNextPage: boolean
+  nextCursor?: string
+  untrusted: true
+}
 export interface RpcEndpoints {
   catalog: { input: Record<string, never>; result: Catalog }
   project: { input: { projectId: string }; result: ProjectView }
   issues: { input: IssuesRequest; result: IssuesPage }
+  discover: { input: DiscoverRequest; result: DiscoverPage }
   configure: { input: { configuration: ProjectsConfig; expectedRevision: string }; result: Catalog }
 }
 export type RpcResult<T> =

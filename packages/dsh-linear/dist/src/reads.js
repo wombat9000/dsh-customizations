@@ -14,11 +14,33 @@ export class LinearReadError extends Error {
         this.code = code;
     }
 }
-const strings = ['team', 'assignee', 'project', 'cycle', 'updatedAfter', 'createdAfter', 'cursor'];
+const strings = [
+    'team',
+    'assignee',
+    'project',
+    'cycle',
+    'updatedAfter',
+    'createdAfter',
+    'cursor',
+    'query',
+];
+const allowedKeys = {
+    listTeams: [],
+    listProjects: ['team', 'query', 'limit', 'cursor'],
+    listIssues: [
+        ...strings.filter((key) => key !== 'query'),
+        'states',
+        'priorities',
+        'labels',
+        'orderBy',
+        'limit',
+        'includeArchived',
+    ],
+    getIssue: ['issue'],
+    getProject: ['project'],
+};
 function validate(method, input) {
-    const keys = method === 'listIssues'
-        ? [...strings, 'states', 'priorities', 'labels', 'orderBy', 'limit', 'includeArchived']
-        : [method === 'getIssue' ? 'issue' : 'project'];
+    const keys = allowedKeys[method];
     const invalid = () => {
         throw new LinearReadError('INVALID_ARGUMENT');
     };
@@ -31,7 +53,7 @@ function validate(method, input) {
     for (const key of [...strings, 'issue'])
         if (args[key] !== undefined && !nonempty(args[key]))
             invalid();
-    if (method !== 'listIssues' && !nonempty(args[keys[0]]))
+    if ((method === 'getIssue' || method === 'getProject') && !nonempty(args[keys[0]]))
         invalid();
     for (const key of ['states', 'labels']) {
         const value = args[key];
@@ -111,6 +133,8 @@ export function createLinearReads(runtime, { timeoutMs = 30000 } = {}) {
         }
     };
     const service = Object.freeze({
+        listTeams: (args, options) => run('listTeams', args, options),
+        listProjects: (args, options) => run('listProjects', args, options),
         listIssues: (args, options) => run('listIssues', args, options),
         getIssue: (args, options) => run('getIssue', args, options),
         getProject: (args, options) => run('getProject', args, options),

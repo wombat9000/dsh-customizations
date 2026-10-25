@@ -1,4 +1,5 @@
 import { useTranslation } from './locale.ts'
+import { SourcePicker } from './source-picker.tsx'
 import React, { useEffect, useRef, useState } from 'react'
 import type {
   Catalog,
@@ -24,7 +25,7 @@ export function safeUrl(value?: string) {
 }
 const message = (error: unknown) =>
   error instanceof Error ? error.message : 'Projects are unavailable.'
-const styles = `.local-projects{height:100%;overflow:auto;padding:24px;color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-layer-2);box-sizing:border-box;overflow-wrap:anywhere}.local-projects *{box-sizing:border-box}.local-projects h1{font-size:24px}.local-projects h2{font-size:20px}.local-projects h3{font-size:16px}.local-projects button,.local-projects select,.local-projects textarea{font:inherit;color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-layer-3);border:1px solid var(--dsw-alias-border-l2);border-radius:6px;padding:8px;max-width:100%}.local-projects button{cursor:pointer}.local-projects button:disabled{opacity:.6;cursor:default}.local-projects :focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:2px}.local-projects textarea{width:100%;min-height:260px;font-family:monospace}.local-projects article,.local-projects details{border:1px solid var(--dsw-alias-border-l2);border-radius:8px;padding:12px;margin:12px 0}.local-projects p{margin:10px 0}.local-projects small{color:var(--dsw-alias-label-secondary)}.local-projects a{color:var(--dsw-alias-label-primary);text-decoration:underline}.local-projects dl{display:grid;grid-template-columns:minmax(90px,auto) 1fr;gap:8px}.local-projects dd{margin:0;white-space:pre-wrap}.local-projects summary{cursor:pointer}.local-projects nav{display:flex;gap:8px;flex-wrap:wrap}`
+const styles = `.local-projects{height:100%;overflow:auto;padding:24px;color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-layer-2);box-sizing:border-box;overflow-wrap:anywhere}.local-projects *{box-sizing:border-box}.local-projects h1{font-size:24px}.local-projects h2{font-size:20px}.local-projects h3{font-size:16px}.local-projects button,.local-projects input,.local-projects select,.local-projects textarea{font:inherit;color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-layer-3);border:1px solid var(--dsw-alias-border-l2);border-radius:6px;padding:8px;max-width:100%}.local-projects button{cursor:pointer}.local-projects button:disabled{opacity:.6;cursor:default}.local-projects :focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:2px}.local-projects textarea{width:100%;min-height:260px;font-family:monospace}.local-projects article,.local-projects details{border:1px solid var(--dsw-alias-border-l2);border-radius:8px;padding:12px;margin:12px 0}.local-projects p{margin:10px 0}.local-projects small{color:var(--dsw-alias-label-secondary)}.local-projects a{color:var(--dsw-alias-label-primary);text-decoration:underline}.local-projects dl{display:grid;grid-template-columns:minmax(90px,auto) 1fr;gap:8px}.local-projects dd{margin:0;white-space:pre-wrap}.local-projects summary{cursor:pointer}.local-projects nav{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.local-projects-candidates{list-style:none;padding:0;max-height:320px;overflow:auto}.local-projects-candidates li{padding:6px 0}`
 
 function Issues({
   request,
@@ -307,9 +308,16 @@ function Editor({
       </p>
       <p>
         {t(
-          'Define teams and projects with stable IDs, names, conventions and explicit sources. Linear project and team references require UUIDs. An empty convention clears an inherited value.',
+          'Define teams and projects with stable IDs, names, conventions and explicit sources. Add sources from your accounts, or edit the JSON directly; Linear references require UUIDs. An empty convention clears an inherited value.',
         )}
       </p>
+      <SourcePicker
+        request={request}
+        catalog={catalog}
+        draft={draft}
+        disabled={busy}
+        onDraft={setDraft}
+      />
       <details>
         <summary>{t('Configuration example')}</summary>
         <pre style={{ whiteSpace: 'pre-wrap' }}>

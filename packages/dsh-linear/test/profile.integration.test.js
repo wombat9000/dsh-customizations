@@ -127,6 +127,8 @@ test('host registers the matching settings namespace and reversible RPC without 
   const config = Config({})
   apply(ctx, config)
   assert.deepEqual(Object.keys(services.get('localLinearReads')), [
+    'listTeams',
+    'listProjects',
     'listIssues',
     'getIssue',
     'getProject',

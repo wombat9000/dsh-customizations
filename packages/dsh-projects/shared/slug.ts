@@ -1,0 +1,11 @@
+// Derives a valid local identifier from an upstream name; callers still ensure uniqueness.
+export function slug(value: string, fallback: string): string {
+  const result = value
+    .normalize('NFKD')
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/gu, '-')
+    .replace(/^[-_]+|[-_]+$/gu, '')
+    .slice(0, 60)
+    .replace(/[-_]+$/u, '')
+  return result || fallback
+}

@@ -16,6 +16,8 @@ const messages = {
   failed:
     'The tracker read failed. Check the existing integration configuration and source access.',
   response: 'The tracker returned an unsupported response. No raw diagnostic is exposed.',
+  account:
+    'The signed-in GitHub account could not be determined. Enter an owner, or check gh authentication.',
   stopped: 'The Projects service has stopped.',
   cancelled: 'The Projects request was cancelled or timed out.',
 } as const
@@ -84,7 +86,7 @@ function conventions(value: unknown): Conventions {
     }
   return result
 }
-function source(value: unknown): ProjectSource {
+export function source(value: unknown): ProjectSource {
   const source = record(value)
   const key = id(source.id)
   if (source.kind === 'github-repository' || source.kind === 'github-project') {

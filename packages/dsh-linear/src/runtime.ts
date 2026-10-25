@@ -142,6 +142,12 @@ export class LinearRuntime {
     }
   }
 
+  async listTeams(_args: Record<string, never> = {}, signal?: AbortSignal) {
+    const { client } = await this.client(signal)
+    const connection = await this.request('list teams', () => client.teams({ first: 100 }))
+    return { teams: connection.nodes.map(publicTeam) }
+  }
+
   async searchIssues(args: SearchIssuesArgs, signal?: AbortSignal) {
     const { client } = await this.client(signal)
     const team =

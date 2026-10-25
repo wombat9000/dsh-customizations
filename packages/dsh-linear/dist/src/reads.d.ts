@@ -11,7 +11,31 @@ export interface LinearIssuePage {
         nextCursor?: string;
     };
 }
+export interface LinearTeamRead {
+    id: string;
+    key: string;
+    name: string;
+    private: boolean;
+}
+export interface LinearTeamList {
+    teams: LinearTeamRead[];
+}
+export interface LinearListProjectsArgs {
+    team?: string;
+    query?: string;
+    limit?: number;
+    cursor?: string;
+}
+export interface LinearProjectPage {
+    projects: LinearProjectRead[];
+    pageInfo: {
+        hasNextPage: boolean;
+        nextCursor?: string;
+    };
+}
 export interface LinearReads {
+    listTeams(args?: Record<string, never>, options?: LinearReadOptions): Promise<LinearTeamList>;
+    listProjects(args?: LinearListProjectsArgs, options?: LinearReadOptions): Promise<LinearProjectPage>;
     listIssues(args?: LinearListIssuesArgs, options?: LinearReadOptions): Promise<LinearIssuePage>;
     getIssue(args: {
         issue: string;
@@ -21,6 +45,8 @@ export interface LinearReads {
     }, options?: LinearReadOptions): Promise<LinearProjectRead>;
 }
 export interface LinearReadRuntime {
+    listTeams(args: Record<string, never>, signal: AbortSignal): Promise<LinearTeamList>;
+    listProjects(args: LinearListProjectsArgs, signal: AbortSignal): Promise<LinearProjectPage>;
     listIssues(args: LinearListIssuesArgs, signal: AbortSignal): Promise<LinearIssuePage>;
     getIssue(args: {
         issue: string;

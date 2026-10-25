@@ -84,7 +84,7 @@ The recipe selects the GitHub bundle, but source changes do not update a running
 
 ### Projects
 
-[Projects](packages/dsh-projects/README.md) adds a left-navigation page and shared host service for explicitly linked GitHub repositories/Projects and Linear projects/teams. The UI and three read-only agent tools use the same service, backed by the existing integrations and credentials. Local configuration supports team conventions with project overrides; these are descriptive guidance, not permission grants. The first version preserves native statuses and paging warnings, uses a JSON editor for local source links, and performs no tracker writes or cross-tracker synchronization. Applying the recipe and restarting remain separate, approved operations.
+[Projects](packages/dsh-projects/README.md) adds a left-navigation page and shared host service for explicitly linked GitHub repositories/Projects and Linear projects/teams. The UI and three read-only agent tools use the same service, backed by the existing integrations and credentials. Local configuration supports team conventions with project overrides; these are descriptive guidance, not permission grants. The first version preserves native statuses and paging warnings, lets you pick source links from the connected GitHub and Linear accounts or edit them as JSON, and performs no tracker writes or cross-tracker synchronization. Applying the recipe and restarting remain separate, approved operations.
 
 ### Shared OpenRouter credentials
 

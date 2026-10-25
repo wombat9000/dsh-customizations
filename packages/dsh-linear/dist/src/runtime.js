@@ -95,6 +95,11 @@ export class LinearRuntime {
             teams: teamConnection.nodes.map(publicTeam),
         };
     }
+    async listTeams(_args = {}, signal) {
+        const { client } = await this.client(signal);
+        const connection = await this.request('list teams', () => client.teams({ first: 100 }));
+        return { teams: connection.nodes.map(publicTeam) };
+    }
     async searchIssues(args, signal) {
         const { client } = await this.client(signal);
         const team = text(args.team) === undefined
