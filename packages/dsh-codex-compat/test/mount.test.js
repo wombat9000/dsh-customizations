@@ -91,27 +91,14 @@ test('real Cordis mount, Connection lifetime and JSON domain survive plugin unlo
   assert.equal(
     (
       await runtime.rpc(
-        'subagents-set',
-        {
-          sessionId: 'fixture-session',
-          enabled: true,
-          revision: 0,
-        },
-        signal,
-      )
-    ).ok,
-    true,
-  )
-  assert.equal(
-    (
-      await runtime.rpc(
-        'session-set',
+        'mode-set',
         {
           sessionId: 'fixture-session',
           provider: 'openai-codex',
           model: 'gpt-6-sol',
-          enabled: true,
-          revision: 0,
+          mode: 'all',
+          sessionRevision: 0,
+          subagentsRevision: 0,
         },
         signal,
       )
@@ -135,7 +122,46 @@ test('real Cordis mount, Connection lifetime and JSON domain survive plugin unlo
   assert.equal(status.value.subagentsRevision, 1)
   assert.equal(runtime.sessionStatus('legacy-session').requested, true)
   assert.equal(runtime.sessionStatus('legacy-session').subagentsRequested, false)
+  assert.equal(
+    (await runtime.rpc('integration-set', { enabled: true, revision: 1 }, signal)).ok,
+    true,
+  )
+  const changeMode = (mode, sessionRevision, subagentsRevision) =>
+    runtime.rpc(
+      'mode-set',
+      {
+        sessionId: 'fixture-session',
+        provider: 'openai-codex',
+        model: 'gpt-6-sol',
+        mode,
+        sessionRevision,
+        subagentsRevision,
+      },
+      signal,
+    )
+  assert.equal((await changeMode('main', 1, 1)).ok, true)
   await second.dispose()
+  const third = mount()
+  await third.await()
+  const main = runtime.sessionStatus('fixture-session')
+  assert.equal(main.requested, true)
+  assert.equal(main.subagentsRequested, false)
+  assert.equal(main.sessionRevision, 2)
+  assert.equal(main.subagentsRevision, 2)
+  assert.equal(
+    (await changeMode('off', 0, 0)).ok,
+    true,
+    'stale Off remains a durable recovery action',
+  )
+  await third.dispose()
+  const fourth = mount()
+  await fourth.await()
+  const off = runtime.sessionStatus('fixture-session')
+  assert.equal(off.requested, false)
+  assert.equal(off.subagentsRequested, false)
+  assert.equal(off.sessionRevision, 3)
+  assert.equal(off.subagentsRevision, 3)
+  await fourth.dispose()
   // Exercise the packaged exported plugin, not just its cohesive mount operation.
   const exported = ctx.plugin(plugin)
   await exported.await()

@@ -24,7 +24,7 @@ async function fixture(t, stored, profile) {
       return {
         get: (id) => table.get(id),
         async put(id, value) {
-          await state.sessionBarrier?.()
+          await state.sessionBarrier?.(name, value)
           if (state.failure) throw new Error('fixture storage failure with private detail')
           table.set(id, Object.freeze(value))
         },
@@ -70,6 +70,15 @@ async function fixture(t, stored, profile) {
     runtime,
     rpc,
     setSession,
+    setMode: (mode, overrides = {}) =>
+      rpc('mode-set', {
+        sessionId: 'fast-session',
+        ...selection,
+        mode,
+        sessionRevision: records.get('fast-session')?.revision ?? 0,
+        subagentsRevision: subagents.get('fast-session')?.revision ?? 0,
+        ...overrides,
+      }),
     setSubagents: (enabled, id = 'fast-session', rev = subagents.get(id)?.revision ?? 0) =>
       rpc('subagents-set', { sessionId: id, enabled, revision: rev }),
     loop,
@@ -85,10 +94,14 @@ async function fixture(t, stored, profile) {
   }
 }
 
-test('session choice persists independently; fresh/fork sessions and non-conversation calls remain Standard', async (t) => {
+test('Off → All → Main → Off persists without affecting fresh sessions or auxiliary calls', async (t) => {
   const f = await fixture(t)
   assert.equal(f.runtime.sessionStatus('fast-session').requested, false)
-  assert.equal((await f.setSession(true)).ok, true)
+  assert.equal(f.runtime.sessionStatus('fast-session').subagentsRequested, false)
+  const enabled = await f.setMode('all')
+  assert.equal(enabled.ok, true)
+  assert.equal(enabled.value.requested, true)
+  assert.equal(enabled.value.subagentsRequested, true)
   await consume(f.loop())
   await consume(f.loop('other'))
   await consume(f.loop('fast-session', { purpose: 'compaction' }))
@@ -97,12 +110,38 @@ test('session choice persists independently; fresh/fork sessions and non-convers
   await consume(f.loop('child'))
   assert.deepEqual(
     f.captures.map((c) => c.body.service_tier),
-    ['priority', undefined, undefined, undefined, undefined, undefined],
+    ['priority', undefined, undefined, undefined, undefined, 'priority'],
   )
   assert.equal((await f.setSession(true, 'child')).ok, false)
-  const resumed = await fixture(t, { records: f.records, global: f.global() })
+  const resumed = await fixture(t, {
+    records: f.records,
+    subagents: f.subagents,
+    global: f.global(),
+  })
   assert.equal(resumed.runtime.sessionStatus('fast-session').requested, true)
+  assert.equal(resumed.runtime.sessionStatus('fast-session').subagentsRequested, true)
   assert.equal(resumed.runtime.sessionStatus('other').requested, false)
+  assert.equal(resumed.runtime.sessionStatus('other').subagentsRequested, false)
+  const main = await f.setMode('main')
+  assert.equal(main.ok, true)
+  assert.equal(main.value.requested, true)
+  assert.equal(main.value.subagentsRequested, false)
+  const mainResumed = await fixture(t, { records: f.records, subagents: f.subagents })
+  await consume(mainResumed.loop())
+  await consume(mainResumed.loop('child'))
+  assert.deepEqual(
+    mainResumed.captures.map((c) => c.body.service_tier),
+    ['priority', undefined],
+  )
+  const off = await f.setMode('off')
+  assert.equal(off.ok, true)
+  assert.equal(off.value.requested, false)
+  assert.equal(off.value.subagentsRequested, false)
+  const offResumed = await fixture(t, { records: f.records, subagents: f.subagents })
+  await consume(offResumed.loop())
+  await consume(offResumed.loop('child'))
+  assert.ok(offResumed.captures.every((c) => c.body.service_tier === undefined))
+  assert.equal((await f.setMode('all')).ok, true)
   f.select({ provider: 'openai-codex', model: 'gpt-5.5' })
   assert.equal(
     f.runtime.sessionStatus('fast-session').requested,
@@ -116,16 +155,93 @@ test('session choice persists independently; fresh/fork sessions and non-convers
         provider: 'openai-codex',
         model: 'gpt-6-sol',
         enabled: true,
-        revision: 1,
+        revision: f.records.get('fast-session').revision,
       })
     ).ok,
     false,
   )
 })
 
-// Policy is observed at the real LLM/adapter boundary; the live registry and storage effects
-// are controlled. This catches accidental main-toggle inheritance and cross-root leakage.
-test('Subagents Fast is independent, root-scoped and model-eligible across nested delegations', async (t) => {
+test('legacy endpoints retain default All and Main overrides but cannot activate child-only policy', async (t) => {
+  const f = await fixture(t)
+  assert.equal((await f.setSubagents(true)).ok, false)
+  assert.equal((await f.setSession(true)).value.subagentsRequested, true)
+  await f.setSubagents(false)
+  assert.equal((await f.setSession(true)).value.subagentsRequested, false)
+  await consume(f.loop())
+  await consume(f.loop('child'))
+  assert.deepEqual(
+    f.captures.map((c) => c.body.service_tier),
+    ['priority', undefined],
+  )
+  await f.setSession(false)
+  const enabled = await f.setSession(true)
+  assert.equal(enabled.ok, true)
+  assert.equal(enabled.value.subagentsRequested, true)
+  await f.setSession(false)
+  await consume(f.loop())
+  await consume(f.loop('child'))
+  assert.deepEqual(
+    f.captures.slice(-2).map((c) => c.body.service_tier),
+    [undefined, undefined],
+  )
+  assert.equal((await f.setSubagents(true)).ok, false)
+})
+
+for (const failedTable of ['subagents', 'sessions']) {
+  test(`partial All failure in ${failedTable} leaves child-only intent inactive, including after reload`, async (t) => {
+    const f = await fixture(t)
+    assert.equal(f.runtime.sessionStatus('fast-session').supported, true)
+    f.state.sessionBarrier = async (table) => {
+      if (table === failedTable) throw new Error('fixture private storage failure')
+    }
+    const result = await f.setMode('all')
+    assert.equal(result.ok, false)
+    assert.doesNotMatch(result.error.message, /private storage failure/)
+    const status = f.runtime.sessionStatus('fast-session')
+    assert.equal(status.requested, false)
+    assert.equal(status.subagentsRequested, false)
+    assert.equal(
+      f.subagents.get('fast-session')?.enabled,
+      failedTable === 'sessions' ? true : undefined,
+    )
+    const resumed = await fixture(t, { records: f.records, subagents: f.subagents })
+    await consume(resumed.loop('child'))
+    assert.equal(resumed.captures[0].body.service_tier, undefined)
+    f.state.sessionBarrier = null
+    assert.equal((await f.setMode('all')).value.subagentsRequested, true)
+  })
+}
+
+for (const mode of ['main', 'off']) {
+  for (const failedTable of ['sessions', 'subagents']) {
+    test(`${mode} fences survive a partial ${failedTable} write failure and permit recovery`, async (t) => {
+      const f = await fixture(t)
+      assert.equal((await f.setMode('all')).ok, true)
+      f.state.sessionBarrier = async (table) => {
+        if (table === failedTable) throw new Error('fixture persistence failure')
+      }
+      assert.equal((await f.setMode(mode)).ok, false)
+      const status = f.runtime.sessionStatus('fast-session')
+      assert.equal(status.requested, mode === 'main')
+      assert.equal(status.subagentsRequested, false)
+      assert.equal(status.subagentsOffPending, mode === 'off' || failedTable === 'subagents')
+      assert.equal(status.sessionOffPending, mode === 'off' && failedTable === 'sessions')
+      await consume(f.loop('child'))
+      assert.equal(f.captures[0].body.service_tier, undefined)
+      f.state.sessionBarrier = null
+      assert.equal((await f.setMode(mode)).ok, true)
+      assert.equal(f.runtime.sessionStatus('fast-session').subagentsOffPending, false)
+      const resumed = await fixture(t, { records: f.records, subagents: f.subagents })
+      assert.equal(resumed.runtime.sessionStatus('fast-session').requested, mode === 'main')
+      await consume(resumed.loop('child'))
+      assert.equal(resumed.captures[0].body.service_tier, undefined)
+    })
+  }
+}
+
+// Policy is observed at the real LLM/adapter boundary; registry and storage effects are controlled.
+test('All is parent-gated, root-scoped and child-model-eligible across nested delegations', async (t) => {
   const f = await fixture(t, undefined, {
     models: [
       { id: 'gpt-6-sol' },
@@ -160,8 +276,8 @@ test('Subagents Fast is independent, root-scoped and model-eligible across neste
   // A normal conversation fork must not follow its seed parent's subagent policy.
   f.agents.get('other').session.header = { parentSession: 'fast-session', isSeeded: true }
   assert.equal(f.runtime.sessionStatus('fast-session').subagentsRequested, false)
-  assert.equal((await f.setSubagents(true)).ok, true)
-  assert.equal(f.runtime.sessionStatus('fast-session').requested, false)
+  assert.equal((await f.setMode('all')).ok, true)
+  assert.equal(f.runtime.sessionStatus('fast-session').requested, true)
   await consume(f.loop())
   await consume(f.loop('child'))
   await consume(f.loop('nested', { model: 'gpt-5.5' }))
@@ -171,12 +287,12 @@ test('Subagents Fast is independent, root-scoped and model-eligible across neste
   await consume(f.ctx.llm.stream(request('child')))
   assert.deepEqual(
     f.captures.map((c) => c.body.service_tier),
-    [undefined, 'priority', 'priority', undefined, undefined, undefined, undefined],
+    ['priority', 'priority', 'priority', undefined, undefined, undefined, undefined],
   )
   assert.equal(f.captures[1].options.sessionId, 'child:dsh-codex-fast-v1')
   assert.equal((await f.setSubagents(true, 'child')).ok, false)
   assert.equal((await f.setSubagents(true, 'fast-session', 0)).ok, false, 'stale enable rejects')
-  await f.setSession(true)
+  assert.equal((await f.setSession(true)).ok, true)
   await f.setSubagents(false)
   await consume(f.loop())
   await consume(f.loop('child'))
@@ -184,12 +300,18 @@ test('Subagents Fast is independent, root-scoped and model-eligible across neste
     f.captures.slice(-2).map((c) => c.body.service_tier),
     ['priority', undefined],
   )
-  // Root policy is independent even of the parent's model/provider support.
+  assert.equal((await f.setMode('all')).ok, true)
+  // A different supported selection also deactivates the old choice, without a migration.
+  f.select({ provider: 'openai-codex', model: 'gpt-5.5' })
+  assert.equal(f.runtime.sessionStatus('fast-session').requested, false)
+  assert.equal(f.runtime.sessionStatus('fast-session').subagentsRequested, false)
+  await consume(f.loop('child'))
+  assert.equal(f.captures.at(-1).body.service_tier, undefined)
   f.select({ provider: 'another-provider', model: 'another-model' })
   assert.equal(f.runtime.sessionStatus('fast-session').supported, false)
-  assert.equal((await f.setSubagents(true)).ok, true)
+  assert.equal((await f.setSubagents(true)).ok, false)
   await consume(f.loop('child'))
-  assert.equal(f.captures.at(-1).body.service_tier, 'priority')
+  assert.equal(f.captures.at(-1).body.service_tier, undefined)
   const resumed = await fixture(t, {
     records: f.records,
     subagents: f.subagents,
@@ -199,9 +321,108 @@ test('Subagents Fast is independent, root-scoped and model-eligible across neste
   assert.equal(resumed.captures[0].body.service_tier, 'priority')
 })
 
-test('Subagents Fast leaves a gateway endpoint Standard even for an allowlisted child model', async (t) => {
-  const f = await fixture(t, undefined, { baseURL: 'https://gateway.fixture.invalid' })
-  assert.equal((await f.setSubagents(true)).ok, true)
+for (const parentState of ['missing', 'disabled', 'different-selection', 'unsupported']) {
+  test(`legacy child-only intent stays inactive with ${parentState} parent, without rewriting storage`, async (t) => {
+    const parent = {
+      provider: 'openai-codex',
+      model: 'gpt-6-sol',
+      enabled: parentState !== 'disabled',
+      revision: 7,
+    }
+    if (parentState === 'unsupported') parent.model = 'unknown-model'
+    const records = new Map(parentState === 'missing' ? [] : [['fast-session', parent]])
+    const subagents = new Map([['fast-session', { enabled: true, revision: 9 }]])
+    const f = await fixture(t, { records, subagents })
+    if (parentState === 'different-selection')
+      f.select({ provider: 'openai-codex', model: 'gpt-5.5' })
+    if (parentState === 'unsupported')
+      f.select({ provider: 'openai-codex', model: 'unknown-model' })
+    assert.equal(f.runtime.sessionStatus('fast-session').subagentsRequested, false)
+    await consume(f.loop('child'))
+    assert.equal(f.captures[0].body.service_tier, undefined)
+    assert.equal(f.captures[0].options.sessionId, 'child')
+    assert.equal(subagents.get('fast-session').enabled, true)
+    assert.equal(subagents.get('fast-session').revision, 9)
+    assert.equal(records.get('fast-session'), parentState === 'missing' ? undefined : parent)
+  })
+}
+
+for (const mode of ['all', 'main']) {
+  for (const staleField of ['sessionRevision', 'subagentsRevision']) {
+    test(`${mode} validates ${staleField} before enabling`, async (t) => {
+      const f = await fixture(t)
+      assert.equal((await f.setMode('main')).ok, true)
+      assert.equal((await f.setMode(mode, { [staleField]: 0 })).ok, false)
+      assert.equal(f.records.get('fast-session').revision, 1)
+      assert.equal(f.subagents.get('fast-session').revision, mode === 'main' ? 2 : 1)
+      assert.equal(f.runtime.sessionStatus('fast-session').subagentsRequested, false)
+      assert.equal((await f.setMode(mode)).ok, true)
+    })
+  }
+}
+
+for (const parentEnabled of [false, true]) {
+  test(`stale Main durably reduces child policy without enabling a ${parentEnabled ? 'requested' : 'disabled'} parent`, async (t) => {
+    const parent = {
+      provider: 'openai-codex',
+      model: 'gpt-6-sol',
+      enabled: parentEnabled,
+      revision: 7,
+    }
+    const f = await fixture(t, {
+      records: new Map([['fast-session', parent]]),
+      subagents: new Map([['fast-session', { enabled: true, revision: 9 }]]),
+    })
+    const result = await f.setMode('main', { sessionRevision: 0, subagentsRevision: 0 })
+    assert.equal(result.ok, false)
+    assert.match(result.error.message, /changed/)
+    assert.equal(
+      f.records.get('fast-session'),
+      parent,
+      'stale Main never rewrites parent enablement',
+    )
+    assert.equal(f.subagents.get('fast-session').enabled, false)
+    assert.equal(f.subagents.get('fast-session').revision, 10)
+    const resumed = await fixture(t, { records: f.records, subagents: f.subagents })
+    await consume(resumed.loop('child'))
+    assert.equal(resumed.captures[0].body.service_tier, undefined)
+  })
+}
+
+test('combined stale Off recovers both policies after changing to a slash-qualified non-Codex route', async (t) => {
+  const f = await fixture(t)
+  assert.equal((await f.setMode('all')).ok, true)
+  f.state.failure = true
+  assert.equal((await f.setMode('off', { sessionRevision: 999, subagentsRevision: 999 })).ok, false)
+  assert.equal(f.runtime.sessionStatus('fast-session').sessionOffPending, true)
+  assert.equal(f.runtime.sessionStatus('fast-session').subagentsOffPending, true)
+  f.select({ provider: 'another-provider', model: 'another/model' })
+  f.state.failure = false
+  assert.equal((await f.setMode('off', { sessionRevision: 0, subagentsRevision: 0 })).ok, true)
+  assert.equal(f.records.get('fast-session').enabled, false)
+  assert.equal(f.records.get('fast-session').model, 'gpt-6-sol')
+  assert.equal(f.subagents.get('fast-session').enabled, false)
+  const resumed = await fixture(t, { records: f.records, subagents: f.subagents })
+  await consume(resumed.loop('child'))
+  assert.equal(resumed.captures[0].body.service_tier, undefined)
+})
+
+test('persisted All leaves an unreviewed gateway Standard even for an allowlisted child model', async (t) => {
+  const f = await fixture(
+    t,
+    {
+      records: new Map([
+        [
+          'fast-session',
+          { provider: 'openai-codex', model: 'gpt-6-sol', enabled: true, revision: 1 },
+        ],
+      ]),
+      subagents: new Map([['fast-session', { enabled: true, revision: 1 }]]),
+    },
+    { baseURL: 'https://gateway.fixture.invalid' },
+  )
+  assert.equal(f.runtime.sessionStatus('fast-session').subagentsRequested, false)
+  assert.equal((await f.setSubagents(true)).ok, false)
   await consume(f.loop('child'))
   assert.equal(f.captures.length, 1)
   assert.equal(f.captures[0].model.baseUrl, 'https://gateway.fixture.invalid')
@@ -211,7 +432,7 @@ test('Subagents Fast leaves a gateway endpoint Standard even for an allowlisted 
 
 test('Subagents Fast fails closed on orphaned, inconsistent or unowned ancestry', async (t) => {
   const f = await fixture(t)
-  await f.setSubagents(true)
+  assert.equal((await f.setMode('all')).ok, true)
   const child = f.agents.get('child')
   for (const header of [
     { origin: 'subagent', delegationDepth: 1 },
@@ -232,6 +453,10 @@ test('Subagents Fast fails closed on orphaned, inconsistent or unowned ancestry'
 
 for (const revoke of [
   'subagents-off',
+  'mode-off',
+  'mode-main',
+  'root-model-changed',
+  'root-provider-changed',
   'integration-off',
   'root-replaced',
   'child-replaced',
@@ -239,7 +464,7 @@ for (const revoke of [
 ]) {
   test(`pending child payload loses Fast after ${revoke}`, async (t) => {
     const f = await fixture(t)
-    await f.setSubagents(true)
+    assert.equal((await f.setMode('all')).ok, true)
     const entered = gate(),
       hold = gate()
     f.provider(undefined, {
@@ -256,6 +481,14 @@ for (const revoke of [
       assert.equal(f.runtime.sessionStatus('fast-session').subagentsRequested, false)
       assert.equal(f.runtime.sessionStatus('fast-session').subagentsOffPending, true)
       assert.equal(f.subagents.get('fast-session').enabled, true)
+    } else if (revoke === 'mode-off' || revoke === 'mode-main') {
+      f.state.failure = true
+      assert.equal((await f.setMode(revoke === 'mode-off' ? 'off' : 'main')).ok, false)
+      assert.equal(f.runtime.sessionStatus('fast-session').subagentsRequested, false)
+    } else if (revoke === 'root-model-changed') {
+      f.select({ provider: 'openai-codex', model: 'gpt-5.5' })
+    } else if (revoke === 'root-provider-changed') {
+      f.select({ provider: 'another-provider', model: 'another/model' })
     } else if (revoke === 'integration-off') {
       await f.rpc('integration-set', { enabled: false, revision: 999 })
     } else if (revoke === 'ownership-lost') {
@@ -280,33 +513,130 @@ for (const revoke of [
   })
 }
 
-test('a late subagent Enable cannot undo a newer Off while storage is pending', async (t) => {
-  const f = await fixture(t)
-  const entered = gate(),
-    hold = gate()
-  let first = true
-  f.state.sessionBarrier = async () => {
-    if (first) {
-      first = false
+for (const [scope, blockedWrite, revoke] of [
+  ['subagents', 1, 'subagents'],
+  ['session', 1, 'subagents'],
+  ['session', 2, 'subagents'],
+  ['all', 1, 'off'],
+  ['all', 2, 'off'],
+  ['all', 1, 'main'],
+  ['all', 2, 'main'],
+  ['main', 1, 'off'],
+  ['main', 2, 'off'],
+  ['subagents', 1, 'main'],
+  ['subagents', 1, 'off'],
+]) {
+  test(`a late ${scope} Enable cannot undo newer ${revoke} during write ${blockedWrite}`, async (t) => {
+    const f = await fixture(t)
+    assert.equal(f.runtime.sessionStatus('fast-session').supported, true)
+    if (scope === 'subagents') assert.equal((await f.setMode('main')).ok, true)
+    const entered = gate(),
+      hold = gate()
+    let writes = 0
+    f.state.sessionBarrier = async () => {
+      if (++writes === blockedWrite) {
+        entered.resolve()
+        await hold.promise
+      }
+    }
+    const enable =
+      scope === 'session'
+        ? f.setSession(true)
+        : scope === 'subagents'
+          ? f.setSubagents(true)
+          : f.setMode(scope)
+    await entered.promise
+    const recovery =
+      revoke === 'subagents' ? f.setSubagents(false, 'fast-session', 999) : f.setMode(revoke)
+    assert.equal(f.runtime.sessionStatus('fast-session').subagentsRequested, false)
+    if (revoke === 'off') assert.equal(f.runtime.sessionStatus('fast-session').requested, false)
+    hold.resolve()
+    const enabled = await enable
+    if (enabled.ok) assert.equal(enabled.value.subagentsRequested, false)
+    else assert.match(enabled.error.message, /changed/)
+    const result = await recovery
+    if (revoke === 'main') {
+      assert.equal(f.subagents.get('fast-session').enabled, false)
+      const resumed = await fixture(t, { records: f.records, subagents: f.subagents })
+      await consume(resumed.loop('child'))
+      assert.equal(resumed.captures[0].body.service_tier, undefined)
+    }
+    // Main durably disables children even when stale revisions reject parent enablement.
+    if (revoke === 'main' && !result.ok) assert.equal((await f.setMode('main')).ok, true)
+    else assert.equal(result.ok, true)
+    assert.equal(f.subagents.get('fast-session').enabled, false)
+    assert.equal(f.runtime.sessionStatus('fast-session').subagentsRequested, false)
+    assert.equal((await f.setSubagents(true, 'fast-session', 0)).ok, false)
+  })
+}
+
+for (const mode of ['all', 'main']) {
+  test(`cancelling ${mode} during its first write never enables the parent`, async (t) => {
+    const f = await fixture(t)
+    assert.equal(f.runtime.sessionStatus('fast-session').supported, true)
+    const entered = gate(),
+      hold = gate()
+    f.state.sessionBarrier = async () => {
       entered.resolve()
       await hold.promise
     }
-  }
-  const enable = f.setSubagents(true)
-  await entered.promise
-  const off = f.setSubagents(false, 'fast-session', 999)
-  assert.equal(f.runtime.sessionStatus('fast-session').subagentsRequested, false)
-  hold.resolve()
-  assert.equal((await enable).value.subagentsRequested, false)
-  assert.equal((await off).ok, true)
-  assert.equal(f.subagents.get('fast-session').enabled, false)
-  assert.equal((await f.setSubagents(true, 'fast-session', 0)).ok, false)
-})
+    const controller = new AbortController()
+    const pending = f.runtime.rpc(
+      'mode-set',
+      {
+        sessionId: 'fast-session',
+        provider: 'openai-codex',
+        model: 'gpt-6-sol',
+        mode,
+        sessionRevision: 0,
+        subagentsRevision: 0,
+      },
+      controller.signal,
+    )
+    await entered.promise
+    controller.abort()
+    hold.resolve()
+    const result = await pending
+    assert.equal(result.ok, false)
+    assert.match(result.error.message, /cancelled/)
+    assert.equal(f.records.size, 0)
+    assert.equal(f.subagents.get('fast-session').enabled, mode === 'all')
+    assert.equal(f.runtime.sessionStatus('fast-session').subagentsRequested, false)
+    const resumed = await fixture(t, { records: f.records, subagents: f.subagents })
+    await consume(resumed.loop('child'))
+    assert.equal(resumed.captures[0].body.service_tier, undefined)
+  })
+}
+
+for (const revoke of ['off', 'main']) {
+  test(`queued All cannot undo a newer ${revoke} before its writes begin`, async (t) => {
+    const f = await fixture(t)
+    assert.equal(f.runtime.sessionStatus('fast-session').supported, true)
+    const entered = gate(),
+      hold = gate()
+    f.state.globalBarrier = async () => {
+      entered.resolve()
+      await hold.promise
+    }
+    const busy = f.rpc('integration-set', { enabled: true, revision: 0 })
+    await entered.promise
+    const older = f.setMode('all')
+    const newer = f.setMode(revoke)
+    hold.resolve()
+    assert.equal((await busy).ok, true)
+    assert.equal((await older).ok, false)
+    assert.equal((await newer).ok, true)
+    const status = f.runtime.sessionStatus('fast-session')
+    assert.equal(status.requested, revoke === 'main')
+    assert.equal(status.subagentsRequested, false)
+    assert.equal(f.subagents.get('fast-session').enabled, false)
+  })
+}
 
 test('integration Off is a durable recovery switch, even with a stale UI revision', async (t) => {
   const f = await fixture(t)
   const original = f.adapter.streamWithSnapshot
-  await f.setSession(true)
+  assert.equal((await f.setSession(true)).ok, true)
   await consume(f.loop())
   assert.equal((await f.rpc('integration-set', { enabled: false, revision: 999 })).ok, true)
   assert.equal(f.global().enabled, false)
@@ -321,6 +651,7 @@ test('integration Off is a durable recovery switch, even with a stale UI revisio
 
 test('a late Enable write cannot undo emergency Off or reject its durable recovery', async (t) => {
   const f = await fixture(t)
+  assert.equal(f.runtime.sessionStatus('fast-session').supported, true)
   await f.rpc('integration-set', { enabled: false, revision: 0 })
   const hold = gate(),
     entered = gate()
@@ -350,7 +681,7 @@ test('a late Enable write cannot undo emergency Off or reject its durable recove
 
 test('session Off revokes an unsent payload before persistence and stale enables cannot restore it', async (t) => {
   const f = await fixture(t)
-  await f.setSession(true)
+  assert.equal((await f.setSession(true)).ok, true)
   const payload = gate(),
     entered = gate(),
     stored = gate(),
@@ -382,7 +713,7 @@ test('session Off revokes an unsent payload before persistence and stale enables
 
 test('failed storage keeps emergency Off effective and never exposes private failure details', async (t) => {
   const f = await fixture(t)
-  await f.setSession(true)
+  assert.equal((await f.setSession(true)).ok, true)
   f.state.failure = true
   assert.equal((await f.setSession(false)).ok, false)
   assert.equal(f.runtime.sessionStatus('fast-session').sessionOffPending, true)
@@ -432,6 +763,28 @@ test('invalid RPC, unsupported model, cancellation and stale enables do not auth
     ],
   ])
     assert.equal((await f.rpc(endpoint, input)).ok, false)
+  for (const invalid of [
+    { mode: 'subagents' },
+    { mode: 'on' },
+    { mode: { toString: () => 'all' } },
+    { subagentsRevision: -1 },
+    { sessionRevision: 0.5 },
+    { extra: true },
+  ])
+    assert.equal((await f.setMode('all', invalid)).ok, false)
+  assert.equal(
+    (
+      await f.rpc('mode-set', {
+        sessionId: 'fast-session',
+        provider: 'openai-codex',
+        model: 'gpt-6-sol',
+        mode: 'all',
+        sessionRevision: 0,
+      })
+    ).ok,
+    false,
+  )
+  assert.equal((await f.setMode('all', { sessionId: 'child' })).ok, false)
   const controller = new AbortController()
   controller.abort()
   assert.equal(
@@ -452,6 +805,23 @@ test('invalid RPC, unsupported model, cancellation and stale enables do not auth
     ).ok,
     false,
   )
+  assert.equal(
+    (
+      await f.runtime.rpc(
+        'mode-set',
+        {
+          sessionId: 'fast-session',
+          provider: 'openai-codex',
+          model: 'gpt-6-sol',
+          mode: 'all',
+          sessionRevision: 0,
+          subagentsRevision: 0,
+        },
+        controller.signal,
+      )
+    ).ok,
+    false,
+  )
   assert.equal(f.subagents.size, 0)
   f.select({ provider: 'openai-codex', model: 'unknown-model' })
   assert.equal((await f.setSession(true)).ok, false)
@@ -460,7 +830,7 @@ test('invalid RPC, unsupported model, cancellation and stale enables do not auth
 
 test('native pre-payload credential errors remain native errors rather than bridge incompatibility', async (t) => {
   const f = await fixture(t)
-  await f.setSession(true)
+  assert.equal((await f.setSession(true)).ok, true)
   f.credential(async () => {
     throw new LlmError('fixture missing key', 'MISSING_CREDENTIAL')
   })

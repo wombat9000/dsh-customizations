@@ -13,7 +13,7 @@ import type { Domain } from '@deepseek-ai/dsh-storage-domain'
 import { z } from 'zod'
 import { CodexFastBridge, FastBridgeError, supportsFast } from './bridge.js'
 import { CHANNEL, isObject } from '../../shared/contracts.js'
-import type { FastStatus, IntegrationStatus } from '../../shared/contracts.js'
+import type { FastMode, FastStatus, IntegrationStatus } from '../../shared/contracts.js'
 
 const record = z
   .object({
@@ -143,7 +143,8 @@ export class CodexFastRuntime {
       requested,
       supported,
       sessionRevision: saved?.revision ?? 0,
-      subagentsRequested: !this.subagentsOff.has(sessionId) && subagents?.enabled === true,
+      subagentsRequested:
+        requested && supported && !this.subagentsOff.has(sessionId) && subagents?.enabled === true,
       subagentsRevision: subagents?.revision ?? 0,
       sessionOffPending: this.sessionOff.has(sessionId) && saved?.enabled === true,
       subagentsOffPending: this.subagentsOff.has(sessionId) && subagents?.enabled === true,
@@ -193,30 +194,41 @@ export class CodexFastRuntime {
     }
     return null
   }
-  /** Ordinary LOOP calls use either this session's choice or its root's independent child policy. */
+  /** Child policy requires a live, supported parent choice for its current selection. */
   stream(
     options: GenerateOptions,
     next: () => AsyncIterable<import('@deepseek-ai/dsh-llm').StreamChunk>,
   ) {
     const owner =
       options.sessionId === undefined ? null : this.policyOwner(String(options.sessionId))
-    const saved = owner
-      ? this.domain?.table(owner.subagent ? 'subagents' : 'sessions').get(owner.sessionId)
-      : undefined
-    const revoked = owner?.subagent ? this.subagentsOff : this.sessionOff
+    const parent = owner ? this.domain?.table('sessions').get(owner.sessionId) : undefined
+    const child = owner ? this.domain?.table('subagents').get(owner.sessionId) : undefined
+    const parentRequested = () => {
+      if (!owner || !owner.live() || this.sessionOff.has(owner.sessionId) || !parent?.enabled)
+        return false
+      const selected = this.selection(owner.sessionId)
+      return (
+        this.domain?.table('sessions').get(owner.sessionId) === parent &&
+        parent.provider === selected.provider &&
+        parent.model === selected.model &&
+        (!owner.subagent || this.bridge.supports(selected.provider, selected.model))
+      )
+    }
+    const childRequested = () =>
+      !!owner &&
+      !this.subagentsOff.has(owner.sessionId) &&
+      child?.enabled === true &&
+      this.domain?.table('subagents').get(owner.sessionId) === child
     const target =
       this.enabled() &&
       !!owner &&
-      !revoked.has(owner.sessionId) &&
+      parentRequested() &&
       isAgentLoopRequest(options) &&
       options.purpose === undefined &&
       supportsFast(options.provider, options.model) &&
-      saved?.enabled === true &&
-      (owner.subagent ||
-        ('model' in saved &&
-          'provider' in saved &&
-          saved.model === options.model &&
-          saved.provider === options.provider))
+      (owner.subagent
+        ? childRequested()
+        : parent?.model === options.model && parent.provider === options.provider)
     if (!target || !owner) return this.bridge.stream(options, next, null)
     try {
       this.bridge.enable()
@@ -224,18 +236,14 @@ export class CodexFastRuntime {
       this.observations.set(String(options.sessionId), { model: options.model, kind: 'error' })
       throw new FastBridgeError()
     }
-    // Child models qualify independently of the parent's selected model/provider.
-    // An unreviewed API/endpoint/catalog entry remains a native Standard call.
+    // A child model may differ, but its parent's current selection must remain eligible.
+    // An unreviewed child API/endpoint/catalog entry remains a native Standard call.
     if (owner.subagent && !this.bridge.supports(options.provider, options.model))
       return this.bridge.stream(options, next, null)
     const sessionId = String(options.sessionId)
     const runtime = this
     const live = () =>
-      runtime.enabled() &&
-      !revoked.has(owner.sessionId) &&
-      owner.live() &&
-      runtime.domain?.table(owner.subagent ? 'subagents' : 'sessions').get(owner.sessionId) ===
-        saved
+      runtime.enabled() && parentRequested() && (!owner.subagent || childRequested())
     const stream = this.bridge.stream(options, next, {
       live,
       report() {
@@ -251,7 +259,14 @@ export class CodexFastRuntime {
       }
     })()
   }
-  async rpc(endpoint: string, raw: unknown, signal: AbortSignal) {
+  async rpc(
+    endpoint: string,
+    raw: unknown,
+    signal: AbortSignal,
+  ): Promise<
+    | { ok: true; value: FastStatus | IntegrationStatus }
+    | { ok: false; error: { code: string; message: string; details: Record<string, never> } }
+  > {
     try {
       this.guard()
       if (endpoint === 'integration-status') {
@@ -299,6 +314,112 @@ export class CodexFastRuntime {
           }),
         }
       }
+      if (endpoint === 'mode-set') {
+        const value = input(raw, [
+          'sessionId',
+          'provider',
+          'model',
+          'mode',
+          'sessionRevision',
+          'subagentsRevision',
+        ])
+        if (
+          !identity(value.sessionId) ||
+          typeof value.provider !== 'string' ||
+          value.provider.length < 1 ||
+          value.provider.length > 200 ||
+          typeof value.model !== 'string' ||
+          value.model.length < 1 ||
+          value.model.length > 200 ||
+          typeof value.mode !== 'string' ||
+          !['off', 'all', 'main'].includes(value.mode) ||
+          (value.mode !== 'off' && !identity(value.model)) ||
+          !revision(value.sessionRevision) ||
+          !revision(value.subagentsRevision)
+        )
+          fail('Invalid Fast mode setting.')
+        const sessionId = value.sessionId as string
+        const mode = value.mode as FastMode
+        this.selection(sessionId)
+        // Fences take effect before the write queue or any fallible persistence.
+        if (mode === 'off') {
+          this.sessionOff.add(sessionId)
+          this.sessionEpoch.set(sessionId, (this.sessionEpoch.get(sessionId) ?? 0) + 1)
+        }
+        if (mode !== 'all') {
+          this.subagentsOff.add(sessionId)
+          this.subagentsEpoch.set(sessionId, (this.subagentsEpoch.get(sessionId) ?? 0) + 1)
+        }
+        const sessionEpoch = this.sessionEpoch.get(sessionId) ?? 0
+        const subagentsEpoch = this.subagentsEpoch.get(sessionId) ?? 0
+        const current = () =>
+          this.active &&
+          sessionEpoch === (this.sessionEpoch.get(sessionId) ?? 0) &&
+          subagentsEpoch === (this.subagentsEpoch.get(sessionId) ?? 0)
+        return {
+          ok: true as const,
+          value: await this.queued(async () => {
+            if (!this.domain) throw new UserError('Fast settings storage is unavailable.')
+            if (signal.aborted) fail('Fast settings change was cancelled.')
+            const domain = this.domain
+            const status = this.sessionStatus(sessionId)
+            const writeParent = async () => {
+              const previous = domain.table('sessions').get(sessionId)
+              await domain.table('sessions').put(sessionId, {
+                provider: 'openai-codex',
+                // Recovery Off disables the saved selection, not a newly selected route.
+                model: mode === 'off' && previous ? previous.model : (value.model as string),
+                enabled: mode !== 'off',
+                revision: status.sessionRevision + 1,
+              })
+            }
+            const writeChild = () =>
+              domain.table('subagents').put(sessionId, {
+                enabled: mode === 'all',
+                revision: status.subagentsRevision + 1,
+              })
+            // Main's reduction is safe even if an older write changed a revision while queued.
+            // Persist it before rejecting stale parent enablement so reload cannot restore All.
+            if (mode === 'main') await writeChild()
+            if (
+              mode !== 'off' &&
+              (status.provider !== value.provider ||
+                status.model !== value.model ||
+                status.sessionRevision !== value.sessionRevision ||
+                status.subagentsRevision !== value.subagentsRevision ||
+                !current())
+            )
+              fail('The session model or Fast setting changed. Refresh before trying again.')
+            if (mode !== 'off' && (!status.enabled || !status.available || !status.supported))
+              fail('Enable the Fast integration and select a supported Codex model first.')
+            if (mode === 'off') {
+              // Persist the parent first: child-only records are always inactive on reload.
+              await writeParent()
+              if (sessionEpoch === (this.sessionEpoch.get(sessionId) ?? 0))
+                this.sessionOff.delete(sessionId)
+              await writeChild()
+              if (subagentsEpoch === (this.subagentsEpoch.get(sessionId) ?? 0))
+                this.subagentsOff.delete(sessionId)
+            } else {
+              // All may save child intent first; Main has already durably revoked it.
+              if (mode === 'all') await writeChild()
+              if (!current()) return this.sessionStatus(sessionId)
+              if (signal.aborted) fail('Fast settings change was cancelled.')
+              const selected = this.selection(sessionId)
+              if (selected.provider !== value.provider || selected.model !== value.model)
+                fail('The session model or Fast setting changed. Refresh before trying again.')
+              await writeParent()
+              // An older enable must never clear a newer Off or Main fence.
+              if (current()) {
+                this.sessionOff.delete(sessionId)
+                this.subagentsOff.delete(sessionId)
+              }
+            }
+            this.observations.delete(sessionId)
+            return this.sessionStatus(sessionId)
+          }),
+        }
+      }
       if (endpoint === 'subagents-set') {
         const value = input(raw, ['sessionId', 'enabled', 'revision'])
         if (
@@ -314,6 +435,7 @@ export class CodexFastRuntime {
           this.subagentsEpoch.set(sessionId, (this.subagentsEpoch.get(sessionId) ?? 0) + 1)
         }
         const epoch = this.subagentsEpoch.get(sessionId) ?? 0
+        const parentEpoch = this.sessionEpoch.get(sessionId) ?? 0
         return {
           ok: true as const,
           value: await this.queued(async () => {
@@ -323,16 +445,23 @@ export class CodexFastRuntime {
             if (
               value.enabled === true &&
               (status.subagentsRevision !== value.revision ||
-                epoch !== (this.subagentsEpoch.get(sessionId) ?? 0))
+                epoch !== (this.subagentsEpoch.get(sessionId) ?? 0) ||
+                parentEpoch !== (this.sessionEpoch.get(sessionId) ?? 0))
             )
               fail('Subagent Fast settings changed. Refresh before trying again.')
-            if (value.enabled === true && (!status.enabled || !status.available))
-              fail('Enable the Fast integration first.')
+            if (
+              value.enabled === true &&
+              (!status.enabled || !status.available || !status.requested || !status.supported)
+            )
+              fail('Enable Fast for the current supported parent model first.')
             await this.domain.table('subagents').put(sessionId, {
               enabled: value.enabled as boolean,
               revision: status.subagentsRevision + 1,
             })
-            if (epoch === (this.subagentsEpoch.get(sessionId) ?? 0))
+            if (
+              epoch === (this.subagentsEpoch.get(sessionId) ?? 0) &&
+              (value.enabled === false || parentEpoch === (this.sessionEpoch.get(sessionId) ?? 0))
+            )
               this.subagentsOff.delete(sessionId)
             return this.sessionStatus(sessionId)
           }),
@@ -352,42 +481,25 @@ export class CodexFastRuntime {
       )
         fail('Invalid session setting.')
       const sessionId = value.sessionId as string
-      this.selection(sessionId)
-      if (value.enabled === false) {
-        this.sessionOff.add(sessionId)
-        this.sessionEpoch.set(sessionId, (this.sessionEpoch.get(sessionId) ?? 0) + 1)
-      }
-      const sessionEpoch = this.sessionEpoch.get(sessionId) ?? 0
-      return {
-        ok: true as const,
-        value: await this.queued(async () => {
-          if (!this.domain) throw new UserError('Fast settings storage is unavailable.')
-          if (signal.aborted) fail('Fast settings change was cancelled.')
-          const status = this.sessionStatus(sessionId)
-          if (
-            value.enabled === true &&
-            (status.provider !== value.provider ||
-              status.model !== value.model ||
-              status.sessionRevision !== value.revision ||
-              sessionEpoch !== (this.sessionEpoch.get(sessionId) ?? 0))
-          )
-            fail('The session model or Fast setting changed. Refresh before trying again.')
-          if (value.enabled === true && (!status.enabled || !status.available || !status.supported))
-            fail('Enable the Fast integration and select a supported Codex model first.')
-          const previous = this.domain.table('sessions').get(sessionId)
-          await this.domain.table('sessions').put(value.sessionId as string, {
-            provider: 'openai-codex',
-            // Recovery Off disables the saved choice, even if the UI now shows another route.
-            model: value.enabled === false && previous ? previous.model : (value.model as string),
-            enabled: value.enabled as boolean,
-            revision: status.sessionRevision + 1,
-          })
-          if (sessionEpoch === (this.sessionEpoch.get(sessionId) ?? 0))
-            this.sessionOff.delete(sessionId)
-          this.observations.delete(sessionId)
-          return this.sessionStatus(sessionId)
-        }),
-      }
+      const status = this.sessionStatus(sessionId)
+      // Compatibility callers retain the initial All default and an existing Main override.
+      return this.rpc(
+        'mode-set',
+        {
+          sessionId,
+          provider: value.provider,
+          model: value.model,
+          mode:
+            value.enabled === false
+              ? 'off'
+              : status.requested && !status.subagentsRequested
+                ? 'main'
+                : 'all',
+          sessionRevision: value.revision,
+          subagentsRevision: status.subagentsRevision,
+        },
+        signal,
+      )
     } catch (error) {
       return {
         ok: false as const,
