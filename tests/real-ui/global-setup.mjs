@@ -21,6 +21,7 @@ const plugins = [
   { name: '@local/dsh-openrouter', directory: 'packages/dsh-openrouter' },
   { name: '@local/dsh-jev', directory: 'packages/dsh-jev' },
   { name: '@wombat9000/dsh-session-recap', directory: 'packages/dsh-session-recap' },
+  { name: '@local/dsh-suggest-replies', directory: 'packages/dsh-suggest-replies' },
   { name: '@local/dsh-github', directory: 'packages/dsh-github' },
   { name: '@local/dsh-projects', directory: 'packages/dsh-projects' },
   { name: '@local/dsh-session-environment', directory: 'packages/dsh-session-environment' },
@@ -87,6 +88,10 @@ export async function startDisposableHost({ additionalPlugins = [], profilePatch
     const fixture = join(profile, 'node_modules', 'dsh-visual-fixture')
     await mkdir(fixture, { recursive: true })
     await copyFile(join(root, 'tests/real-ui/session-fixture.mjs'), join(fixture, 'index.mjs'))
+    await copyFile(
+      join(root, 'tests/real-ui/suggest-replies-fixture.mjs'),
+      join(fixture, 'suggest-replies-fixture.mjs'),
+    )
     await copyFile(
       join(root, 'tests/real-ui/global-guidance-fixture.mjs'),
       join(fixture, 'global-guidance-fixture.mjs'),

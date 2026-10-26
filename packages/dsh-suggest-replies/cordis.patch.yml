@@ -1,0 +1,3 @@
+- insert:
+    - id: local-suggest-replies
+      name: '@local/dsh-suggest-replies'

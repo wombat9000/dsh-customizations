@@ -383,6 +383,15 @@ importers:
         specifier: 0.2.1-rc.3
         version: 0.2.1-rc.3(@deepseek-ai/cordis@4.0.5)
 
+  packages/dsh-suggest-replies:
+    dependencies:
+      '@deepseek-ai/dsh':
+        specifier: 0.2.1-rc.3
+        version: 0.2.1-rc.3(0651ab484cc8264d7857a9cf5f25350e)
+      react:
+        specifier: 18.3.1
+        version: 18.3.1
+
   packages/dsh-tool-imagegen:
     dependencies:
       '@deepseek-ai/cordis':

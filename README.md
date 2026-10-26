@@ -78,6 +78,10 @@ Google auth provides the shared **Google accounts** Settings card, client config
 
 [Global Guidance](packages/dsh-global-guidance/README.md) contributes independently toggleable instruction themes across presets. Its initial **Visual evidence** component keeps screenshot capture, provenance, delegated-agent handoff, presentation, and screenshot artifact hygiene together under one switch. Use **Plugins → Global Guidance** to disable an individual component or the whole bundle. Only running components contribute instructions to subsequent normal prompt assemblies; hosts without live profile reload require a restart. Explicit complete-prompt and scoped overrides remain authoritative. The bundle adds no tools, capture automation, cleanup daemon, or permission grants and does not rewrite instruction files. Repository-specific screenshot procedures remain in the [DSH client UI skill](.agents/skills/dsh-client-ui-development/SKILL.md#screenshot-evidence-and-handoff). The recipe selects the bundle, but applying it to your running profile requires separate approval.
 
+### Suggested replies
+
+[Suggested replies](packages/dsh-suggest-replies/README.md) adds a preset-neutral `suggest_replies` tool. Agents can offer up to three follow-up messages as buttons above an empty composer after a completed turn. Clicking fills an editable draft; it never sends, approves an action, or overwrites your existing text. Suggestions use normal durable tool results, with no separate generation request or store. The tool call remains visible in work history. The `personal-web` recipe selects the bundle; applying it and restarting a running host require separate approval.
+
 ### GitHub
 
 [GitHub](packages/dsh-github/README.md) adds eighteen preset-neutral read tools, twelve write tools, and an explicit session issue-management grant request to all sessions when its host bundle is loaded. Tools use the existing `gh` authentication in DSH’s managed subprocess backend; a sandbox CLI login does not establish that an unmanaged host process sees the same account. The plugin never installs `gh`, starts a login flow, or copies tokens into DSH settings.

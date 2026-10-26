@@ -31,6 +31,8 @@ artifacts/
 /packages/dsh-google-drive/dist/
 /packages/dsh-session-recap/client.js
 /packages/dsh-session-recap/dist/
+/packages/dsh-suggest-replies/client.js
+/packages/dsh-suggest-replies/dist/
 /packages/dsh-file-intuition/dist/
 /packages/dsh-global-guidance/dist/
 /packages/dsh-github/client.js

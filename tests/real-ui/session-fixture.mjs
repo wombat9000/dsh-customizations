@@ -12,6 +12,7 @@ import { githubSessionSeed, githubWorkspaceName } from './github-grants-fixture.
 import { githubItemsSeed, githubItemsWorkspace } from './github-items-fixture.mjs'
 import { githubFieldSessionSeed, githubFieldWorkspaceName } from './github-field-fixture.mjs'
 import { basename, join } from 'node:path'
+import { registerReplyFixture } from './suggest-replies-fixture.mjs'
 
 export const inject = ['sessions', 'sessionPersistence', 'sessionProjectionCache', 'sessionTitle']
 
@@ -36,6 +37,7 @@ export function prepareFixtureSession(ctx, id, options) {
 export async function apply(ctx) {
   registerGlobalGuidanceFixture(ctx)
   registerApprovalFixture(ctx)
+  registerReplyFixture(ctx, { prepareFixtureSession, persistSession })
   const commandCwd = join(process.cwd(), '..', commandWorkspace)
   await mkdir(commandCwd, { recursive: true })
   const command = approvalCommandSeed(commandCwd)
