@@ -85,6 +85,10 @@
     {
       "name": "@local/dsh-tool-trivy",
       "source": "../../packages/dsh-tool-trivy"
+    },
+    {
+      "name": "@local/dsh-browser-recording",
+      "source": "../../packages/dsh-browser-recording"
     }
   ],
   "patch": "cordis.patch.yml"

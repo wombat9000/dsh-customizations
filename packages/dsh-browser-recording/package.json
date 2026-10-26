@@ -1,0 +1,40 @@
+{
+  "name": "@local/dsh-browser-recording",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Explicit browser interaction recordings with MP4 and looping WebP exports",
+  "type": "module",
+  "main": "dist/src/index.js",
+  "exports": {
+    ".": "./dist/src/index.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist/**/*.js",
+    "cordis.patch.yml",
+    "locale",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "node scripts/build-host.mjs",
+    "test": "node --test test/*.test.mjs"
+  },
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "dependencies": {
+    "@deepseek-ai/dsh-tools": "0.2.1-rc.3",
+    "@deepseek-ai/dsh-subprocess": "0.2.1-rc.3",
+    "@deepseek-ai/dsh-system-prompt": "0.2.1-rc.3"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "4.0.5",
+    "@deepseek-ai/dsh": "0.2.1-rc.3"
+  },
+  "license": "UNLICENSED"
+}
