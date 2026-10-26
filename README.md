@@ -16,6 +16,14 @@ Before dependency work in any checkout or worktree, follow the [repository setup
 
 Set `DSH_HOME` before applying a profile if your Harness home is not `~/.dsh`.
 
+### Amp orbs
+
+The executable `.agents/setup` prepares fresh Amp orbs with Node.js 24.20.0 (matching CI), the manifest-pinned pnpm, frozen workspace dependencies, and the matching Playwright Chromium and system dependencies. It checks the repository and builds Session Environment. Node downloads are checksum-verified; toolchains stay under `~/.local/share/dsh-customizations-orb`, and a checkout-scoped login-shell hook makes them available to agents and supervised services.
+
+Network provisioning is approved for this orb lifecycle script only. Dependency lifecycle scripts remain disabled; the release-age policy and required DSH patch remain enforced. Normal agent dependency work still follows the offline-first setup procedure above. Setup refuses symlinked dependency directories and never applies a profile, authenticates a user, or starts a persistent DSH host.
+
+Amp snapshots successful setup for reuse by fresh project orbs. Exact snapshots skip setup; stale snapshots retain installed tools and caches while setup reconciles the current lockfile. Warm setup skips existing toolchain/browser downloads and checks system packages before invoking apt. `.agents/resume` only checks readiness and never reinstalls dependencies. These files must reach the project's default branch before future orbs can use them. The browser is suitable for interaction tests; an x64 orb is not the Linux ARM64 container used for visual baselines.
+
 ## Apply the starter profile
 
 Before applying to retained state, complete target validation and the [host operator acceptance steps](MIGRATION-0.2.1-rc.3.md#host-operator-acceptance-sequence), including backups and explicit deployment approval. The commands below are a procedure, not a report of a completed `0.2.1-rc.3` install or deployment.

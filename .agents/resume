@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# No credentials, persistent DSH profile, or backing service needs reconnecting.
+# Dependencies and Chromium belong to setup and the project snapshot, not wakeup.
+repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
+cd -- "$repo_root"
+tools="$HOME/.local/share/dsh-customizations-orb/bin"
+export PATH="$tools:$PATH"
+unset NODE_PATH
+if [[ ! -x "$tools/node" || ! -x "$tools/pnpm" || ! -f node_modules/playwright/cli.js ]]; then
+  echo 'Orb dependencies are missing; run .agents/setup' >&2
+  exit 1
+fi
+printf 'Orb ready: Node %s, pnpm %s\n' "$(node --version)" "$(pnpm --version)"

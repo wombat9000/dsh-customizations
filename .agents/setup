@@ -1,0 +1,108 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
+cd -- "$repo_root"
+tools="$HOME/.local/share/dsh-customizations-orb"
+node_version=24.20.0 # Match .github/workflows/tests.yml.
+case "$(uname -m)" in
+  x86_64) arch=x64 ;;
+  aarch64) arch=arm64 ;;
+  *) echo 'Unsupported orb architecture' >&2; exit 1 ;;
+esac
+
+step() {
+  local start=$SECONDS
+  printf '\n==> %s\n' "$1"
+  shift
+  "$@"
+  printf 'Finished in %ss\n' "$((SECONDS - start))"
+}
+
+install_node() {
+  local name="node-v${node_version}-linux-${arch}"
+  if [[ ! -x "$tools/$name/bin/node" ]]; then
+    (
+      download="$(mktemp -d)"
+      trap 'rm -rf -- "$download"' EXIT
+      curl --fail --silent --show-error --location "https://nodejs.org/dist/v${node_version}/$name.tar.xz" -o "$download/$name.tar.xz"
+      curl --fail --silent --show-error --location "https://nodejs.org/dist/v${node_version}/SHASUMS256.txt" -o "$download/SHASUMS256.txt"
+      cd -- "$download"
+      grep "  $name.tar.xz\$" SHASUMS256.txt | sha256sum --check -
+      tar -xJf "$name.tar.xz" -C "$tools"
+    )
+  fi
+  for bin in node npm npx; do
+    ln -sfn "$tools/$name/bin/$bin" "$tools/bin/$bin"
+  done
+}
+
+install_pnpm() {
+  local version prefix
+  version="$(node -p "require('./package.json').packageManager.replace(/^pnpm@/, '')")"
+  prefix="$tools/pnpm-$version"
+  if [[ ! -f "$prefix/lib/node_modules/pnpm/package.json" ]] ||
+    [[ "$(node -p "require('$prefix/lib/node_modules/pnpm/package.json').version")" != "$version" ]]; then
+    npm install --global --prefix "$prefix" --ignore-scripts --no-audit --no-fund "pnpm@$version"
+  fi
+  ln -sfn "$prefix/bin/pnpm" "$tools/bin/pnpm"
+  [[ "$(pnpm --version)" == "$version" ]]
+}
+
+mkdir -p "$tools/bin"
+export PATH="$tools/bin:$PATH"
+unset NODE_PATH # Do not borrow dependencies from an unrelated DSH installation.
+step 'Pinned Node.js' install_node
+step 'Pinned pnpm' install_pnpm
+
+# Amp and supervised services start in separate non-interactive login shells.
+# Only activate these tools for this checkout, including its subdirectories.
+profile_marker='# dsh-customizations orb toolchain'
+if ! grep -Fqx "$profile_marker" "$HOME/.bash_profile" 2>/dev/null; then
+  cat >> "$HOME/.bash_profile" <<EOF
+
+$profile_marker
+if [[ "\$PWD" == "$repo_root" || "\$PWD" == "$repo_root/"* ]]; then
+  case ":\$PATH:" in
+    *:"$tools/bin":*) ;;
+    *) export PATH="$tools/bin:\$PATH" ;;
+  esac
+  unset NODE_PATH
+fi
+EOF
+fi
+
+# Refuse another checkout's dependency tree; a content-addressed store is fine.
+node --input-type=module <<'JS'
+import { lstatSync, readdirSync, realpathSync } from 'node:fs'
+import { resolve } from 'node:path'
+const packages = readdirSync('packages', { withFileTypes: true }).filter((p) => p.isDirectory())
+for (const dir of ['node_modules', ...packages.map((p) => `packages/${p.name}/node_modules`)]) {
+  const entry = lstatSync(dir, { throwIfNoEntry: false })
+  if (entry && (entry.isSymbolicLink() || realpathSync(dir) !== resolve(dir))) {
+    throw new Error(`Refusing shared dependency directory: ${dir}`)
+  }
+}
+JS
+
+# Network population is approved for orb setup only. Normal agent installs stay
+# offline-first under the repository setup skill. Never run lifecycle scripts.
+step 'Frozen workspace dependencies' pnpm install --frozen-lockfile --ignore-scripts
+
+# Playwright skips existing browser downloads on stale snapshots.
+step 'Playwright Chromium' node node_modules/playwright/cli.js install chromium
+install_browser_dependencies() {
+  if ! node node_modules/playwright/cli.js install-deps --dry-run chromium; then
+    node node_modules/playwright/cli.js install-deps chromium
+  fi
+}
+step 'Chromium system dependencies' install_browser_dependencies
+step 'Chromium launch' node --input-type=module <<'JS'
+import { chromium } from 'playwright'
+const browser = await chromium.launch()
+console.log(`Chromium ${browser.version()} ready`)
+await browser.close()
+JS
+step 'Repository checks' node scripts/check.mjs
+step 'Session Environment build' pnpm run build
+printf '\nOrb setup ready: Node %s, pnpm %s\n' "$(node --version)" "$(pnpm --version)"

@@ -18,6 +18,7 @@ coverage/
 .vitest/
 # Diagnostic captures and run metadata; visual baselines live under packages/.
 /artifacts/
+/.amp/portals/
 
 # Backups created by the profile apply script
 *.bak
