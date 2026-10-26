@@ -15,6 +15,20 @@ export const TYPERT = {
         description: 'Reads bounded CWD and Git state for one live Session.',
         members: [
           {
+            name: 'readWorktreePreference',
+            kind: 'method',
+            signature:
+              'readWorktreePreference(request: WorktreePreferenceRequest, signal: AbortSignal): Promise<WorktreePreferenceSnapshot>',
+            summary: 'Read the saved workflow preference and current Git eligibility.',
+          },
+          {
+            name: 'setWorktreePreference',
+            kind: 'method',
+            signature:
+              'setWorktreePreference(request: WorktreePreferenceChange, signal: AbortSignal): Promise<WorktreePreferenceSnapshot>',
+            summary: 'Save a user-only session preference and the next-session default.',
+          },
+          {
             name: 'readCI',
             kind: 'method',
             signature:

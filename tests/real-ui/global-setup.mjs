@@ -1,14 +1,22 @@
 import { mkdtemp, mkdir, writeFile, symlink, rm, copyFile, readFile } from 'node:fs/promises'
 import { setTimeout as delay } from 'node:timers/promises'
 import { tmpdir } from 'node:os'
-import { dirname, join, resolve } from 'node:path'
+import { dirname, join, relative, resolve } from 'node:path'
 import { createRequire } from 'node:module'
 import { killGroup, startHost, stopHost } from './host-process.mjs'
 
 const require = createRequire(import.meta.url)
 const root = resolve(import.meta.dirname, '../..')
+const launcherRequire = createRequire(require.resolve('@deepseek-ai/dsh/package.json'))
 // Add UI bundles here; every spec shares this one host, not one host per package.
 const plugins = [
+  {
+    name: '@deepseek-ai/dsh-experimental-tool-worktree',
+    directory: relative(
+      root,
+      dirname(launcherRequire.resolve('@deepseek-ai/dsh-experimental-tool-worktree/package.json')),
+    ),
+  },
   { name: '@local/dsh-global-guidance', directory: 'packages/dsh-global-guidance' },
   { name: '@local/dsh-openrouter', directory: 'packages/dsh-openrouter' },
   { name: '@local/dsh-jev', directory: 'packages/dsh-jev' },

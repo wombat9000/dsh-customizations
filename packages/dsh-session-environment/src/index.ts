@@ -1,6 +1,6 @@
 import { homedir } from 'node:os'
 import type { Context } from '@deepseek-ai/cordis'
-import type {} from '@deepseek-ai/dsh-session'
+import { SessionId } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-shell'
 import { TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import s from '@deepseek-ai/schemastery'
@@ -11,6 +11,13 @@ import type {
   SessionCISnapshot,
 } from './types.js'
 import { CI_CHECKOUT_COMMAND, probeCheckout, readSessionCI } from './ci-host.js'
+import { effectiveSessionDirectory, mountWorktreePreferences } from './worktree-preference.js'
+import type { WorktreePreferences } from './worktree-preference.js'
+import type {
+  WorktreePreferenceRequest,
+  WorktreePreferenceChange,
+  WorktreePreferenceSnapshot,
+} from './types.js'
 import type { CIHost } from './ci-host.js'
 import {
   DEFAULT_STDOUT_MAX_BYTES,
@@ -56,6 +63,10 @@ export function resolveConfig(config: Config = {}): ResolvedConfig {
 function ciHost(ctx: Context, config: ResolvedConfig): CIHost {
   return {
     sessions: ctx.sessions,
+    directory: (id) => {
+      const session = ctx.sessions.get(SessionId(id))
+      return session ? effectiveSessionDirectory(ctx, session) : undefined
+    },
     async probe(cwd, signal) {
       const execution = await ctx.shell.execute(
         ctx.shell.resolve({
@@ -93,7 +104,7 @@ export async function readSessionEnvironment(
 ): Promise<SessionEnvironmentSnapshot> {
   const home = homedir()
   const session = ctx.sessions.get(request.sessionId)
-  const cwd = typeof session?.header.cwd === 'string' ? session.header.cwd : null
+  const cwd = session ? (effectiveSessionDirectory(ctx, session) ?? null) : null
   if (!cwd) return unavailableSnapshot(null, home, 'Session working directory is unavailable')
 
   // Bracket local Git sampling with checkout identity when CI is available.
@@ -117,6 +128,11 @@ export async function readSessionEnvironment(
     const execution = await ctx.shell.execute(spec)
     const result = await execution.result()
     const snapshot = parseGitEnvironmentResult({ cwd, home, result })
+    if (
+      ctx.sessions.get(request.sessionId) !== session ||
+      (session && effectiveSessionDirectory(ctx, session) !== cwd)
+    )
+      return unavailableSnapshot(cwd, home, 'Checkout changed; checking again')
     if (snapshot.repo !== true || !before) return snapshot
     // Identity probes remain local/fetch-free. Never pair an older displayed
     // branch with a checkout key sampled after a branch/session/CWD change.
@@ -145,16 +161,57 @@ export async function readSessionEnvironment(
 }
 
 export class SessionEnvironmentService extends TypertRemoteService {
-  static inject = ['sessions', 'shell']
+  static inject = [
+    'sessions',
+    'shell',
+    'agents',
+    'storageDomain',
+    'systemPrompt',
+    'workingDirectory',
+  ]
   static Config = Config
 
   readonly config: ResolvedConfig
   private readonly lifetime = new AbortController()
+  private readonly preferences: Promise<WorktreePreferences | null>
 
   constructor(ctx: Context, config: Config = {}) {
     super(ctx, 'sessionEnvironment')
     this.config = resolveConfig(config)
     ctx.effect(() => () => this.lifetime.abort())
+    this.preferences = mountWorktreePreferences(ctx).catch(() => {
+      ctx.logger.warn('Worktree preference storage is unavailable; existing tools are unchanged.')
+      return null
+    })
+  }
+
+  async readWorktreePreference(
+    request: WorktreePreferenceRequest,
+    signal: AbortSignal,
+  ): Promise<WorktreePreferenceSnapshot> {
+    const preferences = await this.preferences
+    const control = AbortSignal.any([signal, this.lifetime.signal])
+    if (preferences) return preferences.read(request, control)
+    control.throwIfAborted()
+    const session = this.ctx.sessions.get(request.sessionId)
+    if (!session) throw new Error('Open this session before checking Worktree mode.')
+    return {
+      sessionId: request.sessionId,
+      enabled: false,
+      revision: 0,
+      cwd: effectiveSessionDirectory(this.ctx, session) ?? '',
+      available: false,
+      reason: 'Worktree preference storage is unavailable.',
+    }
+  }
+
+  async setWorktreePreference(
+    request: WorktreePreferenceChange,
+    signal: AbortSignal,
+  ): Promise<WorktreePreferenceSnapshot> {
+    const preferences = await this.preferences
+    if (!preferences) throw new Error('Worktree preference storage is unavailable.')
+    return preferences.set(request, AbortSignal.any([signal, this.lifetime.signal]))
   }
 
   async read(

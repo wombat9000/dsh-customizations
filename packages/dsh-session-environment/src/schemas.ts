@@ -6,6 +6,26 @@ export const sessionEnvironmentRequestSchema = z
   })
   .strict()
 
+export const worktreePreferenceChangeSchema = z
+  .object({
+    sessionId: z.string().min(1),
+    enabled: z.boolean(),
+    revision: z.number().int().nonnegative(),
+    cwd: z.string().min(1),
+  })
+  .strict()
+
+export const worktreePreferenceSnapshotSchema = z
+  .object({
+    sessionId: z.string().min(1),
+    enabled: z.boolean(),
+    revision: z.number().int().nonnegative(),
+    cwd: z.string(),
+    available: z.boolean(),
+    reason: z.string().nullable(),
+  })
+  .strict()
+
 export const sessionCIRequestSchema = z
   .object({
     sessionId: z.string().min(1),

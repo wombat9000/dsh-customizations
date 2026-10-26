@@ -239,7 +239,7 @@ test('a branch switch during local sampling never binds old Git display to new C
   let switchDuringGitRead = true
   const ctx = {
     sessions: { get: () => session },
-    get: () => ({ readCheckout() {} }),
+    get: (key) => (key === 'localGitHubLiveCI' ? { readCheckout() {} } : undefined),
     shell: {
       resolve: (request) => request,
       async execute(spec) {
@@ -277,8 +277,9 @@ test('a branch switch during local sampling never binds old Git display to new C
 
 test('reads the live session cwd through the Shell service', async () => {
   let resolved
+  const session = { header: { cwd: '/workspace/demo' } }
   const ctx = {
-    sessions: { get: () => ({ header: { cwd: '/workspace/demo' } }) },
+    sessions: { get: () => session },
     shell: {
       resolve(request) {
         resolved = request

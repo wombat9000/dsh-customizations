@@ -61,11 +61,36 @@ test('card follows Conversation and foreground sidebar state without leaking its
   const panels = selectorStore({ activePanelId: null })
   const disposeReset = vi.fn()
   const requests = []
+  let resetConnection
+  let failedCwd = null
   const Card = client.createEnvironmentCard(
-    { on: () => disposeReset },
+    {
+      on: (_event, callback) => {
+        resetConnection = callback
+        return disposeReset
+      },
+    },
     {
       async read({ sessionId }, signal) {
         requests.push({ sessionId, signal })
+        if (failedCwd)
+          return {
+            ok: true,
+            value: {
+              cwd: failedCwd,
+              home: '/home/test',
+              repo: null,
+              hasHead: null,
+              branch: null,
+              upstream: null,
+              ahead: null,
+              behind: null,
+              dirtyFiles: null,
+              additions: null,
+              deletions: null,
+              error: 'Git probe failed after changing directories',
+            },
+          }
         return {
           ok: true,
           value: {
@@ -173,6 +198,31 @@ test('card follows Conversation and foreground sidebar state without leaking its
     await page.getByRole('button', { name: 'Copy CWD: /workspace/second', exact: true }).click()
   })
   expect(copied.mock.calls).toEqual([['/workspace/second']])
+
+  // The workspace summary still names the original checkout after native cd.
+  // A failed read of the new cwd must clear the old branch and cached path.
+  failedCwd = '/workspace/task-worktree'
+  await act(async () => resetConnection())
+  await expect
+    .element(
+      page.getByRole('button', {
+        name: 'Copy CWD: /workspace/task-worktree',
+        exact: true,
+      }),
+    )
+    .toBeVisible()
+  expect(card().querySelector('[aria-label="Copy branch name: main"]')).toBeNull()
+  expect(card().querySelector('[aria-label="Copy CWD: /workspace/second"]')).toBeNull()
+  failedCwd = null
+  await act(async () => resetConnection())
+  await expect
+    .element(
+      page.getByRole('button', {
+        name: 'Copy branch name: main',
+        exact: true,
+      }),
+    )
+    .toBeVisible()
 
   // Hidden retained Chat content and embedded Chat occurrences are not the
   // foreground main Chat. Missing Chat content also fails closed.

@@ -12,6 +12,7 @@ git remote -v || exit 1`
 // Narrow managed Shell/session adapter. No host cwd or unmanaged git is used.
 export interface CIHost {
   sessions: { get(id: string): { header: { cwd?: string } } | undefined }
+  directory?(sessionId: string): string | undefined
   probe(cwd: string, signal: AbortSignal): Promise<string | null>
   github():
     { readCheckout(checkout: CICheckout, signal: AbortSignal): Promise<CISnapshot> } | undefined
@@ -44,13 +45,14 @@ export function checkoutIdentity(
 }
 export async function probeCheckout(host: CIHost, sessionId: string, signal: AbortSignal) {
   const session = host.sessions.get(sessionId)
-  const cwd = session?.header.cwd
+  const directory = () => (host.directory ? host.directory(sessionId) : session?.header.cwd)
+  const cwd = directory()
   if (!session || !cwd || signal.aborted) return null
   const text = await host.probe(cwd, signal)
   if (
     signal.aborted ||
     host.sessions.get(sessionId) !== session ||
-    session.header.cwd !== cwd ||
+    directory() !== cwd ||
     text === null
   )
     return null

@@ -56,6 +56,25 @@ export interface SessionCISnapshot extends CISnapshot {
   checkoutKey: string
 }
 
+export interface WorktreePreferenceRequest {
+  readonly sessionId: SessionId
+}
+
+export interface WorktreePreferenceChange extends WorktreePreferenceRequest {
+  readonly enabled: boolean
+  readonly revision: number
+  readonly cwd: string
+}
+
+export interface WorktreePreferenceSnapshot {
+  readonly sessionId: SessionId
+  readonly enabled: boolean
+  readonly revision: number
+  readonly cwd: string
+  readonly available: boolean
+  readonly reason: string | null
+}
+
 export interface SessionEnvironmentRequest {
   readonly sessionId: SessionId
 }

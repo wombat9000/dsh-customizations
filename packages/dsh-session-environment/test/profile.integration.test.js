@@ -16,7 +16,11 @@ test('portable recipe selects the local environment bundle after base and Web', 
   const matches = recipe.bundles.filter((bundle) => bundle.name === manifest.name)
   assert.equal(matches.length, 1)
   const index = recipe.bundles.findIndex((bundle) => bundle.name === manifest.name)
-  for (const name of ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app']) {
+  for (const name of [
+    '@deepseek-ai/dsh-base',
+    '@deepseek-ai/dsh-web-app',
+    '@deepseek-ai/dsh-experimental-tool-worktree',
+  ]) {
     const prerequisite = recipe.bundles.findIndex((bundle) => bundle.name === name)
     assert.ok(prerequisite >= 0, `Missing prerequisite bundle: ${name}`)
     assert.ok(index > prerequisite, `Session environment must follow ${name}`)
@@ -73,7 +77,14 @@ test('build emits every declared runtime and type entrypoint', async () => {
   const host = await import('../lib/index.js')
   const remote = await import('../lib/types/remote.js')
   const typert = await import('../lib/types/typert.host.js')
-  assert.deepEqual(host.default.inject, ['sessions', 'shell'])
+  assert.deepEqual(host.default.inject, [
+    'sessions',
+    'shell',
+    'agents',
+    'storageDomain',
+    'systemPrompt',
+    'workingDirectory',
+  ])
   assert.equal(remote.default.package, manifest.name)
   assert.equal(typert.TYPERT.package, manifest.name)
   assert.equal(remote.default.descriptors[0].id, typert.TYPERT.invocations[0].id)
