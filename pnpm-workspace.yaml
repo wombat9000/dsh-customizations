@@ -1,5 +1,10 @@
 packages:
   - packages/*
+nodeLinker: isolated
+# Share package files through the existing same-filesystem content-addressed store.
+packageImportMethod: hardlink
+# DSH client declarations require project-local resolution; override global opt-ins.
+enableGlobalVirtualStore: false
 patchedDependencies:
   '@deepseek-ai/dsh-client-connection@0.2.1-rc.3': patches/dsh-client-connection-0.2.1-rc.3-rpc-owner.patch
 minimumReleaseAgeExclude:
