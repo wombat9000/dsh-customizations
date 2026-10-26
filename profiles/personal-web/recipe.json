@@ -43,6 +43,10 @@
       "source": "../../packages/dsh-suggest-replies"
     },
     {
+      "name": "@local/dsh-ship-it",
+      "source": "../../packages/dsh-ship-it"
+    },
+    {
       "name": "@local/dsh-project-steward",
       "source": "../../packages/dsh-project-steward"
     },

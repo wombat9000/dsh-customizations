@@ -34,6 +34,7 @@ artifacts/
 /packages/dsh-session-recap/dist/
 /packages/dsh-suggest-replies/client.js
 /packages/dsh-suggest-replies/dist/
+/packages/dsh-ship-it/client.js
 /packages/dsh-file-intuition/dist/
 /packages/dsh-global-guidance/dist/
 /packages/dsh-github/client.js

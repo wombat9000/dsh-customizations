@@ -1,0 +1,3 @@
+- insert:
+    - id: local-ship-it
+      name: '@local/dsh-ship-it'
