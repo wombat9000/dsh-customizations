@@ -54,6 +54,24 @@ importers:
         specifier: 2.9.0
         version: 2.9.0
 
+  packages/dsh-browser-recording:
+    dependencies:
+      '@deepseek-ai/cordis':
+        specifier: 4.0.5
+        version: 4.0.5(@deepseek-ai/cordis-plugin-include@1.0.10)(@deepseek-ai/cordis-plugin-loader@1.0.6)
+      '@deepseek-ai/dsh':
+        specifier: 0.2.1-rc.3
+        version: 0.2.1-rc.3(0651ab484cc8264d7857a9cf5f25350e)
+      '@deepseek-ai/dsh-subprocess':
+        specifier: 0.2.1-rc.3
+        version: 0.2.1-rc.3(@deepseek-ai/cordis@4.0.5)(@deepseek-ai/dsh-http-proxy@0.2.1-rc.3(@deepseek-ai/cordis@4.0.5))
+      '@deepseek-ai/dsh-system-prompt':
+        specifier: 0.2.1-rc.3
+        version: 0.2.1-rc.3(@deepseek-ai/cordis@4.0.5)(@deepseek-ai/dsh-llm@0.2.1-rc.3(@deepseek-ai/cordis@4.0.5))(@deepseek-ai/dsh-scope@0.2.1-rc.3(@deepseek-ai/cordis@4.0.5))
+      '@deepseek-ai/dsh-tools':
+        specifier: 0.2.1-rc.3
+        version: 0.2.1-rc.3(216a232736cc22d421973382c4e97320)
+
   packages/dsh-codex-compat:
     dependencies:
       '@deepseek-ai/cordis':

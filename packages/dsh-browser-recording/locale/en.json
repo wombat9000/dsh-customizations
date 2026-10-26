@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Browser recording",
+    "description": "Agent-controlled browser recordings. Requires preinstalled agent-browser, Chromium and ffmpeg."
+  }
+}
