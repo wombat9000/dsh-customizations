@@ -11,6 +11,10 @@
       "source": "@deepseek-ai/dsh-web-app"
     },
     {
+      "name": "@deepseek-ai/dsh-experimental-tool-worktree",
+      "source": "@deepseek-ai/dsh-experimental-tool-worktree"
+    },
+    {
       "name": "@local/dsh-global-guidance",
       "source": "../../packages/dsh-global-guidance"
     },

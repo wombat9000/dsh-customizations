@@ -4,16 +4,29 @@ import type {
   SessionEnvironmentSnapshot,
   SessionCIRequest,
   SessionCISnapshot,
+  WorktreePreferenceRequest,
+  WorktreePreferenceChange,
+  WorktreePreferenceSnapshot,
 } from './types.js'
 import {
   sessionEnvironmentRequestSchema,
   sessionEnvironmentSnapshotSchema,
   sessionCIRequestSchema,
   sessionCISnapshotSchema,
+  worktreePreferenceChangeSchema,
+  worktreePreferenceSnapshotSchema,
 } from './schemas.js'
 
 declare module '@deepseek-ai/dsh-typert-protocol' {
   interface TypertRemoteNamespace$73657373696f6e456e7669726f6e6d656e74 {
+    readWorktreePreference: (
+      request: WorktreePreferenceRequest,
+      signal?: AbortSignal,
+    ) => Promise<RemoteResult<WorktreePreferenceSnapshot>>
+    setWorktreePreference: (
+      request: WorktreePreferenceChange,
+      signal?: AbortSignal,
+    ) => Promise<RemoteResult<WorktreePreferenceSnapshot>>
     readCI: (
       request: SessionCIRequest,
       signal?: AbortSignal,
@@ -24,6 +37,14 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     ) => Promise<RemoteResult<SessionEnvironmentSnapshot>>
   }
   interface TypertRemoteMap {
+    'sessionEnvironment/readWorktreePreference': (
+      request: WorktreePreferenceRequest,
+      signal?: AbortSignal,
+    ) => Promise<RemoteResult<WorktreePreferenceSnapshot>>
+    'sessionEnvironment/setWorktreePreference': (
+      request: WorktreePreferenceChange,
+      signal?: AbortSignal,
+    ) => Promise<RemoteResult<WorktreePreferenceSnapshot>>
     'sessionEnvironment/readCI': (
       request: SessionCIRequest,
       signal?: AbortSignal,
@@ -91,6 +112,34 @@ export const TYPERT_REMOTE: TypertRemoteContribution = {
         create: () => sessionCISnapshotSchema,
       },
     },
+    ...(['readWorktreePreference', 'setWorktreePreference'] as const).map((method) => ({
+      id: `@local/dsh-session-environment#sessionEnvironment/${method}`,
+      service: 'sessionEnvironment',
+      namespace: 'sessionEnvironment',
+      method,
+      invocation: { kind: 'direct' as const },
+      parameters: [
+        {
+          name: 'request',
+          wire: 'request',
+          source: 'json' as const,
+          codec: {
+            mode: 'strict' as const,
+            typeSymbol: `@local/dsh-session-environment/types#${method === 'readWorktreePreference' ? 'WorktreePreferenceRequest' : 'WorktreePreferenceChange'}`,
+            create: () =>
+              method === 'readWorktreePreference'
+                ? sessionEnvironmentRequestSchema
+                : worktreePreferenceChangeSchema,
+          },
+        },
+      ],
+      cancellation: { parameter: 'signal' as const },
+      result: {
+        mode: 'strict' as const,
+        typeSymbol: '@local/dsh-session-environment/types#WorktreePreferenceSnapshot',
+        create: () => worktreePreferenceSnapshotSchema,
+      },
+    })),
   ],
 }
 

@@ -11,6 +11,17 @@ import sessionEnvironmentRemote from '@local/dsh-session-environment/remote'
 import type { SessionEnvironmentSnapshot } from '@local/dsh-session-environment/types'
 import { CIRows, useEnvironmentVisible, useLiveCI } from './ci.js'
 import type { CIRemote } from './ci.js'
+import { WorktreeToggle } from './worktree.js'
+import type { WorktreeRemote, WorktreeToggleProps } from './worktree.js'
+
+// Narrow adapter for the lead-verified DSH 0.2.1-rc.3 native slots. Neither
+// contribution owns props or replaces the native controls; both are additive.
+declare module '@deepseek-ai/dsh-client-ui-slots' {
+  interface SlotMap {
+    'conversation.hero.options': { kind: 'list'; scope: 'session' }
+    'conversation.input.left': { kind: 'list'; scope: 'session' }
+  }
+}
 
 const POLL_INTERVAL_MS = 3_000
 const LOADING_DELAY_MS = 300
@@ -18,6 +29,7 @@ const LOADING_DELAY_MS = 300
 type LoadStatus = 'idle' | 'pending' | 'ready' | 'error'
 
 interface CachedEnvironment {
+  readonly cwd: string | null
   readonly home: string
   readonly repo: boolean
   readonly hasHead: boolean | null
@@ -32,6 +44,7 @@ interface CachedEnvironment {
 }
 
 interface EnvironmentInfo {
+  readonly sourceKey?: string
   readonly status: LoadStatus
   readonly cwd: string | null
   readonly home: string | null
@@ -65,7 +78,7 @@ export function selectedEnvironmentSession(state: SessionListState): SessionId |
   return selected.length === 1 ? selected[0]?.id : undefined
 }
 
-interface SessionEnvironmentRemote extends CIRemote {
+interface SessionEnvironmentRemote extends CIRemote, WorktreeRemote {
   read(
     request: { readonly sessionId: SessionId },
     signal?: AbortSignal,
@@ -150,10 +163,11 @@ export function blankInfo(
   }
 }
 
-function cachedInfo(cwd: string | null, cached: CachedEnvironment): EnvironmentInfo {
+function cachedInfo(sourceKey: string, cached: CachedEnvironment): EnvironmentInfo {
   return {
     status: 'ready',
-    cwd,
+    sourceKey,
+    cwd: cached.cwd,
     home: cached.home,
     repo: cached.repo,
     hasHead: cached.hasHead,
@@ -364,11 +378,14 @@ export function createEnvironmentCard(
       const item = selected === undefined ? undefined : state.byId[selected]
       return typeof item?.cwd === 'string' ? item.cwd : null
     })
+    // Workspace membership retains the original cwd. Cache observations by exact
+    // session and source directory so two worktrees of one project cannot mix.
+    const sourceKey = `${sessionId ?? ''}:${cwd ?? ''}`
     const [info, setInfo] = React.useState<EnvironmentInfo>(blankInfo('idle', null, false))
     const cardRef = React.useRef<HTMLElement>(null)
     const visible = useEnvironmentVisible(cardRef, isConversation && sessionId !== undefined)
     const ciRequest =
-      sessionId && info.cwd === cwd && info.checkoutKey
+      sessionId && info.sourceKey === sourceKey && info.checkoutKey
         ? { sessionId, checkoutKey: info.checkoutKey }
         : null
     const ci = useLiveCI(sessionEnvironment, ciRequest, visible)
@@ -380,8 +397,12 @@ export function createEnvironmentCard(
       }
 
       if (!visible) return undefined
-      const cached = cwd === null ? undefined : environmentCache.get(cwd)
-      setInfo(cached === undefined ? blankInfo('pending', cwd, false) : cachedInfo(cwd, cached))
+      const cached = environmentCache.get(sourceKey)
+      setInfo(
+        cached === undefined
+          ? { ...blankInfo('pending', cwd, false), sourceKey }
+          : cachedInfo(sourceKey, cached),
+      )
 
       let active = true
       let busy = false
@@ -391,7 +412,7 @@ export function createEnvironmentCard(
           ? window.setTimeout(() => {
               if (!active) return
               setInfo((previous) =>
-                previous.cwd === cwd && previous.status === 'pending'
+                previous.sourceKey === sourceKey && previous.status === 'pending'
                   ? { ...previous, showLoading: true }
                   : previous,
               )
@@ -403,13 +424,11 @@ export function createEnvironmentCard(
         window.clearTimeout(loadingTimer)
         loadingTimer = null
       }
-      const preserveCacheOrError = (message: string): void => {
-        const latest = cwd === null ? undefined : environmentCache.get(cwd)
-        setInfo(
-          latest === undefined
-            ? { ...blankInfo('error', cwd, false), error: message }
-            : cachedInfo(cwd, latest),
-        )
+      const showError = (message: string, observedCwd: string | null = null): void => {
+        // The original workspace cwd cannot identify a later native worktree.
+        // A failed probe must not resurrect an older checkout's path or branch.
+        environmentCache.delete(sourceKey)
+        setInfo({ ...blankInfo('error', observedCwd, false), sourceKey, error: message })
       }
 
       const refresh = async (): Promise<void> => {
@@ -420,16 +439,17 @@ export function createEnvironmentCard(
           if (!active) return
           clearLoadingTimer()
           if (!result.ok) {
-            preserveCacheOrError('Unavailable')
+            showError('Unavailable')
             return
           }
           const next: SessionEnvironmentSnapshot = result.value
           if (next.repo === null || next.error !== undefined) {
-            preserveCacheOrError(next.error ?? 'Unavailable')
+            showError(next.error ?? 'Unavailable', next.cwd)
             return
           }
           const nextCwd = next.cwd ?? cwd
           const cacheValue: CachedEnvironment = {
+            cwd: nextCwd,
             home: next.home,
             repo: next.repo,
             hasHead: next.hasHead,
@@ -442,12 +462,12 @@ export function createEnvironmentCard(
             additions: next.additions,
             deletions: next.deletions,
           }
-          if (nextCwd !== null) environmentCache.set(nextCwd, cacheValue)
-          setInfo(cachedInfo(nextCwd, cacheValue))
+          environmentCache.set(sourceKey, cacheValue)
+          setInfo(cachedInfo(sourceKey, cacheValue))
         } catch {
           if (active && !controller.signal.aborted) {
             clearLoadingTimer()
-            preserveCacheOrError('Unavailable')
+            showError('Unavailable')
           }
         } finally {
           busy = false
@@ -468,7 +488,7 @@ export function createEnvironmentCard(
         window.clearInterval(interval)
         resetDisposer()
       }
-    }, [sessionId, cwd, visible])
+    }, [sessionId, cwd, sourceKey, visible])
 
     if (!isConversation || sessionId === undefined) return null
 
@@ -491,14 +511,15 @@ export function createEnvironmentCard(
       }
     `
 
-    const cached = cwd === null ? undefined : environmentCache.get(cwd)
+    const cached = environmentCache.get(sourceKey)
     const displayInfo =
-      info.cwd === cwd
+      info.sourceKey === sourceKey
         ? info
         : cached === undefined
           ? blankInfo('pending', cwd, false)
-          : cachedInfo(cwd, cached)
-    const fullCwd = cwd ?? displayInfo.cwd ?? 'Unavailable'
+          : cachedInfo(sourceKey, cached)
+    const knownCwd = displayInfo.status === 'error' ? displayInfo.cwd : (displayInfo.cwd ?? cwd)
+    const fullCwd = knownCwd ?? 'Unavailable'
     const shownCwd = compactPath(fullCwd, displayInfo.home)
     const waitingText = displayInfo.showLoading ? 'Checking…' : '—'
 
@@ -594,7 +615,7 @@ export function createEnvironmentCard(
         'div',
         { style: styles.row },
         React.createElement('span', { style: styles.label }, 'CWD'),
-        (cwd ?? displayInfo.cwd)
+        knownCwd
           ? React.createElement(
               CopyValue,
               { key: `${sessionId}:cwd:${fullCwd}`, label: 'CWD', value: fullCwd },
@@ -666,7 +687,35 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       EnvironmentCard,
     ),
   )
+  const remote = mounted as SessionEnvironmentRemote
+  type NativeWorktreeProps = Omit<WorktreeToggleProps, 'remote' | 'placement'>
+  const unregisterHero = ctx.slots.inject('conversation.hero.options', () =>
+    ctx.slots.register(
+      {
+        name: 'conversation.hero.options',
+        id: 'session-environment-worktree-hero',
+        order: 20,
+        label: 'Worktree mode',
+      },
+      (props: NativeWorktreeProps) =>
+        React.createElement(WorktreeToggle, { ...props, remote, placement: 'hero' }),
+    ),
+  )
+  const unregisterComposer = ctx.slots.inject('conversation.input.left', () =>
+    ctx.slots.register(
+      {
+        name: 'conversation.input.left',
+        id: 'session-environment-worktree-composer',
+        order: 20,
+        label: 'Worktree mode',
+      },
+      (props: NativeWorktreeProps) =>
+        React.createElement(WorktreeToggle, { ...props, remote, placement: 'composer' }),
+    ),
+  )
   return async () => {
+    unregisterComposer()
+    unregisterHero()
     unregisterSlot()
     await unmountRemote()
   }
