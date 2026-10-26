@@ -25,6 +25,7 @@ const plugins = [
   { name: '@local/dsh-github', directory: 'packages/dsh-github' },
   { name: '@local/dsh-projects', directory: 'packages/dsh-projects' },
   { name: '@local/dsh-session-environment', directory: 'packages/dsh-session-environment' },
+  { name: '@local/dsh-ship-it', directory: 'packages/dsh-ship-it' },
 ]
 
 export async function waitForFixture(workspace, timeoutMs = 10000) {

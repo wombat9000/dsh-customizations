@@ -401,6 +401,36 @@ importers:
         specifier: 0.2.1-rc.3
         version: 0.2.1-rc.3(@deepseek-ai/cordis@4.0.5)
 
+  packages/dsh-ship-it:
+    dependencies:
+      '@deepseek-ai/cordis':
+        specifier: 4.0.5
+        version: 4.0.5(@deepseek-ai/cordis-plugin-include@1.0.10)(@deepseek-ai/cordis-plugin-loader@1.0.6)
+      '@deepseek-ai/dsh':
+        specifier: 0.2.1-rc.3
+        version: 0.2.1-rc.3(0651ab484cc8264d7857a9cf5f25350e)
+      '@deepseek-ai/dsh-api-remotes':
+        specifier: 0.2.1-rc.3
+        version: 0.2.1-rc.3(@deepseek-ai/cordis@4.0.5)(@deepseek-ai/dsh-scope@0.2.1-rc.3(@deepseek-ai/cordis@4.0.5))
+      '@deepseek-ai/dsh-api-session-controller':
+        specifier: 0.2.1-rc.3
+        version: 0.2.1-rc.3(c55b2f5f5b8763ff03fb5ff50e5d36f1)
+      '@deepseek-ai/dsh-client-ui-conversation':
+        specifier: 0.2.1-rc.3
+        version: 0.2.1-rc.3(@deepseek-ai/cordis@4.0.5)
+      '@deepseek-ai/dsh-client-ui-renderer':
+        specifier: 0.2.1-rc.3
+        version: 0.2.1-rc.3(@deepseek-ai/cordis@4.0.5)
+      '@deepseek-ai/dsh-client-ui-session':
+        specifier: 0.2.1-rc.3
+        version: 0.2.1-rc.3(@deepseek-ai/cordis@4.0.5)
+      '@deepseek-ai/dsh-client-ui-slots':
+        specifier: 0.2.1-rc.3
+        version: 0.2.1-rc.3(@deepseek-ai/cordis@4.0.5)
+      react:
+        specifier: 18.3.1
+        version: 18.3.1
+
   packages/dsh-suggest-replies:
     dependencies:
       '@deepseek-ai/dsh':

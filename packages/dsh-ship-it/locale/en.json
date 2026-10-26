@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Ship it",
+    "description": "Send the shipping workflow to the current session. Does not execute Git commands itself."
+  }
+}
