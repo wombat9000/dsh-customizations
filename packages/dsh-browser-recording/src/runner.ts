@@ -152,12 +152,56 @@ export async function record(request: Request): Promise<Record<string, unknown>>
       throw new Error('Recording requires an HTTP(S) URL without embedded credentials')
     const chrome = await chromePath()
     // Preflight before opening a browser. Never provision tools automatically.
-    for (const command of ['agent-browser', 'ffmpeg', 'ffprobe'])
+    for (const command of ['agent-browser', 'ffprobe'])
       await run(
         command,
         ['-version'].map((arg) => (command === 'agent-browser' ? '--version' : arg)),
         process.cwd(),
       )
+    try {
+      // Encode synthetic frames to pipes: version checks miss builds that lack
+      // agent-browser's -fps_mode vfr or the encoders used by our exports.
+      // No page data, browser process or task recording directory exists yet.
+      for (const output of [
+        [
+          '-c:v',
+          'libx264',
+          '-pix_fmt',
+          'yuv420p',
+          '-fps_mode',
+          'vfr',
+          '-movflags',
+          'frag_keyframe+empty_moov',
+          '-f',
+          'mp4',
+          'pipe:1',
+        ],
+        ['-c:v', 'libwebp_anim', '-loop', '0', '-f', 'webp', 'pipe:1'],
+      ])
+        await run(
+          'ffmpeg',
+          [
+            '-hide_banner',
+            '-loglevel',
+            'error',
+            '-nostdin',
+            '-f',
+            'lavfi',
+            '-i',
+            'color=c=black:s=16x16:r=2',
+            '-frames:v',
+            '2',
+            '-an',
+            ...output,
+          ],
+          process.cwd(),
+        )
+    } catch {
+      // Do not expose subprocess diagnostics or inherited environment details.
+      throw new Error(
+        'Compatible FFmpeg is required in the subprocess execution environment: recording needs -fps_mode vfr with libx264, and loop export needs libwebp_anim. Ask the environment operator to provide compatible FFmpeg on PATH; the plugin does not install tools.',
+      )
+    }
     const directory = join(tmpdir(), `dsh-browser-recording-${request.id}`)
     await mkdir(directory, { mode: 0o700 })
     const state: State = {

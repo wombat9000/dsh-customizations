@@ -1,5 +1,10 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import { spawnSync } from 'node:child_process'
+import { randomUUID } from 'node:crypto'
+import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import * as Tools from '@deepseek-ai/dsh-tools'
 import * as Prompt from '@deepseek-ai/dsh-system-prompt'
@@ -46,6 +51,89 @@ test('recorded actions cannot become CLI options, shell commands, JavaScript or 
       record({ operation: 'start', id: '11111111-1111-4111-8111-111111111111', url }),
       /HTTP/,
     )
+})
+
+test('runner checks encoding capabilities before creating recording state or launching a browser', async (t) => {
+  const source = await readFile(new URL('../dist/src/runner.js', import.meta.url), 'utf8')
+  for (const unsupported of ['-fps_mode', 'libx264', 'libwebp_anim', null]) {
+    await t.test(unsupported ?? 'compatible encoder', async (t) => {
+      const root = await mkdtemp(join(tmpdir(), 'recording-preflight-test-'))
+      t.after(() => rm(root, { recursive: true, force: true }))
+      const bin = join(root, 'bin')
+      const temporary = join(root, 'temporary')
+      await mkdir(bin)
+      await mkdir(temporary)
+      const id = randomUUID()
+      const directory = join(temporary, `dsh-browser-recording-${id}`)
+      const log = join(root, 'calls.jsonl')
+      const executable = `#!${process.execPath}
+import { appendFileSync, existsSync } from 'node:fs';
+import { basename } from 'node:path';
+const command = basename(process.argv[1]);
+const args = process.argv.slice(2);
+appendFileSync(process.env.PREFLIGHT_LOG, JSON.stringify({ command, args, directoryExists: existsSync(process.env.RECORDING_DIRECTORY) }) + '\\n');
+if (command === 'ffmpeg' && process.env.UNSUPPORTED && args.includes(process.env.UNSUPPORTED)) {
+  process.stderr.write('fixture-private-diagnostic: unsupported ' + process.env.UNSUPPORTED);
+  process.exit(1);
+}
+if (command === 'agent-browser') {
+  if (args.includes('eval')) process.stdout.write(JSON.stringify({ data: { result: true } }));
+  else if (args.includes('snapshot')) process.stdout.write('fixture snapshot');
+}
+`
+      for (const command of ['agent-browser', 'ffmpeg', 'ffprobe'])
+        await writeFile(join(bin, command), executable, { mode: 0o700 })
+      const env = {
+        ...process.env,
+        PATH: bin,
+        TMPDIR: temporary,
+        AGENT_BROWSER_EXECUTABLE_PATH: '/fixture/chromium',
+        PREFLIGHT_LOG: log,
+        RECORDING_DIRECTORY: directory,
+        UNSUPPORTED: unsupported ?? '',
+      }
+      const invoke = (request) =>
+        spawnSync(process.execPath, ['--input-type=module', '-', JSON.stringify(request)], {
+          input: source,
+          cwd: root,
+          env,
+          encoding: 'utf8',
+          timeout: 10_000,
+        })
+      const result = invoke({ operation: 'start', id, url: 'https://example.com' })
+      assert.ifError(result.error)
+      const calls = (await readFile(log, 'utf8')).trim().split('\n').map(JSON.parse)
+      if (unsupported) {
+        assert.equal(result.status, 1, 'an incompatible encoder must reject start')
+        assert.match(result.stderr, /compatible FFmpeg/i)
+        assert.match(result.stderr, /-fps_mode vfr/)
+        assert.match(result.stderr, /libx264/)
+        assert.match(result.stderr, /libwebp_anim/)
+        assert.match(result.stderr, /PATH/)
+        assert.doesNotMatch(result.stderr, /fixture-private-diagnostic/)
+        assert.ok(calls.every((call) => !call.directoryExists))
+        assert.ok(
+          calls.every(
+            (call) => call.command !== 'agent-browser' || call.args.includes('--version'),
+          ),
+        )
+        assert.deepEqual(await readdir(temporary), [])
+      } else {
+        assert.equal(result.status, 0, result.stderr)
+        assert.equal(JSON.parse(result.stdout).snapshot, 'fixture snapshot')
+        const encodes = calls.filter(
+          (call) => call.command === 'ffmpeg' && call.args.includes('-i'),
+        )
+        assert.ok(
+          encodes.some((call) => call.args.includes('libx264') && call.args.includes('vfr')),
+        )
+        assert.ok(encodes.some((call) => call.args.includes('libwebp_anim')))
+        assert.ok(encodes.every((call) => !call.directoryExists))
+        assert.equal(invoke({ operation: 'discard', id, directory }).status, 0)
+        assert.deepEqual(await readdir(temporary), [])
+      }
+    })
+  }
 })
 
 test('compaction scales action times into video time, merges overlaps and keeps both endpoints', () => {
