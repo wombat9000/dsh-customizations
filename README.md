@@ -14,6 +14,8 @@ Install these tools before you use the repository:
 
 Before dependency work in any checkout or worktree, follow the [repository setup skill](.agents/skills/repository-setup/SKILL.md). It covers dependency ownership, pinned executable availability, offline cache limitations, and approval boundaries. You can read this Markdown directly without a plugin.
 
+The [worktree installation policy](.agents/skills/repository-setup/SKILL.md#share-dependencies-between-worktrees) keeps separate dependency trees but shares package files through pnpm's same-filesystem store. The [workspace configuration](pnpm-workspace.yaml) explicitly disables the experimental global virtual store, even when a user enables it globally, because the pinned DSH client declarations fail the forced build with that layout.
+
 Set `DSH_HOME` before applying a profile if your Harness home is not `~/.dsh`.
 
 ### Amp orbs
