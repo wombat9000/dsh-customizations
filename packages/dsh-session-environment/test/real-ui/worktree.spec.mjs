@@ -60,26 +60,68 @@ test('choose Worktree mode before starting, retain it, and follow native directo
       await openRepository(app)
       await expect(toggle(app)).toHaveAttribute('aria-checked', 'true')
     })
-    await test.step('The initial native repository row exposes the remembered choice without submitting a prompt', async () => {
+    await test.step('New sessions use the same composer control without submitting a prompt', async () => {
       await fixture(app, 'startup')
       await app.getByRole('button', { name: 'New session', exact: true }).first().click()
       await closeGetStarted(app)
       await app.getByRole('button', { name: 'Choose workspace', exact: true }).click()
       await app.getByRole('menuitem', { name: worktreeStartupWorkspace, exact: true }).click()
-      const hero = app.locator('[data-worktree-toggle="hero"]')
-      await expect(hero).toBeVisible()
+      const composer = app.locator('[data-worktree-toggle="composer"]')
+      await expect(composer).toBeVisible()
+      await expect(composer).toHaveCount(1)
+      await expect(app.locator('[data-worktree-toggle="hero"]')).toHaveCount(0)
       await expect(toggle(app)).toHaveAttribute('aria-checked', 'true')
-      await expect(app.locator('[data-worktree-toggle="composer"]')).toHaveCount(0)
       await setTheme(app, 'dark')
       const screenshot = testInfo.outputPath('worktree-new-session.png')
       await app.screenshot({ path: screenshot })
       await testInfo.attach(
-        'Worktree preference in the native new-session row (disposable shell)',
+        'Worktree preference in the new-session composer toolbar (disposable shell)',
         { path: screenshot, contentType: 'image/png' },
       )
-      // A new session can change its choice without changing the saved parent.
-      await toggle(app).click()
+      // Hold only the real save response. Native disabled styles and adjacent
+      // toolbar controls must not blink or move while the browser awaits it.
+      const beforeSave = await toggle(app).boundingBox()
+      const opacity = await toggle(app).evaluate((button) => getComputedStyle(button).opacity)
+      let release
+      const held = new Promise((resolve) => {
+        release = resolve
+      })
+      let responseHeld = false
+      let delivery = Promise.resolve()
+      const saveEndpoint = '**/api/sessionEnvironment/setWorktreePreference'
+      const holdSave = (route) => {
+        delivery = (async () => {
+          const response = await route.fetch()
+          responseHeld = true
+          await held
+          await route.fulfill({ response })
+        })()
+        return delivery
+      }
+      await app.route(saveEndpoint, holdSave)
+      try {
+        // A new session changes only its choice, not the saved parent's choice.
+        await toggle(app).click()
+        await expect.poll(() => responseHeld).toBe(true)
+        await expect(toggle(app)).toHaveAttribute('aria-busy', 'true')
+        await expect(toggle(app)).toBeDisabled()
+        await expect(toggle(app)).toHaveAttribute('aria-checked', 'true')
+        expect(await toggle(app).boundingBox()).toEqual(beforeSave)
+        await expect(toggle(app)).toHaveCSS('opacity', opacity)
+        const pendingScreenshot = testInfo.outputPath('worktree-save-pending.png')
+        await composer.screenshot({ path: pendingScreenshot })
+        await testInfo.attach('Stable Worktree control while the real save response is held', {
+          path: pendingScreenshot,
+          contentType: 'image/png',
+        })
+      } finally {
+        release()
+        await delivery
+        await app.unroute(saveEndpoint, holdSave)
+      }
+      await expect(toggle(app)).toBeEnabled()
       await expect(toggle(app)).toHaveAttribute('aria-checked', 'false')
+      expect(await toggle(app).boundingBox()).toEqual(beforeSave)
     })
     await test.step('Environment follows native cwd changes and Off leaves the worktree intact', async () => {
       await openRepository(app)

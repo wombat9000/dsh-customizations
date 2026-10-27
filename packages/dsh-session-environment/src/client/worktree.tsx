@@ -25,7 +25,6 @@ export interface WorktreeToggleProps {
   useSession: UseSession
   // Native wire value is string|null; undefined means its baseline is not here yet.
   useProjection: (key: 'workingDirectory') => string | null | undefined
-  placement: 'hero' | 'composer'
 }
 
 type Refresh = (sessionId: SessionId) => void
@@ -89,8 +88,7 @@ const styles: Record<string, React.CSSProperties> = {
 }
 
 export function WorktreeToggle(props: WorktreeToggleProps): React.ReactElement | null {
-  const { remote, sessionId, placement } = props
-  const blank = props.useSession((session) => session.blank)
+  const { remote, sessionId } = props
   const subagent = props.useSession((session) => session.subagent !== null)
   const open = props.useSession((session) => session.openState === 'open')
   const cwd = props.useProjection('workingDirectory') ?? null
@@ -184,7 +182,7 @@ export function WorktreeToggle(props: WorktreeToggleProps): React.ReactElement |
     }
   }, [remote, sessionId, cwd, subagent, open])
 
-  if (subagent || (placement === 'hero' ? !blank : blank)) return null
+  if (subagent) return null
 
   // Hide the old identity synchronously, before the next effect starts its read.
   const current = open && view?.sessionId === sessionId && view.cwd === cwd ? view : null
@@ -193,17 +191,22 @@ export function WorktreeToggle(props: WorktreeToggleProps): React.ReactElement |
   const disabled =
     loading || Boolean(current?.error) || !snapshot || (!snapshot.available && !snapshot.enabled)
   const on = Boolean(snapshot?.enabled && snapshot.available)
-  const status = loading
-    ? current?.pending === 'save'
-      ? 'Saving…'
-      : 'Checking…'
-    : current?.error
-      ? 'Unconfirmed'
-      : !snapshot?.available
+  // Keep the confirmed choice in place during a save or peer refresh. Swapping
+  // it for a wider progress label makes the native toolbar jump on every click.
+  const status = current?.error
+    ? 'Unconfirmed'
+    : !snapshot
+      ? 'Checking…'
+      : !snapshot.available
         ? 'Unavailable'
         : on
           ? 'On'
           : 'Off'
+  const progress = loading
+    ? current?.pending === 'save'
+      ? 'Saving Worktree mode…'
+      : 'Checking Worktree mode…'
+    : ''
   const tooltip = [
     guidance,
     offGuidance,
@@ -214,7 +217,7 @@ export function WorktreeToggle(props: WorktreeToggleProps): React.ReactElement |
     .join(' ')
 
   return (
-    <span style={styles.group} data-worktree-toggle={placement} title={tooltip}>
+    <span style={styles.group} data-worktree-toggle="composer" title={tooltip}>
       <button
         type="button"
         role="switch"
@@ -247,8 +250,13 @@ export function WorktreeToggle(props: WorktreeToggleProps): React.ReactElement |
           <circle cx="15" cy="3" r="2" />
         </svg>
         <span>Worktree</span>
-        <span aria-hidden="true">{status}</span>
+        <span aria-hidden="true" style={{ minWidth: '3ch', textAlign: 'center' }}>
+          {status}
+        </span>
       </button>
+      <span role="status" style={styles.description}>
+        {progress}
+      </span>
       <span id={descriptionId} style={styles.description}>
         {tooltip}
       </span>
