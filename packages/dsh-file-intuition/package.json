@@ -1,6 +1,6 @@
 {
   "name": "@local/dsh-file-intuition",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "private": true,
   "description": "Jev-backed file judgments and the File Intuition reference",
   "type": "module",
@@ -32,12 +32,12 @@
     }
   },
   "dependencies": {
-    "@deepseek-ai/dsh-fs": "0.2.1-rc.3",
-    "@deepseek-ai/dsh-skill": "0.2.1-rc.3",
-    "@deepseek-ai/dsh-tools": "0.2.1-rc.3"
+    "@deepseek-ai/dsh-fs": "0.2.1-rc.5",
+    "@deepseek-ai/dsh-skill": "0.2.1-rc.5",
+    "@deepseek-ai/dsh-tools": "0.2.1-rc.5"
   },
   "peerDependencies": {
-    "@deepseek-ai/dsh": "0.2.1-rc.3",
+    "@deepseek-ai/dsh": "0.2.1-rc.5",
     "@deepseek-ai/cordis": "4.0.5"
   },
   "license": "UNLICENSED"

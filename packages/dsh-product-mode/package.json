@@ -1,8 +1,8 @@
 {
   "name": "@local/dsh-product-mode",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "private": true,
-  "description": "Product mode: conversational GitHub project planning for DSH 0.2.1-rc.3",
+  "description": "Product mode: conversational GitHub project planning for DSH 0.2.1-rc.5",
   "type": "module",
   "exports": {
     "./package.json": "./package.json"
@@ -25,6 +25,6 @@
   },
   "license": "UNLICENSED",
   "peerDependencies": {
-    "@deepseek-ai/dsh": "0.2.1-rc.3"
+    "@deepseek-ai/dsh": "0.2.1-rc.5"
   }
 }

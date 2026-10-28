@@ -28,7 +28,7 @@ interface Chat {
   }
   nodes: { turnDataSource(turn: number, kind: 'tool-call'): Source<readonly { root: ToolBlock }[]> }
 }
-// Consumed subsets of the published 0.2.1-rc.3 session standard props. The
+// Consumed subsets of the published 0.2.1-rc.5 session standard props. The
 // integration journey verifies the real slot, tool projection, and input actions.
 export interface ReplyProps {
   useSession: Selector<{ blank: boolean; openState: string; running: boolean }>

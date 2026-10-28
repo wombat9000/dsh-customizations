@@ -1,6 +1,6 @@
 # GitHub tools
 
-This bundle adds eighteen read tools, twelve write tools, and a session issue-management grant request to every DSH session, independent of preset. Most writes require individual approval. Draft PR creation, draft title/body edits, and stack creation/appends skip this bundle's approval prompt; live grants can also cover supported field updates and dependency additions. Other DSH policy guards still apply. It targets DSH `0.2.1-rc.3` and `github.com`. It uses the GitHub CLI already available through DSH’s managed subprocess backend; it adds no SDK, login flow, or credential store. The Web conversation card shows grant scope, revocation, and recent change outcomes.
+This bundle adds eighteen read tools, twelve write tools, and a session issue-management grant request to every DSH session, independent of preset. Most writes require individual approval. Draft PR creation, draft title/body edits, and stack creation/appends skip this bundle's approval prompt; live grants can also cover supported field updates and dependency additions. Other DSH policy guards still apply. It targets DSH `0.2.1-rc.5` and `github.com`. It uses the GitHub CLI already available through DSH’s managed subprocess backend; it adds no SDK, login flow, or credential store. The Web conversation card shows grant scope, revocation, and recent change outcomes.
 
 ## Access and execution
 
@@ -197,7 +197,7 @@ The browser bridge exposes only status and revocation, with same-origin, loopbac
 
 ## Packaging and validation
 
-See the [DSH `0.2.1-rc.3` validation results](../../MIGRATION-0.2.1-rc.3.md#validation-results) for actual test outcomes and screenshot limitations.
+See the [DSH `0.2.1-rc.5` validation results](../../MIGRATION-0.2.1-rc.5.md#validation-results) for actual test outcomes and screenshot limitations.
 
 The portable `personal-web` recipe selects `@local/dsh-github`. The bundle inserts a host plugin row and does not replace the preset roster. Applying it to a profile and restarting DSH require separate approval; editing this source does not update the running GUI.
 

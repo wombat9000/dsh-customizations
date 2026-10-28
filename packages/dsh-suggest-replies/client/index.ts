@@ -3,7 +3,7 @@ import { Replies, type ReplyProps } from './replies.tsx'
 
 export const inject = ['slots']
 
-// Additive session list, verified against DSH 0.2.1-rc.3: returning null
+// Additive session list, verified against DSH 0.2.1-rc.5: returning null
 // removes only our row. Native composer controls and other docks remain intact.
 interface ClientContext {
   slots: {
