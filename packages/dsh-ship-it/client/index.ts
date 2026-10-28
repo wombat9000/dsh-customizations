@@ -13,7 +13,7 @@ import { SHIP_IT_PROMPT } from './prompt.ts'
 export default {
   inject: ['slots', 'sessions', 'conversation'],
   apply(ctx: Context) {
-    // DSH 0.2.1-rc.3: additive session-scoped list, ascending order, no owner
+    // DSH 0.2.1-rc.5: additive session-scoped list, ascending order, no owner
     // props. Returning null hides only our entry; native header controls remain.
     return ctx.slots.inject('conversation.session.header.utilities', () =>
       ctx.slots.register(

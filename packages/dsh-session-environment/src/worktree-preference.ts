@@ -186,7 +186,7 @@ inside=$(git -c core.fsmonitor=false rev-parse --is-inside-work-tree 2>/dev/null
 git -c core.fsmonitor=false rev-parse --verify 'HEAD^{commit}' >/dev/null 2>&1 || { printf 'no-head'; exit 0; }
 printf 'ready'`
 
-// Narrow consumed adapters for the inspected DSH 0.2.1-rc.3 services/events.
+// Narrow consumed adapters for the inspected DSH 0.2.1-rc.5 services/events.
 // This package has no direct runtime imports from the agent or prompt packages;
 // the disposable-shell journey verifies these registrations against real DSH.
 interface PromptRegistry {

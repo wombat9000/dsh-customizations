@@ -40,7 +40,7 @@ test('portable recipe selects Linear after base and Web with its plugin settings
     ...manifest.dependencies,
     ...manifest.peerDependencies,
   })) {
-    if (name.startsWith('@deepseek-ai/dsh-')) assert.equal(version, '0.2.1-rc.3', name)
+    if (name.startsWith('@deepseek-ai/dsh-')) assert.equal(version, '0.2.1-rc.5', name)
   }
   assert.equal(manifest.dependencies['@linear/sdk'], '92.0.0')
   const patch = await readFile(new URL('../cordis.patch.yml', import.meta.url), 'utf8')

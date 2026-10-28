@@ -1,6 +1,6 @@
 # Local DSH YouTube Tools
 
-Gemini-backed tools for understanding public YouTube videos in DSH `0.2.1-rc.3`. The package registers ordinary tools and therefore also appears automatically in Programmatic Tool Calling (PTC) as `tools.youtube_watch`, `tools.youtube_transcript`, `tools.youtube_transcript_read`, and `tools.youtube_transcript_search`.
+Gemini-backed tools for understanding public YouTube videos in DSH `0.2.1-rc.5`. The package registers ordinary tools and therefore also appears automatically in Programmatic Tool Calling (PTC) as `tools.youtube_watch`, `tools.youtube_transcript`, `tools.youtube_transcript_read`, and `tools.youtube_transcript_search`.
 
 ## Tools
 
@@ -128,7 +128,7 @@ Host and client sources use strict TypeScript, including checked indexed access 
 
 ## Build and test
 
-See the [DSH `0.2.1-rc.3` validation results](../../MIGRATION-0.2.1-rc.3.md#validation-results) for actual fixture and browser outcomes and their limits.
+See the [DSH `0.2.1-rc.5` validation results](../../MIGRATION-0.2.1-rc.5.md#validation-results) for actual fixture and browser outcomes and their limits.
 
 After the repository's approved dependency setup, run these commands from the repository root. Builds use the existing pinned TypeScript and client bundler; no package-local compiler installation is needed.
 
