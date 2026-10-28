@@ -14,7 +14,7 @@ interface BlockSource {
   subscribe(listener: () => void): () => void
   getSnapshot(): { reason: string } | undefined
 }
-// Consumed subsets of the pinned 0.2.1-rc.3 APIs, also used by Ship it.
+// Consumed subsets of the pinned 0.2.1-rc.5 APIs, also used by Ship it.
 // The additive dock list supports per-session inject; hooks.block supplies
 // useBlock. Native admission/authorization remain authoritative.
 interface ClientContext {

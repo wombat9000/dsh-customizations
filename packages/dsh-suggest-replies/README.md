@@ -1,6 +1,6 @@
 # Suggested replies
 
-Agent-authored follow-up buttons for DSH Web `0.2.1-rc.3`. The host bundle contributes `suggest_replies` and guidance across presets; it adds no preset or provider request.
+Agent-authored follow-up buttons for DSH Web `0.2.1-rc.5`. The host bundle contributes `suggest_replies` and guidance across presets; it adds no preset or provider request.
 
 The agent calls `suggest_replies({ replies: ["Explain the tradeoff", "Add a regression test"] })` just before its final response. Supply zero to three single-line, plain-text replies, each at most 120 characters. Empty arrays clear suggestions. Whitespace is trimmed and duplicates removed. Invalid inputs fail without publishing suggestions.
 

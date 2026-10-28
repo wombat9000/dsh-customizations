@@ -1,6 +1,6 @@
 # Global Guidance
 
-This bundle provides independently toggleable guidance themes for DSH **`0.2.1-rc.3`**. It starts with one component, **Visual evidence**. Screenshot capture, provenance, agent handoff, presentation, and screenshot artifact hygiene form one theme and share one toggle. Future independent themes can add their own host rows to this bundle.
+This bundle provides independently toggleable guidance themes for DSH **`0.2.1-rc.5`**. It starts with one component, **Visual evidence**. Screenshot capture, provenance, agent handoff, presentation, and screenshot artifact hygiene form one theme and share one toggle. Future independent themes can add their own host rows to this bundle.
 
 ## Enable or disable guidance
 

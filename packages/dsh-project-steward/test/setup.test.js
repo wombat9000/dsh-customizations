@@ -194,11 +194,11 @@ test('release-age configuration and guidance retain review and approval boundari
     // DSH packages at the target, plus exact upstream runtime versions published with it.
     assert.match(
       exclusion,
-      /^  - '(?:@deepseek-ai\/dsh[^']*@0\.2\.1-rc\.3|@deepseek-ai\/(?:cordis(?:-plugin-[a-z]+)?|cosmokit|schemastery)@\d+\.\d+\.\d+|@earendil-works\/pi-[a-z]+@\d+\.\d+\.\d+)'$/,
+      /^  - '(?:@deepseek-ai\/dsh[^']*@0\.2\.1-rc\.5|@deepseek-ai\/(?:cordis(?:-plugin-[a-z]+)?|cosmokit|schemastery)@\d+\.\d+\.\d+|@earendil-works\/pi-[a-z]+@\d+\.\d+\.\d+)'$/,
     )
   }
   assert.match(workspace, /^patchedDependencies:/m)
-  assert.ok(workspace.includes('patches/dsh-client-connection-0.2.1-rc.3-rpc-owner.patch'))
+  assert.ok(workspace.includes('patches/dsh-client-connection-0.2.1-rc.5-rpc-owner.patch'))
   const skill = await text(skillPath)
   assert.ok(skill.includes('minimumReleaseAge: 5760'))
   assert.ok(skill.includes('4 days in minutes'))
