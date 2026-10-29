@@ -67,20 +67,12 @@ async function mount(remote, sources, sessionId = 'first') {
   const render = (id = sessionId) =>
     act(async () => {
       root.render(
-        h(
-          React.Fragment,
-          null,
-          ...['hero', 'composer'].map((placement) =>
-            h(WorktreeToggle, {
-              key: placement,
-              remote,
-              sessionId: id,
-              useSession: sources.useSession,
-              useProjection: sources.useProjection,
-              placement,
-            }),
-          ),
-        ),
+        h(WorktreeToggle, {
+          remote,
+          sessionId: id,
+          useSession: sources.useSession,
+          useProjection: sources.useProjection,
+        }),
       )
     })
   await render()
@@ -94,7 +86,7 @@ afterEach(async () => {
   vi.restoreAllMocks()
 })
 
-test('saved preference follows hero/composer lifecycle, errors recover read-only, and non-Git disables enabling', async () => {
+test('one composer control survives the first prompt, keeps saves stable, and recovers errors read-only', async () => {
   const firstRead = deferred()
   let read = () => firstRead.promise
   let save
@@ -113,7 +105,8 @@ test('saved preference follows hero/composer lifecycle, errors recover read-only
   await act(async () => sources.set({ openState: 'open' }))
   await expect.element(toggle()).toBeDisabled()
   await expect.element(toggle()).toHaveAttribute('aria-checked', 'false')
-  expect(container.querySelector('[data-worktree-toggle="composer"]')).toBeNull()
+  expect(container.querySelector('[data-worktree-toggle="composer"]')).not.toBeNull()
+  expect(container.querySelector('[data-worktree-toggle="hero"]')).toBeNull()
   expect(
     remote.readWorktreePreference.mock.calls.every(([request]) => request.sessionId === 'first'),
   ).toBe(true)
@@ -128,7 +121,14 @@ test('saved preference follows hero/composer lifecycle, errors recover read-only
   expect(tooltip).toContain('Off does not change or delete a worktree.')
   expect(tooltip).toContain('remembered for new sessions')
 
+  const button = toggle().element()
+  const label = button.textContent
+  const beforeSave = button.getBoundingClientRect()
   await click()
+  expect(toggle().element()).toBe(button)
+  expect(button.getBoundingClientRect().width).toBe(beforeSave.width)
+  expect(button.getBoundingClientRect().height).toBe(beforeSave.height)
+  expect(button.textContent).toBe(label)
   expect(remote.setWorktreePreference.mock.calls[0][0]).toEqual({
     sessionId: 'first',
     enabled: true,
@@ -137,7 +137,8 @@ test('saved preference follows hero/composer lifecycle, errors recover read-only
   })
   await expect.element(toggle()).toBeDisabled()
   await expect.element(toggle()).toHaveAttribute('aria-checked', 'false')
-  await expect.poll(() => toggle().element().textContent).toContain('Saving')
+  await expect.element(toggle()).toHaveAttribute('aria-busy', 'true')
+  await expect.element(page.getByRole('status')).toHaveTextContent('Saving Worktree mode…')
   // No second write can start while the first remains unconfirmed.
   await act(async () => toggle().element().click())
   expect(remote.setWorktreePreference).toHaveBeenCalledTimes(1)
@@ -145,10 +146,15 @@ test('saved preference follows hero/composer lifecycle, errors recover read-only
   await act(async () => save.resolve(ok(value)))
   await expect.element(toggle()).toHaveAttribute('aria-checked', 'true')
   await expect.poll(() => toggle().element().textContent).toContain('On')
+  expect(button.getBoundingClientRect().width).toBe(beforeSave.width)
+  expect(button.getBoundingClientRect().height).toBe(beforeSave.height)
+  await expect.element(toggle()).toHaveAttribute('aria-busy', 'false')
+  await expect.element(page.getByRole('status')).toHaveTextContent('')
 
-  // Composer was mounted but hidden during the hero write. It must refresh
-  // through the shared component notification, not retain its first Off read.
+  // The first prompt must not replace the control or reset its confirmed choice.
   await act(async () => sources.set({ blank: false }))
+  expect(toggle().element()).toBe(button)
+  expect(container.querySelector('[data-worktree-toggle="composer"]')).not.toBeNull()
   expect(container.querySelector('[data-worktree-toggle="hero"]')).toBeNull()
   await expect.element(toggle()).toHaveAttribute('aria-checked', 'true')
   await click()
@@ -249,7 +255,7 @@ test('late reads and saves cannot cross session, effective cwd, or component lif
   nextRead = async ({ sessionId }) => ok(preference({ sessionId }))
   await fixture.render('second')
   await expect.element(toggle()).toBeEnabled()
-  expect(reads.slice(0, 2).every(({ signal }) => signal.aborted)).toBe(true)
+  expect(reads[0].signal.aborted).toBe(true)
   await act(async () => initialRead.resolve(ok(preference({ enabled: true, revision: 99 }))))
   await expect.element(toggle()).toHaveAttribute('aria-checked', 'false')
 
@@ -266,10 +272,10 @@ test('late reads and saves cannot cross session, effective cwd, or component lif
   nextRead = () => changedCwdRead.promise
   await act(async () => sources.set({ cwd: '/old-cwd' }))
   await expect.element(toggle()).toBeDisabled()
-  const oldCwdRequests = reads.slice(-2)
+  const oldCwdRequest = reads.at(-1)
   nextRead = async () => ok(preference({ sessionId: 'third', cwd: '/new-cwd', revision: 7 }))
   await act(async () => sources.set({ cwd: '/new-cwd' }))
-  expect(oldCwdRequests.every(({ signal }) => signal.aborted)).toBe(true)
+  expect(oldCwdRequest.signal.aborted).toBe(true)
   await act(async () =>
     changedCwdRead.resolve(
       ok(preference({ sessionId: 'third', cwd: '/old-cwd', enabled: true, revision: 100 })),
@@ -280,10 +286,10 @@ test('late reads and saves cannot cross session, effective cwd, or component lif
 
   nextRead = () => finalRead.promise
   await fixture.render('fourth')
-  const unmountedRequests = reads.slice(-2)
+  const unmountedRequest = reads.at(-1)
   await act(async () => root.unmount())
   root = undefined
-  expect(unmountedRequests.every(({ signal }) => signal.aborted)).toBe(true)
+  expect(unmountedRequest.signal.aborted).toBe(true)
   await act(async () =>
     finalRead.resolve(ok(preference({ sessionId: 'fourth', cwd: '/new-cwd', enabled: true }))),
   )

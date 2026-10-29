@@ -14,11 +14,10 @@ import type { CIRemote } from './ci.js'
 import { WorktreeToggle } from './worktree.js'
 import type { WorktreeRemote, WorktreeToggleProps } from './worktree.js'
 
-// Narrow adapter for the lead-verified DSH 0.2.1-rc.3 native slots. Neither
-// contribution owns props or replaces the native controls; both are additive.
+// Pinned DSH 0.2.1-rc.3 exposes this additive, session-scoped input seat in
+// both the blank-session and active-session composer. Native controls stay intact.
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface SlotMap {
-    'conversation.hero.options': { kind: 'list'; scope: 'session' }
     'conversation.input.left': { kind: 'list'; scope: 'session' }
   }
 }
@@ -688,19 +687,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     ),
   )
   const remote = mounted as SessionEnvironmentRemote
-  type NativeWorktreeProps = Omit<WorktreeToggleProps, 'remote' | 'placement'>
-  const unregisterHero = ctx.slots.inject('conversation.hero.options', () =>
-    ctx.slots.register(
-      {
-        name: 'conversation.hero.options',
-        id: 'session-environment-worktree-hero',
-        order: 20,
-        label: 'Worktree mode',
-      },
-      (props: NativeWorktreeProps) =>
-        React.createElement(WorktreeToggle, { ...props, remote, placement: 'hero' }),
-    ),
-  )
+  type NativeWorktreeProps = Omit<WorktreeToggleProps, 'remote'>
   const unregisterComposer = ctx.slots.inject('conversation.input.left', () =>
     ctx.slots.register(
       {
@@ -709,13 +696,11 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
         order: 20,
         label: 'Worktree mode',
       },
-      (props: NativeWorktreeProps) =>
-        React.createElement(WorktreeToggle, { ...props, remote, placement: 'composer' }),
+      (props: NativeWorktreeProps) => React.createElement(WorktreeToggle, { ...props, remote }),
     ),
   )
   return async () => {
     unregisterComposer()
-    unregisterHero()
     unregisterSlot()
     await unmountRemote()
   }
