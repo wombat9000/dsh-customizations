@@ -1,6 +1,6 @@
 # Browser recording
 
-`@local/dsh-browser-recording` adds agent tools for user-requested browser interaction recordings in DSH `0.2.1-rc.3`. It does not record your desktop or DSH itself, attach to your personal browser, or install any software. The `personal-web` recipe selects it; applying the recipe or restarting a retained profile requires separate approval.
+`@local/dsh-browser-recording` adds agent tools for user-requested browser interaction recordings in DSH `0.2.1-rc.5`. It does not record your desktop or DSH itself, attach to your personal browser, or install any software. The `personal-web` recipe selects it; applying the recipe or restarting a retained profile requires separate approval.
 
 Ask your agent to record a short browser demo and supply the starting URL. It uses:
 

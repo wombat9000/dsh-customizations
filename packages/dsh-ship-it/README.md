@@ -1,6 +1,6 @@
 # Ship it
 
-`@local/dsh-ship-it` adds **Ship it** to the top-right header of an existing top-level DSH conversation. It targets DSH `0.2.1-rc.3` only and uses the native session-scoped conversation service.
+`@local/dsh-ship-it` adds **Ship it** to the top-right header of an existing top-level DSH conversation. It targets DSH `0.2.1-rc.5` only and uses the native session-scoped conversation service.
 
 Clicking the button sends the exact shipping instructions from [client/prompt.ts](client/prompt.ts) as one ordinary user message to that session: commit all changes, fetch/rebase onto `origin/main`, run the full suite, and push. Substantive conflicts still require the agent to check with you; failing checks can be ignored only after reproducing them on `origin/main`. Tests must not be repeated after later fetches/rebases unless conflict resolution or local edits changed files.
 

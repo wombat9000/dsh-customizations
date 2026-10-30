@@ -14,7 +14,7 @@ import type { CIRemote } from './ci.js'
 import { WorktreeToggle } from './worktree.js'
 import type { WorktreeRemote, WorktreeToggleProps } from './worktree.js'
 
-// Pinned DSH 0.2.1-rc.3 exposes this additive, session-scoped input seat in
+// Pinned DSH 0.2.1-rc.5 exposes this additive, session-scoped input seat in
 // both the blank-session and active-session composer. Native controls stay intact.
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface SlotMap {
@@ -491,7 +491,7 @@ export function createEnvironmentCard(
 
     if (!isConversation || sessionId === undefined) return null
 
-    // Pinned DSH 0.2.1-rc.3 markup: only the mounted Chat view emits
+    // Pinned DSH 0.2.1-rc.5 markup: only the mounted Chat view emits
     // data-chat-flow inside the main Conversation's session content. Exclude
     // hidden retained views and embedded sidebars, and match the selected session.
     // Foreground push/fullscreen panels have no hidden ancestor; their visibility

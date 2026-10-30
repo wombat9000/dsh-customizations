@@ -52,7 +52,7 @@ async function bounded(promise, label) {
 // Primary owner: the installed DSH/pi authorization-to-persistence boundary.
 // Existing helper tests use synthetic flows and cannot expose this native bridge risk.
 // This deliberately records a limitation, not a fix: pi 1.3.0 passes { signal }
-// to CredentialStore.modify, but DSH 0.2.1-rc.3 drops that argument. A queued write
+// to CredentialStore.modify, but DSH 0.2.1-rc.5 drops that argument. A queued write
 // admitted before cancellation can therefore replace the grant after "cancelled".
 // Only public provider OAuth login results are synthetic; Models.login, the native
 // registered flow, AuthorizationService, record locking, and disk writes remain real.
@@ -101,7 +101,7 @@ test(
       assert.equal(
         JSON.parse(await readFile(cli.resolve('@deepseek-ai/dsh-llm-pi-ai/package.json'), 'utf8'))
           .version,
-        '0.2.1-rc.3',
+        '0.2.1-rc.5',
       )
 
       // Provider factories construct fresh auth objects. Observe the public Models
