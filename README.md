@@ -82,7 +82,7 @@ Google auth provides the shared **Google accounts** Settings card, client config
 
 ### Suggested replies
 
-[Suggested replies](packages/dsh-suggest-replies/README.md) adds a preset-neutral `suggest_replies` tool. Agents can offer up to three follow-up messages as buttons above an empty composer after a completed turn. Clicking fills an editable draft; it never sends, approves an action, or overwrites your existing text. Suggestions use normal durable tool results, with no separate generation request or store. The tool call remains visible in work history. The `personal-web` recipe selects the bundle; applying it and restarting a running host require separate approval.
+[Suggested replies](packages/dsh-suggest-replies/README.md) adds a preset-neutral `suggest_replies` tool. Agents can offer up to three follow-up messages above the composer after a completed turn. Click to toggle several suggestions into your editable draft without replacing your text. Hold a suggestion for 700 ms, or activate its keyboard-accessible **Send now** arrow, to send only that suggestion while preserving the draft and attachments. Selecting does not send or grant approval. Suggestions use normal durable tool results, with no separate generation request or store. The tool call remains visible in work history. The `personal-web` recipe selects the bundle; applying it and restarting a running host require separate approval.
 
 ### GitHub
 

@@ -18,7 +18,7 @@ const schema = {
 // The native registry owns result validation, persistence, policy, and disposal.
 const tool = {
     name: TOOL,
-    description: 'Offer up to three likely next user messages as buttons above the composer. Call just before your final response when useful; do not put a suggestion block in the answer. Write concise plain-text replies in the user’s voice and language, grounded in the current conversation. A click fills the draft only; it never sends or authorizes an action. Pass an empty replies array to clear suggestions. The last successful call in this turn replaces earlier suggestions.',
+    description: 'Offer up to three likely next user messages as buttons above the composer. Call just before your final response when useful; do not put a suggestion block in the answer. Write concise plain-text replies in the user’s voice and language, grounded in the current conversation. Users can select multiple replies into an editable draft; selecting never sends or authorizes an action. Holding a suggestion or choosing its Send now action sends only that reply as an ordinary user message while preserving the draft. Pass an empty replies array to clear suggestions. The last successful call in this turn replaces earlier suggestions.',
     parameters: schema,
     output: {
         schema,
