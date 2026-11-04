@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import { afterEach, expect, test, vi } from 'vitest'
 import { page, userEvent } from 'vitest/browser'
 import { Replies } from '../../client/replies.tsx'
+import { createDelivery } from '../../client/delivery.ts'
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 let root, container
@@ -26,14 +27,16 @@ const result = (seq, replies, extra = {}) => ({
 })
 
 async function mount(replies = ['First reply', 'Second reply', 'Third reply']) {
-  const fixture = { rows: [{ root: result(9, replies) }] }
+  const fixture = { rows: new Map([[1, [{ root: result(9, replies) }]]]) }
   const emptyRows = []
+  const admit = vi.fn(async () => {})
+  const delivery = createDelivery(admit)
   const sources = new Map()
   const source = (id) => {
     if (!sources.has(id))
       sources.set(id, {
         subscribe: () => () => {},
-        getSnapshot: () => (id === 1 ? fixture.rows : emptyRows),
+        getSnapshot: () => fixture.rows.get(id) ?? emptyRows,
       })
     return sources.get(id)
   }
@@ -57,7 +60,9 @@ async function mount(replies = ['First reply', 'Second reply', 'Third reply']) {
     useChat: (f) => f(chat),
     useAccess: () => true,
     useBlock: (f) => f(undefined),
-    send: vi.fn(async () => {}),
+    useDelivery: (select) =>
+      select(React.useSyncExternalStore(delivery.subscribe, delivery.getSnapshot)),
+    send: delivery.send,
     inputActions: {
       // The native revision/undo contract is exercised by the real-shell journey.
       insertText: vi.fn((text, span) => {
@@ -77,9 +82,14 @@ async function mount(replies = ['First reply', 'Second reply', 'Third reply']) {
   const rerender = () => act(render)
   await rerender()
   return {
-    ...fixture,
-    setRows: (rows) => {
-      fixture.rows = rows
+    admit,
+    setRows: (rows, turn = 1) => {
+      fixture.rows.set(turn, rows)
+    },
+    remount: async () => {
+      await act(() => root.unmount())
+      root = createRoot(container)
+      await rerender()
     },
     session,
     input,
@@ -195,7 +205,7 @@ test('multiple toggles compose and remove owned text without erasing edits or at
   await act(() => toggle('First reply').click())
   await act(() => toggle('First reply').click())
   expect(f.input.draft).toBe('Edited context\nUser ending\nMy rewritten reply')
-  expect(f.props.send).not.toHaveBeenCalled()
+  expect(f.admit).not.toHaveBeenCalled()
 })
 
 test('rejected stale edit does not select a reply or persist a replacement draft', async () => {
@@ -218,7 +228,7 @@ test('keyboard toggles compose; Send now sends only its reply and retains the dr
   const send = page.getByRole('button', { name: 'Send now: Third reply', exact: true })
   send.element().focus()
   await act(() => userEvent.keyboard('{Enter}'))
-  expect(f.props.send).toHaveBeenCalledExactlyOnceWith('Third reply')
+  expect(f.admit).toHaveBeenCalledExactlyOnceWith('Third reply')
   expect(f.input.draft).toBe('Keep my draft\nFirst reply\nSecond reply')
 })
 
@@ -233,13 +243,13 @@ test('hold sends once at the threshold, preserves draft and suppresses trailing 
   await pointer(button, 'pointerdown')
   expect(button.dataset.holding).toBe('true')
   await act(() => vi.advanceTimersByTimeAsync(699))
-  expect(f.props.send).not.toHaveBeenCalled()
+  expect(f.admit).not.toHaveBeenCalled()
   await act(() => vi.advanceTimersByTimeAsync(1))
-  expect(f.props.send).toHaveBeenCalledExactlyOnceWith('Second reply')
+  expect(f.admit).toHaveBeenCalledExactlyOnceWith('Second reply')
   await pointer(button, 'pointerup')
   await act(() => button.click())
   expect(f.input.draft).toBe('Keep my draft')
-  expect(f.props.send).toHaveBeenCalledTimes(1)
+  expect(f.admit).toHaveBeenCalledTimes(1)
 })
 
 test('short click toggles, while pointer cancellation, movement, Escape and lifecycle changes cancel holds', async () => {
@@ -284,7 +294,7 @@ test('short click toggles, while pointer cancellation, movement, Escape and life
       root = undefined
     } else await pointer(button, kind, kind === 'pointermove' ? { clientX: 100 } : {})
     await act(() => vi.advanceTimersByTimeAsync(1000))
-    expect(f.props.send, kind).not.toHaveBeenCalled()
+    expect(f.admit, kind).not.toHaveBeenCalled()
     if (kind === 'busy') {
       f.session.running = false
       await f.rerender()
@@ -293,10 +303,57 @@ test('short click toggles, while pointer cancellation, movement, Escape and life
   expect(f.input.draft).toBe('First reply')
 })
 
+test('admission stays locked across remounts and successful RPC until the originating turn advances', async () => {
+  const f = await mount()
+  let accept
+  f.admit.mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        accept = resolve
+      }),
+  )
+  const send = () =>
+    page.getByRole('button', { name: 'Send now: First reply', exact: true }).element()
+  await act(async () => send().click())
+  expect(f.admit).toHaveBeenCalledTimes(1)
+  await f.remount()
+  expect(send().disabled).toBe(true)
+  await act(async () => accept())
+  expect(send().disabled).toBe(true)
+  // The integration owner also rejects duplicate admission from a stale view.
+  await act(async () => {
+    send().click()
+    await f.props.send('Second reply', 1)
+  })
+  expect(f.admit).toHaveBeenCalledTimes(1)
+  await expect
+    .element(page.getByRole('status'))
+    .toHaveTextContent('Reply sent. Waiting for the conversation to update.')
+  f.setRows([{ root: result(20, ['First reply']) }], 2)
+  f.chat.timeline.turnOrder = [1, 2]
+  f.chat.timeline.turns.set(2, f.turn)
+  await f.rerender()
+  expect(send().disabled).toBe(false)
+  f.admit.mockResolvedValueOnce(undefined)
+  await act(async () => send().click())
+  expect(f.admit).toHaveBeenCalledTimes(2)
+})
+
+test('ambiguous repeated text never transfers ownership to a user-authored copy', async () => {
+  const f = await mount(['Test'])
+  await act(() => toggle('Test').click())
+  await f.edit('Test\nTest')
+  expect(toggle('Test').element().getAttribute('aria-pressed')).toBe('false')
+  await f.edit('Test\nRun')
+  await act(() => toggle('Test').click())
+  await act(() => toggle('Test').click())
+  expect(f.input.draft).toBe('Test\nRun')
+})
+
 test('pending sends reject duplicate activation; uncertain failures show an alert without retrying', async () => {
   const f = await mount()
   let reject
-  f.props.send.mockImplementation(
+  f.admit.mockImplementation(
     () =>
       new Promise((_, fail) => {
         reject = fail
@@ -307,7 +364,7 @@ test('pending sends reject duplicate activation; uncertain failures show an aler
     send.click()
     send.click()
   })
-  expect(f.props.send).toHaveBeenCalledTimes(1)
+  expect(f.admit).toHaveBeenCalledTimes(1)
   expect(send.disabled).toBe(true)
   await act(async () => reject(new Error('Disconnected')))
   await expect
@@ -315,6 +372,6 @@ test('pending sends reject duplicate activation; uncertain failures show an aler
     .toHaveTextContent(
       'Could not confirm this reply was sent. Check the conversation before trying again.',
     )
-  expect(f.props.send).toHaveBeenCalledTimes(1)
+  expect(f.admit).toHaveBeenCalledTimes(1)
   expect(f.input.draft).toBe('')
 })

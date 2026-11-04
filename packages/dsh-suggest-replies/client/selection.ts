@@ -15,18 +15,25 @@ export function reconcileSelection(state: SelectionState, draft: string): Select
   let start = 0
   while (start < state.draft.length && start < draft.length && state.draft[start] === draft[start])
     start++
-  let end = state.draft.length
-  let nextEnd = draft.length
-  while (end > start && nextEnd > start && state.draft[end - 1] === draft[nextEnd - 1]) {
-    end--
-    nextEnd--
+  const shorter = Math.min(state.draft.length, draft.length)
+  let suffix = 0
+  while (suffix < shorter && state.draft.at(-1 - suffix) === draft.at(-1 - suffix)) suffix++
+  const delta = draft.length - state.draft.length
+  // Repeated text can make prepending and appending indistinguishable. Compare
+  // both extreme minimal edit alignments; retain ownership only if they agree.
+  const leftStart = Math.min(start, shorter - suffix)
+  const rightEnd = state.draft.length - Math.min(suffix, shorter - start)
+  const leftEnd = state.draft.length - suffix
+  function map(selection: Selection, editStart: number, editEnd: number) {
+    if (editEnd <= selection.start)
+      return { ...selection, start: selection.start + delta, end: selection.end + delta }
+    if (editStart >= selection.end) return selection
+    return undefined
   }
-  const delta = nextEnd - end
   const selections = state.selections.flatMap((selection) => {
-    if (end <= selection.start)
-      return [{ ...selection, start: selection.start + delta, end: selection.end + delta }]
-    if (start >= selection.end) return [selection]
-    return []
+    const left = map(selection, leftStart, leftEnd)
+    const right = map(selection, start, rightEnd)
+    return left && right && left.start === right.start && left.end === right.end ? [left] : []
   })
   return { draft, selections }
 }

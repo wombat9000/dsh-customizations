@@ -1,6 +1,7 @@
-import React, { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import React, { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import { parseReplies, TOOL } from '../shared/replies.ts'
 import { ReplyButton } from './reply-button.tsx'
+import type { DeliveryState } from './delivery.ts'
 import { reconcileSelection, toggleSelection, type SelectionState } from './selection.ts'
 
 type Selector<S> = <T>(selector: (snapshot: S) => T) => T
@@ -43,6 +44,7 @@ export interface ReplyProps {
   useChat: Selector<Chat>
   useAccess(capability: 'session/prompt'): boolean
   useBlock: Selector<{ reason: string } | undefined>
+  useDelivery: Selector<DeliveryState | undefined>
   useInput: Selector<{
     draft: string
     draftRev: number
@@ -55,7 +57,7 @@ export interface ReplyProps {
     insertText(text: string, span: { start: number; end: number; draftRev: number }): boolean
     persistDraft(): void
   }
-  send(reply: string): Promise<void>
+  send(reply: string, turn: number): Promise<void>
 }
 
 function latestSuggestions(rows: readonly { root: ToolBlock }[]) {
@@ -104,6 +106,7 @@ export function Replies({
   useInput,
   useAccess,
   useBlock,
+  useDelivery,
   inputActions,
   send,
 }: ReplyProps) {
@@ -120,9 +123,8 @@ export function Replies({
   const input = useInput((value) => value)
   // Plain-text offsets differ from chip offsets; never replace structured drafts.
   const editable = input.phase === 'plain' && !input.claim && input.occurrences.length === 0
-  const [sending, setSending] = useState(false)
-  const [error, setError] = useState(false)
-  const inFlight = useRef(false)
+  const delivery = useDelivery((value) => value)
+  const sending = delivery?.phase === 'pending'
   const turn = useChat((chat) => {
     const id = chat.timeline.turnOrder.at(-1)
     const current = id === undefined ? undefined : chat.timeline.turns.get(id)
@@ -151,23 +153,18 @@ export function Replies({
     if (current !== selection) setSelection({ ...current, scope })
   }, [current, selection, scope])
   const visible = ready && allowed && editable && !block && turn !== undefined && replies.length > 0
-  const canSend = useRef(false)
-  canSend.current = visible && !sending
+  const sent = delivery !== undefined && delivery.turn === turn && delivery.phase === 'sent'
+  const error = delivery !== undefined && delivery.turn === turn && delivery.phase === 'error'
+  const disabled = sending || sent
 
   async function submit(reply: string) {
-    if (!canSend.current || inFlight.current) return
-    inFlight.current = true
-    setSending(true)
-    setError(false)
+    if (!visible || disabled || turn === undefined) return
     try {
-      // Native admission sends only this reply; it never submits the composer.
-      await send(reply)
+      // The session-owned delivery latch survives view remounts and retains a
+      // successful admission until the turn advances. It owns duplicate guards.
+      await send(reply, turn)
     } catch {
-      // Admission may already have succeeded. Never retry an uncertain send.
-      setError(true)
-    } finally {
-      inFlight.current = false
-      setSending(false)
+      // Delivery publishes uncertainty to the view; never retry automatically.
     }
   }
 
@@ -185,9 +182,9 @@ export function Replies({
           key={`${scope}:${reply}`}
           reply={reply}
           selected={current.selections.some((selection) => selection.reply === reply)}
-          disabled={sending}
+          disabled={disabled}
           onToggle={() => {
-            if (inFlight.current) return
+            if (disabled) return
             const next = toggleSelection(current, reply)
             // Text and revision come from one snapshot. A stale render cannot
             // replace later edits. The native action also preserves undo.
@@ -205,6 +202,11 @@ export function Replies({
           onSend={() => void submit(reply)}
         />
       ))}
+      {sent && (
+        <span className="dsh-reply-notice" role="status">
+          Reply sent. Waiting for the conversation to update.
+        </span>
+      )}
       {error && (
         <span className="dsh-reply-notice" role="alert">
           Could not confirm this reply was sent. Check the conversation before trying again.

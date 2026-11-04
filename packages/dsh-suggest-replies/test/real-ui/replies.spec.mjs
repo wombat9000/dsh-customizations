@@ -163,12 +163,24 @@ test('native reply dock composes persistent drafts and sends individual replies 
         content: [{ type: 'text', text: replies[2] }],
       })
       await expectDraft(composedDraft)
+      await expect(sendNow(replies[0])).toBeDisabled()
+      await openSeededSession(app)
+      await openReplies()
+      await expect(sendNow(replies[0])).toBeDisabled()
       release()
       await accepted
-      await expect(sendNow(replies[0])).toBeEnabled()
+      await expect(dock.getByRole('status')).toHaveText(
+        'Reply sent. Waiting for the conversation to update.',
+      )
+      await expect(sendNow(replies[0])).toBeDisabled()
       await expectDraft(composedDraft)
     })
     await test.step('The separate Send now action is keyboard accessible and also preserves the draft', async () => {
+      // Prompt interception deliberately produces no new history. Reload the
+      // isolated client to exercise the alternative action with a fresh latch.
+      await app.reload()
+      await expect(app.getByRole('button', { name: 'Account menu', exact: true })).toBeVisible()
+      await openReplies()
       const accepted = app.waitForResponse('**/api/session/prompt')
       await sendNow(replies[0]).focus()
       await app.keyboard.press('Enter')
@@ -181,7 +193,10 @@ test('native reply dock composes persistent drafts and sends individual replies 
       await expectDraft(composedDraft)
       release()
       await accepted
-      await expect(sendNow(replies[0])).toBeEnabled()
+      await expect(dock.getByRole('status')).toHaveText(
+        'Reply sent. Waiting for the conversation to update.',
+      )
+      await expect(sendNow(replies[0])).toBeDisabled()
       await expectDraft(composedDraft)
     })
     expect(requests).toHaveLength(2)

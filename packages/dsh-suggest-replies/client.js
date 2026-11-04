@@ -152,23 +152,27 @@ function reconcileSelection(state, draft) {
 	if (state.draft === draft) return state;
 	let start = 0;
 	while (start < state.draft.length && start < draft.length && state.draft[start] === draft[start]) start++;
-	let end = state.draft.length;
-	let nextEnd = draft.length;
-	while (end > start && nextEnd > start && state.draft[end - 1] === draft[nextEnd - 1]) {
-		end--;
-		nextEnd--;
+	const shorter = Math.min(state.draft.length, draft.length);
+	let suffix = 0;
+	while (suffix < shorter && state.draft.at(-1 - suffix) === draft.at(-1 - suffix)) suffix++;
+	const delta = draft.length - state.draft.length;
+	const leftStart = Math.min(start, shorter - suffix);
+	const rightEnd = state.draft.length - Math.min(suffix, shorter - start);
+	const leftEnd = state.draft.length - suffix;
+	function map(selection, editStart, editEnd) {
+		if (editEnd <= selection.start) return {
+			...selection,
+			start: selection.start + delta,
+			end: selection.end + delta
+		};
+		if (editStart >= selection.end) return selection;
 	}
-	const delta = nextEnd - end;
 	return {
 		draft,
 		selections: state.selections.flatMap((selection) => {
-			if (end <= selection.start) return [{
-				...selection,
-				start: selection.start + delta,
-				end: selection.end + delta
-			}];
-			if (start >= selection.end) return [selection];
-			return [];
+			const left = map(selection, leftStart, leftEnd);
+			const right = map(selection, start, rightEnd);
+			return left && right && left.start === right.start && left.end === right.end ? [left] : [];
 		})
 	};
 }
@@ -231,15 +235,14 @@ const css = `
 .dsh-reply-notice{width:100%;font-size:12px;color:var(--dsw-alias-label-secondary,inherit)}
 @keyframes dsh-reply-hold{to{transform:scaleX(1)}}
 `;
-function Replies({ useSession, useChat, useInput, useAccess, useBlock, inputActions, send }) {
+function Replies({ useSession, useChat, useInput, useAccess, useBlock, useDelivery, inputActions, send }) {
 	const ready = useSession((session) => !session.blank && !session.removed && session.openState === "open" && !session.running && session.pendingSubmissions.length === 0);
 	const allowed = useAccess("session/prompt");
 	const block = useBlock((value) => value);
 	const input = useInput((value) => value);
 	const editable = input.phase === "plain" && !input.claim && input.occurrences.length === 0;
-	const [sending, setSending] = (0, react.useState)(false);
-	const [error, setError] = (0, react.useState)(false);
-	const inFlight = (0, react.useRef)(false);
+	const delivery = useDelivery((value) => value);
+	const sending = delivery?.phase === "pending";
 	const turn = useChat((chat) => {
 		const id = chat.timeline.turnOrder.at(-1);
 		const current = id === void 0 ? void 0 : chat.timeline.turns.get(id);
@@ -272,21 +275,14 @@ function Replies({ useSession, useChat, useInput, useAccess, useBlock, inputActi
 		scope
 	]);
 	const visible = ready && allowed && editable && !block && turn !== void 0 && replies.length > 0;
-	const canSend = (0, react.useRef)(false);
-	canSend.current = visible && !sending;
+	const sent = delivery !== void 0 && delivery.turn === turn && delivery.phase === "sent";
+	const error = delivery !== void 0 && delivery.turn === turn && delivery.phase === "error";
+	const disabled = sending || sent;
 	async function submit(reply) {
-		if (!canSend.current || inFlight.current) return;
-		inFlight.current = true;
-		setSending(true);
-		setError(false);
+		if (!visible || disabled || turn === void 0) return;
 		try {
-			await send(reply);
-		} catch {
-			setError(true);
-		} finally {
-			inFlight.current = false;
-			setSending(false);
-		}
+			await send(reply, turn);
+		} catch {}
 	}
 	if (!visible) return null;
 	return /* @__PURE__ */ react.default.createElement("div", {
@@ -298,9 +294,9 @@ function Replies({ useSession, useChat, useInput, useAccess, useBlock, inputActi
 		key: `${scope}:${reply}`,
 		reply,
 		selected: current.selections.some((selection) => selection.reply === reply),
-		disabled: sending,
+		disabled,
 		onToggle: () => {
-			if (inFlight.current) return;
+			if (disabled) return;
 			const next = toggleSelection(current, reply);
 			if (inputActions.insertText(next.draft, {
 				start: 0,
@@ -315,10 +311,53 @@ function Replies({ useSession, useChat, useInput, useAccess, useBlock, inputActi
 			}
 		},
 		onSend: () => void submit(reply)
-	})), error && /* @__PURE__ */ react.default.createElement("span", {
+	})), sent && /* @__PURE__ */ react.default.createElement("span", {
+		className: "dsh-reply-notice",
+		role: "status"
+	}, "Reply sent. Waiting for the conversation to update."), error && /* @__PURE__ */ react.default.createElement("span", {
 		className: "dsh-reply-notice",
 		role: "alert"
 	}, "Could not confirm this reply was sent. Check the conversation before trying again."));
+}
+
+//#endregion
+//#region client/delivery.ts
+function createDelivery(admit) {
+	let state;
+	const listeners = /* @__PURE__ */ new Set();
+	function publish(next) {
+		state = next;
+		for (const listener of listeners) listener();
+	}
+	return {
+		getSnapshot: () => state,
+		subscribe(listener) {
+			listeners.add(listener);
+			return () => {
+				listeners.delete(listener);
+			};
+		},
+		async send(reply, turn) {
+			if (state?.phase === "pending" || state?.turn === turn && state.phase === "sent") return;
+			publish({
+				turn,
+				phase: "pending"
+			});
+			try {
+				await admit(reply);
+				publish({
+					turn,
+					phase: "sent"
+				});
+			} catch (error) {
+				publish({
+					turn,
+					phase: "error"
+				});
+				throw error;
+			}
+		}
+	};
 }
 
 //#endregion
@@ -329,20 +368,31 @@ const inject = [
 	"conversation"
 ];
 function apply(ctx) {
+	const deliveries = /* @__PURE__ */ new Map();
 	ctx.slots.inject("conversation.input.dock", () => ctx.slots.register({
 		name: "conversation.input.dock",
 		id: "local-suggest-replies",
 		order: 20,
-		inject: (sessionId) => ({
-			hooks: { block: ctx.conversation.blocks.storeFor(sessionId) },
-			send: async (reply) => {
-				const scope = ctx.sessions.scope(sessionId);
-				const current = scope && ctx.sessions.sessionOf(scope)?.getSnapshot();
-				const conversation = scope?.get("conversation");
-				if (!current || !conversation || current.removed || current.openState !== "open" || current.running || current.pendingSubmissions.length > 0 || ctx.conversation.blocks.storeFor(sessionId).getSnapshot()) throw new Error("Session is not available for a suggested reply");
-				await conversation.send(reply);
+		inject: (sessionId) => {
+			let delivery = deliveries.get(sessionId);
+			if (!delivery) {
+				delivery = createDelivery(async (reply) => {
+					const scope = ctx.sessions.scope(sessionId);
+					const current = scope && ctx.sessions.sessionOf(scope)?.getSnapshot();
+					const conversation = scope?.get("conversation");
+					if (!current || !conversation || current.removed || current.openState !== "open" || current.running || current.pendingSubmissions.length > 0 || ctx.conversation.blocks.storeFor(sessionId).getSnapshot()) throw new Error("Session is not available for a suggested reply");
+					await conversation.send(reply);
+				});
+				deliveries.set(sessionId, delivery);
 			}
-		})
+			return {
+				hooks: {
+					block: ctx.conversation.blocks.storeFor(sessionId),
+					delivery
+				},
+				send: delivery.send
+			};
+		}
 	}, (props) => react.default.createElement(Replies, {
 		...props,
 		key: props.sessionId
