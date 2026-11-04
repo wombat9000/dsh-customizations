@@ -40,6 +40,168 @@ function parseReplies(value) {
 }
 
 //#endregion
+//#region client/reply-button.tsx
+function ReplyButton({ reply, selected, disabled, onToggle, onSend }) {
+	const [holding, setHolding] = (0, react.useState)(false);
+	const timer = (0, react.useRef)(void 0);
+	const suppressClick = (0, react.useRef)(false);
+	const origin = (0, react.useRef)(void 0);
+	const send = (0, react.useRef)(onSend);
+	send.current = onSend;
+	function cancel(suppress = true) {
+		if (timer.current !== void 0) clearTimeout(timer.current);
+		timer.current = void 0;
+		origin.current = void 0;
+		if (suppress) suppressClick.current = true;
+		setHolding(false);
+	}
+	(0, react.useEffect)(() => {
+		if (disabled) cancel();
+	}, [disabled]);
+	(0, react.useEffect)(() => {
+		const escape = (event) => {
+			if (event.key === "Escape") cancel();
+		};
+		const blur = () => cancel();
+		const visibility = () => {
+			if (document.hidden) cancel();
+		};
+		window.addEventListener("keydown", escape);
+		window.addEventListener("blur", blur);
+		window.addEventListener("scroll", blur, true);
+		document.addEventListener("visibilitychange", visibility);
+		return () => {
+			if (timer.current !== void 0) clearTimeout(timer.current);
+			window.removeEventListener("keydown", escape);
+			window.removeEventListener("blur", blur);
+			window.removeEventListener("scroll", blur, true);
+			document.removeEventListener("visibilitychange", visibility);
+		};
+	}, []);
+	return /* @__PURE__ */ react.default.createElement("span", { className: "dsh-reply-choice" }, /* @__PURE__ */ react.default.createElement("button", {
+		type: "button",
+		className: "dsh-reply-toggle",
+		"aria-pressed": selected,
+		disabled,
+		"data-holding": holding || void 0,
+		title: "Click to toggle in your draft. Hold to send only this reply; release early to cancel sending.",
+		onPointerDown: (event) => {
+			if (disabled || event.button !== 0 || !event.isPrimary) return;
+			cancel(false);
+			suppressClick.current = false;
+			origin.current = {
+				x: event.clientX,
+				y: event.clientY
+			};
+			event.currentTarget.setPointerCapture(event.pointerId);
+			setHolding(true);
+			timer.current = setTimeout(() => {
+				timer.current = void 0;
+				origin.current = void 0;
+				suppressClick.current = true;
+				setHolding(false);
+				send.current();
+			}, 700);
+		},
+		onPointerMove: (event) => {
+			const start = origin.current;
+			const box = event.currentTarget.getBoundingClientRect();
+			if (start && (Math.hypot(event.clientX - start.x, event.clientY - start.y) > 10 || event.clientX < box.left || event.clientX > box.right || event.clientY < box.top || event.clientY > box.bottom)) cancel();
+		},
+		onPointerUp: () => cancel(false),
+		onPointerLeave: () => cancel(),
+		onPointerCancel: () => cancel(),
+		onBlur: () => cancel(),
+		onLostPointerCapture: () => {
+			if (origin.current) cancel();
+		},
+		onContextMenu: (event) => event.preventDefault(),
+		onKeyDown: (event) => {
+			if (event.key === "Enter" || event.key === " ") suppressClick.current = false;
+		},
+		onClick: () => {
+			if (suppressClick.current) {
+				suppressClick.current = false;
+				return;
+			}
+			onToggle();
+		}
+	}, /* @__PURE__ */ react.default.createElement("span", null, reply)), /* @__PURE__ */ react.default.createElement("button", {
+		type: "button",
+		className: "dsh-reply-send",
+		"aria-label": `Send now: ${reply}`,
+		title: "Send only this reply now. Your draft stays unchanged.",
+		disabled,
+		onClick: onSend
+	}, /* @__PURE__ */ react.default.createElement("svg", {
+		width: "14",
+		height: "14",
+		viewBox: "0 0 20 20",
+		fill: "none",
+		"aria-hidden": "true"
+	}, /* @__PURE__ */ react.default.createElement("path", {
+		d: "m3 9 14-6-6 14-2-6-6-2Zm6 2 4-4",
+		stroke: "currentColor",
+		strokeWidth: "1.5"
+	}))));
+}
+
+//#endregion
+//#region client/selection.ts
+function reconcileSelection(state, draft) {
+	if (state.draft === draft) return state;
+	let start = 0;
+	while (start < state.draft.length && start < draft.length && state.draft[start] === draft[start]) start++;
+	const shorter = Math.min(state.draft.length, draft.length);
+	let suffix = 0;
+	while (suffix < shorter && state.draft.at(-1 - suffix) === draft.at(-1 - suffix)) suffix++;
+	const delta = draft.length - state.draft.length;
+	const leftStart = Math.min(start, shorter - suffix);
+	const rightEnd = state.draft.length - Math.min(suffix, shorter - start);
+	const leftEnd = state.draft.length - suffix;
+	function map(selection, editStart, editEnd) {
+		if (editEnd <= selection.start) return {
+			...selection,
+			start: selection.start + delta,
+			end: selection.end + delta
+		};
+		if (editStart >= selection.end) return selection;
+	}
+	return {
+		draft,
+		selections: state.selections.flatMap((selection) => {
+			const left = map(selection, leftStart, leftEnd);
+			const right = map(selection, start, rightEnd);
+			return left && right && left.start === right.start && left.end === right.end ? [left] : [];
+		})
+	};
+}
+function toggleSelection(state, reply) {
+	const selected = state.selections.find((selection) => selection.reply === reply);
+	if (selected) {
+		const end = selected.start === 0 && state.selections.some((selection) => selection.start === selected.end && state.draft[selection.start] === "\n") ? selected.end + 1 : selected.end;
+		const removed = end - selected.start;
+		return {
+			draft: state.draft.slice(0, selected.start) + state.draft.slice(end),
+			selections: state.selections.filter((selection) => selection !== selected).map((selection) => selection.start >= selected.end ? {
+				...selection,
+				start: Math.max(selected.start, selection.start - removed),
+				end: selection.end - removed
+			} : selection)
+		};
+	}
+	const addition = `${state.draft && !state.draft.endsWith("\n") ? "\n" : ""}${reply}`;
+	return {
+		draft: state.draft + addition,
+		selections: [...state.selections, {
+			reply,
+			start: state.draft.length,
+			end: state.draft.length + addition.length
+		}]
+	};
+}
+
+//#endregion
 //#region client/replies.tsx
 function latestSuggestions(rows) {
 	let latest;
@@ -59,13 +221,28 @@ function latestSuggestions(rows) {
 }
 const css = `
 .dsh-suggest-replies{box-sizing:border-box;width:calc(100% - 32px);max-width:var(--dsh-chat-content-width,680px);margin:0 auto 8px;display:flex;flex-wrap:wrap;gap:6px}
-.dsh-suggest-replies button{max-width:100%;border:1px solid var(--dsw-alias-border-l2,#8885);border-radius:12px;background:var(--dsw-alias-bg-layer-2,transparent);color:var(--dsw-alias-label-secondary,inherit);padding:7px 12px;font:inherit;font-size:13px;line-height:1.4;text-align:left;overflow-wrap:anywhere;cursor:pointer}
+.dsh-reply-choice{display:inline-flex;max-width:100%;border:1px solid var(--dsw-alias-border-l2,#8885);border-radius:12px;background:var(--dsw-alias-bg-layer-2,transparent)}
+.dsh-suggest-replies button{position:relative;min-width:0;border:0;border-radius:11px;background:transparent;color:var(--dsw-alias-label-secondary,inherit);padding:7px 12px;font:inherit;font-size:13px;line-height:1.4;text-align:left;overflow-wrap:anywhere;cursor:pointer;touch-action:pan-y}
 .dsh-suggest-replies button:hover{background:var(--dsw-alias-interactive-bg-hover,#8882);color:var(--dsw-alias-label-primary,inherit)}
-.dsh-suggest-replies button:focus-visible{outline:2px solid var(--dsw-alias-brand-primary,currentColor);outline-offset:2px}
+.dsh-suggest-replies button:focus-visible{outline:2px solid var(--dsw-alias-brand-primary,currentColor);outline-offset:2px;z-index:1}
+.dsh-suggest-replies button:disabled{opacity:.5;cursor:default}
+.dsh-suggest-replies .dsh-reply-toggle{overflow:hidden;border-radius:11px 0 0 11px}
+.dsh-reply-toggle[aria-pressed=true]{background:var(--dsw-alias-interactive-bg-hover,#8882);color:var(--dsw-alias-label-primary,inherit);box-shadow:inset 0 0 0 1px var(--dsw-alias-brand-primary,currentColor)}
+.dsh-reply-toggle::before{content:'';position:absolute;inset:0;background:var(--dsw-alias-brand-primary,currentColor);opacity:.25;transform:scaleX(0);transform-origin:left;pointer-events:none}
+.dsh-reply-toggle[data-holding]::before{animation:dsh-reply-hold .7s linear forwards}
+.dsh-reply-toggle>span{position:relative}
+.dsh-suggest-replies .dsh-reply-send{display:flex;align-items:center;flex-shrink:0;padding:7px 9px;border-left:1px solid var(--dsw-alias-border-l2,#8885);border-radius:0 11px 11px 0}
+.dsh-reply-notice{width:100%;font-size:12px;color:var(--dsw-alias-label-secondary,inherit)}
+@keyframes dsh-reply-hold{to{transform:scaleX(1)}}
 `;
-function Replies({ useSession, useChat, useInput, inputActions }) {
-	const ready = useSession((session) => !session.blank && session.openState === "open" && !session.running);
-	const empty = useInput((input) => input.phase === "plain" && input.draft === "" && input.attachmentIds.length === 0);
+function Replies({ useSession, useChat, useInput, useAccess, useBlock, useDelivery, inputActions, send }) {
+	const ready = useSession((session) => !session.blank && !session.removed && session.openState === "open" && !session.running && session.pendingSubmissions.length === 0);
+	const allowed = useAccess("session/prompt");
+	const block = useBlock((value) => value);
+	const input = useInput((value) => value);
+	const editable = input.phase === "plain" && !input.claim && input.occurrences.length === 0;
+	const delivery = useDelivery((value) => value);
+	const sending = delivery?.phase === "pending";
 	const turn = useChat((chat) => {
 		const id = chat.timeline.turnOrder.at(-1);
 		const current = id === void 0 ? void 0 : chat.timeline.turns.get(id);
@@ -73,30 +250,153 @@ function Replies({ useSession, useChat, useInput, inputActions }) {
 	});
 	const source = useChat((chat) => chat.nodes.turnDataSource(turn ?? -1, "tool-call"));
 	const replies = latestSuggestions((0, react.useSyncExternalStore)(source.subscribe, source.getSnapshot, source.getSnapshot));
-	if (!ready || !empty || turn === void 0 || !replies.length) return null;
+	const scope = JSON.stringify([turn, replies]);
+	const [selection, setSelection] = (0, react.useState)({
+		scope,
+		draft: input.draft,
+		selections: []
+	});
+	const current = (0, react.useMemo)(() => reconcileSelection(selection.scope === scope ? selection : {
+		draft: input.draft,
+		selections: []
+	}, input.draft), [
+		selection,
+		scope,
+		input.draft
+	]);
+	(0, react.useEffect)(() => {
+		if (current !== selection) setSelection({
+			...current,
+			scope
+		});
+	}, [
+		current,
+		selection,
+		scope
+	]);
+	const visible = ready && allowed && editable && !block && turn !== void 0 && replies.length > 0;
+	const sent = delivery !== void 0 && delivery.turn === turn && delivery.phase === "sent";
+	const error = delivery !== void 0 && delivery.turn === turn && delivery.phase === "error";
+	const disabled = sending || sent;
+	async function submit(reply) {
+		if (!visible || disabled || turn === void 0) return;
+		try {
+			await send(reply, turn);
+		} catch {}
+	}
+	if (!visible) return null;
 	return /* @__PURE__ */ react.default.createElement("div", {
 		className: "dsh-suggest-replies",
 		role: "group",
-		"aria-label": "Suggested replies"
-	}, /* @__PURE__ */ react.default.createElement("style", null, css), replies.map((reply) => /* @__PURE__ */ react.default.createElement("button", {
-		key: reply,
-		type: "button",
-		onClick: () => {
-			const span = inputActions.captureInsertion();
-			if (inputActions.insertText(reply, span)) inputActions.persistDraft();
+		"aria-label": "Suggested replies",
+		"aria-busy": sending
+	}, /* @__PURE__ */ react.default.createElement("style", null, css), replies.map((reply) => /* @__PURE__ */ react.default.createElement(ReplyButton, {
+		key: `${scope}:${reply}`,
+		reply,
+		selected: current.selections.some((selection) => selection.reply === reply),
+		disabled,
+		onToggle: () => {
+			if (disabled) return;
+			const next = toggleSelection(current, reply);
+			if (inputActions.insertText(next.draft, {
+				start: 0,
+				end: input.draft.length,
+				draftRev: input.draftRev
+			})) {
+				setSelection({
+					...next,
+					scope
+				});
+				inputActions.persistDraft();
+			}
+		},
+		onSend: () => void submit(reply)
+	})), sent && /* @__PURE__ */ react.default.createElement("span", {
+		className: "dsh-reply-notice",
+		role: "status"
+	}, "Reply sent. Waiting for the conversation to update."), error && /* @__PURE__ */ react.default.createElement("span", {
+		className: "dsh-reply-notice",
+		role: "alert"
+	}, "Could not confirm this reply was sent. Check the conversation before trying again."));
+}
+
+//#endregion
+//#region client/delivery.ts
+function createDelivery(admit) {
+	let state;
+	const listeners = /* @__PURE__ */ new Set();
+	function publish(next) {
+		state = next;
+		for (const listener of listeners) listener();
+	}
+	return {
+		getSnapshot: () => state,
+		subscribe(listener) {
+			listeners.add(listener);
+			return () => {
+				listeners.delete(listener);
+			};
+		},
+		async send(reply, turn) {
+			if (state?.phase === "pending" || state?.turn === turn && state.phase === "sent") return;
+			publish({
+				turn,
+				phase: "pending"
+			});
+			try {
+				await admit(reply);
+				publish({
+					turn,
+					phase: "sent"
+				});
+			} catch (error) {
+				publish({
+					turn,
+					phase: "error"
+				});
+				throw error;
+			}
 		}
-	}, reply)));
+	};
 }
 
 //#endregion
 //#region client/index.ts
-const inject = ["slots"];
+const inject = [
+	"slots",
+	"sessions",
+	"conversation"
+];
 function apply(ctx) {
+	const deliveries = /* @__PURE__ */ new Map();
 	ctx.slots.inject("conversation.input.dock", () => ctx.slots.register({
 		name: "conversation.input.dock",
 		id: "local-suggest-replies",
-		order: 20
-	}, Replies));
+		order: 20,
+		inject: (sessionId) => {
+			let delivery = deliveries.get(sessionId);
+			if (!delivery) {
+				delivery = createDelivery(async (reply) => {
+					const scope = ctx.sessions.scope(sessionId);
+					const current = scope && ctx.sessions.sessionOf(scope)?.getSnapshot();
+					const conversation = scope?.get("conversation");
+					if (!current || !conversation || current.removed || current.openState !== "open" || current.running || current.pendingSubmissions.length > 0 || ctx.conversation.blocks.storeFor(sessionId).getSnapshot()) throw new Error("Session is not available for a suggested reply");
+					await conversation.send(reply);
+				});
+				deliveries.set(sessionId, delivery);
+			}
+			return {
+				hooks: {
+					block: ctx.conversation.blocks.storeFor(sessionId),
+					delivery
+				},
+				send: delivery.send
+			};
+		}
+	}, (props) => react.default.createElement(Replies, {
+		...props,
+		key: props.sessionId
+	})));
 }
 
 //#endregion
