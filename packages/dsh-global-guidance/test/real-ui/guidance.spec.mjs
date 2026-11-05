@@ -68,7 +68,9 @@ test('native Global Guidance switches control instructions and preserve the comp
       await bundle().click()
       await expect(bundle()).not.toBeChecked()
       await expect.poll(() => sections(app)).toEqual([])
-      await expect(detail.getByText('Visual evidence', { exact: true })).toBeVisible()
+      await expect(
+        detail.getByRole('heading', { name: 'Visual evidence', exact: true }),
+      ).toBeVisible()
       await bundle().click()
       await expect(bundle()).toBeChecked()
       await expect(component()).not.toBeChecked()
