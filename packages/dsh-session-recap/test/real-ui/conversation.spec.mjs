@@ -226,7 +226,7 @@ test('generate visual recap cards, review themes and toggle the native footer ac
       else expect(boxes[1].top).toBe(boxes[0].top)
       expect(await dock.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true)
       await app.evaluate(() => document.fonts.ready)
-      await expect.soft(dock).toHaveScreenshot(`recap-cards-${theme}${narrow ? '-narrow' : ''}.png`)
+      await expect(dock).toHaveScreenshot(`recap-cards-${theme}${narrow ? '-narrow' : ''}.png`)
     })
   }
   await test.step('Hide/show reuses the result and a blank session removes the dock and action', async () => {
@@ -287,9 +287,7 @@ test('review concise recap bullets across themes and narrow layout', async ({ ap
           element.style.width = '300px'
         })
       await app.evaluate(() => document.fonts.ready)
-      await expect
-        .soft(dock)
-        .toHaveScreenshot(`recap-bullets-${theme}${narrow ? '-narrow' : ''}.png`)
+      await expect(dock).toHaveScreenshot(`recap-bullets-${theme}${narrow ? '-narrow' : ''}.png`)
     })
   }
 })
@@ -315,12 +313,12 @@ test('unconfigured native recap follows persisted and blank sessions in both the
       await expect(dock).toHaveCount(0)
       const recap = app.getByRole('button', { name: 'Generate recap', exact: true })
       await expect(recap).toBeVisible()
-      await expect.soft(recap).toHaveScreenshot(`${prefix}-existing-session.png`)
+      await expect(recap).toHaveScreenshot(`${prefix}-existing-session.png`)
       await recap.click()
       await expect(dock.getByRole('alert')).toHaveText(
         'Choose a provider and model in Plugins → Session Recap → Configure.',
       )
-      await expect.soft(dock).toHaveScreenshot(`${prefix}-no-provider.png`)
+      await expect(dock).toHaveScreenshot(`${prefix}-no-provider.png`)
       await expect(dock.getByRole('button')).toHaveCount(0)
       await expect(dock.locator('svg, small, strong')).toHaveCount(0)
       await app.getByRole('button', { name: 'New session', exact: true }).first().click()
