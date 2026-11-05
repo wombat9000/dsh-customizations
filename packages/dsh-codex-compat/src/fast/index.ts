@@ -5,7 +5,6 @@ export const name = 'local-codex-fast'
 export const inject = [
   'llm',
   'agents',
-  'sessionProjections',
   'agentDefaultModel',
   'connection',
   'webServer',

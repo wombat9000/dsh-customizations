@@ -7,6 +7,7 @@ import * as plugin from '../dist/src/index.js'
 import { buildHost } from '../scripts/build-host.mjs'
 import { buildClient, clientPath } from '../scripts/build-client.mjs'
 import { checkHost } from '../../../scripts/build-host.mjs'
+import { executeOne } from '../../dsh-github/test/approval-fixture.js'
 
 const cli = createRequire(createRequire(import.meta.url).resolve('@deepseek-ai/dsh/package.json'))
 const installed = (name) => import(pathToFileURL(cli.resolve(name)).href)
@@ -15,20 +16,14 @@ const { Context } = await installed('@deepseek-ai/cordis')
 test('tool runs through the real registry with bounded results and plugin-owned lifetime', async (t) => {
   const ctx = new Context()
   t.after(() => ctx.fiber.dispose())
-  for (const name of ['system-prompt', 'tools']) {
+  for (const name of ['system-prompt', 'tools', 'tool-executor-native']) {
     const module = await installed(`@deepseek-ai/dsh-${name}`)
     await ctx.plugin(module.default ?? module).await()
   }
   const fork = ctx.plugin(plugin)
   await fork.await()
   const tools = ctx.get('tools')
-  const call = (args) =>
-    tools.execute({
-      name: 'suggest_replies',
-      arguments: args,
-      callId: 'fixture-call',
-      signal: new AbortController().signal,
-    })
+  const call = (args) => executeOne(tools, 'suggest_replies', args)
   const result = await call({
     replies: [' Explain the tradeoff ', 'Add a regression test', 'Explain the tradeoff'],
   })

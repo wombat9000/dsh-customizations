@@ -191,7 +191,6 @@ async function composition(t, legacy) {
       },
     })
     root.provide('agents', { get: () => undefined })
-    root.provide('sessionProjections', { stateOf: () => undefined })
   })
   await ctx.loader.await()
   return { ctx, profile, routes, savedBytes }

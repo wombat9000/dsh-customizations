@@ -15,7 +15,12 @@ export async function approvalHost(
 ) {
   const ctx = new Context()
   t.after(() => ctx.fiber.dispose())
-  for (const name of ['system-prompt', 'tools', ...(approval ? ['user-approval'] : [])]) {
+  for (const name of [
+    'system-prompt',
+    'tools',
+    'tool-executor-native',
+    ...(approval ? ['session-projection', 'user-approval'] : []),
+  ]) {
     const module = await installed(`@deepseek-ai/dsh-${name}`)
     await ctx.plugin(module.default ?? module, name === 'user-approval' ? { policy } : {}).await()
   }
@@ -42,12 +47,9 @@ export async function approvalHost(
     requests,
     tools: ctx.get('tools'),
     execute(name, args, overrides = {}) {
-      return ctx.get('tools').execute({
-        name,
-        arguments: args,
+      return executeOne(ctx.get('tools'), name, args, {
         callId: `write-call-${++call}`,
         agent,
-        signal: new AbortController().signal,
         ...overrides,
       })
     },
@@ -55,4 +57,17 @@ export async function approvalHost(
       return callerSession.snapshotEvents().filter((event) => event.type.startsWith('approval/'))
     },
   }
+}
+
+// DSH 0.2.2 executes complete model-call batches through the selected executor;
+// run one call as a single-call batch and return its settled result.
+export async function executeOne(
+  tools,
+  name,
+  args,
+  { callId = 'fixture-call', signal = new AbortController().signal, ...rest } = {},
+) {
+  const calls = [{ type: 'tool-call', id: callId, name, arguments: JSON.stringify(args) ?? '' }]
+  const { results } = await tools.execute({ calls, signal, ...rest })
+  return results[0].result
 }

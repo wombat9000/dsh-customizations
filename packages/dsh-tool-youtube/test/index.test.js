@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { renderToolsSdk } from '@deepseek-ai/dsh-tools'
+import { createRequire } from 'node:module'
+import { pathToFileURL } from 'node:url'
 import { YoutubeTranscriptArchive } from '../dist/src/transcript-store.js'
 import {
   ArchivedYoutubeClient,
@@ -33,6 +34,12 @@ import {
   timestampToSeconds,
   fetchYoutubeDuration,
 } from '../dist/src/index.js'
+
+// DSH 0.2.2 moved the TypeScript SDK renderer to the PTC executor.
+const cli = createRequire(createRequire(import.meta.url).resolve('@deepseek-ai/dsh/package.json'))
+const { renderToolsSdk } = await import(
+  pathToFileURL(cli.resolve('@deepseek-ai/dsh-tool-executor-ptc')).href
+)
 
 const VIDEO_ID = 'dQw4w9WgXcQ'
 const WATCH_URL = `https://www.youtube.com/watch?v=${VIDEO_ID}`
