@@ -1,3 +1,5 @@
+import { ReconnectCodex } from './oauth/reconnect.js'
+import type { ReconnectCodexProps } from './oauth/reconnect.js'
 import type { ComponentType } from 'react'
 import type { RpcTransport } from '../shared/contracts.js'
 import { FastToggle, IntegrationSettings } from './fast/controls.js'
@@ -24,6 +26,17 @@ export function apply(ctx: Context) {
         inject: () => ({ rpc: ctx.get('connection').rpc }),
       },
       FastToggle,
+    ),
+  )
+  // RC3 keys this slot by settings namespace. The control filters by provider ID.
+  ctx.slots.inject('settings.models.provider-card', () =>
+    ctx.slots.register<ReconnectCodexProps>(
+      {
+        name: 'settings.models.provider-card',
+        key: 'llm-pi-ai',
+        inject: () => ({ rpc: ctx.get('connection').rpc }),
+      },
+      ReconnectCodex,
     ),
   )
   ctx.slots.inject('plugins.row.config', () =>

@@ -3,6 +3,7 @@ import { createInterface } from 'node:readline/promises'
 import { setTimeout as delay } from 'node:timers/promises'
 import type { AuthorizationInteraction, AuthorizationService } from '@deepseek-ai/dsh-authorization'
 import { credentialKey } from '@deepseek-ai/dsh-credentials'
+import { mountWebReconnect } from './web.js'
 
 export const name = 'local-codex-oauth'
 export const inject = ['authorization', 'credentials']
@@ -125,7 +126,7 @@ export async function authorizeCodex(
   }
 }
 
-/** Reviewed terminal helper, independent of Fast and of provider/model configuration. */
+/** Mount terminal sign-in and, when Connection is present, browser reconnect. */
 export async function apply(ctx: Context) {
   const activation = new AbortController()
   const release = ctx.effect(
@@ -133,6 +134,9 @@ export async function apply(ctx: Context) {
   )
   await waitForCodexFlow(ctx.authorization, activation.signal)
   release()
+  ctx.inject(['connection', 'webServer'], (connected) =>
+    mountWebReconnect(connected, CODEX_CREDENTIAL_KEY),
+  )
   ctx.effect(() => {
     const controller = new AbortController()
     void authorizeCodex(ctx, controller.signal, {
@@ -141,7 +145,7 @@ export async function apply(ctx: Context) {
       if (controller.signal.aborted) return
       // Provider failures may contain sensitive data; never echo their raw text.
       const message =
-        'Codex OAuth login failed. Retry sign-in using the native Models page or DSH_CODEX_REAUTH=1.'
+        'Codex OAuth login failed. Retry sign-in from Models or with DSH_CODEX_REAUTH=1.'
       ctx.logger.error(message)
       process.stderr.write(`[Codex OAuth] ${message}\n`)
     })

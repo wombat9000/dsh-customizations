@@ -50,6 +50,149 @@ function isFastStatus(value) {
 }
 
 //#endregion
+//#region shared/oauth.ts
+const OAUTH_CHANNEL = "/codex-reconnect";
+const CODEX_DEVICE_URL = "https://auth.openai.com/codex/device";
+/** Device codes are short display strings. The sign-in link is fixed separately. */
+function isDeviceCode(code) {
+	return typeof code === "string" && /^[A-Z0-9-]{4,32}$/iu.test(code);
+}
+/** Check status before rendering data returned by the connection. */
+function isReconnectStatus(status) {
+	if (!isObject(status)) return false;
+	switch (status.phase) {
+		case "code": return isDeviceCode(status.code);
+		case "starting":
+		case "cancelling":
+		case "authorized":
+		case "cancelled":
+		case "failed": return true;
+		default: return false;
+	}
+}
+
+//#endregion
+//#region client/oauth/reconnect.tsx
+const control$1 = {
+	padding: "5px 8px",
+	borderRadius: 6,
+	border: "1px solid var(--dsw-alias-border-l1)",
+	background: "var(--dsw-alias-bg-layer-1)",
+	color: "var(--dsw-alias-label-primary)",
+	font: "inherit"
+};
+const unavailable = "Codex reconnect is unavailable. Check that Codex OAuth is enabled in Plugins.";
+const descriptions = {
+	starting: "Requesting a one-time code…",
+	code: "Enter this one-time code on the OpenAI page.",
+	cancelling: "Cancelling sign-in…",
+	authorized: "Codex reconnected. You can retry your turn.",
+	cancelled: "Stopped waiting. If you already approved sign-in, DSH may still save the connection.",
+	failed: "Codex sign-in failed. Check that your ChatGPT account allows device sign-in, then try again."
+};
+function ReconnectControl({ rpc }) {
+	const run = (0, react.useRef)();
+	const [status, setStatus] = (0, react.useState)();
+	const [error, setError] = (0, react.useState)();
+	const [busy, setBusy] = (0, react.useState)(false);
+	const [cancelPending, setCancelPending] = (0, react.useState)(false);
+	const call = (endpoint, input) => rpc.call(OAUTH_CHANNEL, endpoint, input);
+	(0, react.useEffect)(() => () => {
+		if (run.current) run.current.abandoned = true;
+	}, []);
+	async function start() {
+		if (run.current) return;
+		const current = { abandoned: false };
+		run.current = current;
+		setBusy(true);
+		setError(void 0);
+		setStatus({ phase: "starting" });
+		let finished = false;
+		try {
+			const started = await call("start", {});
+			if (!started.ok || !isObject(started.value)) throw new Error(unavailable);
+			if ("busy" in started.value && started.value.busy === true) {
+				if (!current.abandoned) {
+					setStatus(void 0);
+					setError("A Codex sign-in is already in progress.");
+				}
+				return;
+			}
+			if (!("id" in started.value) || typeof started.value.id !== "string") throw new Error(unavailable);
+			current.id = started.value.id;
+			while (!current.abandoned) {
+				const result = await call("status", { id: current.id });
+				if (current.abandoned) break;
+				if (!result.ok || !isReconnectStatus(result.value)) throw new Error(unavailable);
+				setStatus(result.value);
+				if ([
+					"authorized",
+					"cancelled",
+					"failed"
+				].includes(result.value.phase)) {
+					finished = true;
+					break;
+				}
+				await new Promise((resolve) => setTimeout(resolve, 1e3));
+			}
+		} catch {
+			if (!current.abandoned) {
+				setStatus(void 0);
+				setError(unavailable);
+			}
+		} finally {
+			if (!finished && current.id) call("cancel", { id: current.id }).catch(() => {});
+			run.current = void 0;
+			if (!current.abandoned) {
+				setBusy(false);
+				setCancelPending(false);
+			}
+		}
+	}
+	async function cancel() {
+		const current = run.current;
+		if (!current?.id || cancelPending) return;
+		setCancelPending(true);
+		setError(void 0);
+		try {
+			if (!(await call("cancel", { id: current.id })).ok) throw new Error("Cancel failed");
+		} catch {
+			if (run.current === current && !current.abandoned) {
+				setError("Could not cancel Codex sign-in. Try again.");
+				setCancelPending(false);
+			}
+		}
+	}
+	return /* @__PURE__ */ react.default.createElement("div", { style: {
+		display: "grid",
+		gap: 8
+	} }, /* @__PURE__ */ react.default.createElement("div", { style: {
+		display: "flex",
+		flexWrap: "wrap",
+		gap: 8
+	} }, /* @__PURE__ */ react.default.createElement("button", {
+		type: "button",
+		style: control$1,
+		onClick: () => void start(),
+		disabled: busy
+	}, "Reconnect Codex"), busy && run.current?.id && /* @__PURE__ */ react.default.createElement("button", {
+		type: "button",
+		style: control$1,
+		onClick: () => void cancel(),
+		disabled: cancelPending
+	}, "Cancel sign-in")), status && /* @__PURE__ */ react.default.createElement("div", { role: "status" }, descriptions[cancelPending ? "cancelling" : status.phase]), status?.phase === "code" && !cancelPending && /* @__PURE__ */ react.default.createElement("div", null, /* @__PURE__ */ react.default.createElement("a", {
+		href: "https://auth.openai.com/codex/device",
+		target: "_blank",
+		rel: "noopener noreferrer"
+	}, "Open OpenAI sign-in"), " ", /* @__PURE__ */ react.default.createElement("code", null, status.code)), error && /* @__PURE__ */ react.default.createElement("div", { role: "alert" }, error));
+}
+/** The provider slot is shared by all pi-ai routes. Only Codex uses this flow. */
+function ReconnectCodex({ provider, configured, rpc }) {
+	if (provider.provider !== "openai-codex" || !configured) return null;
+	return /* @__PURE__ */ react.default.createElement(ReconnectControl, { rpc });
+}
+
+//#endregion
 //#region client/fast/controls.tsx
 async function call(rpc, endpoint, payload, valid) {
 	let result;
@@ -335,6 +478,11 @@ function apply(ctx) {
 		order: 10,
 		inject: () => ({ rpc: ctx.get("connection").rpc })
 	}, FastToggle));
+	ctx.slots.inject("settings.models.provider-card", () => ctx.slots.register({
+		name: "settings.models.provider-card",
+		key: "llm-pi-ai",
+		inject: () => ({ rpc: ctx.get("connection").rpc })
+	}, ReconnectCodex));
 	ctx.slots.inject("plugins.row.config", () => ctx.slots.register({
 		name: "plugins.row.config",
 		key: "@local/dsh-codex-compat#local-codex-fast",

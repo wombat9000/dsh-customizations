@@ -8,6 +8,7 @@ import { Context } from '@deepseek-ai/cordis'
 import { installed } from '../../dsh-google-auth/test/profile-fixture.js'
 import * as oauth from '../dist/src/oauth/index.js'
 import * as fast from '../dist/src/fast/index.js'
+import { CODEX_DEVICE_URL, OAUTH_CHANNEL } from '../dist/shared/oauth.js'
 import { gate } from './inference-fixture.js'
 
 const { default: AuthorizationService } = await installed('@deepseek-ai/dsh-authorization')
@@ -278,6 +279,97 @@ test('native Codex OAuth is available without configured routes and pre-cancella
   assert.equal((await f.ctx.credentials.describeRecord(nativeKey)).configured, false)
 })
 
+test(
+  'browser reconnect scopes the code, cancels cleanly, and replaces the grant after consent',
+  { timeout: 10000 },
+  async (t) => {
+    const f = await fixture(t)
+    await f.ctx.credentials.modifyRecord(nativeKey, async () => previousGrant)
+    const nextGrant = {
+      kind: 'grant',
+      payload: { access: 'synthetic-new', refresh: 'synthetic-new' },
+    }
+    const entered = [gate(), gate()]
+    const finish = [gate(), gate()]
+    t.after(() => finish.forEach(({ resolve }) => resolve()))
+    const outcomes = [gate(), gate()]
+    let sequence = 0
+    let settled = 0
+    f.ctx.on('authorization/settled', (key, status) => {
+      if (key === nativeKey) outcomes[settled++].resolve(status)
+    })
+    f.flow(nativeKey, async (session) => {
+      const turn = sequence++
+      try {
+        assert.equal(
+          await session.prompt({ kind: 'select', message: 'Choose', options: methods }),
+          'device_code',
+        )
+        session.notify({ url: 'https://untrusted.invalid', code: 'BAD-CODE', message: 'Ignore' })
+        if (turn === 1)
+          session.notify({ url: CODEX_DEVICE_URL, code: 'CODE-123', message: 'Enter code' })
+        entered[turn].resolve()
+        await finish[turn].promise
+        session.signal.throwIfAborted()
+        if (turn === 1) await session.commit(nextGrant)
+      } finally {
+        entered[turn].resolve()
+      }
+    })
+
+    // Supply the Connection endpoint boundary. Cordis, authorization and the store are real.
+    const browserPeer = { signal: t.signal }
+    let handler
+    f.ctx.provide('connection', {
+      browserPeer,
+      rpc: {
+        handle(channel, handle) {
+          assert.equal(channel, OAUTH_CHANNEL)
+          handler = handle
+          return async () => {
+            handler = undefined
+          }
+        },
+      },
+    })
+    f.ctx.provide('webServer', {})
+    const helper = f.ctx.plugin(oauth)
+    await helper.await()
+
+    const call = (endpoint, payload = {}, peer = browserPeer) =>
+      handler(endpoint, payload, t.signal, peer)
+    assert.equal((await call('start', {}, { signal: t.signal })).ok, false)
+    const cancelled = (await call('start')).value
+    await entered[0].promise
+    assert.deepEqual(await call('status', cancelled), { ok: true, value: { phase: 'starting' } })
+    assert.deepEqual(await call('start'), { ok: true, value: { busy: true } })
+    assert.equal((await call('cancel', { id: 'unrelated-tab' })).ok, false)
+    assert.equal((await call('cancel', cancelled)).ok, true)
+    assert.equal(await outcomes[0].promise, 'cancelled')
+    finish[0].resolve()
+    await new Promise(setImmediate)
+    assert.deepEqual(await f.readRecord(nativeKey), previousGrant)
+    assert.deepEqual(await call('status', cancelled), { ok: true, value: { phase: 'cancelled' } })
+
+    const successful = (await call('start')).value
+    await entered[1].promise
+    assert.equal((await call('status', successful, { signal: t.signal })).ok, false)
+    assert.equal((await call('status', { id: 'unrelated-tab' })).ok, false)
+    assert.deepEqual(await call('status', successful), {
+      ok: true,
+      value: { phase: 'code', code: 'CODE-123' },
+    })
+    assert.deepEqual(await f.readRecord(nativeKey), previousGrant)
+    finish[1].resolve()
+    assert.equal(await outcomes[1].promise, 'authorized')
+    await new Promise(setImmediate)
+    assert.deepEqual(await call('status', successful), { ok: true, value: { phase: 'authorized' } })
+    assert.deepEqual(await f.readRecord(nativeKey), nextGrant)
+    await helper.dispose()
+    assert.equal(handler, undefined)
+  },
+)
+
 // Gate: real component disposal must cancel only its own pending attempt; Fast route and
 // another native surface's same-key attempt outlive it. Unit cancellation cannot reach Cordis ownership.
 test(
@@ -382,7 +474,7 @@ test(
     })
     const competingHelper = f.ctx.plugin(oauth)
     await competingHelper.await()
-    assert.match(await diagnostics.promise, /native Models page/)
+    assert.match(await diagnostics.promise, /DSH_CODEX_REAUTH=1/)
     await competingHelper.dispose()
     assert.equal(nativeSignal.aborted, false)
     assert.equal(authorization.describe(nativeKey).inFlight, true)
