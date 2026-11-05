@@ -26,6 +26,26 @@ These facts come from repository configuration, not an install result:
 
 A dependency link explicitly authorized for read-only testing is not authorization to install, build into its target, or modify the parent checkout. Report borrowed dependencies as a validation limitation. Recheck ownership in every fresh checkout/worktree.
 
+## Share dependencies between worktrees
+
+The repository uses `nodeLinker: isolated`, `packageImportMethod: hardlink`, and `enableGlobalVirtualStore: false` in the [workspace configuration](../../../pnpm-workspace.yaml). pnpm shares package-file inodes through its content-addressed store, while each checkout keeps its own dependency links and lockfile receipt. Do not edit installed package files: hardlinks can share those files with the store and other checkouts.
+
+1. Use an existing compatible store on the checkout's filesystem. After verifying the executable, inspect `pnpm store path` and the install's `node_modules/.modules.yaml` receipt. Leave `storeDir` unset when the default already selects that store. If you need another existing store, select its base with a checkout-scoped option; let pnpm manage `v11` and other format directories. Never merge store formats manually or prune shared stores to make room.
+2. Install each new worktree independently with the approved offline frozen command below. Never symlink an entire dependency tree from another checkout, especially when lockfiles differ. If another checkout already borrows an install, leave that target untouched until its users coordinate migration.
+3. If hardlinking fails across filesystems, select a compatible same-filesystem store. Do not silently switch to copies, download packages, or change machine-wide settings. Missing cache entries or insufficient space require a separate decision.
+
+### Why the global virtual store stays disabled
+
+For pinned pnpm 11.9.0, the experimental option is `enableGlobalVirtualStore`, not the later `virtualStoreType`. The repo-local `false` overrides a user-level opt-in without modifying global configuration. General pnpm 11 settings belong in workspace YAML or global configuration YAML, not the legacy rc file.
+
+The 2026-10-26 same-lockfile Linux ARM64 experiment passed all 1,613 Node tests with the local virtual store, but global-store relinking failed Session Environment's forced browser declaration build (`TS2664`, followed by unknown session/slot types). Published DSH client declarations reference development-only imports that local hoisting makes reachable; global-store realpaths do not preserve that lookup. Node ESM also ignores `NODE_PATH`. Keep the local layout rather than adding a global loader, weakening type checks, editing shared packages, or changing the frozen graph for this optimization. Reevaluate only with a task-owned install and the full build/test path, including direct Node commands and native modules.
+
+The profile application ownership guard separately expects profile dependencies to resolve inside the profile. This repository's setting does not configure independent DSH runtime/profile installs. Do not apply this experiment to them or weaken that guard.
+
+See the [pnpm 11.9.0 implementation](https://github.com/pnpm/pnpm/blob/v11.9.0/pnpm11/config/reader/src/index.ts) and [global-store resolution caveat](https://pnpm.io/10.x/settings#enableglobalvirtualstore). Use the tagged source for version-specific behavior; current documentation describes newer options and loader support.
+
+Measure allocated blocks once per `(device, inode)` across installs **and** the store. Apparent dependency-directory sizes include already-shared files and are not recoverable-space estimates. Retain shared cache entries created during an evaluation; report their cost rather than pruning them.
+
 ## Install only after approval
 
 Once the exact executable, owned dependency directories, configuration, and cache prerequisites are established, obtain explicit approval for an install in this checkout. Using the verified local executable, run:
