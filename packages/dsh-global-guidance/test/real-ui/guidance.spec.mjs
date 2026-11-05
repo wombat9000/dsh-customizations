@@ -41,7 +41,9 @@ test('native Global Guidance switches control instructions and preserve the comp
   const enabledSections = await sections(app)
   expect(enabledSections).toHaveLength(1)
   const body = enabledSections[0].text
-  await expect(detail.getByText('Global Guidance', { exact: true })).toBeVisible()
+  await expect(
+    detail.getByRole('heading', { name: 'Global Guidance', exact: true }).first(),
+  ).toBeVisible()
   await expect(row()).toContainText('Visual evidence')
   await expect(row()).toContainText('Running')
   await expect(component()).toBeChecked()
@@ -69,7 +71,7 @@ test('native Global Guidance switches control instructions and preserve the comp
       await expect(bundle()).not.toBeChecked()
       await expect.poll(() => sections(app)).toEqual([])
       await expect(
-        detail.getByRole('heading', { name: 'Visual evidence', exact: true }),
+        detail.getByRole('heading', { name: 'Visual evidence', exact: true }).first(),
       ).toBeVisible()
       await bundle().click()
       await expect(bundle()).toBeChecked()
