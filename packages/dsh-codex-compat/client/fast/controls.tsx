@@ -1,5 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 import type { UseProjection } from '@deepseek-ai/dsh-api-session-controller/client'
+// DSH 0.2.2 declares the modelSelection projection key with the Agent types.
+import type {} from '@deepseek-ai/dsh-agent'
 import {
   CHANNEL,
   COST_NOTICE,

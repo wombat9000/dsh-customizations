@@ -26,10 +26,8 @@ test('real Cordis mount, Connection lifetime and JSON domain survive plugin unlo
     },
   })
   ctx.provide('settings', { configure: () => () => {} })
-  ctx.provide('agents', { get: (id) => ({ id, session: { header: {} } }) })
-  ctx.provide('sessionProjections', {
-    stateOf: () => ({ pending: { provider: 'openai-codex', model: 'gpt-6-sol' }, lastUsed: null }),
-  })
+  const model = { current: () => ({ provider: 'openai-codex', model: 'gpt-6-sol' }) }
+  ctx.provide('agents', { get: (id) => ({ id, session: { header: {} }, model }) })
   ctx.provide('agentDefaultModel', {
     currentSelection: () => ({ provider: 'openai-codex', model: 'gpt-6-sol' }),
   })

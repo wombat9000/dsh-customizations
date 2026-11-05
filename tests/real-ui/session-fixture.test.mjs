@@ -27,6 +27,7 @@ const StorageJson = await installed('dsh-storage-json')
 const StorageDomain = await installed('dsh-storage-domain')
 const { default: Projections } = await installed('dsh-session-projection')
 const { default: Titles } = await installed('dsh-session-title')
+const { default: Agents } = await installed('dsh-agent')
 const { default: ProjectionCache } = await installed('dsh-session-projection-cache')
 import { waitForFixture } from './global-setup.mjs'
 
@@ -129,6 +130,8 @@ test('all synthetic histories reopen through native V4 persistence without tools
   await ctx.plugin(StorageJson, { root: join(directory, 'cache') }).await()
   await ctx.plugin(StorageDomain, { backend: 'json' }).await()
   await ctx.plugin(Projections).await()
+  // DSH 0.2.2 titles inject the Agent registry; no Agent is ever created here.
+  await ctx.plugin(Agents).await()
   await ctx.plugin(Titles, { fallbackMaxWords: 5, fallbackMaxBytes: 40, maxTitleBytes: 80 }).await()
   await ctx.plugin(ProjectionCache, { writeEveryEvents: 200, writeIntervalMs: 5000 }).await()
   await seedSession(ctx)
@@ -155,6 +158,9 @@ test('all synthetic histories reopen through native V4 persistence without tools
     }
     if (factory !== approvalCommandSeed) continue
     const prior = session.snapshotEvents().length
+    // DSH 0.2.2 prepared Sessions stay read-only until the store announces them.
+    t.after(ctx.sessions.enter(session))
+    ctx.sessions.announce(session)
     for (const turn of [2, 3]) {
       beginCommandTurn(session, turn)
       endCommandTurn(session, turn)
@@ -212,7 +218,7 @@ test('all synthetic histories reopen through native V4 persistence without tools
   }
   assert.equal(ctx.get('tools'), undefined)
   assert.equal(ctx.get('llm'), undefined)
-  assert.equal(ctx.get('agents'), undefined)
+  for (const { header } of headers) assert.equal(ctx.agents.get(header.id), undefined)
 })
 
 test('bootstrap refuses a ready Web listener without a verified seed', async () => {

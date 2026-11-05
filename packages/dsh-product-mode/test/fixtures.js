@@ -110,8 +110,9 @@ export async function snapshot(directory) {
   return result
 }
 
+// Loader 1.1 persists entry changes through commit(change); keep them in memory.
 class MemoryTree extends EntryTree {
-  write() {}
+  commit() {}
 }
 
 export async function host(t, fixture, rows, { full = true, selectedDefault } = {}) {
@@ -133,6 +134,7 @@ export async function host(t, fixture, rows, { full = true, selectedDefault } = 
       'agent',
       'system-prompt',
       'tools',
+      'tool-executor-native',
       'commands',
       'goal',
       'skill',
@@ -159,6 +161,10 @@ export async function host(t, fixture, rows, { full = true, selectedDefault } = 
       await ctx.plugin(module.default ?? module, {}).await()
     }
     await ctx.plugin(GitHub, {}).await()
+  } else {
+    // The 0.2.2 preset registry also injects the Agent registry.
+    const { default: Agents } = await installed('@deepseek-ai/dsh-agent')
+    await ctx.plugin(Agents, {}).await()
   }
   const tree = new MemoryTree(ctx)
   t.after(async () => {

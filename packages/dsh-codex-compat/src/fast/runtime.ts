@@ -117,9 +117,7 @@ export class CodexFastRuntime {
       (agent.session.header.delegationDepth ?? 0) > 0
     )
       return fail('Fast mode is only available for top-level sessions.')
-    const projected = this.ctx.sessionProjections.stateOf(agent.session, 'modelSelection')
-    const selected =
-      projected?.pending ?? projected?.lastUsed ?? this.ctx.agentDefaultModel.currentSelection()
+    const selected = agent.model.current() ?? this.ctx.agentDefaultModel.currentSelection()
     return { agent, provider: selected.provider, model: selected.model }
   }
   sessionStatus(sessionId: string): FastStatus {

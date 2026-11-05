@@ -396,7 +396,6 @@ test(
     })
     f.ctx.provide('settings', { configure: () => () => {} })
     f.ctx.provide('agents', { get: () => undefined })
-    f.ctx.provide('sessionProjections', { stateOf: () => undefined })
     f.ctx.provide('agentDefaultModel', {
       currentSelection: () => ({ provider: 'openai-codex', model: 'gpt-6-sol' }),
     })

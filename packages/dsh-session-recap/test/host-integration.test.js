@@ -71,9 +71,9 @@ async function host(t) {
 test('registers schema-backed settings defaults and opaque storage scope', async (t) => {
   const { rpc, installed } = await host(t)
   assert.deepEqual(installed.policy, { auto: false })
-  assert.equal(installed.owner.config.autoRecap.get(), true)
-  assert.equal(installed.owner.config.useJev.get(), false)
-  assert.equal(installed.owner.config.inactivityMinutes.get(), 30)
+  assert.equal(installed.owner.effectiveConfig.autoRecap.get(), true)
+  assert.equal(installed.owner.effectiveConfig.useJev.get(), false)
+  assert.equal(installed.owner.effectiveConfig.inactivityMinutes.get(), 30)
   const result = await rpc('settings')
   assert.equal(result.ok, true)
   assert.equal(result.value.provider, '')
@@ -144,10 +144,10 @@ test('optional Jev lookup wires the service without required injection or settin
 })
 test('Loader changes preserve live references and RPC lifetime; policy follows disposal', async (t) => {
   const { root, rpc, installed, registrations, policy } = await host(t)
-  const reference = installed.owner.config.autoRecap
+  const reference = installed.owner.effectiveConfig.autoRecap
   await root.loader.update('recap-test-entry', { config: { autoRecap: false } })
   await root.loader.await()
-  assert.equal(reference, installed.owner.config.autoRecap)
+  assert.equal(reference, installed.owner.effectiveConfig.autoRecap)
   assert.equal(reference.get(), false)
   assert.equal((await rpc('settings')).value.autoRecap, false)
   assert.equal(registrations(), 1, 'a volatile edit does not remount the RPC owner')

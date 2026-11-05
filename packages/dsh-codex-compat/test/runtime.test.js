@@ -43,6 +43,7 @@ async function fixture(t, stored, profile) {
               ? { origin: 'subagent', delegationDepth: 1, parentSession: 'fast-session' }
               : {},
         },
+        model: { current: () => selection },
       },
     ]),
   )
@@ -53,7 +54,6 @@ async function fixture(t, stored, profile) {
     isOwnedBy: (id, owner) => agents.has(id) && owners.get(id) === owner,
   })
   f.ctx.provide('agentDefaultModel', { currentSelection: () => selection })
-  f.ctx.provide('sessionProjections', { stateOf: () => ({ pending: selection, lastUsed: null }) })
   const runtime = new CodexFastRuntime(f.ctx, domain)
   f.ctx.on('llm/stream', (options, next) => runtime.stream(options, next))
   t.after(() => runtime.dispose())
