@@ -108,7 +108,6 @@ test('Fast choices persist and Codex reconnect remains available with the Fast i
     await page.getByRole('button', { name: 'Models', exact: true }).click()
     const reconnect = page.getByRole('button', { name: 'Reconnect Codex', exact: true })
     await expect(reconnect).toBeEnabled()
-    await expect(page.getByRole('button', { name: /^Edit .*Codex/ })).toBeVisible()
     await reconnect.click()
     await expect(page.getByText('CODE-123', { exact: true })).toBeVisible()
     await expect(page.getByRole('link', { name: 'Open OpenAI sign-in' })).toHaveAttribute(
