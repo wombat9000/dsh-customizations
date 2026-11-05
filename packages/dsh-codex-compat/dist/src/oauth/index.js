@@ -2,6 +2,7 @@
 import { createInterface } from 'node:readline/promises';
 import { setTimeout as delay } from 'node:timers/promises';
 import { credentialKey } from '@deepseek-ai/dsh-credentials';
+import { mountWebReconnect } from './web.js';
 export const name = 'local-codex-oauth';
 export const inject = ['authorization', 'credentials'];
 export const CODEX_CREDENTIAL_KEY = credentialKey('llm-pi-ai', 'openai-codex');
@@ -106,12 +107,13 @@ export async function authorizeCodex(ctx, signal, { forceLogin = false, output =
         interactionLifetime.abort(new Error('Codex OAuth interaction ended.'));
     }
 }
-/** Reviewed terminal helper, independent of Fast and of provider/model configuration. */
+/** Mount terminal sign-in and, when Connection is present, browser reconnect. */
 export async function apply(ctx) {
     const activation = new AbortController();
     const release = ctx.effect(() => () => activation.abort(new Error('Codex OAuth component disposed.')));
     await waitForCodexFlow(ctx.authorization, activation.signal);
     release();
+    ctx.inject(['connection', 'webServer'], (connected) => mountWebReconnect(connected, CODEX_CREDENTIAL_KEY));
     ctx.effect(() => {
         const controller = new AbortController();
         void authorizeCodex(ctx, controller.signal, {
@@ -120,7 +122,7 @@ export async function apply(ctx) {
             if (controller.signal.aborted)
                 return;
             // Provider failures may contain sensitive data; never echo their raw text.
-            const message = 'Codex OAuth login failed. Retry sign-in using the native Models page or DSH_CODEX_REAUTH=1.';
+            const message = 'Codex OAuth login failed. Retry sign-in from Models or with DSH_CODEX_REAUTH=1.';
             ctx.logger.error(message);
             process.stderr.write(`[Codex OAuth] ${message}\n`);
         });

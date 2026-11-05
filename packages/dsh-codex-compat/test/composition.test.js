@@ -259,14 +259,14 @@ for (const legacy of [false, true]) {
       assert.deepEqual(
         routes.map((route) => route.path).sort(),
         // Target Connection also owns the browser /connect handshake route.
-        ['/api', '/codex-fast-integration', '/connect'],
-        'native Connection and Fast register their distinct inert routes',
+        ['/api', '/codex-fast-integration', '/codex-reconnect', '/connect'],
+        'native Connection, Fast and OAuth register their distinct inert routes',
       )
       await entries.find((entry) => entry.options.id === 'local-codex-oauth').fiber.dispose()
       assert.deepEqual(
         [...f.routes],
-        routes,
-        'OAuth lifetime does not remove Fast/native Connection',
+        routes.filter(({ path }) => path !== '/codex-reconnect'),
+        'OAuth disposal removes only its reconnect route',
       )
       assert.ok(f.ctx.authorization.describe(nativeKey), 'native pi still owns the flow')
       assert.deepEqual(f.ctx.agentDefaultModel.currentSelection(), selection)

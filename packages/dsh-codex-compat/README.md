@@ -1,15 +1,15 @@
 # Codex Compatibility
 
-`@local/dsh-codex-compat` is one repository-owned bundle with two Host components: a reviewed Codex sign-in helper and optional Fast mode. Native DSH/pi-ai still owns OAuth, credentials, token refresh, provider configuration and inference. This package does not install community plugins or replace the native Codex adapter.
+`@local/dsh-codex-compat` is one repository-owned bundle with two Host components: a Codex sign-in helper for Web and the terminal and optional Fast mode. Native DSH/pi-ai still owns OAuth, credentials, token refresh, provider configuration and inference. This package does not install community plugins or replace the native Codex adapter.
 
 The bundle is opt-in and is not included in `personal-web`. Source review, build and merge do not install it. A retained-profile migration requires separate approval, backups and the repository’s [migration checks](../../MIGRATION-0.2.1-rc.3.md).
 
 ## Components and controls
 
-| Component                       | Cordis row          | Responsibility                                                                      |
-| ------------------------------- | ------------------- | ----------------------------------------------------------------------------------- |
-| `@local/dsh-codex-compat/oauth` | `local-codex-oauth` | Show native login notices in the terminal and answer login-method/callback prompts. |
-| `@local/dsh-codex-compat/fast`  | `local-codex-fast`  | Own the optional request-tier bridge, persisted choices and Fast controls.          |
+| Component                       | Cordis row          | Responsibility                                                               |
+| ------------------------------- | ------------------- | ---------------------------------------------------------------------------- |
+| `@local/dsh-codex-compat/oauth` | `local-codex-oauth` | Connect Codex from the Models page or a terminal using native authorization. |
+| `@local/dsh-codex-compat/fast`  | `local-codex-fast`  | Own the optional request-tier bridge, persisted choices and Fast controls.   |
 
 DSH RC2 discovers a Client half only from a bare package Loader name. The bundle therefore mounts Fast through the package root, which exports the same Host component as `/fast`. This keeps two components and one Client module without a dummy bootstrap plugin.
 
@@ -17,10 +17,14 @@ The components have separate native enable/disable controls. The Fast component 
 
 - **Composer → two-bolt Fast button:** Click to cycle **Off → Everything Fast → Main thread only → Off**. The left bolt represents the main thread; the right represents eligible Codex subagents, including nested subagents. Filled bolts indicate Fast. The tooltip names the current and next state and notes higher usage. New sessions start Off; the first click enables everything. There is no subagents-only mode.
 - **Plugins → `@local/dsh-codex-compat` → `local-codex-fast` → Configure → Fast integration:** Turn the Fast integration off. Codex login and Standard inference remain available.
-- **OAuth component Off:** Close this helper’s interaction, request cancellation of its attempt, and stop future automatic terminal login. An already-queued native credential write can still complete, as explained below. Native Models-page sign-in, native refresh and inference remain available.
-- **Fast component Off:** Remove its owned request bridge and RPC handlers. This does not unload the OAuth component or remove credentials.
+- **OAuth component Off:** Close this helper’s interaction, request cancellation of its attempt, and stop future automatic terminal login. An already-queued native credential write can still complete, as explained below. Reconnect Codex requires this component. Native refresh and inference remain available.
+- **Fast component Off:** Unloads the request bridge and the shared browser controls, including Reconnect Codex. To turn off Fast and keep Reconnect Codex available, use the **Fast integration** switch.
 
 ## Sign-in helper
+
+Open **Settings → Models** and select **Reconnect Codex** on the configured OpenAI Codex card. Open the sign-in link in a new tab and enter the one-time code. If OpenAI blocks device sign-in, check your ChatGPT security settings or workspace permissions. After DSH confirms the connection, retry the failed turn in the same chat. The running DSH instance saves the new grant. If sign-in is already in progress, finish it in the browser tab or terminal that started it.
+
+The Web action uses the authenticated browser connection and starts only when clicked. The originating card can read and cancel its own attempt. Closing the card cancels the attempt when the connection is available. An abandoned attempt also expires when its tab stops checking progress. The code is held in memory until the attempt ends. The browser receives the one-time code and status only. The native flow owns the grant.
 
 The OAuth component adapts the locally authored helper from the adjacent `dsh-sandbox` repository. It does not implement PKCE, callback listeners, device-code exchange, token refresh, credential locking or grant writes. The native authorization service and pi-ai provide those operations.
 
@@ -37,7 +41,7 @@ If you explicitly start DSH with `DSH_CODEX_REAUTH=1`, the enabled helper reques
 
 **Native cancellation is not credential rollback.** In this DSH/pi-ai release, the native pi credential bridge does not forward the login signal into its queued record mutation. A replacement already queued for the native store can complete after the attempt reports `cancelled`. Do not infer that the previous grant is unchanged solely from a cancelled outcome, and do not retry automatically. This bundle neither patches that credential bridge nor handles token payloads.
 
-This remains a **terminal interaction helper**, not a new browser sign-in interface. Use the native Models page for browser-managed authorization. The helper adds no HTTP or RPC login surface and registers no competing authorization flow.
+The terminal action remains available for headless recovery. Both entry points delegate to the same native authorization flow.
 
 ## Provider configuration and migration
 
@@ -98,7 +102,7 @@ Status refreshes on page load, window focus, or explicit error recovery. These u
 ## Source and development
 
 ```text
-src/oauth/index.ts       terminal authorization interaction and owned login lifetime
+src/oauth/              terminal interaction and authenticated browser reconnect
 src/fast/index.ts        Fast Host entrypoint
 src/fast/runtime.ts      persisted policy and authenticated RPC
 src/fast/bridge.ts       private adapter compatibility boundary
@@ -119,7 +123,7 @@ node node_modules/@playwright/test/cli.js test --config packages/dsh-codex-compa
 
 `pnpm test` checks this package’s types and committed artifact freshness. Regenerate artifacts after changing source. `pnpm run test:visual` runs shared journeys followed by this bundle’s isolated-profile journey.
 
-OAuth tests use native authorization/credential services with synthetic local flows and temporary records. A separate native pi flow test substitutes only the provider’s login result, holds the real store’s record lock, and proves the documented late-write cancellation limit. It does not execute the OAuth protocol. Fast tests use the installed native adapter/SDK with controlled provider, storage and transport effects. The shell journey disables automatic OAuth login in its fixture profile and makes no inference calls. It reuses native Host/authentication/navigation helpers with configured Codex discovery/defaults that conflict with the shared unconfigured-provider profile.
+OAuth tests use native authorization/credential services with synthetic local flows and temporary records. A separate native pi flow test substitutes only the provider’s login result, holds the real store’s record lock, and proves the documented late-write cancellation limit. It does not execute the OAuth protocol. Fast tests use the installed native adapter/SDK with controlled provider, storage and transport effects. The shell journey uses fixture sign-in replies, disables the OAuth Host component in the fixture profile, and makes no inference calls. It reuses native Host/authentication/navigation helpers with configured Codex discovery/defaults that conflict with the shared unconfigured-provider profile.
 
 Screenshots are diagnostic test-suite captures of the real isolated DSH application with fixture data, not regression baselines or deployment evidence. No ordinary test reads personal credentials, logs in to OpenAI or performs paid inference.
 
