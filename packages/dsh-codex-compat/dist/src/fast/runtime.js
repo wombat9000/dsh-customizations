@@ -164,11 +164,10 @@ export class CodexFastRuntime {
             if (!Number.isSafeInteger(depth) || depth < 1 || !header.parentSession)
                 return null;
             const parent = this.ctx.agents.get(header.parentSession);
-            if (!parent ||
-                (parent.session.header.delegationDepth ?? 0) !== depth - 1 ||
-                !this.ctx.agents.isOwnedBy(currentId, parent))
+            // DSH 0.2.2-rc.2 removed runtime ownership tracking; durable lineage plus
+            // the live identity checks above and on the next iteration remain.
+            if (!parent || (parent.session.header.delegationDepth ?? 0) !== depth - 1)
                 return null;
-            checks.push(() => this.ctx.agents.isOwnedBy(currentId, parent));
             id = String(header.parentSession);
         }
         return null;

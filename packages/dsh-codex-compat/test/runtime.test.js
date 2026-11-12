@@ -48,11 +48,7 @@ async function fixture(t, stored, profile) {
     ]),
   )
   let selection = { provider: 'openai-codex', model: 'gpt-6-sol' }
-  const owners = new Map([['child', agents.get('fast-session')]])
-  f.ctx.provide('agents', {
-    get: (id) => agents.get(id),
-    isOwnedBy: (id, owner) => agents.has(id) && owners.get(id) === owner,
-  })
+  f.ctx.provide('agents', { get: (id) => agents.get(id) })
   f.ctx.provide('agentDefaultModel', { currentSelection: () => selection })
   const runtime = new CodexFastRuntime(f.ctx, domain)
   f.ctx.on('llm/stream', (options, next) => runtime.stream(options, next))
@@ -85,7 +81,6 @@ async function fixture(t, stored, profile) {
     records,
     subagents,
     agents,
-    owners,
     state,
     global: () => global,
     select(value) {
@@ -261,7 +256,6 @@ test('All is parent-gated, root-scoped and child-model-eligible across nested de
       },
     },
   })
-  f.owners.set('nested', child)
   f.agents.set('other-child', {
     id: 'other-child',
     session: {
@@ -272,7 +266,6 @@ test('All is parent-gated, root-scoped and child-model-eligible across nested de
       },
     },
   })
-  f.owners.set('other-child', f.agents.get('other'))
   // A normal conversation fork must not follow its seed parent's subagent policy.
   f.agents.get('other').session.header = { parentSession: 'fast-session', isSeeded: true }
   assert.equal(f.runtime.sessionStatus('fast-session').subagentsRequested, false)
@@ -430,7 +423,7 @@ test('persisted All leaves an unreviewed gateway Standard even for an allowliste
   assert.equal(f.captures[0].options.sessionId, 'child')
 })
 
-test('Subagents Fast fails closed on orphaned, inconsistent or unowned ancestry', async (t) => {
+test('Subagents Fast fails closed on orphaned or inconsistent ancestry', async (t) => {
   const f = await fixture(t)
   assert.equal((await f.setMode('all')).ok, true)
   const child = f.agents.get('child')
@@ -444,10 +437,7 @@ test('Subagents Fast fails closed on orphaned, inconsistent or unowned ancestry'
     child.session.header = header
     await consume(f.loop('child'))
   }
-  child.session.header = { origin: 'subagent', delegationDepth: 1, parentSession: 'fast-session' }
-  f.owners.delete('child')
-  await consume(f.loop('child'))
-  assert.equal(f.captures.length, 6)
+  assert.equal(f.captures.length, 5)
   assert.ok(f.captures.every((c) => c.body.service_tier === undefined))
 })
 
@@ -460,7 +450,6 @@ for (const revoke of [
   'integration-off',
   'root-replaced',
   'child-replaced',
-  'ownership-lost',
 ]) {
   test(`pending child payload loses Fast after ${revoke}`, async (t) => {
     const f = await fixture(t)
@@ -491,12 +480,9 @@ for (const revoke of [
       f.select({ provider: 'another-provider', model: 'another/model' })
     } else if (revoke === 'integration-off') {
       await f.rpc('integration-set', { enabled: false, revision: 999 })
-    } else if (revoke === 'ownership-lost') {
-      f.owners.delete('child')
     } else {
       const id = revoke === 'root-replaced' ? 'fast-session' : 'child'
       f.agents.set(id, { ...f.agents.get(id) })
-      if (id === 'fast-session') f.owners.set('child', f.agents.get(id))
     }
     hold.resolve()
     await pending
