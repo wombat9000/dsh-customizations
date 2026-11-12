@@ -2,6 +2,7 @@ import type {
   Owner,
   GoogleAuth,
   Agents,
+  HostAgents,
   Approval,
   Dispose,
   FileOptions,
@@ -12,6 +13,7 @@ import type {
   BrowserAction,
   BrowserRuntime,
 } from './types.js'
+import { topLevelAgents } from './types.js'
 import type { RouteContext } from './routes.js'
 import type { SheetReadOptions, SheetPrepareOptions } from './sheets-runtime.js'
 interface ServiceOptions {
@@ -22,7 +24,7 @@ interface ServiceOptions {
 }
 interface HostContext extends RouteContext {
   googleAuth: GoogleAuth
-  agents: Agents
+  agents: HostAgents
   approval: Approval
   provide(name: 'googleDrive', service: GoogleDriveService): void
   on(event: 'agent/disposed', callback: (event: { agent: Owner }) => void): unknown
@@ -227,7 +229,7 @@ export function apply(ctx: HostContext) {
   )
   const service = new GoogleDriveService({
     googleAuth: ctx.googleAuth,
-    agents: ctx.agents,
+    agents: topLevelAgents(ctx.agents),
     approval: ctx.approval,
   })
   ctx.effect(() => () => service.dispose())

@@ -49,8 +49,10 @@ function content(result) {
 async function fixture(t, options = {}) {
   const host = await approvalHost(t, options)
   let live = host.agent
-  let roots = [host.agent]
-  const registry = { get: (id) => (live?.session.id === id ? live : undefined), roots: () => roots }
+  const registry = {
+    get: (id) => (live?.session.id === id ? live : undefined),
+    list: () => (live ? [live] : []),
+  }
   host.ctx.provide('agents', registry)
   const caller = createGrantCaller(host.ctx)
   const events = []
@@ -137,10 +139,11 @@ async function fixture(t, options = {}) {
     registry: {
       replace(agent) {
         live = agent
-        roots = [agent]
       },
       removeRoot() {
-        roots = []
+        // DSH derives top-level status from durable subagent delegation metadata.
+        const header = { ...live.session.header, origin: 'subagent', delegationDepth: 1 }
+        Object.defineProperty(live.session, 'header', { value: header, configurable: true })
       },
       removeOwner() {
         live = undefined

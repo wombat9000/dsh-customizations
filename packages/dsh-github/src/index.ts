@@ -7,7 +7,7 @@ import { createGitHubTools } from './tools.js'
 import { createGitHubWriteRuntime } from './write-runtime.js'
 import { registerGitHubWriteTools } from './write-tools.js'
 import { createGitHubGrantRuntime } from './grants.js'
-import { createGrantCaller, registerGitHubGrantTools } from './grant-tools.js'
+import { createGrantCaller, isTopLevelAgent, registerGitHubGrantTools } from './grant-tools.js'
 import { createGitHubPresentation } from './presentation.js'
 import { registerGitHubRoutes } from './routes.js'
 import { mountGitHubLiveCI } from './live-ci.js'
@@ -34,7 +34,7 @@ export function apply(ctx: Host) {
   const grantCaller = createGrantCaller(ctx)
   const agents = {
     get: (id: string) => ctx.get('agents')?.get(id),
-    roots: () => ctx.get('agents')?.roots() ?? [],
+    roots: () => (ctx.get('agents')?.list() ?? []).filter(isTopLevelAgent),
   }
   const presentation = createGitHubPresentation({ agents, grants, caller: grantCaller })
   ctx.effect(() => () => {
