@@ -2,7 +2,7 @@
 
 `@local/dsh-codex-compat` is one repository-owned bundle with two Host components: a Codex sign-in helper for Web and the terminal and optional Fast mode. Native DSH/pi-ai still owns OAuth, credentials, token refresh, provider configuration and inference. This package does not install community plugins or replace the native Codex adapter.
 
-The bundle is opt-in and is not included in `personal-web`. Source review, build and merge do not install it. A retained-profile migration requires separate approval, backups and the repository’s [migration checks](../../MIGRATION-0.2.2-rc.1.md).
+The bundle is opt-in and is not included in `personal-web`. Source review, build and merge do not install it. A retained-profile migration requires separate approval, backups and the repository’s [migration checks](../../MIGRATION-0.2.2-rc.2.md).
 
 ## Components and controls
 
@@ -70,7 +70,7 @@ If an Off write fails, it still takes effect in this process; the page reports t
 
 The Fast component uses native schema-validated `storageDomain` storage. The main-thread choice binds to the session ID and exact provider/model and survives page reload, resume and Host restart. Selecting another model uses Standard; returning to the previously opted-in model restores its saved choice. **Everything Fast** enables eligible subagents too; **Main thread only** disables their Fast policy; **Off** disables both scopes. Subagent Fast requires the root session’s current supported model to request Fast. New top-level sessions and ordinary conversation forks start Off. Integration Off retains saved choices but makes them inactive; explicitly re-enabling it activates them again. Compaction, title, summary and hand-built model calls are excluded for parents and children.
 
-Subagents Fast applies only to ordinary eligible Codex calls with a complete, consistent live delegation chain to the opted-in root session. Each edge must have native subagent metadata and exact runtime parent ownership. Spawned and context-forked children, nested subagents and teammates use that boundary. Missing ancestors, independently resumed children and unreachable out-of-process workers remain Standard. Pending payloads recheck the exact Agent identities, ownership and root policy. Selecting **Main thread only** revokes pending child Fast payloads; selecting **Off** revokes both scopes. Prepared requests retain the in-flight limitation above.
+Subagents Fast applies only to ordinary eligible Codex calls with a complete, consistent live delegation chain to the opted-in root session. Each edge must have native subagent metadata, a consistent delegation depth and a live parent Agent. DSH 0.2.2-rc.2 no longer tracks runtime parent ownership, so a resumed child whose live parent is the opted-in root also qualifies. Spawned and context-forked children, nested subagents and teammates use that boundary. Missing or replaced ancestors and unreachable out-of-process workers remain Standard. Pending payloads recheck the exact Agent identities and root policy. Selecting **Main thread only** revokes pending child Fast payloads; selecting **Off** revokes both scopes. Prepared requests retain the in-flight limitation above.
 
 The existing version-1 storage domain gains an additive `subagents` table. Older records open unchanged and missing child choices mean Off. Previously saved subagents-only choices remain stored but inactive. No bulk rewrite or credential migration runs. Reverting to an older plugin does not preserve the new table on subsequent storage writes; back up runtime state before a retained-profile upgrade or rollback.
 
@@ -80,7 +80,7 @@ Fast controls use authenticated DSH Connection RPC. No agent tool can enable thi
 
 ## Compatibility bridge and diagnostics
 
-**Fast uses a version-specific workaround, not a public DSH adapter extension.** This bundle targets DSH `0.2.2-rc.1`; the bridge verifies pi-ai `1.3.0`. Unreviewed versions disable Fast without modifying Standard requests.
+**Fast uses a version-specific workaround, not a public DSH adapter extension.** This bundle targets DSH `0.2.2-rc.2`; the bridge verifies pi-ai `1.3.0`. Unreviewed versions disable Fast without modifying Standard requests.
 
 The Fast bridge owns:
 
