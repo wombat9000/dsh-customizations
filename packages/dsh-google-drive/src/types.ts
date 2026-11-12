@@ -35,12 +35,29 @@ export interface AgentContext {
   effect(effect: () => Dispose): Dispose
 }
 export interface Owner {
-  session: { id: string }
+  session: { id: string; header?: { origin?: string; delegationDepth?: number } }
   ctx?: AgentContext
 }
 export interface Agents {
   get(id: string): Owner | undefined
   roots(): Owner[]
+}
+/** DSH 0.2.2-rc.2 registry surface; it no longer exposes runtime roots. */
+export interface HostAgents {
+  get(id: string): Owner | undefined
+  list(): Owner[]
+}
+/** A live Agent is top-level unless its session header records subagent delegation. */
+export function isTopLevelAgent(agent: Owner) {
+  const header = agent.session.header
+  return header?.origin !== 'subagent' && !((header?.delegationDepth ?? 0) > 0)
+}
+/** Adapt the host registry to the top-level view this plugin authorizes against. */
+export function topLevelAgents(agents: HostAgents): Agents {
+  return {
+    get: (id) => agents.get(id),
+    roots: () => agents.list().filter(isTopLevelAgent),
+  }
 }
 export interface Approval {
   overrideOf(session: Owner['session']): string | undefined

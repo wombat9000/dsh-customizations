@@ -46,12 +46,18 @@ export function grantPreview(scope: GrantScope, sessionId: string | undefined) {
   ].join('\n\n')
 }
 
+/** A live Agent is top-level unless its session header records subagent delegation. */
+export function isTopLevelAgent(agent: Agent) {
+  const header = agent.session.header
+  return header?.origin !== 'subagent' && !((header?.delegationDepth ?? 0) > 0)
+}
+
 export function createGrantCaller(ctx: Pick<Host, 'get'>): CallerFactory {
   return (exec, lifecycleSignal) => {
     const agent = exec.agent
     const agents = ctx.get('agents')
     const root =
-      !!agent?.session && agents?.get(agent.session.id) === agent && agents.roots().includes(agent)
+      !!agent?.session && agents?.get(agent.session.id) === agent && isTopLevelAgent(agent)
     return {
       agentId: agent?.session?.id,
       session: agent?.session,

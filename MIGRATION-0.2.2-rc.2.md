@@ -15,7 +15,11 @@ The [0.2.2-rc.1](MIGRATION-0.2.2-rc.1.md) and earlier handoffs remain unchanged 
 ## Codex Fast
 
 - `@deepseek-ai/dsh-storage-domain` now builds on zod `4.6.6`. Codex Compatibility's runtime `zod` dependency moves from `4.4.3` to `4.6.6` so its domain schemas type-check against the storage contract. Downstream staging that reviews Codex's runtime dependencies must accept the new version.
-- `AgentRegistry.isOwnedBy()` and runtime parent ownership were removed upstream. Subagents Fast now requires native subagent metadata, a consistent delegation depth and the exact live parent Agent for every edge, and still rechecks those identities before a pending payload is sent. A resumed child whose live parent is the opted-in root therefore qualifies; it previously stayed Standard. The ownership-specific tests are removed.
+- `AgentRegistry.isOwnedBy()`, `roots()` and runtime parent ownership were removed upstream. Subagents Fast now requires native subagent metadata, a consistent delegation depth and the exact live parent Agent for every edge, and still rechecks those identities before a pending payload is sent. A resumed child whose live parent is the opted-in root therefore qualifies; it previously stayed Standard. The ownership-specific tests are removed.
+
+## Top-level agents in GitHub and Google Drive
+
+`AgentRegistry.roots()` was also removed upstream. GitHub grants and Google Drive used it to restrict grants, approvals and session state to top-level Agents, so the real host returned 409 for every grant request. Both now take the live registry's `list()` and keep Agents whose session header is not a subagent origin and has no positive delegation depth, the same test upstream applies to `header.origin`. A live identity check through `agents.get()` still precedes every grant decision.
 
 ## Standard preset re-sync
 

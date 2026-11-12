@@ -33,11 +33,16 @@ export function grantPreview(scope, sessionId) {
         'Approval grants only this complete scope. It does not start work or synchronization.',
     ].join('\n\n');
 }
+/** A live Agent is top-level unless its session header records subagent delegation. */
+export function isTopLevelAgent(agent) {
+    const header = agent.session.header;
+    return header?.origin !== 'subagent' && !((header?.delegationDepth ?? 0) > 0);
+}
 export function createGrantCaller(ctx) {
     return (exec, lifecycleSignal) => {
         const agent = exec.agent;
         const agents = ctx.get('agents');
-        const root = !!agent?.session && agents?.get(agent.session.id) === agent && agents.roots().includes(agent);
+        const root = !!agent?.session && agents?.get(agent.session.id) === agent && isTopLevelAgent(agent);
         return {
             agentId: agent?.session?.id,
             session: agent?.session,

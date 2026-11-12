@@ -7,7 +7,7 @@ import type { GitHubLiveCI } from './live-ci.js'
 // event payloads stay unknown; host-owned object identity is never reconstructed.
 export interface Session {
   id: string
-  header: { cwd: string }
+  header: { cwd: string; origin?: string; delegationDepth?: number }
   seq: number
   eventAt(seq: number): unknown
 }
@@ -17,6 +17,11 @@ export interface Agent {
 export interface Agents {
   get(id: string): Agent | undefined
   roots(): Agent[]
+}
+/** DSH 0.2.2-rc.2 registry surface; it no longer exposes runtime roots. */
+export interface HostAgents {
+  get(id: string): Agent | undefined
+  list(): Agent[]
 }
 export interface Execution {
   agent?: Agent | undefined
@@ -77,7 +82,7 @@ export interface WebHost {
 }
 export interface Host extends ToolHost, WebHost {
   subprocess: Subprocess
-  get(name: 'agents'): Agents | undefined
+  get(name: 'agents'): HostAgents | undefined
   provide(name: string, service: Readonly<GitHubReads> | Readonly<GitHubLiveCI>): unknown
   on(
     event: 'tools/pre-execute',
