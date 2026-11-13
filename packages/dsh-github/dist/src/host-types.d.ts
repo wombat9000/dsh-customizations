@@ -20,7 +20,7 @@ export interface Agents {
     get(id: string): Agent | undefined;
     roots(): Agent[];
 }
-/** DSH 0.2.2-rc.2 registry surface; it no longer exposes runtime roots. */
+/** DSH 0.2.2-rc.2+ registry surface; it no longer exposes runtime roots. */
 export interface HostAgents {
     get(id: string): Agent | undefined;
     list(): Agent[];
