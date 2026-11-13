@@ -108,7 +108,7 @@ export function coordinatorTools(service: DispatchService, wait: WaitFn): ToolDe
     ),
     tool(
       'dispatch_list_presets',
-      'List agent presets available for workers. New workers default to dispatch-worker; any other preset must be chosen explicitly and is shown on the approval card.',
+      'List the agent preset Dispatch uses for workers. This version creates and adopts only dispatch-worker sessions, so worker restrictions and reporting always apply.',
       {},
       [],
       async (_input, exec) => {
@@ -138,7 +138,7 @@ export function coordinatorTools(service: DispatchService, wait: WaitFn): ToolDe
         prompt: str('Complete first message for the worker. Sent exactly as approved.'),
         base: { type: 'object', description: 'Exact snapshot returned by dispatch_refresh_base.' },
         branch: str('Optional new branch name; generated when omitted.'),
-        preset: str('Optional worker preset; defaults to dispatch-worker.'),
+        preset: str('Optional; only dispatch-worker is accepted.'),
         model: str('Optional provider/model; defaults to the DSH default model.'),
       },
       ['intent', 'prompt', 'base'],
@@ -154,7 +154,7 @@ export function coordinatorTools(service: DispatchService, wait: WaitFn): ToolDe
     ),
     tool(
       'dispatch_send_message',
-      'Send an attributed follow-up to one of your workers within its current approved assignment (queue, or steer the current turn). With newAssignment true, prepare a new assignment approval card instead; nothing is delivered until the user approves.',
+      'Send an attributed follow-up to one of your workers within its current approved assignment (queue, or steer the current turn). A finished or superseded assignment stays closed; status updates never reopen it. With newAssignment true, prepare a new assignment approval card for an idle worker instead; nothing is delivered until the user approves, and approval closes the previous assignment.',
       {
         workerId,
         assignmentId: str('Current assignment ID (required unless newAssignment).'),
@@ -212,7 +212,7 @@ export function coordinatorTools(service: DispatchService, wait: WaitFn): ToolDe
     ),
     tool(
       'dispatch_update_session',
-      'Rename a worker or record an attributed administrative work state/summary. Does not forge worker reports, archive, or resume work.',
+      'Rename a worker or record an attributed administrative work state/summary. Does not forge worker reports, archive, or resume work. Setting done or failed closes the assignment for good; a closed assignment’s state cannot be changed.',
       {
         workerId,
         title: str('New display title.'),
@@ -266,8 +266,9 @@ export function coordinatorTools(service: DispatchService, wait: WaitFn): ToolDe
 export function reportTool(service: DispatchService): ToolDefinition {
   return tool(
     'dispatch_report',
-    'Report to the Dispatch coordinator that assigned your current work: progress, input-required, ready-for-review, done, or failed, with a bounded summary and evidence references (paths, commits, PR links). The recipient and assignment come from your approved association.',
+    'Report to the Dispatch coordinator that assigned your current work: progress, input-required, ready-for-review, done, or failed, with a bounded summary and evidence references (paths, commits, PR links). Name the assignment ID from the Dispatch assignment message you are reporting on; a report for any other assignment is refused. The recipient comes from your approved association.',
     {
+      assignmentId: str('Assignment ID from the Dispatch assignment message this report is about.'),
       kind: {
         type: 'string',
         enum: ['progress', 'input-required', 'ready-for-review', 'done', 'failed'],
@@ -279,8 +280,12 @@ export function reportTool(service: DispatchService): ToolDefinition {
         description: 'Up to 20 short references.',
       },
     },
-    ['kind', 'summary'],
-    (input, exec) => service.report(exec.agent, input as { kind: unknown; summary: unknown }),
+    ['assignmentId', 'kind', 'summary'],
+    (input, exec) =>
+      service.report(
+        exec.agent,
+        input as { assignmentId: unknown; kind: unknown; summary: unknown; evidence?: unknown },
+      ),
   )
 }
 

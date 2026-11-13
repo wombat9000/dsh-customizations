@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 
 /** Bumped whenever a persisted record shape changes incompatibly. */
-export const RECORD_VERSION = 1
+export const RECORD_VERSION = 2
 
 export const WORK_STATES = [
   'working',
@@ -17,12 +17,27 @@ export type Decision = (typeof DECISIONS)[number]
 
 /** Pinned output of `dispatch_refresh_base`; proposals refer to it by value. */
 export interface BaseSnapshot {
+  /** Filesystem provider of the managed execution world the repository path belongs to. */
+  readonly provider: string
   readonly repositoryRoot: string
   readonly remote: string
   readonly branch: string
   readonly ref: string
   readonly commit: string
   readonly fetchedAt: string
+}
+
+/**
+ * The exact checkout a reviewed adoption or new assignment targets. Execution
+ * re-inspects Git in the managed world and rejects any drift.
+ */
+export interface CheckoutTarget {
+  readonly provider: string
+  readonly worktreeKey: string
+  readonly worktreePath: string
+  readonly repositoryRoot: string
+  readonly branch: string
+  readonly head: string
 }
 
 /** Exactly what the user approves. Never mutated after preparation. */
@@ -34,6 +49,8 @@ export interface ProposalPayload {
   readonly model: string
   readonly base: BaseSnapshot | null
   readonly branch: string | null
+  /** Reviewed checkout for adopt/assign; null for create, whose checkout does not exist yet. */
+  readonly target: CheckoutTarget | null
   readonly workerSessionId: string | null
   readonly assignmentId: string
 }
@@ -76,6 +93,8 @@ export interface WorkerRecord {
   coordinatorId: string
   generation: number
   originalWorkspace: string
+  provider: string
+  worktreeKey: string
   repositoryRoot: string
   worktreePath: string
   branch: string
@@ -99,8 +118,16 @@ export interface AssignmentRecord {
   readonly preset: string
   readonly model: string
   readonly base: BaseSnapshot | null
+  /** Display status only; never consulted for authority. */
   workState: WorkState
   summary: string
+  /**
+   * Authority closure, separate from display status and one-way: once set, no
+   * status update, report, or follow-up reopens the assignment. Further work
+   * needs a new approved assignment.
+   */
+  closedAt?: string
+  closedBy?: 'worker' | 'coordinator' | 'superseded'
   /** Who last set workState: the worker's report, or an attributed coordinator administrative status. */
   stateSource: 'worker' | 'coordinator'
   evidence: string[]
@@ -128,8 +155,13 @@ export interface ReportRecord {
   readonly evidence: string[]
   readonly createdAt: string
   delivery: 'pending' | 'delivered' | 'dropped'
-  /** Identity of the delivered message, recorded before delivery for log reconciliation. */
+  /**
+   * Identity and exact text of the coordinator message, fixed before the first
+   * delivery attempt so a retry reuses them and reconciliation can recognize an
+   * already admitted copy in the inbox or log.
+   */
   messageId?: string
+  messageText?: string
   deliveredAt?: string
   dropReason?: string
 }

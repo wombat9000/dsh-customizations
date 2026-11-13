@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
-import { readFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import test from 'node:test'
 import { executeOne } from '../../dsh-github/test/approval-fixture.js'
@@ -20,17 +21,21 @@ import {
 // and announced through `agent/created` exactly as the registry dispatches it;
 // no agent loop, model, subprocess, or network runs.
 
-const storageless = (ctx) =>
-  ctx.provide('storageDomain', {
-    open: async () => {
-      throw new Error('none')
-    },
-  })
+// Real DSH storage hub, JSON backend, and domain facility: Dispatch records are
+// validated by the facility exactly as in a deployed Host.
+async function durableStorage(t, ctx) {
+  const root = await mkdtemp(join(tmpdir(), 'dispatch-storage-'))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  await ctx.plugin((await installed('@deepseek-ai/dsh-storage')).default).await()
+  await ctx.plugin(await installed('@deepseek-ai/dsh-storage-json'), { root }).await()
+  await ctx.plugin(await installed('@deepseek-ai/dsh-storage-domain'), { backend: 'json' }).await()
+  return root
+}
 
 async function mountedHost(t) {
   const f = await fixture(t)
   const rows = declarations([standardPatch, patch])
-  const mounted = await host(t, f, rows, { before: storageless })
+  const mounted = await host(t, f, rows, { before: (ctx) => durableStorage(t, ctx) })
   const roster = mounted.ctx.get('agentPresets')
   const { createScope, scopeTarget } = await installed('@deepseek-ai/dsh-scope')
   const { Session } = await installed('@deepseek-ai/dsh-session')
@@ -181,7 +186,7 @@ test(
     const report = await executeOne(
       h.tools,
       'dispatch_report',
-      { kind: 'done', summary: 'x' },
+      { assignmentId: 'a', kind: 'done', summary: 'x' },
       { agent: worker },
     )
     assert.match(JSON.stringify(report), /no approved Dispatch assignment/)
@@ -191,6 +196,46 @@ test(
     )
   },
 )
+
+test('Dispatch fails closed without durable storage and keeps records across reopen', async (t) => {
+  const { apply } = await import('../dist/src/index.js')
+  const { domainStore } = await import('../dist/src/store.js')
+  const ctx = (storageDomain) => ({
+    storageDomain,
+    get: () => undefined,
+    provide() {},
+    effect() {},
+    inject() {},
+  })
+  await assert.rejects(apply(ctx(undefined)), /requires the DSH storage domain/)
+  await assert.rejects(
+    apply(
+      ctx({
+        open: async () => {
+          throw new Error('invalid-record')
+        },
+      }),
+    ),
+    /invalid-record/,
+  )
+  const { Context } = await installed('@deepseek-ai/cordis')
+  const host = new Context()
+  t.after(() => host.fiber.dispose())
+  await durableStorage(t, host)
+  const first = await domainStore(host.get('storageDomain'))
+  await first.transaction((tables) =>
+    tables.workers.put('w', {
+      version: 2,
+      workerId: 'w',
+      coordinatorId: 'c',
+      generation: 1,
+    }),
+  )
+  await first.close()
+  const second = await domainStore(host.get('storageDomain'))
+  assert.equal(second.tables.workers.get('w').coordinatorId, 'c')
+  await second.close()
+})
 
 test('generated host and client artifacts are fresh', async () => {
   const { buildHost } = await import('../scripts/build-host.mjs')

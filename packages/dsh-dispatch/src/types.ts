@@ -57,6 +57,16 @@ export interface AgentLike {
   readonly session: SessionLike
   readonly ctx?: AgentContext
   readonly status?: string
+  /** Session-local model route (`Agent.model`); selecting here never saves the Host default. */
+  readonly model?: {
+    current(): Readonly<ModelSelectionLike> | undefined
+    select(selection: Readonly<ModelSelectionLike>): void
+  }
+  /** Live pending work (`Agent.inbox`); messages keep their identity until claimed. */
+  readonly inbox?: {
+    readonly nextTurn: readonly { readonly id?: unknown }[]
+    readonly nextStep: readonly { readonly id?: unknown }[]
+  }
   followup(message: UserMessageLike): void
   steer(message: UserMessageLike): void
   whenIdle?(): Promise<void>
@@ -91,11 +101,18 @@ export interface SessionControllerLike {
   resolveAgent(
     sessionId: string,
   ): Promise<{ readonly agent: AgentLike } | { readonly error: { message?: string } }>
-  selectModel(request: {
-    sessionId: string
-    provider: string
-    model: string
-  }): Promise<{ selected: { provider: string; model: string } }>
+}
+
+export interface ModelSelectionLike {
+  provider: string
+  model: string
+}
+
+/** `ctx.llm` (dsh-llm 0.2.2-rc.3): the same validation the session controller applies. */
+export interface LlmLike {
+  listProviders(): readonly { id: string }[]
+  listModels(provider: string): Promise<readonly { id: string }[]>
+  resolveCallConfig(selection: ModelSelectionLike): Promise<unknown>
 }
 
 /** `ctx.agentDefaultModel` (dsh-agent-default-model 0.2.2-rc.3). */
@@ -110,6 +127,8 @@ export interface WorktreesLike {
     request: { name?: string; from?: string },
     signal?: AbortSignal,
   ): Promise<{ path: string; branch: string; baseCommit: string; repositoryRoot: string }>
+  /** Live service configuration; `retainOnArchive` is a volatile value. */
+  readonly config?: { readonly retainOnArchive?: { get(): unknown } }
 }
 
 /** `ctx.workingDirectory.get(session)` returns the effective directory. */

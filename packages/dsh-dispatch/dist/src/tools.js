@@ -88,7 +88,7 @@ export function coordinatorTools(service, wait) {
                 checked: await service.inspectDirectory(exec.agent, input.directory),
             };
         }),
-        tool('dispatch_list_presets', 'List agent presets available for workers. New workers default to dispatch-worker; any other preset must be chosen explicitly and is shown on the approval card.', {}, [], async (_input, exec) => {
+        tool('dispatch_list_presets', 'List the agent preset Dispatch uses for workers. This version creates and adopts only dispatch-worker sessions, so worker restrictions and reporting always apply.', {}, [], async (_input, exec) => {
             service.coordinatorOf(exec.agent);
             return service.presets();
         }),
@@ -99,7 +99,7 @@ export function coordinatorTools(service, wait) {
             prompt: str('Complete first message for the worker. Sent exactly as approved.'),
             base: { type: 'object', description: 'Exact snapshot returned by dispatch_refresh_base.' },
             branch: str('Optional new branch name; generated when omitted.'),
-            preset: str('Optional worker preset; defaults to dispatch-worker.'),
+            preset: str('Optional; only dispatch-worker is accepted.'),
             model: str('Optional provider/model; defaults to the DSH default model.'),
         }, ['intent', 'prompt', 'base'], (input, exec) => service.prepareCreate(exec.agent, exec.callId, {
             intent: input.intent,
@@ -109,7 +109,7 @@ export function coordinatorTools(service, wait) {
             preset: input.preset,
             model: input.model,
         })),
-        tool('dispatch_send_message', 'Send an attributed follow-up to one of your workers within its current approved assignment (queue, or steer the current turn). With newAssignment true, prepare a new assignment approval card instead; nothing is delivered until the user approves.', {
+        tool('dispatch_send_message', 'Send an attributed follow-up to one of your workers within its current approved assignment (queue, or steer the current turn). A finished or superseded assignment stays closed; status updates never reopen it. With newAssignment true, prepare a new assignment approval card for an idle worker instead; nothing is delivered until the user approves, and approval closes the previous assignment.', {
             workerId,
             assignmentId: str('Current assignment ID (required unless newAssignment).'),
             message: str('Message text; for a new assignment, the complete prompt.'),
@@ -136,7 +136,7 @@ export function coordinatorTools(service, wait) {
         }, ['workerId'], (input, exec) => service.read(exec.agent, input)),
         tool('dispatch_wait_session', 'Wait up to timeoutSeconds for a worker to stop running. Distinguishes idle, waiting-for-user, and timeout. Idle is not task completion; reports arrive without waiting.', { workerId, timeoutSeconds: { type: 'integer', description: '1–600 (default 60).' } }, ['workerId'], (input, exec) => wait(exec, input.workerId, input.timeoutSeconds)),
         tool('dispatch_interrupt_session', 'Interrupt a worker’s current turn. Pending input is kept. Acknowledgement is reported separately from actual quiescence.', { workerId }, ['workerId'], (input, exec) => service.interrupt(exec.agent, input)),
-        tool('dispatch_update_session', 'Rename a worker or record an attributed administrative work state/summary. Does not forge worker reports, archive, or resume work.', {
+        tool('dispatch_update_session', 'Rename a worker or record an attributed administrative work state/summary. Does not forge worker reports, archive, or resume work. Setting done or failed closes the assignment for good; a closed assignment’s state cannot be changed.', {
             workerId,
             title: str('New display title.'),
             workState: {
@@ -163,7 +163,8 @@ export function coordinatorTools(service, wait) {
     ];
 }
 export function reportTool(service) {
-    return tool('dispatch_report', 'Report to the Dispatch coordinator that assigned your current work: progress, input-required, ready-for-review, done, or failed, with a bounded summary and evidence references (paths, commits, PR links). The recipient and assignment come from your approved association.', {
+    return tool('dispatch_report', 'Report to the Dispatch coordinator that assigned your current work: progress, input-required, ready-for-review, done, or failed, with a bounded summary and evidence references (paths, commits, PR links). Name the assignment ID from the Dispatch assignment message you are reporting on; a report for any other assignment is refused. The recipient comes from your approved association.', {
+        assignmentId: str('Assignment ID from the Dispatch assignment message this report is about.'),
         kind: {
             type: 'string',
             enum: ['progress', 'input-required', 'ready-for-review', 'done', 'failed'],
@@ -174,7 +175,7 @@ export function reportTool(service) {
             items: { type: 'string' },
             description: 'Up to 20 short references.',
         },
-    }, ['kind', 'summary'], (input, exec) => service.report(exec.agent, input));
+    }, ['assignmentId', 'kind', 'summary'], (input, exec) => service.report(exec.agent, input));
 }
 /**
  * Install coordinator tools and a monotonic execution guard in one preset

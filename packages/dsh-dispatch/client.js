@@ -93,6 +93,11 @@ function ProposalView({ status, busy, error, decide }) {
 		rows.push(["Repository", status.base.repositoryRoot]);
 		rows.push(["Base", `${status.base.ref} @ ${status.base.commit.slice(0, 12)} (fetched ${status.base.fetchedAt})`]);
 	}
+	if (status.target) {
+		rows.push(["Repository", status.target.repositoryRoot]);
+		rows.push(["Checkout", status.target.worktreePath]);
+		rows.push(["Commit", status.target.head.slice(0, 12)]);
+	}
 	if (status.branch) rows.push(["Branch", status.branch]);
 	if (status.workerSessionId) rows.push(["Worker session", status.workerSessionId]);
 	if (status.worktree) rows.push(["Worktree", status.worktree.path]);

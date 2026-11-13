@@ -62,7 +62,7 @@ class MemoryTree extends EntryTree {
 
 export async function host(t, fixture, rows, { full = true, selectedDefault, before } = {}) {
   const ctx = new Context()
-  before?.(ctx)
+  await before?.(ctx)
   t.after(() => ctx.fiber.dispose())
   ctx.baseUrl = fixture.baseUrl
   await ctx.plugin(Loader, {}).await()

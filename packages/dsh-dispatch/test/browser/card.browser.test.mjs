@@ -24,6 +24,7 @@ const status = (state, extra = {}) => ({
   model: 'fixture/m1',
   branch: 'dispatch/abc',
   base: {
+    provider: 'LocalFileSystem',
     repositoryRoot: '/repo',
     remote: 'origin',
     branch: 'main',
@@ -31,6 +32,7 @@ const status = (state, extra = {}) => ({
     commit: 'a'.repeat(40),
     fetchedAt: '2026-11-13T10:00:00.000Z',
   },
+  target: null,
   workerSessionId: null,
   assignmentId: 'as1',
   checkpoints: [],
@@ -78,6 +80,32 @@ test('shows exact proposal details, keeps untrusted prompt inert, and sends iden
   })
   await expect.element(page.getByText(/Rejected\. Nothing was created/)).toBeVisible()
   expect(page.getByRole('button', { name: 'Approve' }).query()).toBeNull()
+})
+
+test('an adoption card names the reviewed repository, checkout, and commit', async () => {
+  await render(async () =>
+    status('pending', {
+      kind: 'adopt',
+      model: 'unchanged',
+      base: null,
+      branch: 'feature',
+      workerSessionId: 'w1',
+      target: {
+        provider: 'LocalFileSystem',
+        worktreeKey: '/repo-b/wt',
+        worktreePath: '/repo-b/wt',
+        repositoryRoot: '/repo-b',
+        branch: 'feature',
+        head: 'b'.repeat(40),
+      },
+    }),
+  )
+  await expect
+    .element(page.getByRole('heading', { name: 'Adopt session as Dispatch worker' }))
+    .toBeVisible()
+  await expect.element(page.getByText('/repo-b', { exact: true })).toBeVisible()
+  await expect.element(page.getByText('/repo-b/wt', { exact: true })).toBeVisible()
+  await expect.element(page.getByText('bbbbbbbbbbbb', { exact: true })).toBeVisible()
 })
 
 test('historical and failed proposals offer no decision controls', async () => {

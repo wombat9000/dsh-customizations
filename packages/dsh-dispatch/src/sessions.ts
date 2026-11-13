@@ -3,6 +3,7 @@ import { DispatchError } from './contracts.js'
 import type {
   AgentLike,
   AgentMessageSource,
+  LlmLike,
   SessionControllerLike,
   SessionEventLike,
   UserMessageLike,
@@ -25,7 +26,12 @@ function deepFreeze<T>(value: T): T {
  * `agent-message` source that `@deepseek-ai/dsh-subagent` registers. The sender
  * is always the exact live executing Agent; callers cannot supply it.
  */
-export function agentMessage(sender: AgentLike, heading: string, body: string): UserMessageLike {
+export function agentMessage(
+  sender: AgentLike,
+  heading: string,
+  body: string,
+  id: string = randomUUID(),
+): UserMessageLike {
   const source: AgentMessageSource = {
     kind: 'agent-message',
     form: 'relay',
@@ -34,9 +40,9 @@ export function agentMessage(sender: AgentLike, heading: string, body: string): 
   return deepFreeze(
     structuredClone({
       role: 'user' as const,
-      content: [{ type: 'text' as const, text: `${heading}\n\n${body}` }],
+      content: [{ type: 'text' as const, text: heading ? `${heading}\n\n${body}` : body }],
       source,
-      id: randomUUID(),
+      id,
     }),
   )
 }
@@ -81,12 +87,15 @@ function eventText(event: SessionEventLike): HistoryItem | undefined {
 export class Sessions {
   private readonly controller: () => SessionControllerLike | undefined
   private readonly directories: () => WorkingDirectoryLike | undefined
+  private readonly llm: () => LlmLike | undefined
   constructor(
     controller: () => SessionControllerLike | undefined,
     directories: () => WorkingDirectoryLike | undefined,
+    llm: () => LlmLike | undefined = () => undefined,
   ) {
     this.controller = controller
     this.directories = directories
+    this.llm = llm
   }
 
   private requireController() {
@@ -109,19 +118,30 @@ export class Sessions {
     return result.sessionId
   }
 
-  async selectModel(sessionId: string, model: string) {
+  /**
+   * Pin one worker's model through its own `Agent.model`, after the same
+   * availability and route checks the session controller applies. Unlike
+   * `sessionController.selectModel`, this never saves the Host default model.
+   */
+  async selectModel(agent: AgentLike, model: string) {
     const [provider, ...rest] = model.split('/')
     const id = rest.join('/')
     if (!provider || !id) throw new DispatchError('invalid', 'Name the model as provider/model.')
-    const { selected } = await this.requireController().selectModel({
-      sessionId,
-      provider,
-      model: id,
-    })
-    if (selected.provider !== provider || selected.model !== id)
+    const llm = this.llm()
+    if (!llm || !agent.model)
+      throw new DispatchError('unavailable', 'This DSH build cannot select a session-local model.')
+    if (!llm.listProviders().some((entry) => entry.id === provider))
+      throw new DispatchError('unavailable', `Model provider ${provider} is not available.`)
+    if (!(await llm.listModels(provider)).some((entry) => entry.id === id))
+      throw new DispatchError('unavailable', `Model ${model} is not available.`)
+    const selection = { provider, model: id }
+    await llm.resolveCallConfig(selection)
+    agent.model.select(selection)
+    const current = agent.model.current()
+    if (current?.provider !== provider || current.model !== id)
       throw new DispatchError(
         'uncertain',
-        `The worker runs ${selected.provider}/${selected.model}, not the approved ${model}.`,
+        `The worker runs ${current ? `${current.provider}/${current.model}` : 'no model'}, not the approved ${model}.`,
       )
   }
 
@@ -163,14 +183,35 @@ export class Sessions {
     return { items, ...(next !== undefined ? { cursor: next } : {}), truncated: next !== undefined }
   }
 
-  /** Whether a committed log already holds a delivered message with this identity. */
+  /**
+   * Whether this message identity was already admitted: still pending in the
+   * live inbox, recorded by a durable `agent/inbox/spliced` insertion (queued
+   * or steered), or committed as a message. A canceled splice still counts:
+   * the coordinator's user discarded it, and Dispatch does not resend it.
+   */
   hasMessage(agent: AgentLike, messageId: string) {
+    const pending = [...(agent.inbox?.nextTurn ?? []), ...(agent.inbox?.nextStep ?? [])]
+    if (pending.some((message) => message.id === messageId)) return true
     for (const event of agent.session.snapshotEvents?.() ?? []) {
       const data = event.data
       if (!isRecord(data)) continue
+      if (event.type === 'agent/inbox/spliced') {
+        const inserted = Array.isArray(data.inserted) ? data.inserted : []
+        if (inserted.some((message) => isRecord(message) && message.id === messageId)) return true
+        continue
+      }
       const message = isRecord(data.message) ? data.message : data
       if (message.id === messageId) return true
     }
     return false
+  }
+
+  /** Whether the Agent is idle with nothing queued or steering. */
+  quiescent(agent: AgentLike) {
+    return (
+      (agent.status === undefined || agent.status === 'idle') &&
+      (agent.inbox?.nextTurn.length ?? 0) === 0 &&
+      (agent.inbox?.nextStep.length ?? 0) === 0
+    )
   }
 }

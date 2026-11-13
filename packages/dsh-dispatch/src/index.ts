@@ -1,19 +1,22 @@
 import { DispatchError } from './contracts.js'
-import { Repositories, createGitRunner } from './repositories.js'
+import { Repositories } from './repositories.js'
 import { CHANNEL, createRpcHandler } from './routes.js'
 import { DispatchService } from './service.js'
 import { Sessions } from './sessions.js'
-import { domainStore, memoryStore } from './store.js'
+import { domainStore } from './store.js'
 import type { WaitFn } from './tools.js'
 import type {
   ConnectionLike,
   DefaultModelLike,
   Dispose,
+  LlmLike,
   SessionControllerLike,
   StorageDomainLike,
   WorkingDirectoryLike,
   WorktreesLike,
 } from './types.js'
+import type { ExecutionServices } from './world.js'
+import { managedWorld } from './world.js'
 
 export { DispatchService, COORDINATOR_PRESET, WORKER_PRESET } from './service.js'
 export { DispatchError } from './contracts.js'
@@ -37,33 +40,35 @@ export interface Config {
   gitTimeoutMs?: number
 }
 
+const EXECUTION = ['subprocess', 'sandbox', 'sandboxPolicy', 'fs'] as const
+
 /**
  * One Host-scoped Dispatch owner shared by every coordinator, so ownership,
  * approvals, and delivery have a single serialized registry outside preset revisions.
  */
 export async function apply(ctx: HostContext, config: Config = {}) {
-  let store
-  try {
-    store = await domainStore(ctx.storageDomain!)
-  } catch {
-    ctx.logger?.warn(
-      'Dispatch storage is unavailable; using in-memory records for this Host lifetime.',
-    )
-    store = memoryStore()
-  }
+  // Fails closed: without durable records, claims and reports would silently vanish on restart.
+  if (!ctx.storageDomain) throw new Error('Dispatch requires the DSH storage domain.')
+  const store = await domainStore(ctx.storageDomain)
   const sessions = new Sessions(
     () => ctx.get('sessionController') as SessionControllerLike | undefined,
     () => ctx.get('workingDirectory') as WorkingDirectoryLike | undefined,
+    () => ctx.get('llm') as LlmLike | undefined,
+  )
+  const world = managedWorld(
+    () =>
+      Object.fromEntries(
+        EXECUTION.map((name) => [name, ctx.get(name)]),
+      ) as Partial<ExecutionServices>,
+    {
+      ...(config.gitCommand !== undefined ? { gitCommand: config.gitCommand } : {}),
+      ...(config.gitTimeoutMs !== undefined ? { timeoutMs: config.gitTimeoutMs } : {}),
+    },
   )
   const service = new DispatchService({
     store,
     sessions,
-    repositories: new Repositories(
-      createGitRunner({
-        ...(config.gitCommand !== undefined ? { command: config.gitCommand } : {}),
-        ...(config.gitTimeoutMs !== undefined ? { timeoutMs: config.gitTimeoutMs } : {}),
-      }),
-    ),
+    repositories: new Repositories(world),
     worktrees: () => ctx.get('worktrees') as WorktreesLike | undefined,
     defaultModel: () => ctx.get('agentDefaultModel') as DefaultModelLike | undefined,
     presets: async () => {

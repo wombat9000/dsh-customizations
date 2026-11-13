@@ -14,12 +14,22 @@ export interface ProposalStatus {
   model: string
   branch: string | null
   base: {
+    provider: string
     repositoryRoot: string
     remote: string
     branch: string
     ref: string
     commit: string
     fetchedAt: string
+  } | null
+  /** Reviewed checkout of an adoption or new assignment; drift at execution is refused. */
+  target: {
+    provider: string
+    worktreeKey: string
+    worktreePath: string
+    repositoryRoot: string
+    branch: string
+    head: string
   } | null
   workerSessionId: string | null
   assignmentId: string
