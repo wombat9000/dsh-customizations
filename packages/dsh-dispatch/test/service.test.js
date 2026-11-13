@@ -80,6 +80,7 @@ function harness(
     failWorktree = false,
     retain = true,
     gate,
+    createGate = async () => {},
   } = {},
 ) {
   const agents = new Map()
@@ -108,7 +109,12 @@ function harness(
       },
       followup: (message) => delivered.push({ to: id, mode: 'queue', message }),
       steer: (message) => delivered.push({ to: id, mode: 'steer', message }),
-      cancel: () => {},
+      cancels: [],
+      // rc.3 Agent.cancel semantics: both inbox queues are cleared unless keepInbox.
+      cancel(cause, options = {}) {
+        agent.cancels.push({ cause, options })
+        if (!options.keepInbox) agent.inbox = { nextTurn: [], nextStep: [] }
+      },
     }
     agents.set(id, agent)
     directories.set(id, cwd)
@@ -116,6 +122,7 @@ function harness(
   }
   const controller = {
     async create({ cwd, agentPreset }) {
+      await createGate()
       const sessionId = `worker-${++created}`
       makeAgent(sessionId, { cwd, preset: agentPreset })
       return { sessionId, agentPreset }
@@ -898,4 +905,168 @@ test('workers are admitted only when Git Worktrees retains checkouts on archive'
     /retainOnArchive/,
   )
   assert.equal(h.agents.size, 1)
+})
+
+test('report delivery is one admission: recovery and release cannot interleave with it', async (t) => {
+  const { h, coordinator, workerId, worker } = await managedWorker(t)
+  const { assignmentId } = await h.service.status(coordinator, workerId)
+  const copies = () =>
+    h.delivered.filter(
+      (entry) => entry.to === 'coord-a' && entry.message.source?.senderSessionId === workerId,
+    )
+  // A report and Host-start recovery race for the same pending record: one copy, one identity.
+  const reporting = h.service.report(worker, { assignmentId, kind: 'progress', summary: 'a' })
+  const recovering = h.service.recover()
+  const [result] = await Promise.all([reporting, recovering])
+  assert.equal(result.delivered, true)
+  assert.equal(copies().length, 1, 'the report is queued exactly once')
+  const first = h.service.store.tables.reports.get(result.reportId)
+  assert.equal(first.delivery, 'delivered')
+  assert.equal(copies()[0].message.id, first.messageId)
+
+  // A pending report whose delivery races a release: the release wins and nothing is
+  // queued to the former coordinator, and the dropped record is never overwritten.
+  const followup = coordinator.followup
+  coordinator.followup = () => {
+    throw new Error('coordinator unavailable')
+  }
+  await assert.rejects(
+    h.service.report(worker, { assignmentId, kind: 'progress', summary: 'b' }),
+    /coordinator unavailable/,
+  )
+  coordinator.followup = followup
+  const pending = h.service.store.tables.reports.values().find((r) => r.delivery === 'pending')
+  const before = copies().length
+  const delivering = h.service.deliverReport(pending.id)
+  const releasing = h.service.release(coordinator, { workerId })
+  assert.equal(await delivering, false)
+  await releasing
+  assert.equal(copies().length, before, 'nothing reaches the former coordinator')
+  const dropped = h.service.store.tables.reports.get(pending.id)
+  assert.equal(dropped.delivery, 'dropped')
+  assert.equal(dropped.dropReason, 'Worker released.')
+})
+
+test('a worker turn that starts during admission inspection blocks the assignment', async (t) => {
+  let pause
+  let paused
+  const gate = async (_session, _cwd, args) => {
+    if (pause && args[0] === 'rev-parse' && args.includes('--git-common-dir')) {
+      const hold = pause
+      pause = undefined
+      paused()
+      await hold
+    }
+  }
+  const { h, coordinator, workerId, worker, main } = await managedWorker(t, { gate })
+  const { assignmentId } = await h.service.status(coordinator, workerId)
+  const hold = async (callId, start) => {
+    let resume
+    pause = new Promise((done) => (resume = done))
+    const reached = new Promise((done) => (paused = done))
+    const result = approve(h.service, 'coord-a', callId)
+    await reached // execution is inspecting the checkout, after its quiescence check
+    start()
+    resume()
+    return result
+  }
+
+  // New assignment: the worker was idle at review and at execution start.
+  await h.service.prepareAssign(coordinator, 'assign', { workerId, intent: 'n', prompt: 'next' })
+  const before = h.delivered.length
+  const refused = await hold('assign', () => {
+    worker.status = 'running' // a normal UI prompt starts a native turn
+  })
+  assert.equal(refused.state, 'failed')
+  assert.match(refused.message, /became active or received input/)
+  assert.equal(h.delivered.length, before, 'nothing is delivered to the busy worker')
+  const status = await h.service.status(coordinator, workerId)
+  assert.equal(status.assignmentId, assignmentId, 'the previous assignment stays current')
+  assert.equal(status.assignmentOpen, true, 'and open')
+  assert.ok(!refused.checkpoints.includes('claimed'))
+  worker.status = 'idle'
+
+  // Adoption has the same boundary; queued input counts as activity.
+  const wt = join(main, '..', 'adoptee')
+  git(main, 'worktree', 'add', '-b', 'adoptee', wt)
+  const candidate = h.makeAgent('candidate', { cwd: await realpath(wt) })
+  await h.service.prepareAdopt(coordinator, 'adopt', {
+    sessionId: 'candidate',
+    intent: 'i',
+    prompt: 'p',
+  })
+  const adopted = await hold('adopt', () => {
+    candidate.inbox = { nextTurn: [{ id: 'user-1' }], nextStep: [] }
+  })
+  assert.equal(adopted.state, 'failed')
+  assert.match(adopted.message, /became active or received input/)
+  await assert.rejects(h.service.status(coordinator, 'candidate'), /not managed/)
+  assert.equal(h.service.isManaged('candidate'), false)
+})
+
+test('interrupt aborts the active turn and keeps queued and steering input', async (t) => {
+  const { h, coordinator, workerId, worker } = await managedWorker(t)
+  worker.status = 'running'
+  worker.inbox = { nextTurn: [{ id: 'queued' }], nextStep: [{ id: 'steer' }] }
+  const result = await h.service.interrupt(coordinator, { workerId })
+  assert.equal(result.acknowledged, true)
+  assert.deepEqual(worker.cancels.at(-1).options, { keepInbox: true })
+  assert.deepEqual(worker.inbox, { nextTurn: [{ id: 'queued' }], nextStep: [{ id: 'steer' }] })
+})
+
+test('shutdown waits for in-flight provisioning to record its worker before closing storage', async (t) => {
+  let release
+  let entered
+  const held = new Promise((done) => (release = done))
+  const reached = new Promise((done) => (entered = done))
+  let holdNext = false
+  const repo = await repository(t)
+  const h = harness(t, {
+    createGate: async () => {
+      if (!holdNext) return
+      holdNext = false
+      entered()
+      await held // native session creation takes no abort signal
+    },
+  })
+  const coordinator = h.makeAgent('coord-a', { cwd: repo.main, preset: 'dispatch' })
+  const base = await h.service.refreshBase(coordinator, { directory: repo.main })
+  await h.service.prepareCreate(coordinator, 'create', { intent: 'W', prompt: 'go', base })
+  await h.service.prepareCreate(coordinator, 'late', { intent: 'L', prompt: 'go', base })
+  holdNext = true
+  const rpc = createRpcHandler(h.service)
+  const card = async (callId) =>
+    (await rpc('status', { sessionId: 'coord-a', callId }, new AbortController().signal, owner))
+      .value
+  const decide = async (callId) => {
+    const view = await card(callId)
+    return rpc(
+      'decide',
+      {
+        sessionId: 'coord-a',
+        callId,
+        proposalId: view.proposalId,
+        digest: view.digest,
+        decision: 'approve',
+      },
+      new AbortController().signal,
+      owner,
+    )
+  }
+  assert.equal((await decide('create')).ok, true)
+  await reached
+  let closed = false
+  const disposing = h.service.dispose().then(() => (closed = true))
+  await new Promise((done) => setTimeout(done, 50))
+  assert.equal(closed, false, 'storage stays open while provisioning is in flight')
+  const late = await decide('late')
+  assert.equal(late.ok, false, 'no new effect is admitted during shutdown')
+  release()
+  await disposing
+  const proposal = h.service.store.tables.proposals.values().find((p) => p.callId === 'create')
+  assert.equal(proposal.state, 'uncertain')
+  assert.ok(proposal.workerSessionId, 'the partial worker is discoverable from its proposal')
+  assert.deepEqual(proposal.checkpoints, ['approved', 'session-created'])
+  assert.match(proposal.message, /no worktree was created/)
+  assert.deepEqual(h.worktreeCalls, [])
 })

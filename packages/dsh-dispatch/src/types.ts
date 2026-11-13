@@ -70,7 +70,11 @@ export interface AgentLike {
   followup(message: UserMessageLike): void
   steer(message: UserMessageLike): void
   whenIdle?(): Promise<void>
-  cancel?(cause: { kind: 'user' } | { kind: 'hook'; reason: string }): void
+  /** rc.3 clears both inbox queues unless `keepInbox` is true. */
+  cancel?(
+    cause: { kind: 'user' } | { kind: 'hook'; reason: string },
+    options?: { keepInbox?: boolean },
+  ): void
 }
 
 export interface ToolExecution {
