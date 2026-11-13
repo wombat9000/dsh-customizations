@@ -1,0 +1,220 @@
+import { execFile } from 'node:child_process'
+import { realpath } from 'node:fs/promises'
+import { resolve } from 'node:path'
+import type { BaseSnapshot } from './contracts.js'
+import { DispatchError } from './contracts.js'
+
+export interface GitResult {
+  stdout: string
+}
+/** Argument-vector Git invocation; never a shell string. */
+export type GitRunner = (
+  cwd: string,
+  args: readonly string[],
+  signal?: AbortSignal,
+) => Promise<GitResult>
+
+const MAX_OUTPUT = 1_048_576
+
+export function createGitRunner({
+  command = 'git',
+  timeoutMs = 120_000,
+}: { command?: string; timeoutMs?: number } = {}): GitRunner {
+  return (cwd, args, signal) =>
+    new Promise((done, fail) => {
+      execFile(
+        command,
+        ['-C', cwd, ...args],
+        {
+          timeout: timeoutMs,
+          maxBuffer: MAX_OUTPUT,
+          windowsHide: true,
+          ...(signal ? { signal } : {}),
+          env: {
+            ...process.env,
+            GIT_TERMINAL_PROMPT: '0',
+            GIT_OPTIONAL_LOCKS: '0',
+            LC_ALL: 'C',
+          },
+        },
+        (error, stdout, stderr) => {
+          if (error) {
+            const detail = String(stderr || error.message)
+              .trim()
+              .slice(0, 500)
+            fail(new DispatchError('unavailable', `git ${args[0] ?? ''} failed: ${detail}`))
+          } else done({ stdout: String(stdout) })
+        },
+      )
+    })
+}
+
+/** Canonical checkout identity. The same path on another filesystem provider is a different checkout. */
+export interface CheckoutIdentity {
+  readonly provider: 'local'
+  readonly worktreePath: string
+  readonly repositoryRoot: string
+  readonly commonDir: string
+  readonly linked: boolean
+  readonly registered: boolean
+  readonly branch: string | null
+  readonly head: string | null
+}
+
+const SAFE_REF = /^(?!.*\.\.)(?!.*\/\/)(?!.*@\{)(?![-/.])[A-Za-z0-9._/-]{1,100}(?<![/.])$/u
+const SAFE_REMOTE = /^(?![-.])[A-Za-z0-9._-]{1,64}$/u
+
+export function validBranchName(name: string): boolean {
+  return SAFE_REF.test(name) && !name.endsWith('.lock')
+}
+
+async function canonical(path: string) {
+  try {
+    return await realpath(path)
+  } catch {
+    return resolve(path)
+  }
+}
+
+export class Repositories {
+  private readonly git: GitRunner
+  private readonly now: () => Date
+  constructor(git: GitRunner, now: () => Date = () => new Date()) {
+    this.git = git
+    this.now = now
+  }
+
+  /** Inspect a directory's actual Git registration; never trusts recorded flags. */
+  async inspect(directory: string, signal?: AbortSignal): Promise<CheckoutIdentity | null> {
+    let lines: string[]
+    try {
+      const { stdout } = await this.git(
+        directory,
+        ['rev-parse', '--path-format=absolute', '--show-toplevel', '--git-dir', '--git-common-dir'],
+        signal,
+      )
+      lines = stdout.split('\n').filter(Boolean)
+    } catch {
+      return null
+    }
+    const [top, gitDir, commonDir] = lines
+    if (!top || !gitDir || !commonDir) return null
+    const worktreePath = await canonical(top)
+    const common = await canonical(commonDir)
+    const linked = (await canonical(gitDir)) !== common
+    let branch: string | null = null
+    let head: string | null = null
+    try {
+      head = (
+        await this.git(directory, ['rev-parse', '--verify', 'HEAD^{commit}'], signal)
+      ).stdout.trim()
+      branch =
+        (
+          await this.git(directory, ['symbolic-ref', '--quiet', '--short', 'HEAD'], signal)
+        ).stdout.trim() || null
+    } catch {
+      /* unborn or detached HEAD */
+    }
+    let registered = false
+    try {
+      const { stdout } = await this.git(directory, ['worktree', 'list', '--porcelain'], signal)
+      const paths = stdout
+        .split('\n')
+        .filter((line) => line.startsWith('worktree '))
+        .map((line) => line.slice('worktree '.length))
+      for (const path of paths) if ((await canonical(path)) === worktreePath) registered = true
+    } catch {
+      registered = false
+    }
+    // The repository identity is the shared common directory; its parent names the main checkout.
+    const repositoryRoot = await canonical(resolve(common, '..'))
+    return {
+      provider: 'local',
+      worktreePath,
+      repositoryRoot,
+      commonDir: common,
+      linked,
+      registered,
+      branch,
+      head,
+    }
+  }
+
+  /**
+   * Fetch one configured remote branch into its remote-tracking ref and pin
+   * the resulting commit. Never pulls, resets, merges, or touches the main checkout.
+   */
+  async refreshBase(
+    directory: string,
+    selection: { remote?: string | undefined; branch?: string | undefined },
+    signal?: AbortSignal,
+  ): Promise<BaseSnapshot> {
+    const identity = await this.inspect(directory, signal)
+    if (!identity)
+      throw new DispatchError('ineligible', 'The directory is not inside a Git repository.')
+    const remotes = (await this.git(identity.worktreePath, ['remote'], signal)).stdout
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean)
+    let remote = selection.remote
+    if (remote === undefined) {
+      if (remotes.length !== 1)
+        throw new DispatchError(
+          'invalid',
+          remotes.length
+            ? `Choose a remote explicitly: ${remotes.join(', ')}.`
+            : 'The repository has no configured remote.',
+        )
+      remote = remotes[0]!
+    }
+    if (!SAFE_REMOTE.test(remote) || !remotes.includes(remote))
+      throw new DispatchError('invalid', 'Use one of the repository’s configured remotes.')
+    let branch = selection.branch
+    if (branch === undefined) {
+      try {
+        const { stdout } = await this.git(
+          identity.worktreePath,
+          ['symbolic-ref', '--quiet', '--short', `refs/remotes/${remote}/HEAD`],
+          signal,
+        )
+        branch = stdout.trim().slice(remote.length + 1)
+      } catch {
+        throw new DispatchError('invalid', `Choose a base branch explicitly for ${remote}.`)
+      }
+    }
+    if (!branch || !validBranchName(branch))
+      throw new DispatchError('invalid', 'Use a plain branch name for the base.')
+    const ref = `refs/remotes/${remote}/${branch}`
+    await this.git(
+      identity.worktreePath,
+      ['fetch', '--no-tags', '--no-write-fetch-head', '--', remote, `+refs/heads/${branch}:${ref}`],
+      signal,
+    )
+    const commit = (
+      await this.git(identity.worktreePath, ['rev-parse', '--verify', `${ref}^{commit}`], signal)
+    ).stdout.trim()
+    if (!/^[0-9a-f]{40,64}$/u.test(commit))
+      throw new DispatchError('uncertain', 'The fetched base did not resolve to a commit.')
+    return {
+      repositoryRoot: identity.repositoryRoot,
+      remote,
+      branch,
+      ref,
+      commit,
+      fetchedAt: this.now().toISOString(),
+    }
+  }
+
+  async branchExists(directory: string, branch: string, signal?: AbortSignal) {
+    try {
+      await this.git(
+        directory,
+        ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}`],
+        signal,
+      )
+      return true
+    } catch {
+      return false
+    }
+  }
+}

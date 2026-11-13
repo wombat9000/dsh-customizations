@@ -28,6 +28,8 @@ artifacts/
 /packages/dsh-tool-imagegen/dist/
 /packages/dsh-linear/client.js
 /packages/dsh-linear/dist/
+/packages/dsh-dispatch/client.js
+/packages/dsh-dispatch/dist/
 /packages/dsh-google-drive/client.js
 /packages/dsh-google-drive/dist/
 /packages/dsh-session-recap/client.js
