@@ -104,6 +104,13 @@ test('publication: one host row, two additive presets, and the Standard notice',
     worker.filter((row) => !['persona', 'local-dispatch-worker'].includes(row.id)),
     standard.filter((row) => !removed.has(row.id) && row.id !== 'persona'),
   )
+  // rc.3 persona templates register only {{provider}} and {{model}}; any other
+  // variable throws when the first turn renders the system prompt.
+  for (const row of own.slice(1)) {
+    const persona = row.config.plugins.find((plugin) => plugin.id === 'persona').config
+    const used = `${persona.prefix}\n${persona.suffix}`.match(/\{\{\s*[^}]*\}\}/gu) ?? []
+    for (const variable of used) assert.match(variable, /^\{\{\s*(provider|model)\s*\}\}$/u)
+  }
   assert.equal(worker.at(-1).name, '@local/dsh-dispatch/worker')
   for (const row of flatten(worker)) assert.notEqual(row.name, '@deepseek-ai/dsh-tool-ralph')
   assert.ok(await readFile(join(f.packaged, 'client.js'), 'utf8'))

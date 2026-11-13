@@ -375,6 +375,23 @@ test('reports bind to the executing worker and its association', async (t) => {
   assert.equal(status.stateSource, 'worker')
   assert.equal(status.eligible, true)
 
+  // The status card reads the coordinator's own workers through owner-only RPC
+  // and never sends, claims, or changes state.
+  const sent = h.delivered.length
+  const listed = await rpc('workers', { sessionId: 'coord-1' }, new AbortController().signal, owner)
+  assert.deepEqual(listed, { ok: true, value: [status] })
+  assert.deepEqual(
+    (await rpc('workers', { sessionId: 'coord-2' }, new AbortController().signal, owner)).value,
+    [],
+  )
+  const agentPeer = await rpc('workers', { sessionId: 'coord-1' }, new AbortController().signal, {
+    principal: { kind: 'agent' },
+  })
+  assert.equal(agentPeer.ok, false)
+  assert.equal(agentPeer.error.code, 'forbidden')
+  assert.equal(h.delivered.length, sent)
+  assert.deepEqual(await h.service.status(coordinator, workerSessionId), status)
+
   // Leaving the assigned checkout stops Dispatch admission with remediation.
   const assigned = h.directories.get(workerSessionId)
   h.directories.set(workerSessionId, main)

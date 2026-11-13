@@ -1,0 +1,11 @@
+{
+  "name": "@local/dsh-dispatch-shell-fixture",
+  "private": true,
+  "type": "module",
+  "main": "index.mjs",
+  "dsh": {
+    "bundle": {
+      "patch": "cordis.patch.yml"
+    }
+  }
+}

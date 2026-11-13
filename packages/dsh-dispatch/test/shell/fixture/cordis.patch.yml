@@ -1,0 +1,3 @@
+- insert:
+    - id: dispatch-shell-fixture
+      name: '@local/dsh-dispatch-shell-fixture'

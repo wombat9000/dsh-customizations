@@ -11,6 +11,8 @@ export interface CardProps {
   sessionId: string
   callId: string
   request: Request
+  /** Native navigation to another Session (`uiWorkspace.openSession`), when mounted. */
+  openSession?: ((sessionId: string) => void) | undefined
 }
 
 const LIVE = new Set(['pending', 'executing'])
@@ -31,7 +33,7 @@ export function validStatus(value: unknown): value is ProposalStatus {
   )
 }
 
-const css = `
+export const css = `
 .dsp-card { font: 13px/1.5 var(--dsw-font-family, system-ui, sans-serif); color: var(--dsw-alias-label-primary);
   padding: 14px 16px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 12px; display: grid; gap: 10px; }
 .dsp-card * { box-sizing: border-box; }
@@ -79,11 +81,13 @@ export function ProposalView({
   busy,
   error,
   decide,
+  openSession,
 }: {
   status: ProposalStatus
   busy: boolean
   error: string
   decide?: (decision: 'approve' | 'reject') => void
+  openSession?: ((sessionId: string) => void) | undefined
 }) {
   const rows: [string, string][] = [
     ['Preset', status.preset],
@@ -146,6 +150,13 @@ export function ProposalView({
           </button>
         </div>
       ) : null}
+      {status.workerSessionId && openSession ? (
+        <div className="dsp-actions">
+          <button type="button" onClick={() => openSession(status.workerSessionId!)}>
+            Open worker session
+          </button>
+        </div>
+      ) : null}
       <p className="dsp-muted">Observed {status.observedAt}</p>
     </section>
   )
@@ -156,7 +167,7 @@ export function ProposalView({
  * historical card shows the stored outcome and can only decide a proposal
  * the Host still holds as pending in this Host lifetime.
  */
-export function ProposalCard({ sessionId, callId, request }: CardProps) {
+export function ProposalCard({ sessionId, callId, request, openSession }: CardProps) {
   const [status, setStatus] = React.useState<ProposalStatus | null>(null)
   const [missing, setMissing] = React.useState(false)
   const [error, setError] = React.useState('')
@@ -221,5 +232,13 @@ export function ProposalCard({ sessionId, callId, request }: CardProps) {
         {error}
       </p>
     ) : null
-  return <ProposalView status={status} busy={busy} error={error} decide={decide} />
+  return (
+    <ProposalView
+      status={status}
+      busy={busy}
+      error={error}
+      decide={decide}
+      openSession={openSession}
+    />
+  )
 }

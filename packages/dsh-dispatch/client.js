@@ -34,6 +34,12 @@ react = __toESM(react, 1);
 
 //#region shared/contracts.ts
 const DISPATCH_CHANNEL = "/local-dispatch";
+/** Tool calls whose view is the live worker-status card. */
+const STATUS_TOOLS = [
+	"dispatch_list_sessions",
+	"dispatch_get_session_status",
+	"dispatch_wait_session"
+];
 const CARD_TOOLS = [
 	"dispatch_create_session",
 	"dispatch_add_session",
@@ -87,7 +93,7 @@ function errorMessage(error) {
 	return error instanceof Error ? error.message : "Dispatch is unavailable.";
 }
 /** Presentation only: every value shown comes from the Host-held immutable proposal. */
-function ProposalView({ status, busy, error, decide }) {
+function ProposalView({ status, busy, error, decide, openSession }) {
 	const rows = [["Preset", status.preset], ["Model", status.model]];
 	if (status.base) {
 		rows.push(["Repository", status.base.repositoryRoot]);
@@ -120,14 +126,17 @@ function ProposalView({ status, busy, error, decide }) {
 		type: "button",
 		disabled: busy,
 		onClick: () => decide("reject")
-	}, "Reject")) : null, /* @__PURE__ */ react.default.createElement("p", { className: "dsp-muted" }, "Observed ", status.observedAt));
+	}, "Reject")) : null, status.workerSessionId && openSession ? /* @__PURE__ */ react.default.createElement("div", { className: "dsp-actions" }, /* @__PURE__ */ react.default.createElement("button", {
+		type: "button",
+		onClick: () => openSession(status.workerSessionId)
+	}, "Open worker session")) : null, /* @__PURE__ */ react.default.createElement("p", { className: "dsp-muted" }, "Observed ", status.observedAt));
 }
 /**
 * Tool-view container. Status comes from the Host each time; a reloaded or
 * historical card shows the stored outcome and can only decide a proposal
 * the Host still holds as pending in this Host lifetime.
 */
-function ProposalCard({ sessionId, callId, request }) {
+function ProposalCard({ sessionId, callId, request, openSession }) {
 	const [status, setStatus] = react.default.useState(null);
 	const [missing, setMissing] = react.default.useState(false);
 	const [error, setError] = react.default.useState("");
@@ -204,7 +213,83 @@ function ProposalCard({ sessionId, callId, request }) {
 		status,
 		busy,
 		error,
-		decide
+		decide,
+		openSession
+	});
+}
+
+//#endregion
+//#region client/workers.tsx
+const WORK_STATES = {
+	working: "Working",
+	"waiting-for-user": "Waiting for input",
+	"ready-for-review": "Ready for review",
+	done: "Done",
+	failed: "Failed"
+};
+function validWorkers(value) {
+	return Array.isArray(value) && value.every((item) => item && typeof item === "object" && typeof item.workerId === "string" && typeof item.workState === "string" && typeof item.assignmentOpen === "boolean" && typeof item.eligible === "boolean");
+}
+/** Presentation only: one coordinator's managed workers as the Host reports them now. */
+function WorkersView({ workers, openSession, refresh, error }) {
+	return /* @__PURE__ */ react.default.createElement("section", {
+		className: "dsp-card",
+		"aria-label": "Dispatch workers"
+	}, /* @__PURE__ */ react.default.createElement("style", null, css), /* @__PURE__ */ react.default.createElement("h3", null, "Dispatch workers"), workers.length === 0 ? /* @__PURE__ */ react.default.createElement("p", { className: "dsp-muted" }, "No managed workers.") : null, workers.map((worker) => {
+		const rows = [
+			["Work state", `${WORK_STATES[worker.workState] ?? worker.workState} (${worker.stateSource})`],
+			["Assignment", `${worker.assignmentId} · ${worker.assignmentOpen ? "open" : "closed"}`],
+			["Runtime", worker.runtime],
+			["Branch", worker.branch],
+			["Checkout", worker.worktreePath],
+			["Checkout check", worker.eligibility]
+		];
+		if (worker.lastReport) rows.push(["Latest report", `${worker.lastReport.kind}: ${worker.lastReport.summary}`]);
+		return /* @__PURE__ */ react.default.createElement("article", {
+			key: worker.workerId,
+			"aria-label": `Worker ${worker.title ?? worker.workerId}`
+		}, /* @__PURE__ */ react.default.createElement("p", null, /* @__PURE__ */ react.default.createElement("strong", null, worker.title ?? worker.workerId)), /* @__PURE__ */ react.default.createElement("dl", null, rows.map(([label, value]) => /* @__PURE__ */ react.default.createElement(react.default.Fragment, { key: label }, /* @__PURE__ */ react.default.createElement("dt", null, label), /* @__PURE__ */ react.default.createElement("dd", null, value)))), openSession ? /* @__PURE__ */ react.default.createElement("div", { className: "dsp-actions" }, /* @__PURE__ */ react.default.createElement("button", {
+			type: "button",
+			onClick: () => openSession(worker.workerId)
+		}, "Open worker session")) : null);
+	}), error ? /* @__PURE__ */ react.default.createElement("p", {
+		className: "dsp-error",
+		role: "alert"
+	}, error) : null, refresh ? /* @__PURE__ */ react.default.createElement("div", { className: "dsp-actions" }, /* @__PURE__ */ react.default.createElement("button", {
+		type: "button",
+		onClick: refresh
+	}, "Refresh")) : null);
+}
+/** Tool-view container: reads current status from the Host; never decides or sends. */
+function WorkersCard({ sessionId, request, openSession }) {
+	const [workers, setWorkers] = react.default.useState(null);
+	const [error, setError] = react.default.useState("");
+	const [revision, refresh] = react.default.useReducer((n) => n + 1, 0);
+	react.default.useEffect(() => {
+		const controller = new AbortController();
+		request("workers", { sessionId }, controller.signal).then((value) => {
+			if (controller.signal.aborted) return;
+			if (!validWorkers(value)) throw new Error("Invalid Dispatch worker status.");
+			setWorkers(value);
+			setError("");
+		}, (err) => {
+			if (!controller.signal.aborted) setError(err instanceof Error ? err.message : "Dispatch is unavailable.");
+		});
+		return () => controller.abort();
+	}, [
+		sessionId,
+		request,
+		revision
+	]);
+	if (!workers) return error ? /* @__PURE__ */ react.default.createElement("p", {
+		className: "dsp-error",
+		role: "alert"
+	}, error) : null;
+	return /* @__PURE__ */ react.default.createElement(WorkersView, {
+		workers,
+		openSession,
+		refresh,
+		error
 	});
 }
 
@@ -221,19 +306,36 @@ var client_default = {
 	inject: ["slots", "connection"],
 	ProposalCard,
 	ProposalView,
+	WorkersCard,
+	WorkersView,
 	validStatus,
 	apply(ctx) {
 		const request = createRequest(ctx);
+		const workspace = () => ctx.get?.("uiWorkspace");
+		const openSession = (sessionId) => workspace()?.openSession(sessionId);
+		const navigation = () => workspace() ? openSession : void 0;
 		function Card(props) {
 			return react.default.createElement(ProposalCard, {
 				...props,
-				request
+				request,
+				openSession: navigation()
+			});
+		}
+		function Workers(props) {
+			return react.default.createElement(WorkersCard, {
+				sessionId: props.sessionId,
+				request,
+				openSession: navigation()
 			});
 		}
 		for (const key of CARD_TOOLS) ctx.slots.inject("tool.call.toolview", () => ctx.slots.register({
 			name: "tool.call.toolview",
 			key
 		}, Card));
+		for (const key of STATUS_TOOLS) ctx.slots.inject("tool.call.toolview", () => ctx.slots.register({
+			name: "tool.call.toolview",
+			key
+		}, Workers));
 	}
 };
 

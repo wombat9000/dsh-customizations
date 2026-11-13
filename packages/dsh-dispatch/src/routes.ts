@@ -42,6 +42,10 @@ export function createRpcHandler(service: DispatchService): RpcHandler {
           value: await service.proposalStatus(input.sessionId as string, input.callId as string),
         }
       }
+      if (endpoint === 'workers') {
+        const input = exact(payload, ['sessionId'])
+        return { ok: true, value: await service.workersOf(input.sessionId as string) }
+      }
       if (endpoint === 'decide') {
         const input = exact(payload, ['sessionId', 'callId', 'proposalId', 'digest', 'decision'])
         if (typeof input.digest !== 'string' || !/^[0-9a-f]{64}$/u.test(input.digest))

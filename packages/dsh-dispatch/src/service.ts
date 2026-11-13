@@ -879,15 +879,31 @@ export class DispatchService {
         .map((proposal) => this.view(proposal)),
     )
     const items = []
-    for (const worker of workers) items.push(await this.status(coordinator, worker.workerId))
+    for (const worker of workers) items.push(await this.statusFor(coordinator.id, worker.workerId))
     return { workers: items, operations: proposals }
   }
 
   async status(agent: AgentLike | undefined, workerId: unknown): Promise<WorkerStatus> {
     const coordinator = this.coordinatorOf(agent)
-    const id = bounded(workerId, 'workerId', 200)!
+    return this.statusFor(coordinator.id, bounded(workerId, 'workerId', 200)!)
+  }
+
+  /**
+   * Read-only status of every worker one coordinator session manages, for the
+   * owner-authenticated status card. Changes nothing and reads no transcripts.
+   */
+  async workersOf(coordinatorId: string): Promise<WorkerStatus[]> {
+    const workers = await this.options.store.transaction((tables) =>
+      this.activeClaims(tables).filter((worker) => worker.coordinatorId === coordinatorId),
+    )
+    const items: WorkerStatus[] = []
+    for (const worker of workers) items.push(await this.statusFor(coordinatorId, worker.workerId))
+    return items
+  }
+
+  private async statusFor(coordinatorId: string, id: string): Promise<WorkerStatus> {
     const { worker, assignment, report } = await this.options.store.transaction((tables) => {
-      const worker = this.ownedWorker(tables, coordinator.id, id)
+      const worker = this.ownedWorker(tables, coordinatorId, id)
       const report = tables.reports
         .values()
         .filter((entry) => entry.workerId === id && entry.assignmentId === worker.assignmentId)

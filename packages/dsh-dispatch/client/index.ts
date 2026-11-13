@@ -1,11 +1,13 @@
 import type { ComponentType } from 'react'
 import React from 'react'
-import { CARD_TOOLS, DISPATCH_CHANNEL } from '../shared/contracts.js'
+import { CARD_TOOLS, DISPATCH_CHANNEL, STATUS_TOOLS } from '../shared/contracts.js'
 import type { RpcEndpoints, RpcResult } from '../shared/contracts.js'
 import { ProposalCard, ProposalView, validStatus } from './card.js'
 import type { Request } from './card.js'
+import { WorkersCard, WorkersView } from './workers.js'
 
 interface ClientContext {
+  get?(name: string): unknown
   slots: {
     inject(name: string, callback: () => unknown): unknown
     register<P>(
@@ -42,13 +44,27 @@ export default {
   inject: ['slots', 'connection'],
   ProposalCard,
   ProposalView,
+  WorkersCard,
+  WorkersView,
   validStatus,
   apply(ctx: ClientContext) {
     const request = createRequest(ctx)
+    // Native Session navigation when the workspace UI is mounted; otherwise no control.
+    const workspace = () =>
+      ctx.get?.('uiWorkspace') as { openSession(sessionId: string): void } | undefined
+    const openSession = (sessionId: string) => workspace()?.openSession(sessionId)
+    const navigation = () => (workspace() ? openSession : undefined)
     // Keyed by the actual Dispatch tool names; other tool cards and the shared
     // approval-detail slot are untouched.
     function Card(props: { sessionId: string; callId: string }) {
-      return React.createElement(ProposalCard, { ...props, request })
+      return React.createElement(ProposalCard, { ...props, request, openSession: navigation() })
+    }
+    function Workers(props: { sessionId: string }) {
+      return React.createElement(WorkersCard, {
+        sessionId: props.sessionId,
+        request,
+        openSession: navigation(),
+      })
     }
     for (const key of CARD_TOOLS)
       ctx.slots.inject('tool.call.toolview', () =>
@@ -56,6 +72,10 @@ export default {
           { name: 'tool.call.toolview', key },
           Card,
         ),
+      )
+    for (const key of STATUS_TOOLS)
+      ctx.slots.inject('tool.call.toolview', () =>
+        ctx.slots.register<{ sessionId: string }>({ name: 'tool.call.toolview', key }, Workers),
       )
   },
 }
