@@ -42,7 +42,7 @@ export interface Agents {
   get(id: string): Owner | undefined
   roots(): Owner[]
 }
-/** DSH 0.2.2-rc.2 registry surface; it no longer exposes runtime roots. */
+/** DSH 0.2.2-rc.2+ registry surface; it no longer exposes runtime roots. */
 export interface HostAgents {
   get(id: string): Owner | undefined
   list(): Owner[]

@@ -1,6 +1,6 @@
 {
   "name": "@local/dsh-browser-recording",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "private": true,
   "description": "Explicit browser interaction recordings with MP4 and looping WebP exports",
   "type": "module",
@@ -28,13 +28,13 @@
     }
   },
   "dependencies": {
-    "@deepseek-ai/dsh-tools": "0.2.2-rc.2",
-    "@deepseek-ai/dsh-subprocess": "0.2.2-rc.2",
-    "@deepseek-ai/dsh-system-prompt": "0.2.2-rc.2"
+    "@deepseek-ai/dsh-tools": "0.2.2-rc.3",
+    "@deepseek-ai/dsh-subprocess": "0.2.2-rc.3",
+    "@deepseek-ai/dsh-system-prompt": "0.2.2-rc.3"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "4.1.0",
-    "@deepseek-ai/dsh": "0.2.2-rc.2"
+    "@deepseek-ai/dsh": "0.2.2-rc.3"
   },
   "license": "UNLICENSED"
 }

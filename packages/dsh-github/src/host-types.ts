@@ -3,7 +3,7 @@ import type { GitHubReads, Schema, Subprocess } from './contracts.js'
 import type { GrantCaller } from './grant-contracts.js'
 import type { GitHubLiveCI } from './live-ci.js'
 
-// Narrow consumed DSH 0.2.2-rc.2 host surface. Tool execution arguments and
+// Narrow consumed DSH 0.2.2-rc.3 host surface. Tool execution arguments and
 // event payloads stay unknown; host-owned object identity is never reconstructed.
 export interface Session {
   id: string
@@ -18,7 +18,7 @@ export interface Agents {
   get(id: string): Agent | undefined
   roots(): Agent[]
 }
-/** DSH 0.2.2-rc.2 registry surface; it no longer exposes runtime roots. */
+/** DSH 0.2.2-rc.2+ registry surface; it no longer exposes runtime roots. */
 export interface HostAgents {
   get(id: string): Agent | undefined
   list(): Agent[]
