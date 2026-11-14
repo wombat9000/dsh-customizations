@@ -210,7 +210,7 @@ export function installWorker(tools, service) {
         disposers.push(tools.guard((execution) => {
             const id = execution.agent?.id;
             if (id !== undefined && service.isProvisioning(id))
-                return 'This Dispatch worker is still being provisioned onto its worktree; no tools run until it is verified.';
+                return 'This Dispatch worker has pending admission; no tools run until assignment delivery is confirmed. Inspect its proposal before taking further action.';
             if (workerDenied(execution.name))
                 return `Dispatch workers cannot use ${execution.name}. Ask the coordinator through dispatch_report.`;
             return undefined;

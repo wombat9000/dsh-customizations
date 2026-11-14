@@ -63,10 +63,12 @@ export class Sessions {
     controller;
     directories;
     llm;
-    constructor(controller, directories, llm = () => undefined) {
+    presets;
+    constructor(controller, directories, llm = () => undefined, presets = () => undefined) {
         this.controller = controller;
         this.directories = directories;
         this.llm = llm;
+        this.presets = presets;
     }
     requireController() {
         const controller = this.controller();
@@ -74,14 +76,24 @@ export class Sessions {
             throw new DispatchError('unavailable', 'The DSH session controller is not available.');
         return controller;
     }
-    async create(input) {
-        const result = await this.requireController().create({
+    /** Native selection events can replace a blank session's creation-time preset. */
+    currentPreset(agent) {
+        const presets = this.presets();
+        if (!presets)
+            throw new DispatchError('unavailable', 'The DSH current-preset reader is not available.');
+        try {
+            return presets.presetForSession(agent.session);
+        }
+        catch {
+            throw new DispatchError('unavailable', 'The current session preset could not be read.');
+        }
+    }
+    create(input) {
+        // The caller records the native identity before validating the returned preset.
+        return this.requireController().create({
             cwd: input.cwd,
             agentPreset: input.preset,
         });
-        if (result.agentPreset !== undefined && result.agentPreset !== input.preset)
-            throw new DispatchError('uncertain', `The session was created with preset ${result.agentPreset}, not ${input.preset}.`);
-        return result.sessionId;
     }
     /**
      * Pin one worker's model through its own `Agent.model`, after the same
@@ -171,6 +183,40 @@ export class Sessions {
                 return true;
         }
         return false;
+    }
+    /**
+     * Reserve native idle activity across checkout inspection and persistence.
+     * Maintenance still reports idle; ordinary UI input queues without canceling
+     * it, so callers must check both the signal and inbox after awaited work.
+     * Only worktree provisioning permits its native non-waking directory notice;
+     * the initial gate stays strict and the notice stays queued for the first turn.
+     */
+    reserve(agent, lifetime, operation, options = {}) {
+        if (!agent.runMaintenance || !agent.inbox)
+            throw new DispatchError('unavailable', 'This DSH build cannot reserve idle session activity.');
+        if (!this.quiescent(agent))
+            throw new DispatchError('ineligible', 'The session became active or received input after review.');
+        try {
+            return agent.runMaintenance(async (maintenance) => {
+                const signal = AbortSignal.any([lifetime, maintenance]);
+                const check = () => {
+                    const inbox = agent.inbox;
+                    if (signal.aborted ||
+                        (agent.status !== undefined && agent.status !== 'idle') ||
+                        !inbox ||
+                        inbox.nextTurn.length > 0 ||
+                        inbox.nextStep.some((message) => !options.allowWorktreeDirectoryNotice ||
+                            message.source?.kind !== 'working-directory'))
+                        throw new DispatchError('ineligible', 'The session became active or received input, or Dispatch admission was interrupted.');
+                };
+                check();
+                return operation({ signal, check });
+            });
+        }
+        catch {
+            // runMaintenance throws synchronously when native work already owns idle activity.
+            throw new DispatchError('ineligible', 'The session already has active native work.');
+        }
     }
     /** Whether the Agent is idle with nothing queued or steering. */
     quiescent(agent) {

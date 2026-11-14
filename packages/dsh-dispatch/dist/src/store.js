@@ -51,7 +51,6 @@ export function memoryStore() {
     return new DispatchStore({
         proposals: new MemoryTable(),
         workers: new MemoryTable(),
-        assignments: new MemoryTable(),
         reports: new MemoryTable(),
     });
 }
@@ -64,6 +63,17 @@ function versioned(name, fields) {
         for (const field of fields)
             if (!Object.hasOwn(value, field))
                 throw new Error(`Dispatch ${name} record lacks ${field}.`);
+        if (name === 'worker') {
+            const assignment = value.assignment;
+            if (!isRecord(assignment) ||
+                assignment.version !== RECORD_VERSION ||
+                typeof assignment.id !== 'string' ||
+                assignment.workerId !== value.workerId ||
+                assignment.coordinatorId !== value.coordinatorId ||
+                !Object.hasOwn(assignment, 'workState') ||
+                (assignment.admission !== 'pending' && assignment.admission !== 'admitted'))
+                throw new Error('Invalid Dispatch worker assignment.');
+        }
         return value;
     };
     return {
@@ -78,6 +88,8 @@ function versioned(name, fields) {
         },
     };
 }
+// v3 deliberately fails closed on retained v2 state. Do not rename the domain,
+// skip invalid records, or reset it: proposal/report history must not disappear.
 export const DOMAIN_SPEC = {
     name: 'local_dispatch',
     version: RECORD_VERSION,
@@ -91,10 +103,12 @@ export const DOMAIN_SPEC = {
             ]),
         },
         workers: {
-            valueSchema: versioned('worker', ['workerId', 'coordinatorId', 'generation']),
-        },
-        assignments: {
-            valueSchema: versioned('assignment', ['id', 'workerId', 'workState']),
+            valueSchema: versioned('worker', [
+                'workerId',
+                'coordinatorId',
+                'generation',
+                'assignment',
+            ]),
         },
         reports: {
             valueSchema: versioned('report', ['id', 'workerId', 'delivery']),
@@ -123,7 +137,6 @@ export async function domainStore(storage) {
     return new DispatchStore({
         proposals: new DomainTable(domain.table('proposals')),
         workers: new DomainTable(domain.table('workers')),
-        assignments: new DomainTable(domain.table('assignments')),
         reports: new DomainTable(domain.table('reports')),
     }, () => domain.close());
 }

@@ -3,6 +3,7 @@ import { DispatchError } from './contracts.js'
 import type {
   AgentLike,
   AgentMessageSource,
+  AgentPresetsLike,
   LlmLike,
   SessionControllerLike,
   SessionEventLike,
@@ -47,6 +48,12 @@ export function agentMessage(
   )
 }
 
+export interface IdleReservation {
+  readonly signal: AbortSignal
+  /** Check after awaited work and immediately before admitting the assignment message. */
+  check(): void
+}
+
 export interface HistoryItem {
   readonly seq: number
   readonly type: string
@@ -88,14 +95,17 @@ export class Sessions {
   private readonly controller: () => SessionControllerLike | undefined
   private readonly directories: () => WorkingDirectoryLike | undefined
   private readonly llm: () => LlmLike | undefined
+  private readonly presets: () => AgentPresetsLike | undefined
   constructor(
     controller: () => SessionControllerLike | undefined,
     directories: () => WorkingDirectoryLike | undefined,
     llm: () => LlmLike | undefined = () => undefined,
+    presets: () => AgentPresetsLike | undefined = () => undefined,
   ) {
     this.controller = controller
     this.directories = directories
     this.llm = llm
+    this.presets = presets
   }
 
   private requireController() {
@@ -105,17 +115,24 @@ export class Sessions {
     return controller
   }
 
-  async create(input: { cwd: string; preset: string }) {
-    const result = await this.requireController().create({
+  /** Native selection events can replace a blank session's creation-time preset. */
+  currentPreset(agent: AgentLike): string | null {
+    const presets = this.presets()
+    if (!presets)
+      throw new DispatchError('unavailable', 'The DSH current-preset reader is not available.')
+    try {
+      return presets.presetForSession(agent.session)
+    } catch {
+      throw new DispatchError('unavailable', 'The current session preset could not be read.')
+    }
+  }
+
+  create(input: { cwd: string; preset: string }) {
+    // The caller records the native identity before validating the returned preset.
+    return this.requireController().create({
       cwd: input.cwd,
       agentPreset: input.preset,
     })
-    if (result.agentPreset !== undefined && result.agentPreset !== input.preset)
-      throw new DispatchError(
-        'uncertain',
-        `The session was created with preset ${result.agentPreset}, not ${input.preset}.`,
-      )
-    return result.sessionId
   }
 
   /**
@@ -204,6 +221,56 @@ export class Sessions {
       if (message.id === messageId) return true
     }
     return false
+  }
+
+  /**
+   * Reserve native idle activity across checkout inspection and persistence.
+   * Maintenance still reports idle; ordinary UI input queues without canceling
+   * it, so callers must check both the signal and inbox after awaited work.
+   * Only worktree provisioning permits its native non-waking directory notice;
+   * the initial gate stays strict and the notice stays queued for the first turn.
+   */
+  reserve<T>(
+    agent: AgentLike,
+    lifetime: AbortSignal,
+    operation: (reservation: IdleReservation) => Promise<T>,
+    options: { allowWorktreeDirectoryNotice?: boolean } = {},
+  ): Promise<T> {
+    if (!agent.runMaintenance || !agent.inbox)
+      throw new DispatchError('unavailable', 'This DSH build cannot reserve idle session activity.')
+    if (!this.quiescent(agent))
+      throw new DispatchError(
+        'ineligible',
+        'The session became active or received input after review.',
+      )
+    try {
+      return agent.runMaintenance(async (maintenance) => {
+        const signal = AbortSignal.any([lifetime, maintenance])
+        const check = () => {
+          const inbox = agent.inbox
+          if (
+            signal.aborted ||
+            (agent.status !== undefined && agent.status !== 'idle') ||
+            !inbox ||
+            inbox.nextTurn.length > 0 ||
+            inbox.nextStep.some(
+              (message) =>
+                !options.allowWorktreeDirectoryNotice ||
+                message.source?.kind !== 'working-directory',
+            )
+          )
+            throw new DispatchError(
+              'ineligible',
+              'The session became active or received input, or Dispatch admission was interrupted.',
+            )
+        }
+        check()
+        return operation({ signal, check })
+      })
+    } catch {
+      // runMaintenance throws synchronously when native work already owns idle activity.
+      throw new DispatchError('ineligible', 'The session already has active native work.')
+    }
   }
 
   /** Whether the Agent is idle with nothing queued or steering. */

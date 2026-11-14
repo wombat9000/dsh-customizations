@@ -6,6 +6,7 @@ import { Sessions } from './sessions.js'
 import { domainStore } from './store.js'
 import type { WaitFn } from './tools.js'
 import type {
+  AgentPresetsLike,
   ConnectionLike,
   DefaultModelLike,
   Dispose,
@@ -54,6 +55,7 @@ export async function apply(ctx: HostContext, config: Config = {}) {
     () => ctx.get('sessionController') as SessionControllerLike | undefined,
     () => ctx.get('workingDirectory') as WorkingDirectoryLike | undefined,
     () => ctx.get('llm') as LlmLike | undefined,
+    () => ctx.get('agentPresets') as AgentPresetsLike | undefined,
   )
   const world = managedWorld(
     () =>
@@ -71,6 +73,7 @@ export async function apply(ctx: HostContext, config: Config = {}) {
     repositories: new Repositories(world),
     worktrees: () => ctx.get('worktrees') as WorktreesLike | undefined,
     defaultModel: () => ctx.get('agentDefaultModel') as DefaultModelLike | undefined,
+    warn: (message) => (ctx.logger ? ctx.logger.warn(message) : console.warn(message)),
     presets: async () => {
       const registry = ctx.get('agentPresets') as { list(): Promise<{ id: string }[]> } | undefined
       return registry ? (await registry.list()).map((preset) => preset.id) : []

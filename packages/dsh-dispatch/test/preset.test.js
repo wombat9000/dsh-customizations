@@ -5,6 +5,8 @@ import { dirname, join } from 'node:path'
 import test from 'node:test'
 import { executeOne } from '../../dsh-github/test/approval-fixture.js'
 import { installed } from '../../dsh-product-mode/test/fixtures.js'
+import { RECORD_VERSION } from '../dist/src/contracts.js'
+import { domainStore } from '../dist/src/store.js'
 import {
   cli,
   declarations,
@@ -64,6 +66,45 @@ async function mountedHost(t) {
   const tools = mounted.ctx.get('tools')
   const names = (key) => [...tools.view(key).visible.keys()].sort()
   return { ...mounted, f, rows, lease, agentIn, tools, names }
+}
+
+// Complete durable authority fixture, shared by reopen and native preset-guard
+// tests. The guard and storage implementation, not this fixture, enforce it.
+function workerRecord(workerId = 'w', admission = 'admitted') {
+  const now = '2026-01-01T00:00:00.000Z'
+  return {
+    version: RECORD_VERSION,
+    workerId,
+    coordinatorId: 'c',
+    generation: 1,
+    originalWorkspace: '/fixture/main',
+    provider: 'fixture-fs',
+    worktreeKey: '/fixture/linked',
+    repositoryRoot: '/fixture/main',
+    worktreePath: '/fixture/linked',
+    branch: 'feature',
+    baseCommit: '1'.repeat(40),
+    preset: 'dispatch-worker',
+    verifiedAt: now,
+    assignment: {
+      version: RECORD_VERSION,
+      id: 'assignment-1',
+      workerId,
+      coordinatorId: 'c',
+      proposalId: 'proposal-1',
+      intent: 'fixture task',
+      prompt: 'fixture prompt',
+      preset: 'dispatch-worker',
+      model: 'fixture/m1',
+      base: null,
+      admission,
+      workState: 'working',
+      summary: 'fixture progress',
+      stateSource: 'worker',
+      evidence: ['fixture evidence'],
+      updatedAt: now,
+    },
+  }
 }
 
 const definition = (name) => ({
@@ -197,6 +238,22 @@ test(
       { agent: worker },
     )
     assert.match(JSON.stringify(report), /no approved Dispatch assignment/)
+    // An uncertain post-enqueue save leaves a pending authoritative record.
+    // Exercise the installed preset guard through the real tool executor, not
+    // only the service's isProvisioning predicate. Neither tool may run.
+    const dispatch = h.ctx.get('localDispatch')
+    await dispatch.store.transaction((tables) =>
+      tables.workers.put(worker.id, workerRecord(worker.id, 'pending')),
+    )
+    for (const [name, args] of [
+      ['bash', { command: 'must-not-execute' }],
+      ['dispatch_report', { assignmentId: 'assignment-1', kind: 'done', summary: 'unsafe' }],
+    ]) {
+      const denied = await executeOne(h.tools, name, args, { agent: worker })
+      assert.equal(denied.isError, true)
+      assert.match(JSON.stringify(denied), /pending admission/)
+    }
+    assert.deepEqual(h.calls, [], 'pending admission never reaches a coding subprocess')
     assert.equal(
       (await executeOne(h.tools, 'team_task_create', {}, { agent: standard })).value,
       'ran',
@@ -206,7 +263,6 @@ test(
 
 test('Dispatch fails closed without durable storage and keeps records across reopen', async (t) => {
   const { apply } = await import('../dist/src/index.js')
-  const { domainStore } = await import('../dist/src/store.js')
   const ctx = (storageDomain) => ({
     storageDomain,
     get: () => undefined,
@@ -230,18 +286,116 @@ test('Dispatch fails closed without durable storage and keeps records across reo
   t.after(() => host.fiber.dispose())
   await durableStorage(t, host)
   const first = await domainStore(host.get('storageDomain'))
-  await first.transaction((tables) =>
-    tables.workers.put('w', {
-      version: 2,
-      workerId: 'w',
-      coordinatorId: 'c',
-      generation: 1,
-    }),
-  )
+  const worker = workerRecord()
+  const proposal = {
+    version: RECORD_VERSION,
+    id: 'proposal-1',
+    coordinatorId: 'c',
+    callId: 'call-1',
+    generation: 0,
+    payload: {
+      kind: 'adopt',
+      intent: 'fixture task',
+      prompt: 'fixture prompt',
+      preset: 'dispatch-worker',
+      model: 'unchanged',
+      base: null,
+      branch: worker.branch,
+      target: {
+        provider: worker.provider,
+        worktreeKey: worker.worktreeKey,
+        worktreePath: worker.worktreePath,
+        repositoryRoot: worker.repositoryRoot,
+        branch: worker.branch,
+        head: worker.baseCommit,
+      },
+      workerSessionId: worker.workerId,
+      assignmentId: worker.assignment.id,
+    },
+    digest: '0'.repeat(64),
+    createdAt: worker.verifiedAt,
+    hostEpoch: 'fixture-epoch',
+    state: 'succeeded',
+    checkpoints: ['approved', 'verified', 'claimed', 'delivered'],
+  }
+  const report = {
+    version: RECORD_VERSION,
+    id: 'report-1',
+    workerId: worker.workerId,
+    coordinatorId: worker.coordinatorId,
+    assignmentId: worker.assignment.id,
+    generation: 1,
+    kind: 'progress',
+    summary: 'fixture progress',
+    evidence: ['fixture evidence'],
+    createdAt: worker.verifiedAt,
+    delivery: 'delivered',
+    messageId: 'report-message-1',
+    messageText: 'stable attributed report text',
+    deliveredAt: worker.verifiedAt,
+  }
+  await first.transaction(async (tables) => {
+    await tables.workers.put(worker.workerId, worker)
+    await tables.proposals.put(proposal.id, proposal)
+    await tables.reports.put(report.id, report)
+  })
   await first.close()
   const second = await domainStore(host.get('storageDomain'))
-  assert.equal(second.tables.workers.get('w').coordinatorId, 'c')
+  assert.deepEqual(
+    second.tables.workers.get(worker.workerId),
+    worker,
+    'current task and authority survive reopen',
+  )
+  assert.deepEqual(
+    second.tables.proposals.get(proposal.id),
+    proposal,
+    'approval history survives reopen',
+  )
+  assert.deepEqual(
+    second.tables.reports.get(report.id),
+    report,
+    'outbox identity and provenance survive reopen',
+  )
   await second.close()
+})
+
+test('retained v2 authority fails closed without resetting or renaming its storage domain', async (t) => {
+  const { Context } = await installed('@deepseek-ai/cordis')
+  const host = new Context()
+  t.after(() => host.fiber.dispose())
+  const root = await durableStorage(t, host)
+  const storage = host.get('storageDomain')
+  const legacySpec = {
+    name: 'local_dispatch',
+    version: 2,
+    tables: Object.fromEntries(
+      ['workers', 'assignments', 'proposals', 'reports'].map((name) => [
+        name,
+        { valueSchema: { parse: (value) => value } },
+      ]),
+    ),
+  }
+  const legacy = await storage.open(legacySpec)
+  const current = workerRecord()
+  const { assignment, ...authority } = current
+  const { admission: _admission, ...task } = assignment
+  const oldWorker = { ...authority, version: 2, assignmentId: assignment.id }
+  const oldTask = { ...task, version: 2 }
+  await legacy.table('workers').put(oldWorker.workerId, oldWorker)
+  await legacy.table('assignments').put(oldTask.id, oldTask)
+  await legacy.close()
+  const path = join(root, 'local_dispatch.json')
+  const before = await readFile(path, 'utf8')
+  await assert.rejects(domainStore(storage), (error) => error.code === 'version-mismatch')
+  assert.equal(
+    await readFile(path, 'utf8'),
+    before,
+    'rejected retained state remains byte-for-byte intact',
+  )
+  const reopened = await storage.open(legacySpec)
+  assert.deepEqual(reopened.table('workers').get(oldWorker.workerId), oldWorker)
+  assert.deepEqual(reopened.table('assignments').get(oldTask.id), oldTask)
+  await reopened.close()
 })
 
 test('generated host and client artifacts are fresh', async () => {

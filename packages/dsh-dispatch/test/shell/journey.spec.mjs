@@ -67,7 +67,23 @@ test('coordinator proposes, the user approves, the worker reports back, and stat
 
   await test.step('approval creates the worktree and delivers the assignment', async () => {
     await card.getByRole('button', { name: 'Approve' }).click()
-    await expect(card.getByRole('status')).toHaveText(DONE, { timeout: 30_000 })
+    try {
+      await expect(card.getByRole('status')).toHaveText(DONE, { timeout: 30_000 })
+    } catch (error) {
+      const text = await card
+        .innerText()
+        .catch((diagnosticError) => `Could not read approval card: ${diagnosticError}`)
+      console.log(`Dispatch approval card after status failure:\n${text}`)
+      await testInfo
+        .attach('approval-status-failure', {
+          body: text,
+          contentType: 'text/plain',
+        })
+        .catch((diagnosticError) =>
+          console.log(`Could not attach approval card: ${diagnosticError}`),
+        )
+      throw error
+    }
     await expect(card).toContainText(
       'approved, session-created, worktree-created, verified, claimed, delivered',
     )

@@ -65,11 +65,16 @@ export interface AgentLike {
   /** Live pending work (`Agent.inbox`); messages keep their identity until claimed. */
   readonly inbox?: {
     readonly nextTurn: readonly { readonly id?: unknown }[]
-    readonly nextStep: readonly { readonly id?: unknown }[]
+    readonly nextStep: readonly {
+      readonly id?: unknown
+      readonly source?: { readonly kind?: string }
+    }[]
   }
   followup(message: UserMessageLike): void
   steer(message: UserMessageLike): void
   whenIdle?(): Promise<void>
+  /** rc.3 reserves native idle activity; public status stays idle and input queues until release. */
+  runMaintenance?<T>(job: (signal: AbortSignal) => Promise<T>): Promise<T>
   /** rc.3 clears both inbox queues unless `keepInbox` is true. */
   cancel?(
     cause: { kind: 'user' } | { kind: 'hook'; reason: string },
@@ -105,6 +110,11 @@ export interface SessionControllerLike {
   resolveAgent(
     sessionId: string,
   ): Promise<{ readonly agent: AgentLike } | { readonly error: { message?: string } }>
+}
+
+/** `ctx.agentPresets` rc.3 reads the committed current selection, not only its creation header. */
+export interface AgentPresetsLike {
+  presetForSession(session: SessionLike): string | null
 }
 
 export interface ModelSelectionLike {

@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 
 /** Bumped whenever a persisted record shape changes incompatibly. */
-export const RECORD_VERSION = 2
+export const RECORD_VERSION = 3
 
 export const WORK_STATES = [
   'working',
@@ -99,7 +99,8 @@ export interface WorkerRecord {
   worktreePath: string
   branch: string
   baseCommit: string
-  assignmentId: string
+  /** Sole authority for the current task; no separate assignment write or lookup. */
+  assignment: AssignmentRecord
   preset: string
   verifiedAt: string
   /** Set when management was released; released records keep history and grant nothing. */
@@ -108,6 +109,8 @@ export interface WorkerRecord {
 }
 
 export interface AssignmentRecord {
+  /** Pending reserves ownership but grants no work or report authority. Never replayed automatically. */
+  admission: 'pending' | 'admitted'
   readonly version: number
   readonly id: string
   readonly workerId: string
@@ -127,7 +130,7 @@ export interface AssignmentRecord {
    * needs a new approved assignment.
    */
   closedAt?: string
-  closedBy?: 'worker' | 'coordinator' | 'superseded'
+  closedBy?: 'worker' | 'coordinator'
   /** Who last set workState: the worker's report, or an attributed coordinator administrative status. */
   stateSource: 'worker' | 'coordinator'
   evidence: string[]

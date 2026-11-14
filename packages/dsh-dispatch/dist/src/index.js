@@ -21,7 +21,7 @@ export async function apply(ctx, config = {}) {
     if (!ctx.storageDomain)
         throw new Error('Dispatch requires the DSH storage domain.');
     const store = await domainStore(ctx.storageDomain);
-    const sessions = new Sessions(() => ctx.get('sessionController'), () => ctx.get('workingDirectory'), () => ctx.get('llm'));
+    const sessions = new Sessions(() => ctx.get('sessionController'), () => ctx.get('workingDirectory'), () => ctx.get('llm'), () => ctx.get('agentPresets'));
     const world = managedWorld(() => Object.fromEntries(EXECUTION.map((name) => [name, ctx.get(name)])), {
         ...(config.gitCommand !== undefined ? { gitCommand: config.gitCommand } : {}),
         ...(config.gitTimeoutMs !== undefined ? { timeoutMs: config.gitTimeoutMs } : {}),
@@ -32,6 +32,7 @@ export async function apply(ctx, config = {}) {
         repositories: new Repositories(world),
         worktrees: () => ctx.get('worktrees'),
         defaultModel: () => ctx.get('agentDefaultModel'),
+        warn: (message) => (ctx.logger ? ctx.logger.warn(message) : console.warn(message)),
         presets: async () => {
             const registry = ctx.get('agentPresets');
             return registry ? (await registry.list()).map((preset) => preset.id) : [];

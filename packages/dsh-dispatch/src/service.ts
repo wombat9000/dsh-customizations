@@ -21,10 +21,11 @@ import {
 } from './contracts.js'
 import type { CheckoutIdentity, Repositories } from './repositories.js'
 import { validBranchName } from './repositories.js'
-import type { Sessions } from './sessions.js'
+import type { IdleReservation, Sessions } from './sessions.js'
 import { agentMessage } from './sessions.js'
 import type { DispatchStore, Tables } from './store.js'
 import type { AgentLike, DefaultModelLike, WorktreesLike } from './types.js'
+import { isRecord } from './types.js'
 
 export const COORDINATOR_PRESET = 'dispatch'
 export const WORKER_PRESET = 'dispatch-worker'
@@ -39,6 +40,8 @@ export interface ServiceOptions {
   now?: () => Date
   /** Distinguishes Host lifetimes; proposals from another lifetime never execute. */
   hostEpoch?: string
+  /** Surface known artifacts if the bounded best-effort diagnostic write also fails. */
+  warn?: (message: string) => void
 }
 
 /** Model-facing proposal summary; the full prompt stays in the card and the record. */
@@ -117,13 +120,6 @@ function bounded(value: unknown, name: string, max: number, { required = true } 
  * attributed delivery, reports, and restart reconciliation. Both tools and the
  * user-decision route call these operations; neither assembles them itself.
  */
-interface ClaimPlan {
-  worker: WorkerRecord
-  assignment: AssignmentRecord
-  superseded?: AssignmentRecord
-  previousWorker?: WorkerRecord
-}
-
 export class DispatchService {
   readonly hostEpoch: string
   private readonly now: () => Date
@@ -174,13 +170,16 @@ export class DispatchService {
   private async shutdown() {
     this.disposed = true
     this.lifetime.abort(new Error('Dispatch is shutting down.'))
-    // Any decision already queued in the store admits its execution inside its transaction.
-    await this.options.store.transaction(() => undefined).catch(() => undefined)
-    while (this.inflight.size) await Promise.allSettled([...this.inflight])
-    await this.options.store.transaction((tables) =>
-      this.expirePending(tables, 'Dispatch stopped.'),
-    )
-    await this.options.store.close()
+    try {
+      // Any decision already queued in the store admits its execution inside its transaction.
+      await this.options.store.transaction(() => undefined).catch(() => undefined)
+      while (this.inflight.size) await Promise.allSettled([...this.inflight])
+      await this.options.store.transaction((tables) =>
+        this.expirePending(tables, 'Dispatch stopped.'),
+      )
+    } finally {
+      await this.options.store.close()
+    }
   }
 
   private track<T>(operation: Promise<T>): Promise<T> {
@@ -429,7 +428,7 @@ export class DispatchService {
     if (sessionId === coordinator.id)
       throw new DispatchError('invalid', 'A coordinator cannot manage itself.')
     const candidate = await this.options.sessions.resolve(sessionId)
-    const preset = candidate.session.header.agentPreset ?? 'unknown'
+    const preset = this.options.sessions.currentPreset(candidate)
     if (preset !== WORKER_PRESET)
       throw new DispatchError(
         'ineligible',
@@ -629,12 +628,37 @@ export class DispatchService {
       })
     } catch (error) {
       const message = error instanceof Error ? error.message.slice(0, 1000) : 'Unknown failure.'
-      await this.checkpoint(record.id, (proposal) => {
-        // A failure after a native effect began may have left artifacts; never retried automatically.
-        proposal.state =
-          error instanceof DispatchError && error.code === 'uncertain' ? 'uncertain' : 'failed'
-        proposal.message = `${message} Last confirmed step: ${proposal.checkpoints.at(-1) ?? 'none'}. Partial sessions, branches, and checkouts are retained.`
-      }).catch(() => undefined)
+      try {
+        await this.checkpoint(record.id, (proposal) => {
+          // Native identities are known before their checkpoint write. Preserve
+          // them even when that write failed; never replay an uncertain effect.
+          if (record.workerSessionId) proposal.workerSessionId = record.workerSessionId
+          if (record.worktree) proposal.worktree = record.worktree
+          proposal.state =
+            record.workerSessionId ||
+            proposal.checkpoints.includes('delivered') ||
+            (isRecord(error) && error.code === 'unknown-state') ||
+            (error instanceof DispatchError && error.code === 'uncertain')
+              ? 'uncertain'
+              : 'failed'
+          proposal.message = `${message} Last confirmed step: ${proposal.checkpoints.at(-1) ?? 'none'}. Partial sessions, branches, and checkouts are retained.`
+        })
+      } catch (diagnosticError) {
+        const artifacts = JSON.stringify({
+          proposalId: record.id,
+          workerSessionId: record.workerSessionId ?? record.payload.workerSessionId,
+          worktree: record.worktree,
+        })
+        const reason =
+          diagnosticError instanceof Error ? diagnosticError.message : 'Unknown failure.'
+        const warn = this.options.warn ?? console.warn
+        warn(
+          `Dispatch could not persist its uncertain outcome: ${message} ${artifacts}. Diagnostic write failed: ${reason}`.slice(
+            0,
+            8000,
+          ),
+        )
+      }
     }
   }
 
@@ -646,82 +670,89 @@ export class DispatchService {
     if (!worktrees) throw new DispatchError('unavailable', 'DSH Git Worktrees is not mounted.')
     this.requireRetention()
     // 1. Ordinary session, dispatch-worker preset. Its guard denies every tool until admission.
-    const workerId = await this.options.sessions.create({
+    this.fence()
+    const createdSession = await this.options.sessions.create({
       cwd: base.repositoryRoot,
       preset: payload.preset,
     })
+    const workerId = createdSession.sessionId
+    record.workerSessionId = workerId
     await this.checkpoint(record.id, (proposal) => {
       proposal.workerSessionId = workerId
       proposal.checkpoints.push('session-created')
     })
+    if (createdSession.agentPreset !== undefined && createdSession.agentPreset !== payload.preset)
+      throw new DispatchError(
+        'uncertain',
+        `Session ${workerId} was created with preset ${createdSession.agentPreset}, not ${payload.preset}.`,
+      )
     if (signal.aborted)
       throw new DispatchError(
         'uncertain',
         'Dispatch stopped right after creating the worker session; no worktree was created.',
       )
     const worker = await this.options.sessions.resolve(workerId)
-    // The approved route is pinned on this session only; the Host default is never saved.
-    try {
-      await this.options.sessions.selectModel(worker, payload.model)
-    } catch (error) {
-      throw new DispatchError(
-        'uncertain',
-        `The approved model could not be selected: ${error instanceof Error ? error.message : 'unknown error'}.`,
-      )
-    }
-    // 2. Native worktree, created by the worker Agent so only its directory changes.
-    let created
-    try {
-      created = await worktrees.create(worker, { name: payload.branch!, from: base.commit }, signal)
-    } catch (error) {
-      throw new DispatchError(
-        'uncertain',
-        `Worktree creation failed: ${error instanceof Error ? error.message : 'unknown error'}.`,
-      )
-    }
-    await this.checkpoint(record.id, (proposal) => {
-      proposal.worktree = created
-      proposal.checkpoints.push('worktree-created')
-    })
-    // 3. Verify actual Git registration and the worker's effective directory.
-    const identity = await this.checkout(worker)
-    const repositories = this.options.repositories
-    if (
-      !identity.linked ||
-      !identity.registered ||
-      identity.provider !== base.provider ||
-      identity.worktreePath !== (await repositories.canonical(created.path)) ||
-      identity.branch !== payload.branch ||
-      identity.head !== base.commit ||
-      identity.repositoryRoot !== (await repositories.canonical(base.repositoryRoot))
-    )
-      throw new DispatchError(
-        'uncertain',
-        'The new worker is not on the approved linked worktree, branch, and base.',
-      )
-    await this.checkpoint(record.id, (proposal) => proposal.checkpoints.push('verified'))
-    // 4–5. Claim exclusively and deliver the attributed first message in one admission.
     const coordinator = await this.options.sessions.resolve(record.coordinatorId)
-    await this.options.store.transaction(async (tables) => {
-      this.requireRetention()
-      const claim = this.planClaim(tables, record, worker, identity)
-      await this.applyClaim(tables, claim)
-      await this.pushCheckpoint(tables, record.id, 'claimed')
-      this.deliverAssignment(record, coordinator, worker)
-      await this.pushCheckpoint(tables, record.id, 'delivered')
-    })
+    await this.options.sessions.reserve(
+      worker,
+      signal,
+      async (reservation) => {
+        // The approved route is pinned on this session only; the Host default is never saved.
+        await this.options.sessions.selectModel(worker, payload.model)
+        reservation.check()
+        // 2. Native worktree, created by the worker Agent so only its directory changes.
+        let created
+        try {
+          created = await worktrees.create(
+            worker,
+            { name: payload.branch!, from: base.commit },
+            reservation.signal,
+          )
+        } catch (error) {
+          throw new DispatchError(
+            'uncertain',
+            `Worktree creation failed: ${error instanceof Error ? error.message : 'unknown error'}.`,
+          )
+        }
+        record.worktree = created
+        await this.checkpoint(record.id, (proposal) => {
+          proposal.worktree = created
+          proposal.checkpoints.push('worktree-created')
+        })
+        reservation.check()
+        // 3. Verify actual Git registration while native turns remain reserved.
+        const identity = await this.checkout(worker, reservation.signal)
+        const repositories = this.options.repositories
+        if (
+          !identity.linked ||
+          !identity.registered ||
+          identity.provider !== base.provider ||
+          identity.worktreePath !==
+            (await repositories.canonical(created.path, reservation.signal)) ||
+          identity.branch !== payload.branch ||
+          identity.head !== base.commit ||
+          identity.repositoryRoot !==
+            (await repositories.canonical(base.repositoryRoot, reservation.signal))
+        )
+          throw new DispatchError(
+            'uncertain',
+            'The new worker is not on the approved linked worktree, branch, and base.',
+          )
+        reservation.check()
+        await this.checkpoint(record.id, (proposal) => proposal.checkpoints.push('verified'))
+        await this.options.store.transaction((tables) =>
+          this.admitAssignment(tables, record, coordinator, worker, identity, reservation),
+        )
+      },
+      { allowWorktreeDirectoryNotice: true },
+    )
     this.notify(record.coordinatorId)
   }
 
   /**
-   * Adoption or new assignment: every check and the claim, closure of the
-   * previous assignment, and delivery happen in one serialized admission, so no
-   * release, claim, or report can interleave between verification and effect.
-   * The store lock does not stop a native turn from starting during awaited
-   * inspection or writes, so the live session is re-checked synchronously
-   * immediately before delivery, with no await between that check and the
-   * effect. If it became active, the claim's records are restored inside the
-   * same admission and nothing is delivered.
+   * Store serialization excludes competing Dispatch operations; native
+   * maintenance excludes turns across checkout inspection and awaited writes.
+   * UI input can still queue, so reservation checks also inspect both inboxes.
    */
   private async claimExisting(record: ProposalRecord) {
     const workerId = record.payload.workerSessionId!
@@ -729,41 +760,27 @@ export class DispatchService {
     const coordinator = await this.options.sessions.resolve(record.coordinatorId)
     await this.options.store.transaction(async (tables) => {
       const worker = await this.options.sessions.resolve(workerId)
-      if (!this.options.sessions.quiescent(worker))
-        throw new DispatchError(
-          'ineligible',
-          'The session became active or has queued input after review; nothing was applied.',
+      await this.options.sessions.reserve(worker, this.lifetime.signal, async (reservation) => {
+        this.requireRetention()
+        const identity = await this.checkout(worker, reservation.signal)
+        reservation.check()
+        if (
+          !identity.linked ||
+          !identity.registered ||
+          identity.provider !== target.provider ||
+          identity.worktreeKey !== target.worktreeKey ||
+          identity.worktreePath !== target.worktreePath ||
+          identity.repositoryRoot !== target.repositoryRoot ||
+          identity.branch !== target.branch ||
+          identity.head !== target.head
         )
-      this.requireRetention()
-      const identity = await this.checkout(worker)
-      if (
-        !identity.linked ||
-        !identity.registered ||
-        identity.provider !== target.provider ||
-        identity.worktreeKey !== target.worktreeKey ||
-        identity.worktreePath !== target.worktreePath ||
-        identity.repositoryRoot !== target.repositoryRoot ||
-        identity.branch !== target.branch ||
-        identity.head !== target.head
-      )
-        throw new DispatchError(
-          'ineligible',
-          'The session is no longer on the reviewed repository, checkout, branch, and commit; nothing was applied.',
-        )
-      await this.pushCheckpoint(tables, record.id, 'verified')
-      const claim = this.planClaim(tables, record, worker, identity)
-      await this.applyClaim(tables, claim)
-      // Final effect boundary: synchronous check, then the synchronous effect.
-      if (!this.options.sessions.quiescent(worker)) {
-        await this.revertClaim(tables, claim)
-        throw new DispatchError(
-          'ineligible',
-          'The session became active or received input while Dispatch verified it; nothing was delivered and the previous assignment is unchanged.',
-        )
-      }
-      this.deliverAssignment(record, coordinator, worker)
-      await this.pushCheckpoint(tables, record.id, 'claimed')
-      await this.pushCheckpoint(tables, record.id, 'delivered')
+          throw new DispatchError(
+            'ineligible',
+            'The session is no longer on the reviewed repository, checkout, branch, and commit; nothing was applied.',
+          )
+        await this.pushCheckpoint(tables, record.id, 'verified')
+        await this.admitAssignment(tables, record, coordinator, worker, identity, reservation)
+      })
     })
     this.notify(record.coordinatorId)
   }
@@ -775,17 +792,13 @@ export class DispatchService {
     await tables.proposals.put(id, proposal)
   }
 
-  /**
-   * Synchronous ownership checks and the records a claim writes; nothing is
-   * written here. Must run inside a store transaction, followed by the effect
-   * and then `applyClaim` in the same transaction.
-   */
-  private planClaim(
+  /** Build the one authoritative worker/task record after serialized ownership checks. */
+  private pendingWorker(
     tables: Tables,
     record: ProposalRecord,
     worker: AgentLike,
     identity: CheckoutIdentity,
-  ): ClaimPlan {
+  ): WorkerRecord {
     const existing = tables.workers.get(worker.id)
     if (
       this.generationOf(tables, worker.id) !==
@@ -801,33 +814,8 @@ export class DispatchService {
       if (other.workerId !== worker.id && this.sameCheckout(other, identity))
         throw new DispatchError('conflict', 'Another managed session already uses this checkout.')
     const now = this.stamp()
-    // A new assignment supersedes the previous one; its closure is permanent.
-    let superseded: AssignmentRecord | undefined
-    if (existing && !existing.released) {
-      const previous = tables.assignments.get(existing.assignmentId)
-      if (previous && previous.closedAt === undefined)
-        superseded = { ...previous, closedAt: now, closedBy: 'superseded' }
-    }
-    const next: WorkerRecord = {
-      version: RECORD_VERSION,
-      workerId: worker.id,
-      coordinatorId: record.coordinatorId,
-      generation:
-        (existing?.generation ?? 0) +
-        (existing && !existing.released && record.payload.kind === 'assign' ? 0 : 1),
-      originalWorkspace: existing?.originalWorkspace ?? identity.repositoryRoot,
-      provider: identity.provider,
-      worktreeKey: identity.worktreeKey,
-      repositoryRoot: identity.repositoryRoot,
-      worktreePath: identity.worktreePath,
-      branch: identity.branch!,
-      baseCommit: record.payload.base?.commit ?? existing?.baseCommit ?? identity.head ?? '',
-      assignmentId: record.payload.assignmentId,
-      preset: record.payload.preset,
-      verifiedAt: now,
-      ...(existing?.title !== undefined ? { title: existing.title } : {}),
-    }
     const assignment: AssignmentRecord = {
+      admission: 'pending',
       version: RECORD_VERSION,
       id: record.payload.assignmentId,
       workerId: worker.id,
@@ -845,44 +833,99 @@ export class DispatchService {
       updatedAt: now,
     }
     return {
-      worker: next,
+      version: RECORD_VERSION,
+      workerId: worker.id,
+      coordinatorId: record.coordinatorId,
+      generation:
+        (existing?.generation ?? 0) +
+        (existing && !existing.released && record.payload.kind === 'assign' ? 0 : 1),
+      originalWorkspace: existing?.originalWorkspace ?? identity.repositoryRoot,
+      provider: identity.provider,
+      worktreeKey: identity.worktreeKey,
+      repositoryRoot: identity.repositoryRoot,
+      worktreePath: identity.worktreePath,
+      branch: identity.branch!,
+      baseCommit: record.payload.base?.commit ?? existing?.baseCommit ?? identity.head ?? '',
       assignment,
-      ...(superseded ? { superseded } : {}),
-      ...(existing ? { previousWorker: existing } : {}),
+      preset: record.payload.preset,
+      verifiedAt: now,
+      ...(existing?.title !== undefined ? { title: existing.title } : {}),
     }
   }
 
-  private async applyClaim(tables: Tables, plan: ClaimPlan) {
-    if (plan.superseded) await tables.assignments.put(plan.superseded.id, plan.superseded)
-    await tables.workers.put(plan.worker.workerId, plan.worker)
-    await tables.assignments.put(plan.assignment.id, plan.assignment)
-  }
-
   /**
-   * Undo an applied claim within the same admission when the final check
-   * refuses delivery. No other Dispatch operation observed it. The unused new
-   * assignment stays closed; a session that was never managed is left released.
+   * Pending ownership and its task are one atomic record. If UI input arrives
+   * during that write, restore one prior record before native maintenance ends.
+   * Delivery and storage are NOT atomic: failure after enqueue leaves a pending
+   * assignment that grants nothing and is never replayed automatically.
    */
-  private async revertClaim(tables: Tables, plan: ClaimPlan) {
-    try {
-      const now = this.stamp()
-      await tables.assignments.put(plan.assignment.id, {
-        ...plan.assignment,
-        closedAt: now,
-        closedBy: 'coordinator',
-      })
-      if (plan.superseded) {
-        const { closedAt: _closedAt, closedBy: _closedBy, ...restored } = plan.superseded
-        await tables.assignments.put(restored.id, restored)
-      }
-      await tables.workers.put(
-        plan.worker.workerId,
-        plan.previousWorker ?? { ...plan.worker, released: true },
+  private async admitAssignment(
+    tables: Tables,
+    record: ProposalRecord,
+    coordinator: AgentLike,
+    worker: AgentLike,
+    identity: CheckoutIdentity,
+    reservation: IdleReservation,
+  ) {
+    // Check the recorded native preset and created directory at enqueue, not
+    // stale snapshots. This does not make concurrent reconfiguration atomic.
+    const checkWorkerContext = () => {
+      if (this.options.sessions.currentPreset(worker) !== record.payload.preset)
+        throw new DispatchError(
+          'ineligible',
+          'The session no longer uses the approved dispatch-worker preset; nothing was delivered.',
+        )
+      if (
+        record.payload.kind === 'create' &&
+        (!record.worktree ||
+          this.options.sessions.effectiveDirectory(worker) !== record.worktree.path)
       )
+        throw new DispatchError(
+          'ineligible',
+          'The new worker left its created worktree; nothing was delivered.',
+        )
+    }
+    reservation.check()
+    checkWorkerContext()
+    this.requireRetention()
+    const previous = tables.workers.get(worker.id)
+    const next = this.pendingWorker(tables, record, worker, identity)
+    await tables.workers.put(worker.id, next)
+    try {
+      reservation.check()
+      checkWorkerContext()
+    } catch (interrupted) {
+      try {
+        await tables.workers.put(
+          worker.id,
+          previous ?? {
+            ...next,
+            released: true,
+            assignment: { ...next.assignment, closedAt: this.stamp(), closedBy: 'coordinator' },
+          },
+        )
+      } catch (error) {
+        throw new DispatchError(
+          'uncertain',
+          `Nothing was delivered, but restoring the previous worker record failed. Admission remains pending and grants no work: ${error instanceof Error ? error.message : 'unknown error'}.`,
+        )
+      }
+      throw interrupted
+    }
+    try {
+      // No await between the final queue/abort check above and enqueue. Input
+      // arriving after this point follows the accepted assignment normally.
+      this.deliverAssignment(record, coordinator, worker)
+      await tables.workers.put(worker.id, {
+        ...next,
+        assignment: { ...next.assignment, admission: 'admitted' },
+      })
+      await this.pushCheckpoint(tables, record.id, 'claimed')
+      await this.pushCheckpoint(tables, record.id, 'delivered')
     } catch (error) {
       throw new DispatchError(
         'uncertain',
-        `Dispatch refused delivery but could not restore its records: ${error instanceof Error ? error.message : 'unknown error'}.`,
+        `Assignment delivery or its durable confirmation failed. Inspect the worker and proposal; nothing will be replayed: ${error instanceof Error ? error.message : 'unknown error'}.`,
       )
     }
   }
@@ -911,11 +954,11 @@ export class DispatchService {
 
   // ---- managed-session operations ----------------------------------------
 
-  private async checkout(agent: AgentLike): Promise<CheckoutIdentity> {
+  private async checkout(agent: AgentLike, signal?: AbortSignal): Promise<CheckoutIdentity> {
     const directory = this.options.sessions.effectiveDirectory(agent)
     if (!directory)
       throw new DispatchError('ineligible', 'The session has no effective working directory.')
-    const identity = await this.options.repositories.inspect(agent.session, directory)
+    const identity = await this.options.repositories.inspect(agent.session, directory, signal)
     if (!identity)
       throw new DispatchError('ineligible', 'The session is not inside a Git repository.')
     return identity
@@ -945,10 +988,24 @@ export class DispatchService {
     return worker.provider === identity.provider && worker.worktreeKey === identity.worktreeKey
   }
 
-  /** Verify the worker is still on its claimed linked worktree before any targeted operation. */
-  private async eligible(worker: WorkerRecord, agent: AgentLike) {
+  /**
+   * Inspect one directory snapshot. Active workers remain active; a final
+   * synchronous guard rejects a cwd move during inspection or before the effect.
+   * This does not reserve Git state or exclude external filesystem changes.
+   */
+  private async eligible(
+    worker: WorkerRecord,
+    agent: AgentLike,
+  ): Promise<
+    { eligible: false; reason: string } | { eligible: true; reason: string; assertCurrent(): void }
+  > {
     try {
-      const identity = await this.checkout(agent)
+      const directory = this.options.sessions.effectiveDirectory(agent)
+      if (!directory)
+        throw new DispatchError('ineligible', 'The session has no effective working directory.')
+      const identity = await this.options.repositories.inspect(agent.session, directory)
+      if (!identity)
+        throw new DispatchError('ineligible', 'The session is not inside a Git repository.')
       if (!this.sameCheckout(worker, identity))
         return {
           eligible: false,
@@ -959,7 +1016,15 @@ export class DispatchService {
           eligible: false,
           reason: 'The session is no longer on a registered linked worktree.',
         }
-      return { eligible: true, reason: 'On its assigned linked worktree.' }
+      const assertCurrent = () => {
+        if (this.options.sessions.effectiveDirectory(agent) !== directory)
+          throw new DispatchError(
+            'ineligible',
+            'The session working directory changed during checkout verification; nothing was applied.',
+          )
+      }
+      assertCurrent()
+      return { eligible: true, reason: 'On its assigned linked worktree.', assertCurrent }
     } catch (error) {
       return {
         eligible: false,
@@ -1011,9 +1076,9 @@ export class DispatchService {
       const worker = this.ownedWorker(tables, coordinatorId, id)
       const report = tables.reports
         .values()
-        .filter((entry) => entry.workerId === id && entry.assignmentId === worker.assignmentId)
+        .filter((entry) => entry.workerId === id && entry.assignmentId === worker.assignment.id)
         .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))[0]
-      return { worker, assignment: tables.assignments.get(worker.assignmentId), report }
+      return { worker, assignment: worker.assignment, report }
     })
     let runtime = 'unavailable'
     let check = { eligible: false, reason: 'The session is unavailable.' }
@@ -1031,16 +1096,19 @@ export class DispatchService {
       worktreePath: worker.worktreePath,
       repositoryRoot: worker.repositoryRoot,
       baseCommit: worker.baseCommit,
-      assignmentId: worker.assignmentId,
-      workState: assignment?.workState ?? 'working',
-      assignmentOpen: assignment !== undefined && assignment.closedAt === undefined,
-      summary: assignment?.summary ?? '',
-      stateSource: assignment?.stateSource ?? 'coordinator',
-      evidence: assignment?.evidence ?? [],
-      updatedAt: assignment?.updatedAt ?? worker.verifiedAt,
+      assignmentId: worker.assignment.id,
+      workState: assignment.workState,
+      assignmentOpen: assignment.admission === 'admitted' && assignment.closedAt === undefined,
+      summary: assignment.summary,
+      stateSource: assignment.stateSource,
+      evidence: assignment.evidence,
+      updatedAt: assignment.updatedAt,
       runtime,
       eligible: check.eligible,
-      eligibility: check.reason,
+      eligibility:
+        assignment.admission === 'pending'
+          ? `${check.reason} Assignment admission is pending and grants no work; inspect its proposal.`
+          : check.reason,
       ...(report
         ? {
             lastReport: { kind: report.kind, summary: report.summary, createdAt: report.createdAt },
@@ -1059,7 +1127,7 @@ export class DispatchService {
   private admit<T>(
     coordinator: AgentLike,
     workerId: unknown,
-    effect: (context: { worker: WorkerRecord; live: AgentLike; tables: Tables }) => T | Promise<T>,
+    effect: (context: { worker: WorkerRecord; live: AgentLike }) => T | Promise<T>,
   ): Promise<T> {
     const id = bounded(workerId, 'workerId', 200)!
     return this.options.store.transaction(async (tables) => {
@@ -1074,10 +1142,11 @@ export class DispatchService {
         current.released ||
         current.coordinatorId !== coordinator.id ||
         current.generation !== worker.generation ||
-        current.assignmentId !== worker.assignmentId
+        current.assignment.id !== worker.assignment.id
       )
         throw new DispatchError('conflict', 'Dispatch ownership changed; nothing was sent.')
-      return effect({ worker: current, live, tables })
+      check.assertCurrent()
+      return effect({ worker: current, live })
     })
   }
 
@@ -1099,14 +1168,18 @@ export class DispatchService {
     const mode = input.mode === undefined ? 'queue' : input.mode
     if (mode !== 'queue' && mode !== 'steer')
       throw new DispatchError('invalid', 'Use mode queue or steer.')
-    return this.admit(coordinator, input.workerId, ({ worker, live, tables }) => {
-      if (input.assignmentId !== worker.assignmentId)
+    return this.admit(coordinator, input.workerId, ({ worker, live }) => {
+      if (input.assignmentId !== worker.assignment.id)
         throw new DispatchError(
           'conflict',
           'That assignment is not current for this worker. Start new work with dispatch_send_message in new-assignment mode.',
         )
-      const assignment = tables.assignments.get(worker.assignmentId)
-      if (!assignment) throw new DispatchError('not-found', 'The assignment record is missing.')
+      const assignment = worker.assignment
+      if (assignment.admission !== 'admitted')
+        throw new DispatchError(
+          'uncertain',
+          'Assignment admission is pending; no follow-up was sent.',
+        )
       if (assignment.closedAt !== undefined)
         throw new DispatchError(
           'conflict',
@@ -1114,7 +1187,7 @@ export class DispatchService {
         )
       const envelope = agentMessage(
         coordinator,
-        `Dispatch follow-up for assignment ${worker.assignmentId} from coordinator session ${coordinator.id}. Escalate with dispatch_report if this changes the assignment's scope.`,
+        `Dispatch follow-up for assignment ${worker.assignment.id} from coordinator session ${coordinator.id}. Escalate with dispatch_report if this changes the assignment's scope.`,
         message,
       )
       this.options.sessions.deliver(live, envelope, mode)
@@ -1184,9 +1257,8 @@ export class DispatchService {
       throw new DispatchError('invalid', 'Unknown work state.')
     await this.options.store.transaction(async (tables) => {
       const worker = this.ownedWorker(tables, coordinator.id, workerId)
+      let assignment = worker.assignment
       if (workState !== undefined || summary !== undefined) {
-        const assignment = tables.assignments.get(worker.assignmentId)
-        if (!assignment) throw new DispatchError('not-found', 'The assignment record is missing.')
         if (workState !== undefined && assignment.closedAt !== undefined)
           throw new DispatchError(
             'conflict',
@@ -1194,16 +1266,20 @@ export class DispatchService {
           )
         const now = this.stamp()
         const closing = workState === 'done' || workState === 'failed'
-        await tables.assignments.put(assignment.id, {
+        assignment = {
           ...assignment,
           ...(workState !== undefined ? { workState } : {}),
           ...(summary !== undefined ? { summary: `[coordinator] ${summary}` } : {}),
           ...(closing ? { closedAt: now, closedBy: 'coordinator' as const } : {}),
           stateSource: 'coordinator',
           updatedAt: now,
-        })
+        }
       }
-      if (title !== undefined) await tables.workers.put(workerId, { ...worker, title })
+      await tables.workers.put(workerId, {
+        ...worker,
+        assignment,
+        ...(title !== undefined ? { title } : {}),
+      })
     })
     this.notify(coordinator.id)
     return this.status(coordinator, workerId)
@@ -1239,25 +1315,29 @@ export class DispatchService {
           'conflict',
           'A proposal for this worker is still pending or executing.',
         )
-      for (const report of tables.reports.values())
-        if (report.workerId === workerId && report.delivery === 'pending')
-          await tables.reports.put(report.id, {
-            ...report,
-            delivery: 'dropped',
-            dropReason: 'Worker released.',
-          })
-      const assignment = tables.assignments.get(worker.assignmentId)
-      if (assignment && assignment.closedAt === undefined)
-        await tables.assignments.put(assignment.id, {
-          ...assignment,
-          closedAt: this.stamp(),
-          closedBy: 'coordinator',
+      const release = async (reservation?: IdleReservation) => {
+        for (const report of tables.reports.values())
+          if (report.workerId === workerId && report.delivery === 'pending')
+            await tables.reports.put(report.id, {
+              ...report,
+              delivery: 'dropped',
+              dropReason: 'Worker released.',
+            })
+        reservation?.check()
+        this.fence()
+        const assignment = worker.assignment
+        await tables.workers.put(workerId, {
+          ...worker,
+          assignment:
+            assignment.closedAt !== undefined
+              ? assignment
+              : { ...assignment, closedAt: this.stamp(), closedBy: 'coordinator' },
+          released: true,
+          generation: worker.generation + 1,
         })
-      await tables.workers.put(workerId, {
-        ...worker,
-        released: true,
-        generation: worker.generation + 1,
-      })
+      }
+      if (live) await this.options.sessions.reserve(live, this.lifetime.signal, release)
+      else await release()
     })
     this.notify(coordinator.id)
     return { released: true, retained: ['session', 'history', 'branch', 'checkout'] }
@@ -1271,13 +1351,15 @@ export class DispatchService {
     return worker !== undefined && !worker.released
   }
 
-  /** Synchronous: a session being provisioned has an executing create proposal without a claim yet. */
+  /** Pending admission grants no tools, including after an uncertain outcome or restart. */
   isProvisioning(agentId: string): boolean {
+    const worker = this.options.store.tables.workers.get(agentId)
+    if (worker) return !worker.released && worker.assignment.admission === 'pending'
     return this.options.store.tables.proposals
       .values()
       .some(
         (proposal) =>
-          proposal.state === 'executing' &&
+          ['executing', 'uncertain'].includes(proposal.state) &&
           proposal.workerSessionId === agentId &&
           !proposal.checkpoints.includes('claimed'),
       )
@@ -1316,13 +1398,17 @@ export class DispatchService {
           'forbidden',
           'This session has no approved Dispatch assignment to report on.',
         )
-      if (current.assignmentId !== assignmentId)
+      if (current.assignment.id !== assignmentId)
         throw new DispatchError(
           'conflict',
           `Assignment ${assignmentId} is not this session's current Dispatch assignment; the report was not accepted.`,
         )
-      const assignment = tables.assignments.get(assignmentId)
-      if (!assignment) throw new DispatchError('not-found', 'The assignment record is missing.')
+      const assignment = current.assignment
+      if (assignment.admission !== 'admitted')
+        throw new DispatchError(
+          'uncertain',
+          'Assignment admission is pending; the report was not accepted.',
+        )
       if (assignment.closedAt !== undefined)
         throw new DispatchError(
           'conflict',
@@ -1343,16 +1429,20 @@ export class DispatchService {
         createdAt: this.stamp(),
         delivery: 'pending',
       }
+      check.assertCurrent()
       await tables.reports.put(record.id, record)
       const closing = kind === 'done' || kind === 'failed'
-      await tables.assignments.put(assignment.id, {
-        ...assignment,
-        workState: reportWorkState(kind),
-        summary,
-        evidence: evidence as string[],
-        stateSource: 'worker',
-        updatedAt: record.createdAt,
-        ...(closing ? { closedAt: record.createdAt, closedBy: 'worker' as const } : {}),
+      await tables.workers.put(current.workerId, {
+        ...current,
+        assignment: {
+          ...assignment,
+          workState: reportWorkState(kind),
+          summary,
+          evidence: evidence as string[],
+          stateSource: 'worker',
+          updatedAt: record.createdAt,
+          ...(closing ? { closedAt: record.createdAt, closedBy: 'worker' as const } : {}),
+        },
       })
       return record
     })
@@ -1488,19 +1578,19 @@ export class DispatchService {
     try {
       const live = await this.options.sessions.resolve(id)
       const identity = await this.checkout(live)
-      const eligible =
-        identity.linked && identity.registered && live.session.header.agentPreset === WORKER_PRESET
+      const preset = this.options.sessions.currentPreset(live)
+      const eligible = identity.linked && identity.registered && preset === WORKER_PRESET
       return {
         sessionId: id,
         managed: false,
         ownedByYou: false,
         eligible,
-        preset: live.session.header.agentPreset ?? 'unknown',
+        preset: preset ?? 'unknown',
         runtime: live.status ?? 'unknown',
         branch: identity.branch,
         reason: eligible
           ? 'Eligible for reviewed adoption.'
-          : live.session.header.agentPreset !== WORKER_PRESET
+          : preset !== WORKER_PRESET
             ? 'Only dispatch-worker sessions can be adopted.'
             : 'Not on its own registered linked worktree.',
       }
