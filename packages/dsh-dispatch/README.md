@@ -22,6 +22,12 @@ New workers join an existing native workspace whose canonical directory matches 
 
 Adopting an existing session (`dispatch_add_session`) and giving a worker a new assignment (`dispatch_send_message` with `newAssignment`) use the same card and approval path. Both require an idle worker with nothing queued, bind the approval to the exact reviewed repository, checkout, branch, and commit (shown on the card), and refuse any drift at execution. Approving a new assignment closes the previous one.
 
+### Sidebar roles
+
+Session rows show **D** for the `dispatch` coordinator preset and **W** for `dispatch-worker`. Hover a row to see its full role and preset ID. Native row actions hide the trailing marker while the row is hovered or focused; activity indicators, pin markers, menus, navigation, and titles stay unchanged.
+
+These are display hints from the native session list's last-known preset metadata, not proof of assignment, ownership, or activity. Missing, regular, and unrecognized presets stay unmarked. Reading a role does not bind, retain, or wake the session and makes no Dispatch RPC call.
+
 ## Authority and isolation
 
 - **User-only decisions.** The card decides through the `/local-dispatch` Connection RPC channel. Connection authenticates the signed browser credential (or an API credential) and the handler accepts only the `owner` principal. The browser sends only the proposal identity, its digest, and the decision, never a prompt, model, or target. There is no agent-callable approval or ownership tool, and permissive session approval policies do not apply.

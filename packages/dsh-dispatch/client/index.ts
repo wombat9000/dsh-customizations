@@ -7,6 +7,8 @@ import type { Request } from './card.js'
 import { WorkersCard, WorkersView } from './workers.js'
 import { ProposalTurnTail } from './turn-tail.js'
 import type { TurnTailProps } from './turn-tail.js'
+import { SidebarRoleIcon, SidebarRoleHover } from './sidebar-role.js'
+import type { SidebarRoleProps } from './sidebar-role.js'
 
 interface ClientContext {
   get?(name: string): unknown
@@ -15,7 +17,13 @@ interface ClientContext {
     register<P>(
       seat:
         | { name: 'tool.call.toolview'; key: string }
-        | { name: 'conversation.chat.turnTail'; id: string },
+        | {
+            name:
+              | 'conversation.chat.turnTail'
+              | 'sidebar.session.row.trailing'
+              | 'sidebar.session.row.hover'
+            id: string
+          },
       component: ComponentType<P>,
     ): unknown
   }
@@ -52,6 +60,18 @@ export default {
   WorkersView,
   validStatus,
   apply(ctx: ClientContext) {
+    ctx.slots.inject('sidebar.session.row.trailing', () =>
+      ctx.slots.register<SidebarRoleProps>(
+        { name: 'sidebar.session.row.trailing', id: 'local-dispatch-role' },
+        SidebarRoleIcon,
+      ),
+    )
+    ctx.slots.inject('sidebar.session.row.hover', () =>
+      ctx.slots.register<SidebarRoleProps>(
+        { name: 'sidebar.session.row.hover', id: 'local-dispatch-role' },
+        SidebarRoleHover,
+      ),
+    )
     const request = createRequest(ctx)
     // Native Session navigation when the workspace UI is mounted; otherwise no control.
     const workspace = () =>

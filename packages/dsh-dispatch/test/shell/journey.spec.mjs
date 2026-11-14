@@ -1,5 +1,5 @@
 import { join } from 'node:path'
-import { test, expect } from '../../../../tests/real-ui/fixtures.mjs'
+import { test, expect, setTheme } from '../../../../tests/real-ui/fixtures.mjs'
 import { INTENT, START } from './fixture/index.mjs'
 
 // Real DSH shell, real agent loops for both sessions, and a real Git worktree.
@@ -119,6 +119,13 @@ test('coordinator proposes, the user approves, the worker reports back, and stat
     .filter({ has: page.getByText(INTENT, { exact: true }) })
   await test.step('the named worker belongs to the repository workspace, not Ungrouped', async () => {
     await expect(workerRow).toBeVisible()
+    await expect(workerRow.getByRole('img', { name: 'Dispatch Worker', exact: true })).toBeVisible()
+    await expect(
+      page.getByRole('treeitem', { name: 'Dispatch fixture' }).getByRole('img', {
+        name: 'Dispatch coordinator',
+        exact: true,
+      }),
+    ).toBeVisible()
     await expect(repositoryRow).toHaveAttribute('aria-expanded', 'true')
     // Collapse the real native workspace: a loose session would remain visible.
     await repositoryRow.click()
@@ -126,6 +133,33 @@ test('coordinator proposes, the user approves, the worker reports back, and stat
     await expect(workerRow).toBeHidden()
     await repositoryRow.click()
     await expect(workerRow).toBeVisible()
+  })
+
+  await test.step('native row roles and hover details work in both themes', async () => {
+    const coordinatorRow = page.getByRole('treeitem', { name: 'Dispatch fixture' })
+    const workerIcon = workerRow.getByRole('img', { name: 'Dispatch Worker', exact: true })
+    const coordinatorIcon = coordinatorRow.getByRole('img', {
+      name: 'Dispatch coordinator',
+      exact: true,
+    })
+    try {
+      for (const scheme of ['light', 'dark']) {
+        await setTheme(page, scheme)
+        await card.getByRole('heading').hover()
+        await expect(workerIcon).toBeVisible()
+        await expect(coordinatorIcon).toBeVisible()
+        await evidence(page, testInfo, `sidebar-roles-${scheme}`)
+        await workerRow.hover()
+        await expect(page.getByText('Preset: dispatch-worker', { exact: true })).toBeVisible()
+        // Native row actions hide trailing decorations on hover, not our own CSS.
+        await expect(workerIcon).toBeHidden()
+        await evidence(page, testInfo, `sidebar-role-hover-${scheme}`)
+        await coordinatorRow.hover()
+        await expect(page.getByText('Preset: dispatch', { exact: true })).toBeVisible()
+      }
+    } finally {
+      await setTheme(page, 'light')
+    }
   })
 
   const workers = page.getByRole('region', { name: 'Dispatch workers' })
@@ -152,6 +186,15 @@ test('coordinator proposes, the user approves, the worker reports back, and stat
   await test.step('a fresh page load reads the outcome back from the Host', async () => {
     await page.reload()
     await expect(workerRow).toBeVisible()
+    await expect(
+      workerRow.getByRole('img', { name: 'Dispatch Worker', exact: true }),
+    ).toBeAttached()
+    await expect(
+      page.getByRole('treeitem', { name: 'Dispatch fixture' }).getByRole('img', {
+        name: 'Dispatch coordinator',
+        exact: true,
+      }),
+    ).toBeAttached()
     await repositoryRow.click()
     await expect(workerRow).toBeHidden()
     await repositoryRow.click()

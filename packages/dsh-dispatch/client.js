@@ -355,6 +355,46 @@ function ProposalTurnTail({ sessionId, turn, useChat, request, openSession }) {
 }
 
 //#endregion
+//#region client/sidebar-role.tsx
+const coordinator = {
+	mark: "D",
+	label: "Dispatch coordinator",
+	preset: "dispatch"
+};
+const worker = {
+	mark: "W",
+	label: "Dispatch Worker",
+	preset: "dispatch-worker"
+};
+function useRole({ sessionId, useSessions }) {
+	const preset = useSessions((state) => state.byId[sessionId]?.projectionValues?.agentPreset);
+	return preset === "dispatch" ? coordinator : preset === "dispatch-worker" ? worker : null;
+}
+function SidebarRoleIcon(props) {
+	const role = useRole(props);
+	return role ? /* @__PURE__ */ react.default.createElement("span", {
+		role: "img",
+		"aria-label": role.label,
+		style: {
+			display: "inline-grid",
+			placeItems: "center",
+			boxSizing: "border-box",
+			width: 16,
+			height: 16,
+			border: "1px solid currentColor",
+			borderRadius: 3,
+			fontSize: 10,
+			lineHeight: 1,
+			fontWeight: 600
+		}
+	}, role.mark) : null;
+}
+function SidebarRoleHover(props) {
+	const role = useRole(props);
+	return role ? /* @__PURE__ */ react.default.createElement("div", null, /* @__PURE__ */ react.default.createElement("div", null, role.label), /* @__PURE__ */ react.default.createElement("div", null, "Preset: ", /* @__PURE__ */ react.default.createElement("code", null, role.preset))) : null;
+}
+
+//#endregion
 //#region client/index.ts
 function createRequest(ctx) {
 	return async (endpoint, input, signal) => {
@@ -371,6 +411,14 @@ var client_default = {
 	WorkersView,
 	validStatus,
 	apply(ctx) {
+		ctx.slots.inject("sidebar.session.row.trailing", () => ctx.slots.register({
+			name: "sidebar.session.row.trailing",
+			id: "local-dispatch-role"
+		}, SidebarRoleIcon));
+		ctx.slots.inject("sidebar.session.row.hover", () => ctx.slots.register({
+			name: "sidebar.session.row.hover",
+			id: "local-dispatch-role"
+		}, SidebarRoleHover));
 		const request = createRequest(ctx);
 		const workspace = () => ctx.get?.("uiWorkspace");
 		const openSession = (sessionId) => workspace()?.openSession(sessionId);
