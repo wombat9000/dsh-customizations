@@ -9,6 +9,7 @@ import type {
   SessionEventLike,
   UserMessageLike,
   WorkingDirectoryLike,
+  WorkspaceRegistryLike,
 } from './types.js'
 import { isRecord, isTopLevel } from './types.js'
 
@@ -96,16 +97,19 @@ export class Sessions {
   private readonly directories: () => WorkingDirectoryLike | undefined
   private readonly llm: () => LlmLike | undefined
   private readonly presets: () => AgentPresetsLike | undefined
+  private readonly workspaces: () => WorkspaceRegistryLike | undefined
   constructor(
     controller: () => SessionControllerLike | undefined,
     directories: () => WorkingDirectoryLike | undefined,
     llm: () => LlmLike | undefined = () => undefined,
     presets: () => AgentPresetsLike | undefined = () => undefined,
+    workspaces: () => WorkspaceRegistryLike | undefined = () => undefined,
   ) {
     this.controller = controller
     this.directories = directories
     this.llm = llm
     this.presets = presets
+    this.workspaces = workspaces
   }
 
   private requireController() {
@@ -133,6 +137,24 @@ export class Sessions {
       cwd: input.cwd,
       agentPreset: input.preset,
     })
+  }
+
+  /**
+   * Configure only a newly created worker, after its native identity is checkpointed.
+   * The approved repository root and native workspace paths are canonical. Never
+   * create a workspace or infer membership from the worker's later worktree cwd.
+   * A headless Host or unmatched root keeps the ordinary ungrouped session.
+   */
+  async configureNewWorker(sessionId: string, repositoryRoot: string, intent: string) {
+    const controller = this.requireController()
+    if (!controller.rename)
+      throw new DispatchError('unavailable', 'This DSH build cannot name the new worker session.')
+    const workspace = this.workspaces()
+      ?.list()
+      .find((entry) => entry.path === repositoryRoot)
+    if (workspace) await workspace.attachSession(sessionId)
+    // Native rename owns sanitization, byte limits, and the logged title event.
+    await controller.rename({ sessionId, title: intent })
   }
 
   /**

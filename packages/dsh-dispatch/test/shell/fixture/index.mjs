@@ -17,6 +17,7 @@ export const inject = ['llm']
 export const PROVIDER = 'dispatch-fixture'
 export const MODEL = 'scripted'
 export const START = 'Start the fixture worker.'
+export const INTENT = 'Review the fixture README'
 
 const ASSIGNMENT = /Dispatch assignment ([0-9a-f-]{36})/u
 
@@ -87,7 +88,7 @@ export function script(messages, repository) {
       return {
         tool: 'dispatch_create_session',
         args: {
-          intent: 'Review the fixture README',
+          intent: INTENT,
           prompt: 'Review README.md and report back with dispatch_report.',
           base,
           branch: 'dispatch/journey',

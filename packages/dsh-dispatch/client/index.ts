@@ -5,13 +5,17 @@ import type { RpcEndpoints, RpcResult } from '../shared/contracts.js'
 import { ProposalCard, ProposalView, validStatus } from './card.js'
 import type { Request } from './card.js'
 import { WorkersCard, WorkersView } from './workers.js'
+import { ProposalTrace, ProposalTurnTail } from './turn-tail.js'
+import type { TraceProps, TurnTailProps } from './turn-tail.js'
 
 interface ClientContext {
   get?(name: string): unknown
   slots: {
     inject(name: string, callback: () => unknown): unknown
     register<P>(
-      seat: { name: string; key: string; inject?: (...args: string[]) => Partial<P> },
+      seat:
+        | { name: 'tool.call.toolview'; key: string }
+        | { name: 'conversation.chat.turnTail'; id: string },
       component: ComponentType<P>,
     ): unknown
   }
@@ -54,11 +58,20 @@ export default {
       ctx.get?.('uiWorkspace') as { openSession(sessionId: string): void } | undefined
     const openSession = (sessionId: string) => workspace()?.openSession(sessionId)
     const navigation = () => (workspace() ? openSession : undefined)
-    // Keyed by the actual Dispatch tool names; other tool cards and the shared
-    // approval-detail slot are untouched.
-    function Card(props: { sessionId: string; callId: string }) {
-      return React.createElement(ProposalCard, { ...props, request, openSession: navigation() })
+    // A native footer exists only after turn/end. Keep the trace card usable
+    // until then; once the footer exists, it owns the only approval controls.
+    function Card(props: Omit<TraceProps, 'request' | 'openSession'>) {
+      return React.createElement(ProposalTrace, { ...props, request, openSession: navigation() })
     }
+    function TurnTail(props: TurnTailProps) {
+      return React.createElement(ProposalTurnTail, { ...props, request, openSession: navigation() })
+    }
+    ctx.slots.inject('conversation.chat.turnTail', () =>
+      ctx.slots.register<TurnTailProps>(
+        { name: 'conversation.chat.turnTail', id: 'local-dispatch-approvals' },
+        TurnTail,
+      ),
+    )
     function Workers(props: { sessionId: string }) {
       return React.createElement(WorkersCard, {
         sessionId: props.sessionId,
@@ -68,7 +81,7 @@ export default {
     }
     for (const key of CARD_TOOLS)
       ctx.slots.inject('tool.call.toolview', () =>
-        ctx.slots.register<{ sessionId: string; callId: string }>(
+        ctx.slots.register<Omit<TraceProps, 'request' | 'openSession'>>(
           { name: 'tool.call.toolview', key },
           Card,
         ),

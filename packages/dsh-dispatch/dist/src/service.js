@@ -473,6 +473,8 @@ export class DispatchService {
         const worker = await this.options.sessions.resolve(workerId);
         const coordinator = await this.options.sessions.resolve(record.coordinatorId);
         await this.options.sessions.reserve(worker, signal, async (reservation) => {
+            await this.options.sessions.configureNewWorker(workerId, base.repositoryRoot, payload.intent);
+            reservation.check();
             // The approved route is pinned on this session only; the Host default is never saved.
             await this.options.sessions.selectModel(worker, payload.model);
             reservation.check();

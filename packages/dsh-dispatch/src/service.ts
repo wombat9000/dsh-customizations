@@ -697,6 +697,12 @@ export class DispatchService {
       worker,
       signal,
       async (reservation) => {
+        await this.options.sessions.configureNewWorker(
+          workerId,
+          base.repositoryRoot,
+          payload.intent,
+        )
+        reservation.check()
         // The approved route is pinned on this session only; the Host default is never saved.
         await this.options.sessions.selectModel(worker, payload.model)
         reservation.check()
