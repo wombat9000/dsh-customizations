@@ -108,16 +108,10 @@ function ProposalView({ status, busy, error, decide, openSession }) {
 	if (status.workerSessionId) rows.push(["Worker session", status.workerSessionId]);
 	if (status.worktree) rows.push(["Worktree", status.worktree.path]);
 	if (status.checkpoints.length) rows.push(["Completed steps", status.checkpoints.join(", ")]);
-	const compact = [
-		"succeeded",
-		"rejected",
-		"expired"
-	].includes(status.state);
-	const details = /* @__PURE__ */ react.default.createElement(react.default.Fragment, null, /* @__PURE__ */ react.default.createElement("dl", null, rows.map(([label, value]) => /* @__PURE__ */ react.default.createElement(react.default.Fragment, { key: label }, /* @__PURE__ */ react.default.createElement("dt", null, label), /* @__PURE__ */ react.default.createElement("dd", null, value)))), /* @__PURE__ */ react.default.createElement("details", null, /* @__PURE__ */ react.default.createElement("summary", null, "Complete prompt (", status.prompt.length, " characters)"), /* @__PURE__ */ react.default.createElement("pre", null, status.prompt)), /* @__PURE__ */ react.default.createElement("p", { className: "dsp-muted" }, "Observed ", status.observedAt));
 	return /* @__PURE__ */ react.default.createElement("section", {
 		className: "dsp-card",
 		"aria-label": TITLES[status.kind] ?? "Dispatch proposal"
-	}, /* @__PURE__ */ react.default.createElement("style", null, css), /* @__PURE__ */ react.default.createElement("h3", null, TITLES[status.kind] ?? "Dispatch proposal"), /* @__PURE__ */ react.default.createElement("p", null, status.intent), compact ? /* @__PURE__ */ react.default.createElement("details", null, /* @__PURE__ */ react.default.createElement("summary", null, "Review proposal details"), details) : details, /* @__PURE__ */ react.default.createElement("p", {
+	}, /* @__PURE__ */ react.default.createElement("style", null, css), /* @__PURE__ */ react.default.createElement("h3", null, TITLES[status.kind] ?? "Dispatch proposal"), /* @__PURE__ */ react.default.createElement("p", null, status.intent), /* @__PURE__ */ react.default.createElement("dl", null, rows.map(([label, value]) => /* @__PURE__ */ react.default.createElement(react.default.Fragment, { key: label }, /* @__PURE__ */ react.default.createElement("dt", null, label), /* @__PURE__ */ react.default.createElement("dd", null, value)))), /* @__PURE__ */ react.default.createElement("details", null, /* @__PURE__ */ react.default.createElement("summary", null, "Complete prompt (", status.prompt.length, " characters)"), /* @__PURE__ */ react.default.createElement("pre", null, status.prompt)), /* @__PURE__ */ react.default.createElement("p", {
 		className: "dsp-muted",
 		role: "status"
 	}, STATES[status.state] ?? status.state), status.message ? /* @__PURE__ */ react.default.createElement("p", { className: "dsp-muted" }, status.message) : null, error ? /* @__PURE__ */ react.default.createElement("p", {
@@ -135,10 +129,10 @@ function ProposalView({ status, busy, error, decide, openSession }) {
 	}, "Reject")) : null, status.workerSessionId && openSession ? /* @__PURE__ */ react.default.createElement("div", { className: "dsp-actions" }, /* @__PURE__ */ react.default.createElement("button", {
 		type: "button",
 		onClick: () => openSession(status.workerSessionId)
-	}, "Open worker session")) : null);
+	}, "Open worker session")) : null, /* @__PURE__ */ react.default.createElement("p", { className: "dsp-muted" }, "Observed ", status.observedAt));
 }
 /**
-* Tool-view container. Status comes from the Host each time; a reloaded or
+* Status-backed proposal card. A reloaded or
 * historical card shows the stored outcome and can only decide a proposal
 * the Host still holds as pending in this Host lifetime.
 */
@@ -348,20 +342,6 @@ function proposalCalls(data) {
 	}
 	return [...calls];
 }
-/** A trace keeps the original card until its actual native footer is present. */
-function ProposalTrace(props) {
-	const surface = props.useChat((snapshot) => {
-		const nodes = snapshot.nodes.values();
-		const owner = nodes.find((node) => node.kind === "tool-call" && object(node.data) && proposalCalls([{ root: node.data.root }]).includes(props.callId));
-		if (!owner) return "none";
-		const location = owner.location;
-		if (!object(location) || !object(location.turn)) return "trace";
-		const turn = location.turn.turn;
-		return nodes.some((node) => node.kind === "turn-tail" && object(node.data) && node.data.turn === turn) ? "tail" : "trace";
-	});
-	if (surface === "none") return null;
-	return surface === "tail" ? /* @__PURE__ */ react.default.createElement("p", { className: "dsp-muted" }, "Review the Dispatch proposal below this conversation turn.") : /* @__PURE__ */ react.default.createElement(ProposalCard, props);
-}
 function ProposalTurnTail({ sessionId, turn, useChat, request, openSession }) {
 	const source = useChat((snapshot) => snapshot.nodes.turnDataSource(turn.turn, "tool-call"));
 	const data = react.default.useSyncExternalStore(source.subscribe, source.getSnapshot, source.getSnapshot);
@@ -395,13 +375,6 @@ var client_default = {
 		const workspace = () => ctx.get?.("uiWorkspace");
 		const openSession = (sessionId) => workspace()?.openSession(sessionId);
 		const navigation = () => workspace() ? openSession : void 0;
-		function Card(props) {
-			return react.default.createElement(ProposalTrace, {
-				...props,
-				request,
-				openSession: navigation()
-			});
-		}
 		function TurnTail(props) {
 			return react.default.createElement(ProposalTurnTail, {
 				...props,
@@ -420,10 +393,6 @@ var client_default = {
 				openSession: navigation()
 			});
 		}
-		for (const key of CARD_TOOLS) ctx.slots.inject("tool.call.toolview", () => ctx.slots.register({
-			name: "tool.call.toolview",
-			key
-		}, Card));
 		for (const key of STATUS_TOOLS) ctx.slots.inject("tool.call.toolview", () => ctx.slots.register({
 			name: "tool.call.toolview",
 			key

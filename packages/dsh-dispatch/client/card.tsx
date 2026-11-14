@@ -113,9 +113,11 @@ export function ProposalView({
   if (status.workerSessionId) rows.push(['Worker session', status.workerSessionId])
   if (status.worktree) rows.push(['Worktree', status.worktree.path])
   if (status.checkpoints.length) rows.push(['Completed steps', status.checkpoints.join(', ')])
-  const compact = ['succeeded', 'rejected', 'expired'].includes(status.state)
-  const details = (
-    <>
+  return (
+    <section className="dsp-card" aria-label={TITLES[status.kind] ?? 'Dispatch proposal'}>
+      <style>{css}</style>
+      <h3>{TITLES[status.kind] ?? 'Dispatch proposal'}</h3>
+      <p>{status.intent}</p>
       <dl>
         {rows.map(([label, value]) => (
           <React.Fragment key={label}>
@@ -128,22 +130,6 @@ export function ProposalView({
         <summary>Complete prompt ({status.prompt.length} characters)</summary>
         <pre>{status.prompt}</pre>
       </details>
-      <p className="dsp-muted">Observed {status.observedAt}</p>
-    </>
-  )
-  return (
-    <section className="dsp-card" aria-label={TITLES[status.kind] ?? 'Dispatch proposal'}>
-      <style>{css}</style>
-      <h3>{TITLES[status.kind] ?? 'Dispatch proposal'}</h3>
-      <p>{status.intent}</p>
-      {compact ? (
-        <details>
-          <summary>Review proposal details</summary>
-          {details}
-        </details>
-      ) : (
-        details
-      )}
       <p className="dsp-muted" role="status">
         {STATES[status.state] ?? status.state}
       </p>
@@ -175,12 +161,13 @@ export function ProposalView({
           </button>
         </div>
       ) : null}
+      <p className="dsp-muted">Observed {status.observedAt}</p>
     </section>
   )
 }
 
 /**
- * Tool-view container. Status comes from the Host each time; a reloaded or
+ * Status-backed proposal card. A reloaded or
  * historical card shows the stored outcome and can only decide a proposal
  * the Host still holds as pending in this Host lifetime.
  */

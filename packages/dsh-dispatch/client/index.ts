@@ -1,12 +1,12 @@
 import type { ComponentType } from 'react'
 import React from 'react'
-import { CARD_TOOLS, DISPATCH_CHANNEL, STATUS_TOOLS } from '../shared/contracts.js'
+import { DISPATCH_CHANNEL, STATUS_TOOLS } from '../shared/contracts.js'
 import type { RpcEndpoints, RpcResult } from '../shared/contracts.js'
 import { ProposalCard, ProposalView, validStatus } from './card.js'
 import type { Request } from './card.js'
 import { WorkersCard, WorkersView } from './workers.js'
-import { ProposalTrace, ProposalTurnTail } from './turn-tail.js'
-import type { TraceProps, TurnTailProps } from './turn-tail.js'
+import { ProposalTurnTail } from './turn-tail.js'
+import type { TurnTailProps } from './turn-tail.js'
 
 interface ClientContext {
   get?(name: string): unknown
@@ -58,11 +58,8 @@ export default {
       ctx.get?.('uiWorkspace') as { openSession(sessionId: string): void } | undefined
     const openSession = (sessionId: string) => workspace()?.openSession(sessionId)
     const navigation = () => (workspace() ? openSession : undefined)
-    // A native footer exists only after turn/end. Keep the trace card usable
-    // until then; once the footer exists, it owns the only approval controls.
-    function Card(props: Omit<TraceProps, 'request' | 'openSession'>) {
-      return React.createElement(ProposalTrace, { ...props, request, openSession: navigation() })
-    }
+    // The completed-turn footer is the only approval surface; native tool
+    // output stays read-only while the coordinator is running.
     function TurnTail(props: TurnTailProps) {
       return React.createElement(ProposalTurnTail, { ...props, request, openSession: navigation() })
     }
@@ -79,13 +76,6 @@ export default {
         openSession: navigation(),
       })
     }
-    for (const key of CARD_TOOLS)
-      ctx.slots.inject('tool.call.toolview', () =>
-        ctx.slots.register<Omit<TraceProps, 'request' | 'openSession'>>(
-          { name: 'tool.call.toolview', key },
-          Card,
-        ),
-      )
     for (const key of STATUS_TOOLS)
       ctx.slots.inject('tool.call.toolview', () =>
         ctx.slots.register<{ sessionId: string }>({ name: 'tool.call.toolview', key }, Workers),

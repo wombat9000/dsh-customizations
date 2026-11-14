@@ -107,12 +107,10 @@ test('coordinator proposes, the user approves, the worker reports back, and stat
     }
     await expect(card.getByRole('button', { name: 'Approve', exact: true })).toHaveCount(0)
     await expect(card.getByRole('button', { name: 'Open worker session' })).toBeVisible()
-    await card.getByText('Review proposal details', { exact: true }).click()
     await expect(card).toContainText(
       'approved, session-created, worktree-created, verified, claimed, delivered',
     )
     await expect(card).toContainText('.agents/worktrees/dispatch/journey')
-    await card.getByText('Review proposal details', { exact: true }).click()
   })
 
   const repositoryRow = page.getByRole('treeitem', { name: /^repository(?:\s|$)/u })

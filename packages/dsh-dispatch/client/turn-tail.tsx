@@ -16,20 +16,12 @@ interface ToolSource {
 interface ChatSnapshot {
   readonly nodes: {
     turnDataSource(turn: number, kind: 'tool-call'): ToolSource
-    values(): readonly {
-      readonly kind: string
-      readonly data: unknown
-      readonly location: unknown
-    }[]
   }
 }
 type UseChat = <T>(selector: (snapshot: ChatSnapshot) => T) => T
 export interface TurnTailProps {
   sessionId: string
   turn: { readonly turn: number }
-  useChat: UseChat
-}
-export interface TraceProps extends CardProps {
   useChat: UseChat
 }
 const tools = new Set<string>(CARD_TOOLS)
@@ -57,37 +49,6 @@ function proposalCalls(data: readonly ToolData[]): string[] {
       calls.add(block.callId)
   }
   return [...calls]
-}
-
-/** A trace keeps the original card until its actual native footer is present. */
-export function ProposalTrace(props: TraceProps) {
-  const surface = props.useChat((snapshot) => {
-    const nodes = snapshot.nodes.values()
-    const owner = nodes.find(
-      (node) =>
-        node.kind === 'tool-call' &&
-        object(node.data) &&
-        proposalCalls([{ root: node.data.root }]).includes(props.callId),
-    )
-    // Tool views survive preparing -> start -> result under the same identity.
-    // Do not read status before preparation finishes: a not-found response is
-    // terminal for the card and would otherwise hide the later ready proposal.
-    if (!owner) return 'none'
-    const location = owner.location
-    if (!object(location) || !object(location.turn)) return 'trace'
-    const turn = location.turn.turn
-    return nodes.some(
-      (node) => node.kind === 'turn-tail' && object(node.data) && node.data.turn === turn,
-    )
-      ? 'tail'
-      : 'trace'
-  })
-  if (surface === 'none') return null
-  return surface === 'tail' ? (
-    <p className="dsp-muted">Review the Dispatch proposal below this conversation turn.</p>
-  ) : (
-    <ProposalCard {...props} />
-  )
 }
 
 export function ProposalTurnTail({
