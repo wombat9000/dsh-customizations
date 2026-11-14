@@ -24,6 +24,14 @@ export async function nativeAgents(t, { workingDirectory = false } = {}) {
     const module = await installed(`dsh-${name}`)
     await ctx.plugin(module.default ?? module, {}).await()
   }
+  const { default: Titles } = await installed('dsh-session-title')
+  await ctx
+    .plugin(Titles, {
+      fallbackMaxWords: 8,
+      fallbackMaxBytes: 80,
+      maxTitleBytes: 200,
+    })
+    .await()
   if (workingDirectory) {
     const { default: Fs } = await installed('dsh-fs-local')
     await ctx.plugin(Fs, {}).await()
@@ -94,5 +102,6 @@ export async function nativeAgents(t, { workingDirectory = false } = {}) {
     nextSteps,
     presetRegistry: presets,
     directoryService: ctx.get('workingDirectory'),
+    titleService: ctx.get('sessionTitle'),
   }
 }

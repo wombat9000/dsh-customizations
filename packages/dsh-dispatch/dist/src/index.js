@@ -21,7 +21,7 @@ export async function apply(ctx, config = {}) {
     if (!ctx.storageDomain)
         throw new Error('Dispatch requires the DSH storage domain.');
     const store = await domainStore(ctx.storageDomain);
-    const sessions = new Sessions(() => ctx.get('sessionController'), () => ctx.get('workingDirectory'), () => ctx.get('llm'), () => ctx.get('agentPresets'));
+    const sessions = new Sessions(() => ctx.get('sessionController'), () => ctx.get('workingDirectory'), () => ctx.get('llm'), () => ctx.get('agentPresets'), () => ctx.get('workspaceRegistry'));
     const world = managedWorld(() => Object.fromEntries(EXECUTION.map((name) => [name, ctx.get(name)])), {
         ...(config.gitCommand !== undefined ? { gitCommand: config.gitCommand } : {}),
         ...(config.gitTimeoutMs !== undefined ? { timeoutMs: config.gitTimeoutMs } : {}),

@@ -23,6 +23,10 @@ export function validStatus(value: unknown): value is ProposalStatus {
   return (
     typeof v.proposalId === 'string' &&
     typeof v.state === 'string' &&
+    Object.hasOwn(STATES, v.state) &&
+    typeof v.kind === 'string' &&
+    Object.hasOwn(TITLES, v.kind) &&
+    typeof v.coordinatorId === 'string' &&
     typeof v.intent === 'string' &&
     typeof v.prompt === 'string' &&
     typeof v.preset === 'string' &&
@@ -163,32 +167,55 @@ export function ProposalView({
 }
 
 /**
- * Tool-view container. Status comes from the Host each time; a reloaded or
+ * Status-backed proposal card. A reloaded or
  * historical card shows the stored outcome and can only decide a proposal
  * the Host still holds as pending in this Host lifetime.
  */
-export function ProposalCard({ sessionId, callId, request, openSession }: CardProps) {
+export function ProposalCard(props: CardProps) {
+  // Native slot components can survive navigation. Never reuse another owner’s
+  // status, digest, busy state, or outstanding request across identities.
+  return <OwnedProposalCard key={JSON.stringify([props.sessionId, props.callId])} {...props} />
+}
+
+function OwnedProposalCard({ sessionId, callId, request, openSession }: CardProps) {
   const [status, setStatus] = React.useState<ProposalStatus | null>(null)
   const [missing, setMissing] = React.useState(false)
   const [error, setError] = React.useState('')
   const [busy, setBusy] = React.useState(false)
+  const [available, setAvailable] = React.useState(false)
+  const stopReading = React.useRef<() => void>(() => {})
+  const decisionRequest = React.useRef<AbortController | null>(null)
   const [revision, refresh] = React.useReducer((n: number) => n + 1, 0)
   React.useEffect(() => {
+    setBusy(false)
+    return () => {
+      decisionRequest.current?.abort()
+      decisionRequest.current = null
+    }
+  }, [request])
+  React.useEffect(() => {
+    setAvailable(false)
     const controller = new AbortController()
     let timer: ReturnType<typeof setTimeout> | undefined
     let failures = 0
+    stopReading.current = () => {
+      controller.abort()
+      if (timer) clearTimeout(timer)
+    }
     async function load() {
       try {
         const value = await request('status', { sessionId, callId }, controller.signal)
         if (controller.signal.aborted) return
-        if (!validStatus(value))
+        if (!validStatus(value) || value.coordinatorId !== sessionId)
           throw new Error('Invalid Dispatch proposal; approval is unavailable.')
         setStatus(value)
+        setAvailable(true)
         setMissing(false)
         failures = 0
         if (LIVE.has(value.state)) timer = setTimeout(load, 2000)
       } catch (err) {
         if (controller.signal.aborted) return
+        setAvailable(false)
         if (errorMessage(err).includes('no longer exists')) setMissing(true)
         else {
           setError(errorMessage(err))
@@ -204,26 +231,44 @@ export function ProposalCard({ sessionId, callId, request, openSession }: CardPr
   }, [sessionId, callId, request, revision])
   const decide = React.useCallback(
     async (decision: 'approve' | 'reject') => {
-      if (!status || busy) return
+      if (!status || !available || status.state !== 'pending' || decisionRequest.current) return
+      const controller = new AbortController()
+      decisionRequest.current = controller
+      stopReading.current()
       setBusy(true)
       setError('')
       try {
-        const value = await request('decide', {
-          sessionId,
-          callId,
-          proposalId: status.proposalId,
-          digest: status.digest,
-          decision,
-        })
-        if (validStatus(value)) setStatus(value)
+        const value = await request(
+          'decide',
+          {
+            sessionId,
+            callId,
+            proposalId: status.proposalId,
+            digest: status.digest,
+            decision,
+          },
+          controller.signal,
+        )
+        if (controller.signal.aborted) return
+        if (
+          !validStatus(value) ||
+          value.coordinatorId !== sessionId ||
+          value.proposalId !== status.proposalId ||
+          value.digest !== status.digest
+        )
+          throw new Error('Invalid Dispatch decision result. Inspect status before trying again.')
+        setStatus(value)
       } catch (err) {
-        setError(errorMessage(err))
+        if (!controller.signal.aborted) setError(errorMessage(err))
       } finally {
-        setBusy(false)
-        refresh()
+        if (!controller.signal.aborted) {
+          decisionRequest.current = null
+          setBusy(false)
+          refresh()
+        }
       }
     },
-    [status, busy, request, sessionId, callId],
+    [status, available, request, sessionId, callId],
   )
   if (missing) return null
   if (!status)
@@ -235,7 +280,7 @@ export function ProposalCard({ sessionId, callId, request, openSession }: CardPr
   return (
     <ProposalView
       status={status}
-      busy={busy}
+      busy={busy || !available}
       error={error}
       decide={decide}
       openSession={openSession}

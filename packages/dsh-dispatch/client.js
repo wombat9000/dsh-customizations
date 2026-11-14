@@ -52,7 +52,7 @@ const LIVE = /* @__PURE__ */ new Set(["pending", "executing"]);
 function validStatus(value) {
 	if (!value || typeof value !== "object") return false;
 	const v = value;
-	return typeof v.proposalId === "string" && typeof v.state === "string" && typeof v.intent === "string" && typeof v.prompt === "string" && typeof v.preset === "string" && typeof v.model === "string" && typeof v.digest === "string" && /^[0-9a-f]{64}$/u.test(v.digest) && Array.isArray(v.checkpoints);
+	return typeof v.proposalId === "string" && typeof v.state === "string" && Object.hasOwn(STATES, v.state) && typeof v.kind === "string" && Object.hasOwn(TITLES, v.kind) && typeof v.coordinatorId === "string" && typeof v.intent === "string" && typeof v.prompt === "string" && typeof v.preset === "string" && typeof v.model === "string" && typeof v.digest === "string" && /^[0-9a-f]{64}$/u.test(v.digest) && Array.isArray(v.checkpoints);
 }
 const css = `
 .dsp-card { font: 13px/1.5 var(--dsw-font-family, system-ui, sans-serif); color: var(--dsw-alias-label-primary);
@@ -132,20 +132,41 @@ function ProposalView({ status, busy, error, decide, openSession }) {
 	}, "Open worker session")) : null, /* @__PURE__ */ react.default.createElement("p", { className: "dsp-muted" }, "Observed ", status.observedAt));
 }
 /**
-* Tool-view container. Status comes from the Host each time; a reloaded or
+* Status-backed proposal card. A reloaded or
 * historical card shows the stored outcome and can only decide a proposal
 * the Host still holds as pending in this Host lifetime.
 */
-function ProposalCard({ sessionId, callId, request, openSession }) {
+function ProposalCard(props) {
+	return /* @__PURE__ */ react.default.createElement(OwnedProposalCard, {
+		key: JSON.stringify([props.sessionId, props.callId]),
+		...props
+	});
+}
+function OwnedProposalCard({ sessionId, callId, request, openSession }) {
 	const [status, setStatus] = react.default.useState(null);
 	const [missing, setMissing] = react.default.useState(false);
 	const [error, setError] = react.default.useState("");
 	const [busy, setBusy] = react.default.useState(false);
+	const [available, setAvailable] = react.default.useState(false);
+	const stopReading = react.default.useRef(() => {});
+	const decisionRequest = react.default.useRef(null);
 	const [revision, refresh] = react.default.useReducer((n) => n + 1, 0);
 	react.default.useEffect(() => {
+		setBusy(false);
+		return () => {
+			decisionRequest.current?.abort();
+			decisionRequest.current = null;
+		};
+	}, [request]);
+	react.default.useEffect(() => {
+		setAvailable(false);
 		const controller = new AbortController();
 		let timer;
 		let failures = 0;
+		stopReading.current = () => {
+			controller.abort();
+			if (timer) clearTimeout(timer);
+		};
 		async function load() {
 			try {
 				const value = await request("status", {
@@ -153,13 +174,15 @@ function ProposalCard({ sessionId, callId, request, openSession }) {
 					callId
 				}, controller.signal);
 				if (controller.signal.aborted) return;
-				if (!validStatus(value)) throw new Error("Invalid Dispatch proposal; approval is unavailable.");
+				if (!validStatus(value) || value.coordinatorId !== sessionId) throw new Error("Invalid Dispatch proposal; approval is unavailable.");
 				setStatus(value);
+				setAvailable(true);
 				setMissing(false);
 				failures = 0;
 				if (LIVE.has(value.state)) timer = setTimeout(load, 2e3);
 			} catch (err) {
 				if (controller.signal.aborted) return;
+				setAvailable(false);
 				if (errorMessage(err).includes("no longer exists")) setMissing(true);
 				else {
 					setError(errorMessage(err));
@@ -179,7 +202,10 @@ function ProposalCard({ sessionId, callId, request, openSession }) {
 		revision
 	]);
 	const decide = react.default.useCallback(async (decision) => {
-		if (!status || busy) return;
+		if (!status || !available || status.state !== "pending" || decisionRequest.current) return;
+		const controller = new AbortController();
+		decisionRequest.current = controller;
+		stopReading.current();
 		setBusy(true);
 		setError("");
 		try {
@@ -189,17 +215,22 @@ function ProposalCard({ sessionId, callId, request, openSession }) {
 				proposalId: status.proposalId,
 				digest: status.digest,
 				decision
-			});
-			if (validStatus(value)) setStatus(value);
+			}, controller.signal);
+			if (controller.signal.aborted) return;
+			if (!validStatus(value) || value.coordinatorId !== sessionId || value.proposalId !== status.proposalId || value.digest !== status.digest) throw new Error("Invalid Dispatch decision result. Inspect status before trying again.");
+			setStatus(value);
 		} catch (err) {
-			setError(errorMessage(err));
+			if (!controller.signal.aborted) setError(errorMessage(err));
 		} finally {
-			setBusy(false);
-			refresh();
+			if (!controller.signal.aborted) {
+				decisionRequest.current = null;
+				setBusy(false);
+				refresh();
+			}
 		}
 	}, [
 		status,
-		busy,
+		available,
 		request,
 		sessionId,
 		callId
@@ -211,7 +242,7 @@ function ProposalCard({ sessionId, callId, request, openSession }) {
 	}, error) : null;
 	return /* @__PURE__ */ react.default.createElement(ProposalView, {
 		status,
-		busy,
+		busy: busy || !available,
 		error,
 		decide,
 		openSession
@@ -294,6 +325,36 @@ function WorkersCard({ sessionId, request, openSession }) {
 }
 
 //#endregion
+//#region client/turn-tail.tsx
+const tools = new Set(CARD_TOOLS);
+const object = (value) => value !== null && typeof value === "object";
+/** Only settled, successful proposal tools can have prepared an approval. */
+function proposalCalls(data) {
+	const calls = /* @__PURE__ */ new Set();
+	const seen = /* @__PURE__ */ new Set();
+	const pending = data.map(({ root }) => root).toReversed();
+	while (pending.length) {
+		const block = pending.pop();
+		if (!object(block) || seen.has(block)) continue;
+		seen.add(block);
+		if (Array.isArray(block.subCalls)) pending.push(...block.subCalls.toReversed());
+		if (block.kind === "tool-result" && block.isError !== true && typeof block.name === "string" && tools.has(block.name) && typeof block.callId === "string" && block.callId) calls.add(block.callId);
+	}
+	return [...calls];
+}
+function ProposalTurnTail({ sessionId, turn, useChat, request, openSession }) {
+	const source = useChat((snapshot) => snapshot.nodes.turnDataSource(turn.turn, "tool-call"));
+	const data = react.default.useSyncExternalStore(source.subscribe, source.getSnapshot, source.getSnapshot);
+	return /* @__PURE__ */ react.default.createElement(react.default.Fragment, null, proposalCalls(data).map((callId) => /* @__PURE__ */ react.default.createElement(ProposalCard, {
+		key: `${sessionId}:${callId}`,
+		sessionId,
+		callId,
+		request,
+		openSession
+	})));
+}
+
+//#endregion
 //#region client/index.ts
 function createRequest(ctx) {
 	return async (endpoint, input, signal) => {
@@ -314,13 +375,17 @@ var client_default = {
 		const workspace = () => ctx.get?.("uiWorkspace");
 		const openSession = (sessionId) => workspace()?.openSession(sessionId);
 		const navigation = () => workspace() ? openSession : void 0;
-		function Card(props) {
-			return react.default.createElement(ProposalCard, {
+		function TurnTail(props) {
+			return react.default.createElement(ProposalTurnTail, {
 				...props,
 				request,
 				openSession: navigation()
 			});
 		}
+		ctx.slots.inject("conversation.chat.turnTail", () => ctx.slots.register({
+			name: "conversation.chat.turnTail",
+			id: "local-dispatch-approvals"
+		}, TurnTail));
 		function Workers(props) {
 			return react.default.createElement(WorkersCard, {
 				sessionId: props.sessionId,
@@ -328,10 +393,6 @@ var client_default = {
 				openSession: navigation()
 			});
 		}
-		for (const key of CARD_TOOLS) ctx.slots.inject("tool.call.toolview", () => ctx.slots.register({
-			name: "tool.call.toolview",
-			key
-		}, Card));
 		for (const key of STATUS_TOOLS) ctx.slots.inject("tool.call.toolview", () => ctx.slots.register({
 			name: "tool.call.toolview",
 			key

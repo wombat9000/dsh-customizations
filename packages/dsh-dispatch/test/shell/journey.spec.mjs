@@ -1,6 +1,6 @@
 import { join } from 'node:path'
 import { test, expect } from '../../../../tests/real-ui/fixtures.mjs'
-import { START } from './fixture/index.mjs'
+import { INTENT, START } from './fixture/index.mjs'
 
 // Real DSH shell, real agent loops for both sessions, and a real Git worktree.
 // Only the model route is scripted (fixture/index.mjs): no credentials or network.
@@ -20,10 +20,9 @@ async function expandLastTurn(page) {
 }
 
 async function evidence(page, testInfo, name) {
-  await testInfo.attach(name, {
-    body: await page.screenshot({ fullPage: true }),
-    contentType: 'image/png',
-  })
+  const path = testInfo.outputPath(`${name}.png`)
+  await page.screenshot({ path, fullPage: true })
+  await testInfo.attach(name, { path, contentType: 'image/png' })
 }
 
 test('coordinator proposes, the user approves, the worker reports back, and state survives reload', async ({
@@ -55,7 +54,11 @@ test('coordinator proposes, the user approves, the worker reports back, and stat
   const card = page.getByRole('region', { name: 'Create Dispatch worker' })
   await test.step('the coordinator turn proposes; nothing exists before approval', async () => {
     await expect(page.getByText('The approval card is ready.')).toBeVisible({ timeout: 30_000 })
-    await expandLastTurn(page)
+    await expect(page.getByRole('button', { name: /^Completed in/u }).last()).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    )
+    await expect(card.getByRole('button', { name: 'Approve', exact: true })).toBeVisible()
     await expect(card.getByRole('status')).toHaveText(
       'Waiting for your decision. Nothing has been created or sent.',
     )
@@ -63,6 +66,24 @@ test('coordinator proposes, the user approves, the worker reports back, and stat
     await expect(card).toContainText('dispatch/journey')
     await expect(card).not.toContainText('Worker session')
     await evidence(page, testInfo, 'proposal-pending')
+  })
+
+  await test.step('pending approval survives reload outside the collapsed tool trace', async () => {
+    await page.reload()
+    await expect(page.getByText('The approval card is ready.')).toBeVisible({ timeout: 30_000 })
+    const completed = page.getByRole('button', { name: /^Completed in/u }).last()
+    await expect(completed).toHaveAttribute('aria-expanded', 'false')
+    await expect(card.getByRole('button', { name: 'Approve', exact: true })).toBeVisible()
+    // Inspect the inner fold only after proving approval is already reachable.
+    await completed.click()
+    const tools = page.getByRole('button', { name: 'Called tools', exact: true }).last()
+    await expect(tools).toHaveAttribute('aria-expanded', 'false')
+    await tools.click()
+    await expect(page.getByRole('button', { name: 'Approve', exact: true })).toHaveCount(1)
+    await tools.click()
+    await completed.click()
+    await expect(card.getByRole('button', { name: 'Approve', exact: true })).toBeVisible()
+    await evidence(page, testInfo, 'proposal-pending-after-reload')
   })
 
   await test.step('approval creates the worktree and delivers the assignment', async () => {
@@ -84,11 +105,27 @@ test('coordinator proposes, the user approves, the worker reports back, and stat
         )
       throw error
     }
+    await expect(card.getByRole('button', { name: 'Approve', exact: true })).toHaveCount(0)
+    await expect(card.getByRole('button', { name: 'Open worker session' })).toBeVisible()
     await expect(card).toContainText(
       'approved, session-created, worktree-created, verified, claimed, delivered',
     )
     await expect(card).toContainText('.agents/worktrees/dispatch/journey')
-    await expect(card.getByRole('button', { name: 'Approve' })).toHaveCount(0)
+  })
+
+  const repositoryRow = page.getByRole('treeitem', { name: /^repository(?:\s|$)/u })
+  const workerRow = page
+    .getByRole('treeitem')
+    .filter({ has: page.getByText(INTENT, { exact: true }) })
+  await test.step('the named worker belongs to the repository workspace, not Ungrouped', async () => {
+    await expect(workerRow).toBeVisible()
+    await expect(repositoryRow).toHaveAttribute('aria-expanded', 'true')
+    // Collapse the real native workspace: a loose session would remain visible.
+    await repositoryRow.click()
+    await expect(repositoryRow).toHaveAttribute('aria-expanded', 'false')
+    await expect(workerRow).toBeHidden()
+    await repositoryRow.click()
+    await expect(workerRow).toBeVisible()
   })
 
   const workers = page.getByRole('region', { name: 'Dispatch workers' })
@@ -114,17 +151,21 @@ test('coordinator proposes, the user approves, the worker reports back, and stat
 
   await test.step('a fresh page load reads the outcome back from the Host', async () => {
     await page.reload()
+    await expect(workerRow).toBeVisible()
+    await repositoryRow.click()
+    await expect(workerRow).toBeHidden()
+    await repositoryRow.click()
+    await expect(workerRow).toBeVisible()
     await page.getByRole('treeitem', { name: 'Dispatch fixture' }).click()
     await expect(page.getByText('Worker report received.')).toBeVisible({ timeout: 30_000 })
     await page.getByRole('button', { name: /^Task message received/u }).click()
     await expect(page.getByText(REPORT)).toBeVisible()
     await expandLastTurn(page)
     await expect(workers).toContainText('Ready for review (worker)')
-    await page
-      .getByRole('button', { name: /^Completed in/u })
-      .first()
-      .click()
-    await page.getByRole('button', { name: 'Called tools' }).first().click()
+    await expect(page.getByRole('button', { name: /^Completed in/u }).first()).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    )
     await expect(card.getByRole('status')).toHaveText(DONE)
     await expect(card.getByRole('button', { name: 'Approve' })).toHaveCount(0)
     await evidence(page, testInfo, 'after-reload')

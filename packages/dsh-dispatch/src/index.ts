@@ -14,6 +14,7 @@ import type {
   SessionControllerLike,
   StorageDomainLike,
   WorkingDirectoryLike,
+  WorkspaceRegistryLike,
   WorktreesLike,
 } from './types.js'
 import type { ExecutionServices } from './world.js'
@@ -56,6 +57,7 @@ export async function apply(ctx: HostContext, config: Config = {}) {
     () => ctx.get('workingDirectory') as WorkingDirectoryLike | undefined,
     () => ctx.get('llm') as LlmLike | undefined,
     () => ctx.get('agentPresets') as AgentPresetsLike | undefined,
+    () => ctx.get('workspaceRegistry') as WorkspaceRegistryLike | undefined,
   )
   const world = managedWorld(
     () =>

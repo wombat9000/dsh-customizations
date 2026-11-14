@@ -110,6 +110,15 @@ export interface SessionControllerLike {
   resolveAgent(
     sessionId: string,
   ): Promise<{ readonly agent: AgentLike } | { readonly error: { message?: string } }>
+  rename?(request: { sessionId: string; title: string }): Promise<{ title: string; seq: number }>
+}
+
+/** Native workspace membership validates the immutable session header cwd, not its worktree. */
+export interface WorkspaceRegistryLike {
+  list(): readonly {
+    readonly path: string
+    attachSession(sessionId: string): Promise<void>
+  }[]
 }
 
 /** `ctx.agentPresets` rc.3 reads the committed current selection, not only its creation header. */

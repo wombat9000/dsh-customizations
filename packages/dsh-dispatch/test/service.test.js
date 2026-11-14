@@ -86,6 +86,8 @@ async function harness(
     worktreeGate = async () => {},
     nativeDirectory = false,
     automaticDispose = true,
+    workspaceRegistry,
+    renameGate = async () => {},
   } = {},
 ) {
   const native = await nativeAgents(t, { workingDirectory: nativeDirectory })
@@ -93,6 +95,7 @@ async function harness(
   const directories = new Map()
   const delivered = []
   const defaultSaves = []
+  const renames = []
   let created = 0
   const makeAgent = async (id, { cwd, preset = 'dispatch-worker', origin } = {}) => {
     const agent = await native.create(id, {
@@ -125,6 +128,12 @@ async function harness(
       const agent = agents.get(id)
       return agent ? { agent } : { error: { message: 'Unknown session.' } }
     },
+    async rename({ sessionId, title }) {
+      renames.push({ sessionId, title })
+      await renameGate(sessionId)
+      const accepted = native.titleService.rename(agents.get(sessionId).session, title)
+      return { title: accepted.title, seq: accepted.eventSeq }
+    },
   }
   const llm = {
     listProviders: () => [{ id: 'fixture' }],
@@ -151,6 +160,7 @@ async function harness(
     () => native.directoryService ?? { get: (session) => directories.get(session.id) },
     () => llm,
     () => native.presetRegistry,
+    () => workspaceRegistry,
   )
   const service = new DispatchService({
     store: memoryStore(),
@@ -173,6 +183,8 @@ async function harness(
     makeAgent,
     worktreeCalls,
     defaultSaves,
+    renames,
+    controller,
     sessions,
     worktrees,
     ...native,
@@ -194,7 +206,24 @@ const owner = { principal: { kind: 'owner' } }
 
 test('refresh, prepare, reject, and approve once: one worker on its own linked worktree', async (t) => {
   const { main, remote } = await repository(t)
-  const h = await harness(t)
+  const members = ['retained-session']
+  const workspaceRegistry = {
+    list: () => [
+      { path: `${main}-unrelated`, attachSession: async () => assert.fail('unrelated workspace') },
+      {
+        path: main,
+        async attachSession(id) {
+          const proposal = h.service.store.tables.proposals
+            .values()
+            .find((p) => p.workerSessionId === id)
+          assert.ok(proposal.checkpoints.includes('session-created'), 'identity is durable first')
+          assert.equal(h.agents.get(id).session.header.cwd, main)
+          members.push(id)
+        },
+      },
+    ],
+  }
+  const h = await harness(t, { workspaceRegistry })
   const coordinator = await h.makeAgent('coord-1', { cwd: main, preset: 'dispatch' })
   const base = await h.service.refreshBase(coordinator, { directory: main })
   assert.equal(base.remote, 'origin')
@@ -215,6 +244,7 @@ test('refresh, prepare, reject, and approve once: one worker on its own linked w
   assert.equal(git(main, 'status', '--porcelain'), '')
 
   const prompt = 'Implement the thing.\n'.repeat(200)
+  const intent = '  Implement\n  the thing  '
   const rejected = await h.service.prepareCreate(coordinator, 'call-a', {
     intent: 'A',
     prompt,
@@ -256,7 +286,7 @@ test('refresh, prepare, reject, and approve once: one worker on its own linked w
   assert.equal(h.agents.size, 1)
 
   await h.service.prepareCreate(coordinator, 'call-b', {
-    intent: 'B',
+    intent,
     prompt,
     base,
     branch: 'feature/b',
@@ -312,6 +342,23 @@ test('refresh, prepare, reject, and approve once: one worker on its own linked w
     'the worker Agent creates its own worktree',
   )
   assert.equal(h.directories.get('coord-1'), main, 'coordinator directory is unchanged')
+  assert.deepEqual(members, ['retained-session', done.workerSessionId])
+  const worker = h.agents.get(done.workerSessionId)
+  assert.equal(
+    worker.session.header.cwd,
+    main,
+    'native membership keeps the original approved root',
+  )
+  assert.equal(
+    worker.session.snapshotEvents().findLast((event) => event.type === 'session/title')?.data.title,
+    'Implement the thing',
+    'the approved intent becomes a native normalized title, not the assignment prompt',
+  )
+  assert.equal(
+    coordinator.session.snapshotEvents().some((event) => event.type === 'session/title'),
+    false,
+    'naming never touches the coordinator',
+  )
 
   const workerDir = h.directories.get(done.workerSessionId)
   assert.notEqual(workerDir, main)
@@ -327,6 +374,101 @@ test('refresh, prepare, reject, and approve once: one worker on its own linked w
   })
   assert.ok(first.message.content[0].text.endsWith(prompt), 'the exact approved prompt is sent')
   assert.ok(Object.isFrozen(first.message))
+})
+
+test('new workers remain named without an existing matching native workspace', async (t) => {
+  for (const registry of ['absent', 'unmatched']) {
+    await t.test(registry, async (t) => {
+      const { main } = await repository(t)
+      const h = await harness(t, {
+        workspaceRegistry:
+          registry === 'absent'
+            ? undefined
+            : {
+                list: () => [
+                  {
+                    path: `${main}-other`,
+                    attachSession: async () => assert.fail('no exact match'),
+                  },
+                ],
+              },
+      })
+      const coordinator = await h.makeAgent('coord', { cwd: main, preset: 'dispatch' })
+      const base = await h.service.refreshBase(coordinator, { directory: main })
+      await h.service.prepareCreate(coordinator, 'create', {
+        intent: 'Named worker',
+        prompt: 'go',
+        base,
+      })
+      const result = await approve(h.service, coordinator.id, 'create')
+      assert.equal(result.state, 'succeeded', result.message)
+      const worker = h.agents.get(result.workerSessionId)
+      assert.equal(worker.session.header.cwd, main)
+      assert.equal(
+        worker.session.snapshotEvents().findLast((event) => event.type === 'session/title')?.data
+          .title,
+        'Named worker',
+      )
+    })
+  }
+})
+
+test('new-worker metadata failures retain the checkpointed session and never admit or replay work', async (t) => {
+  for (const failure of ['attach', 'rename', 'rename-unavailable']) {
+    await t.test(failure, async (t) => {
+      const { main } = await repository(t)
+      let attaches = 0
+      const h = await harness(t, {
+        workspaceRegistry: {
+          list: () => [
+            {
+              path: main,
+              async attachSession(id) {
+                attaches++
+                const proposal = h.service.store.tables.proposals
+                  .values()
+                  .find((p) => p.workerSessionId === id)
+                assert.ok(proposal.checkpoints.includes('session-created'))
+                if (failure === 'attach') throw new Error('native workspace attach failed')
+              },
+            },
+          ],
+        },
+        renameGate: async () => {
+          throw new Error('native rename failed')
+        },
+      })
+      if (failure === 'rename-unavailable') delete h.controller.rename
+      const coordinator = await h.makeAgent('coord', { cwd: main, preset: 'dispatch' })
+      const base = await h.service.refreshBase(coordinator, { directory: main })
+      await h.service.prepareCreate(coordinator, 'create', { intent: 'Name', prompt: 'go', base })
+      const result = await approve(h.service, coordinator.id, 'create')
+      assert.equal(result.state, 'uncertain', result.message)
+      assert.equal(result.workerSessionId, 'worker-1')
+      assert.deepEqual(result.checkpoints, ['approved', 'session-created'])
+      assert.ok(h.agents.has(result.workerSessionId))
+      assert.match(
+        result.message,
+        failure === 'attach'
+          ? /native workspace attach failed/
+          : failure === 'rename'
+            ? /native rename failed/
+            : /cannot name/,
+      )
+      assert.deepEqual(h.worktreeCalls, [])
+      assert.deepEqual(h.delivered, [])
+      assert.equal(h.service.isProvisioning(result.workerSessionId), true)
+      const effects = { attaches, renames: h.renames.length }
+      await h.service.recover()
+      assert.deepEqual(
+        { attaches, renames: h.renames.length },
+        effects,
+        'recovery does not retry metadata',
+      )
+      assert.deepEqual(h.delivered, [])
+      assert.equal(h.agents.size, 2, 'recovery does not create another session')
+    })
+  }
 })
 
 test('reports bind to the executing worker and its association', async (t) => {
@@ -499,12 +641,15 @@ test('active follow-ups and reports reject cwd drift during inspection without c
 
 test('ownership is exclusive across coordinators and survives racing adoption', async (t) => {
   const { main } = await repository(t)
-  const h = await harness(t)
+  const h = await harness(t, {
+    workspaceRegistry: { list: () => assert.fail('adoption must not regroup existing sessions') },
+  })
   const a = await h.makeAgent('coord-a', { cwd: main, preset: 'dispatch' })
   const b = await h.makeAgent('coord-b', { cwd: main, preset: 'dispatch' })
   const wtPath = join(main, '..', 'adopt-wt')
   git(main, 'worktree', 'add', '-b', 'adopt', wtPath)
-  await h.makeAgent('existing', { cwd: await realpath(wtPath) })
+  const existing = await h.makeAgent('existing', { cwd: await realpath(wtPath) })
+  h.titleService.rename(existing.session, 'User-owned title')
   await h.makeAgent('on-main', { cwd: main })
   await assert.rejects(
     h.service.prepareAdopt(a, 'x', { sessionId: 'on-main', intent: 'i', prompt: 'p' }),
@@ -558,6 +703,14 @@ test('ownership is exclusive across coordinators and survives racing adoption', 
     outcomes.filter((o) => o.state === 'succeeded').length,
     1,
     'only one coordinator acquires the session',
+  )
+  assert.deepEqual(h.renames, [], 'adoption does not overwrite native session names')
+  assert.deepEqual(
+    existing.session
+      .snapshotEvents()
+      .filter((event) => event.type === 'session/title')
+      .map((event) => event.data.title),
+    ['User-owned title'],
   )
   const winner = outcomes[0].state === 'succeeded' ? a : b
   const loser = winner === a ? b : a
@@ -1511,6 +1664,7 @@ test('a failed session-created checkpoint retains the known native session ID an
   assert.equal(failed.state, 'uncertain', 'a native effect already succeeded')
   assert.ok(h.agents.has(failed.workerSessionId), 'the exact retained session is discoverable')
   assert.match(failed.message, /session-created checkpoint failed/)
+  assert.deepEqual(h.renames, [], 'metadata effects wait for the known-ID checkpoint')
   assert.deepEqual(h.worktreeCalls, [], 'there is no automatic retry or later provisioning effect')
   assert.deepEqual(h.delivered, [])
   assert.equal(
