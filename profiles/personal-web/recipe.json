@@ -55,6 +55,10 @@
       "source": "../../packages/dsh-product-mode"
     },
     {
+      "name": "@local/dsh-dispatch",
+      "source": "../../packages/dsh-dispatch"
+    },
+    {
       "name": "@local/dsh-web-firecrawl",
       "source": "../../packages/dsh-web-firecrawl"
     },

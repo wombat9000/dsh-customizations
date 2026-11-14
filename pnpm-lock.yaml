@@ -126,6 +126,12 @@ importers:
         specifier: 4.6.6
         version: 4.6.6
 
+  packages/dsh-dispatch:
+    dependencies:
+      '@deepseek-ai/dsh':
+        specifier: 0.2.2-rc.3
+        version: 0.2.2-rc.3(bde2d4710a00603fb77ac7a13d0d90d7)
+
   packages/dsh-file-intuition:
     dependencies:
       '@deepseek-ai/cordis':

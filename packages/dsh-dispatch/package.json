@@ -1,0 +1,50 @@
+{
+  "name": "@local/dsh-dispatch",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Dispatch: coordinate approved worker sessions on linked Git worktrees for DSH 0.2.2-rc.3",
+  "type": "module",
+  "main": "dist/src/index.js",
+  "exports": {
+    ".": "./dist/src/index.js",
+    "./coordinator": "./dist/src/coordinator.js",
+    "./worker": "./dist/src/worker.js",
+    "./client": "./client.js",
+    "./locale/en.json": "./locale/en.json",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "client.js",
+    "presets",
+    "locale",
+    "icon.svg",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "node scripts/build-host.mjs && node scripts/build-client.mjs",
+    "build:host": "node scripts/build-host.mjs",
+    "build:client": "node scripts/build-client.mjs",
+    "typecheck": "node ../../node_modules/typescript/bin/tsc -p tsconfig.host.json && node scripts/typecheck-client.mjs",
+    "test": "node --test test/*.test.js"
+  },
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-tool"
+      ],
+      "platform": "web"
+    }
+  },
+  "license": "UNLICENSED",
+  "peerDependencies": {
+    "@deepseek-ai/dsh": "0.2.2-rc.3"
+  }
+}

@@ -1,0 +1,9 @@
+# Isolated Dispatch journey: a scripted in-process model route, never a provider
+# credential or network call. Worker checkouts are retained, as Dispatch requires.
+- id: agent-default-model
+  config:
+    provider: dispatch-fixture
+    model: scripted
+- id: worktree
+  config:
+    retainOnArchive: true
