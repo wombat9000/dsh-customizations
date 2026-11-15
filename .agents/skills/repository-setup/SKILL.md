@@ -5,7 +5,7 @@ description: Check dependency ownership and pinned tools, prepare an approved of
 
 # Repository setup
 
-Use this procedure before dependency work or validation. It is repo-owned Markdown and works without Project Steward or a skill loader. Run commands from the repository root unless stated otherwise. Setup is not automatic, and permission to edit code is not permission to install dependencies.
+Use this procedure before dependency work or validation. It is repo-owned Markdown and works without Project Steward or a skill loader. Run commands from the repository root unless stated otherwise. Only the bounded worktree bootstrap below has standing authorization; permission to edit code does not authorize other dependency installs or changes. Always complete the prerequisite checks.
 
 ## Verified repository facts
 
@@ -22,19 +22,33 @@ These facts come from repository configuration, not an install result:
 1. Confirm the checkout with `pwd`, `git status --short`, and `node --version`. Preserve unrelated changes. A new worktree shares Git metadata but does not bring its own `node_modules` from the source checkout.
 2. Locate pnpm with `command -v pnpm` on POSIX (or `Get-Command pnpm` on PowerShell), without invoking it. Inspect the executable's symlink target, wrapper, and adjacent package manifest. Establish that the exact 11.9.0 executable and its runtime files are already available. Even `pnpm --version` can trigger provisioning through a shim or version manager. If the pin is unavailable, stop and request approval for provisioning. Do not run `npx`, Corepack preparation, or a package-manager downloader automatically.
 3. Inspect root `node_modules` and each `packages/*/node_modules` using lstat/readlink/realpath or equivalent. Inspect parent path components, bind mounts, and `.npmrc`/workspace virtual-store settings too. If any dependency directory is symlinked, shared with another checkout, or has uncertain ownership, **do not install there**. Do not unlink, delete, relink, or mutate another checkout's dependencies automatically. Normal package links inside a checkout-owned pnpm tree are expected; a link to another checkout's whole tree is different. A shared content-addressed cache is not a shared dependency tree.
-4. Inspect package-manager configuration, environment overrides, registry settings, and the chosen cache location without printing credentials. Require an accessible cache with the locked packages for this OS/architecture. Directory existence does not establish cache completeness. If the cache is missing or incomplete, stop and report the limitation. Do not fall back online automatically.
+4. Inspect package-manager configuration, environment overrides, registry settings, and the chosen cache location without printing credentials. Locate an existing accessible cache for this OS/architecture. Directory existence does not establish cache completeness; the offline frozen install below can establish whether locked packages are missing. If the cache is unavailable or the offline attempt reports missing packages, stop and report the limitation. Do not fall back online automatically.
 
 A dependency link explicitly authorized for read-only testing is not authorization to install, build into its target, or modify the parent checkout. Report borrowed dependencies as a validation limitation. Recheck ownership in every fresh checkout/worktree.
 
-## Install only after approval
+## Restore locked worktree dependencies
 
-Once the exact executable, owned dependency directories, configuration, and cache prerequisites are established, obtain explicit approval for an install in this checkout. Using the verified local executable, run:
+After the prerequisite checks, you may restore dependencies without another approval question only when all these conditions hold:
+
+- The target is this repository's isolated task worktree. Every dependency tree the command may replace is absent or verified as owned exclusively by that worktree. Shared, borrowed, main-checkout, runtime, and profile dependency trees are outside this authorization.
+- The exact pinned pnpm executable is already available and verified. No package-manager or toolchain provisioning is needed.
+- You restore the existing checked-in dependency graph. Do not add or upgrade dependencies or change tracked manifests, lockfiles, patches, or package-manager configuration as part of this operation.
+- Use only the existing offline cache, keep the lockfile frozen, and disable installation lifecycle scripts. If packages are missing or installation fails, stop and inspect the partial local layout; ask before any download, script execution, or operation outside these conditions.
+
+Using the verified local executable, run:
 
 ```sh
-pnpm install --offline --frozen-lockfile --ignore-scripts
+pnpm install --offline --frozen-lockfile --ignore-scripts \
+  --config.enableGlobalVirtualStore=false --virtual-store-dir=node_modules/.pnpm
 ```
 
-Here `pnpm` means the already-inspected local 11.9.0 executable, not an unverified shim. The command writes the checkout's dependency tree and package-manager metadata. It must not update the lockfile. If offline resolution fails, stop and report the error. Do not remove `--offline`, relax `--frozen-lockfile`, upgrade dependencies, or enable lifecycle scripts automatically. Obtain separate approval for cache population/network access and any necessary lifecycle script or binary download.
+Here `pnpm` means the already-inspected local 11.9.0 executable, not an unverified shim. The command may write only the worktree-owned dependency layout and package-manager metadata associated with the offline restore. A reinstall to repair that local layout is also covered after the same checks. Supply the virtual-store settings as command options; do not persist them in tracked or global configuration. Do not delete, unlink, or rewrite shared trees to make an installation qualify.
+
+Outside this bounded case, obtain explicit approval before installing. Network/cache population, new dependencies or versions, required install scripts, binary downloads, and toolchain provisioning still need separate approval. Do not drop `--offline`, relax `--frozen-lockfile`, or enable lifecycle scripts as a fallback. Normal project build and test commands within the approved task are separate from dependency installation hooks.
+
+This exception covers the explicit restore command, not implicit installation through `pnpm run` or `pnpm exec`. Use command-local `verifyDepsBeforeRun=error` and matching virtual-store settings for those commands so a layout mismatch fails instead of triggering an implicit install. Standing authorization does not bypass sandbox or tool approvals and does not authorize CI edits, profile application, commits, or deployment.
+
+The policy applies to worktrees that contain these instructions. It does not update older branches or authorize installs in other repositories. Existing workers on older instructions need updated guidance or direct user authorization.
 
 The `0.2.2-rc.3` offline frozen, scripts-disabled install was validated in the checkout-owned Linux ARM64 dependency tree with a populated pnpm 11 cache, after explicitly approved network cache population. This does not establish fresh-cache or other-platform install success. See the [current migration handoff](../../../MIGRATION-0.2.2-rc.3.md) for actual target-version results and limitations. Fresh setup fixtures validate dependency-free checks and ownership observations, not cache population.
 
