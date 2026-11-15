@@ -1658,17 +1658,46 @@ function stateLabel(entry) {
 	if (state === "open") return (entry.isDraft ?? entry.draft) === true ? "Draft" : "Open";
 	return "State unknown";
 }
-function PullRequestRow({ entry }) {
+/** GitHub's REST dates are UTC ISO timestamps. Never let Date.parse normalize
+* invalid calendar dates into a plausible age. No clock subscription is needed. */
+function openedAge(value, now) {
+	if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/.test(value)) return void 0;
+	const instant = Date.parse(value);
+	if (!Number.isFinite(instant) || instant > now || new Date(instant).toISOString().slice(0, 19) !== value.slice(0, 19)) return void 0;
+	const elapsed = Math.floor((now - instant) / 1e3);
+	for (const [seconds, unit] of [
+		[86400, "day"],
+		[3600, "hour"],
+		[60, "minute"]
+	]) {
+		const count = Math.floor(elapsed / seconds);
+		if (count > 0) return {
+			timestamp: value,
+			age: `${count} ${unit}${count === 1 ? "" : "s"} ago`
+		};
+	}
+	return {
+		timestamp: value,
+		age: "just now"
+	};
+}
+function PullRequestRow({ entry, now }) {
 	const title = text(entry.title) || "Title unavailable";
 	const number = Number.isSafeInteger(entry.number) ? `#${entry.number}` : "";
 	const author = text(supplied(entry.author, "login"));
+	const opened = openedAge(entry.createdAt, now);
 	const head = text(entry.headRefName) || text(supplied(entry.head, "ref"));
 	const base = text(entry.baseRefName) || text(supplied(entry.base, "ref"));
 	const sha = text(entry.headRefOid) || text(supplied(entry.head, "sha"));
-	return /* @__PURE__ */ react.default.createElement("article", { className: "gh-pr-list-row" }, /* @__PURE__ */ react.default.createElement("h4", null, /* @__PURE__ */ react.default.createElement(Link, { url: entry.url ?? entry.html_url }, title)), /* @__PURE__ */ react.default.createElement("div", { className: "gh-pr-list-meta" }, /* @__PURE__ */ react.default.createElement("span", { className: "gh-pr-list-state" }, stateLabel(entry)), number && /* @__PURE__ */ react.default.createElement("span", null, number), author && /* @__PURE__ */ react.default.createElement("span", null, `by ${author}`), (head || base || sha) && /* @__PURE__ */ react.default.createElement("details", { className: "gh-pr-list-branch" }, /* @__PURE__ */ react.default.createElement("summary", null, "Branch & commit"), head && /* @__PURE__ */ react.default.createElement("p", null, "From ", /* @__PURE__ */ react.default.createElement("code", null, head)), base && /* @__PURE__ */ react.default.createElement("p", null, "Into ", /* @__PURE__ */ react.default.createElement("code", null, base)), sha && /* @__PURE__ */ react.default.createElement("p", null, "Commit ", /* @__PURE__ */ react.default.createElement("code", null, sha)))));
+	return /* @__PURE__ */ react.default.createElement("article", { className: "gh-pr-list-row" }, /* @__PURE__ */ react.default.createElement("div", { className: "gh-pr-list-heading" }, /* @__PURE__ */ react.default.createElement("h4", null, /* @__PURE__ */ react.default.createElement(Link, { url: entry.url ?? entry.html_url }, title)), /* @__PURE__ */ react.default.createElement("span", { className: "gh-pr-list-state" }, stateLabel(entry))), /* @__PURE__ */ react.default.createElement("div", { className: "gh-pr-list-meta" }, number && /* @__PURE__ */ react.default.createElement("span", null, number), (author || opened) && /* @__PURE__ */ react.default.createElement("span", { className: "gh-pr-list-identity" }, author && /* @__PURE__ */ react.default.createElement("span", { className: "gh-pr-list-author" }, `@${author}`), author && opened && " · ", opened && /* @__PURE__ */ react.default.createElement("time", {
+		dateTime: opened.timestamp,
+		title: `Opened ${opened.timestamp}`,
+		"aria-label": `Opened ${opened.timestamp}, ${opened.age}`
+	}, `opened ${opened.age}`)), (head || base || sha) && /* @__PURE__ */ react.default.createElement("details", { className: "gh-pr-list-branch" }, /* @__PURE__ */ react.default.createElement("summary", { "aria-label": `Branch and commit details for ${number || title}` }, "Details"), head && /* @__PURE__ */ react.default.createElement("p", null, "From ", /* @__PURE__ */ react.default.createElement("code", null, head)), base && /* @__PURE__ */ react.default.createElement("p", null, "Into ", /* @__PURE__ */ react.default.createElement("code", null, base)), sha && /* @__PURE__ */ react.default.createElement("p", null, "Commit ", /* @__PURE__ */ react.default.createElement("code", null, sha)))));
 }
 /** Historical list presentation only: no fetching, pagination or authority. */
 function PullRequestList({ model, block, inspect }) {
+	const now = Date.now();
 	return /* @__PURE__ */ react.default.createElement("section", {
 		className: "gh-grant gh-pr-list",
 		"aria-label": "GitHub Pull requests"
@@ -1683,10 +1712,12 @@ function PullRequestList({ model, block, inspect }) {
 		key: index
 	}, warning)), /* @__PURE__ */ react.default.createElement("div", { className: "gh-pr-list-results" }, model.entries.slice(0, 5).map((entry, index) => /* @__PURE__ */ react.default.createElement(PullRequestRow, {
 		key: index,
-		entry
+		entry,
+		now
 	})), model.entries.length > 5 && /* @__PURE__ */ react.default.createElement("details", { className: "gh-pr-list-more" }, /* @__PURE__ */ react.default.createElement("summary", null, `Show ${model.entries.length - 5} more fetched PRs`), model.entries.slice(5).map((entry, index) => /* @__PURE__ */ react.default.createElement(PullRequestRow, {
 		key: index,
-		entry
+		entry,
+		now
 	})))), /* @__PURE__ */ react.default.createElement("details", { className: "gh-pr-list-data" }, /* @__PURE__ */ react.default.createElement("summary", null, "Data details"), model.warnings.map((warning, index) => /* @__PURE__ */ react.default.createElement("p", { key: index }, warning)), /* @__PURE__ */ react.default.createElement("details", null, /* @__PURE__ */ react.default.createElement("summary", null, "Raw tool details"), /* @__PURE__ */ react.default.createElement("pre", { tabIndex: 0 }, rawDetails(block) || "No raw tool result is available yet.")), inspect && /* @__PURE__ */ react.default.createElement("button", {
 		type: "button",
 		onClick: inspect
@@ -1698,11 +1729,14 @@ const pullRequestListCss = `
 .gh-pr-list .gh-pr-list-status { font-size:13px; color:var(--dsw-alias-label-secondary); margin:8px 0; }
 .gh-pr-list .gh-pr-list-results { margin-top:12px; }
 .gh-pr-list .gh-pr-list-row { padding:12px 0; border-top:1px solid color-mix(in srgb,var(--dsw-alias-border-standard,#8885) 65%,transparent); }
-.gh-pr-list .gh-pr-list-row h4 { margin:0 0 6px; font-size:14px; line-height:1.5; font-weight:600; }
+.gh-pr-list .gh-pr-list-heading { display:flex; align-items:baseline; gap:8px 12px; margin-bottom:6px; }
+.gh-pr-list .gh-pr-list-row h4 { flex:1; min-width:0; margin:0; font-size:14px; line-height:1.5; font-weight:600; }
+.gh-pr-list .gh-pr-list-identity { min-width:0; }
+.gh-pr-list .gh-pr-list-author { color:var(--dsw-alias-label-primary); font-weight:500; }
 .gh-pr-list .gh-pr-list-row h4 a { color:inherit; text-decoration:none; }
 .gh-pr-list .gh-pr-list-row h4 a:hover,.gh-pr-list .gh-pr-list-row h4 a:focus-visible { color:var(--dsw-alias-brand-primary,#486ed4); text-decoration:underline; }
 .gh-pr-list .gh-pr-list-meta { display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 12px; color:var(--dsw-alias-label-secondary); font-size:12px; }
-.gh-pr-list .gh-pr-list-state { color:var(--dsw-alias-label-primary); border:1px solid var(--dsw-alias-border-standard,#8885); border-radius:10px; padding:0 7px; }
+.gh-pr-list .gh-pr-list-state { flex-shrink:0; color:var(--dsw-alias-label-primary); font-size:12px; border:1px solid var(--dsw-alias-border-standard,#8885); border-radius:10px; padding:0 7px; }
 .gh-pr-list .gh-pr-list-branch { min-width:0; margin:0; }
 .gh-pr-list .gh-pr-list-branch[open] { flex-basis:100%; }
 .gh-pr-list .gh-pr-list-branch p { margin:4px 0; }

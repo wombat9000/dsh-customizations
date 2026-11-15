@@ -36,7 +36,18 @@ export const prListData = {
       state: index === 0 || index === 3 ? 'closed' : index === 4 ? 'future-state' : 'open',
       isDraft: index === 2,
       mergedAt: index === 3 ? '2026-10-20T09:30:00Z' : null,
-      author: { login: 'fixture-user' },
+      author: {
+        login: ['alex', 'jordan', 'casey', 'alex', 'automation-bot'][index] ?? 'fixture-user',
+      },
+      createdAt:
+        [
+          '2026-11-15T00:00:00Z',
+          '2026-11-14T12:00:00Z',
+          '2026-11-13T12:00:00Z',
+          '2026-10-15T09:30:00Z',
+          null, // Legacy/missing opened time stays absent; updatedAt is not an age substitute.
+        ][index] ?? null,
+      updatedAt: '2026-11-15T10:00:00Z',
       head: { ref: `review/improvement-${index + 1}`, sha: 'a'.repeat(40) },
       body: 'A shortened description from the supplied result.',
     })),

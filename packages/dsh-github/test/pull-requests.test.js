@@ -21,6 +21,7 @@ import {
   target,
   file,
   restPull,
+  restPullList,
   graphPull,
   observed,
   createObserved,
@@ -117,13 +118,20 @@ test('argument validation owns nested bounds, exact content and prohibited opera
 })
 
 test('list and detail reads preserve explicit PR identity and conservative REST continuation', async () => {
-  const mock = transport([[restPull()], restPull()])
+  const mock = transport([[restPullList()], restPull()])
   const list = await readPullRequest(
     'listPullRequests',
     { owner: 'octocat', repo: 'example', limit: 1, page: 2 },
     mock.request,
   )
   assert.equal(list.pullRequests.nodes[0].number, 7)
+  assert.equal(list.pullRequests.nodes[0].author.login, 'author')
+  assert.equal(list.pullRequests.nodes[0].createdAt, '2026-04-13T10:00:00Z')
+  assert.equal(list.pullRequests.nodes[0].updatedAt, '2026-04-15T10:00:00Z')
+  assert.equal(list.pullRequests.nodes[0].changedFiles, null)
+  assert.equal(list.pullRequests.nodes[0].commits, undefined)
+  assert.equal(list.pullRequests.nodes[0].additions, undefined)
+  assert.equal(mock.calls.length, 1, 'author and opened time use the existing list request only')
   assert.deepEqual(list.pullRequests.pageInfo, {
     page: 2,
     hasNextPage: true,
@@ -136,6 +144,25 @@ test('list and detail reads preserve explicit PR identity and conservative REST 
   assert.equal(detail.pullRequest.base.sha, BASE)
   assert.equal(detail.pullRequest.mergeable, null)
   mock.done()
+})
+
+test('optional list creation dates remain unknown when absent; non-text values fail closed', async () => {
+  for (const created_at of [undefined, null, 'invalid', '2027-01-01T00:00:00Z']) {
+    const mock = transport([[restPullList(7, { created_at })]])
+    const result = await readPullRequest(
+      'listPullRequests',
+      { owner: 'octocat', repo: 'example' },
+      mock.request,
+    )
+    assert.equal(result.pullRequests.nodes[0].createdAt, created_at ?? null)
+    assert.equal(mock.calls.length, 1)
+    mock.done()
+  }
+  const mock = transport([[restPullList(7, { created_at: 0 })]])
+  await assert.rejects(
+    readPullRequest('listPullRequests', { owner: 'octocat', repo: 'example' }, mock.request),
+    rejectsCode('INVALID_RESPONSE'),
+  )
 })
 
 test('files and review summaries expose unavailable patches and independent page metadata', async () => {

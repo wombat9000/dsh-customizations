@@ -51,6 +51,15 @@ export function restPull(number = 7, extra = {}) {
     ...extra,
   }
 }
+// The REST list schema omits aggregate diff/commit counts and mergeability.
+// Keep detail/write fixtures unchanged; list tests must not establish these fields.
+export function restPullList(number = 7, extra = {}) {
+  const pr = restPull(number, { created_at: '2026-04-13T10:00:00Z', ...extra })
+  delete pr.changed_files
+  delete pr.mergeable
+  delete pr.mergeable_state
+  return pr
+}
 export function graphPull(number = 7, extra = {}) {
   return {
     id: `PR_${number}`,

@@ -169,6 +169,15 @@ async function reviewPRList(app, testInfo, theme, narrow) {
     '20 pull requests fetched · More may be available',
   )
   await expect(card.locator('.gh-pr-list-row:visible')).toHaveCount(5)
+  await expect(card.locator('.gh-pr-list-row:visible time')).toHaveCount(4)
+  const firstRow = card.locator('.gh-pr-list-row').first()
+  await expect(firstRow.getByText('@alex', { exact: true })).toBeVisible()
+  await expect(firstRow.locator('time')).toHaveAttribute('datetime', '2026-11-15T00:00:00Z')
+  await expect(firstRow.locator('time')).toHaveAttribute('title', 'Opened 2026-11-15T00:00:00Z')
+  await expect(firstRow.locator('time')).toHaveText(
+    /^opened (?:just now|\d+ (?:minute|hour|day)s? ago)$/,
+  )
+  await expect(card.locator('.gh-pr-list-row').nth(4).locator('time')).toHaveCount(0)
   await expect(
     card.getByRole('link', {
       name: 'Keep repository settings when opening a new worktree',

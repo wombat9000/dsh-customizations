@@ -1,6 +1,6 @@
 import React, { act } from 'react'
 import { createRoot } from 'react-dom/client'
-import { afterEach, expect, test } from 'vitest'
+import { afterEach, expect, test, vi } from 'vitest'
 import { page, userEvent } from 'vitest/browser'
 import { PullRequestCard } from '../../client/pull-request-card.tsx'
 import {
@@ -18,6 +18,7 @@ globalThis.IS_REACT_ACT_ENVIRONMENT = true
 afterEach(async () => {
   await act(async () => root?.unmount())
   container?.remove()
+  vi.restoreAllMocks()
 })
 async function mount(toolName, envelope) {
   container = document.createElement('div')
@@ -176,6 +177,90 @@ test('PR list puts exact titles and established states first, without readiness 
   expect(container.querySelector('img,script,iframe')).toBeNull()
   expect(container.innerText).not.toContain('Ready for review')
   expect(container.innerText).not.toContain('More available')
+})
+
+test.each([
+  ['2026-11-15T12:00:00Z', 'just now'],
+  ['2026-11-15T11:59:59.999Z', 'just now'],
+  ['2026-11-15T11:59:00Z', '1 minute ago'],
+  ['2026-11-15T11:01:00Z', '59 minutes ago'],
+  ['2026-11-15T11:00:00Z', '1 hour ago'],
+  ['2026-11-14T13:00:00Z', '23 hours ago'],
+  ['2026-11-14T12:00:00Z', '1 day ago'],
+  ['2026-11-13T12:00:00Z', '2 days ago'],
+  [undefined, null],
+  [null, null],
+  [0, null],
+  ['2026-02-29T10:00:00Z', null],
+  ['not a timestamp', null],
+  ['2026-11-15T12:00:00.001Z', null],
+])(
+  'PR opened age uses a valid supplied creation instant, never updatedAt: %j',
+  async (createdAt, age) => {
+    vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-11-15T12:00:00Z'))
+    await mount(
+      'github_list_pull_requests',
+      listEnvelope([
+        {
+          ...cardPullRequest,
+          createdAt,
+          updatedAt: '2026-11-15T11:00:00Z',
+          author: { login: 'alex' },
+        },
+      ]),
+    )
+    const row = container.querySelector('article')
+    expect(row.innerText).toContain('@alex')
+    expect(row.innerText).not.toContain('updated')
+    const time = row.querySelector('time')
+    if (age) {
+      expect(time.textContent).toBe(`opened ${age}`)
+      expect(time.getAttribute('datetime')).toBe(createdAt)
+      expect(time.getAttribute('title')).toBe(`Opened ${createdAt}`)
+      expect(time.getAttribute('aria-label')).toBe(`Opened ${createdAt}, ${age}`)
+    } else expect(time).toBeNull()
+  },
+)
+
+test('legacy PR rows escape long authors without avatars, inferred totals, CI or review claims', async () => {
+  await mount(
+    'github_list_pull_requests',
+    listEnvelope([
+      {
+        ...cardPullRequest,
+        title: 'Exact title with <svg onload=alert(1)>',
+        author: {
+          login: '<img src=x onerror=alert(1)>'.repeat(20),
+          avatarUrl: 'https://external.example/avatar',
+        },
+        // These unsupported aggregates do not become decorative list assurances.
+        additions: 0,
+        deletions: 0,
+        changedFiles: 0,
+        commits: 0,
+        checks: { state: 'SUCCESS', truncated: true },
+        reviews: { nodes: [{ state: 'APPROVED' }], pageInfo: { hasNextPage: true } },
+      },
+      { title: 'Legacy missing metadata', author: null },
+    ]),
+  )
+  container.style.width = '320px'
+  expect(container.scrollWidth).toBeLessThanOrEqual(320)
+  const rows = [...container.querySelectorAll('article')]
+  expect(rows[0].innerText).toContain('@<img src=x onerror=alert(1)>')
+  expect(rows[0].querySelector('h4').textContent).toBe('Exact title with <svg onload=alert(1)>')
+  expect(container.querySelector('img,svg,iframe,script,time')).toBeNull()
+  expect(rows[1].innerText).not.toContain('@')
+  for (const label of [
+    '0 commits',
+    '0 files',
+    'Passing',
+    'Approved',
+    'Awaiting review',
+    'Updated',
+    'opened',
+  ])
+    expect(rows.map((row) => row.innerText).join(' ')).not.toContain(label)
 })
 
 test('PR list separates remote-page uncertainty, shortened descriptions and local expansion', async () => {
