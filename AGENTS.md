@@ -8,4 +8,5 @@
 - For repository-owned DSH client UI work, read `.agents/skills/dsh-client-ui-development/SKILL.md` and choose its smallest sufficient path; routine presentation changes do not require fresh contract discovery.
 - If `.agents/skills/` contains other skills, inspect their names and descriptions and load only those relevant to the task. Without a skill tool, read the relevant `SKILL.md` directly.
 - Preserve existing package conventions. Keep shared services in host bundles and per-session contributions in agent presets.
-- Do not install or upgrade dependencies, edit CI, apply profiles, commit, or deploy without explicit approval.
+- Dependency installation requires explicit approval except for the bounded offline worktree bootstrap in [repository setup](.agents/skills/repository-setup/SKILL.md#restore-locked-worktree-dependencies). Dependency additions and upgrades still require explicit approval.
+- Do not edit CI, apply profiles, commit, or deploy without explicit approval.
