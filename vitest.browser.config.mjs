@@ -5,6 +5,7 @@ export default defineConfig({
   test: {
     include: [
       'packages/*/test/browser/*.browser.test.mjs',
+      'shared/client/test/browser/*.browser.test.mjs',
       'packages/dsh-tool-youtube/test/client.browser.test.tsx',
       'packages/dsh-tool-imagegen/test/client.browser.test.tsx',
     ],

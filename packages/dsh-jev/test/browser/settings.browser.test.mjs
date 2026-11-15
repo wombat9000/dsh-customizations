@@ -10,7 +10,7 @@ afterEach(async () => {
   container?.remove()
   root = null
 })
-async function mount() {
+async function mount(view) {
   let model = 'typesafe/jev-1.13'
   const rpc = {
     call: vi.fn(async (channel, method, payload) => {
@@ -23,8 +23,9 @@ async function mount() {
   container = document.createElement('div')
   document.body.append(container)
   root = createRoot(container)
-  await act(async () => root.render(React.createElement(SettingsCard, { rpc })))
-  await act(async () => page.getByText('Jev', { exact: true }).click())
+  await act(async () => root.render(React.createElement(SettingsCard, { rpc, view })))
+  if (view !== 'summary' && view !== 'page')
+    await act(async () => page.getByText('Jev', { exact: true }).click())
   return rpc
 }
 test('Jev settings edits model only and shares credential status without another key field', async () => {
@@ -43,13 +44,42 @@ test('Jev settings edits model only and shares credential status without another
   ])
   await expect.element(page.getByText('Jev model saved. No evaluation was sent.')).toBeVisible()
 })
-test('Jev transport errors stay generic and styles dispose', async () => {
+test('Jev transport errors stay generic and preserve the model draft', async () => {
   const rpc = await mount()
+  await act(async () => page.getByLabelText('Jev model ID').fill('~typesafe/jev-latest'))
   rpc.call.mockRejectedValue(new Error('secret payload'))
   await act(async () => page.getByRole('button', { name: 'Save Jev model' }).click())
   await expect.element(page.getByRole('alert')).toHaveTextContent('Jev settings request failed.')
   expect(container.textContent).not.toContain('secret payload')
-  await act(() => root.unmount())
-  root = null
-  expect(document.querySelector('style[data-plugin-css="jev/settings"]')).toBeNull()
+  await expect.element(page.getByLabelText('Jev model ID')).toHaveValue('~typesafe/jev-latest')
+})
+test('Jev summary does not mount a form or read settings; page starts open', async () => {
+  const rpc = await mount('summary')
+  expect(rpc.call).not.toHaveBeenCalled()
+  expect(container.querySelector('details, input, button, style')).toBeNull()
+  await act(async () => root.render(React.createElement(SettingsCard, { rpc, view: 'page' })))
+  expect(container.querySelector('details').open).toBe(true)
+  expect(rpc.call).toHaveBeenCalledTimes(1)
+})
+test('Jev pending save disables controls until the validated model returns', async () => {
+  const rpc = await mount()
+  let complete
+  rpc.call.mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        complete = resolve
+      }),
+  )
+  await act(async () => page.getByRole('button', { name: 'Save Jev model' }).click())
+  await expect.element(page.getByLabelText('Jev model ID')).toBeDisabled()
+  await expect
+    .element(page.getByRole('button', { name: 'Refresh credential status' }))
+    .toBeDisabled()
+  await act(async () =>
+    complete({ ok: true, value: { model: 'typesafe/jev-1.13', available: true } }),
+  )
+  await expect.element(page.getByLabelText('Jev model ID')).toBeEnabled()
+  await expect.element(page.getByRole('button', { name: 'Save Jev model' })).toBeEnabled()
+  await expect.element(page.getByText('Jev model saved. No evaluation was sent.')).toBeVisible()
+  expect(rpc.call).toHaveBeenCalledTimes(2)
 })

@@ -14,7 +14,7 @@ afterEach(async () => {
   root = null
   vi.restoreAllMocks()
 })
-async function mount(overrides = {}) {
+async function mount(overrides = {}, view) {
   calls.length = 0
   status = {
     configured: false,
@@ -35,8 +35,9 @@ async function mount(overrides = {}) {
   container = document.createElement('div')
   document.body.append(container)
   root = createRoot(container)
-  await act(async () => root.render(React.createElement(SettingsCard, { rpc })))
-  await act(async () => page.getByText('OpenRouter', { exact: true }).click())
+  await act(async () => root.render(React.createElement(SettingsCard, { rpc, view })))
+  if (view !== 'summary' && view !== 'page')
+    await act(async () => page.getByText('OpenRouter', { exact: true }).click())
   return rpc
 }
 test('shared settings saves one canonical credential and clears the password draft', async () => {
@@ -81,7 +82,7 @@ test('malformed RPC status cannot become writable client state', async () => {
     )
   }
 })
-test('transport errors do not expose request details and styles dispose', async () => {
+test('transport errors do not expose request details or clear an unsaved password', async () => {
   const rpc = await mount()
   rpc.call.mockRejectedValue(new Error('sensitive request body'))
   await act(async () => page.getByLabelText('OpenRouter API key').fill('dummy'))
@@ -90,7 +91,32 @@ test('transport errors do not expose request details and styles dispose', async 
     .element(page.getByRole('alert'))
     .toHaveTextContent('OpenRouter settings request failed.')
   expect(container.textContent).not.toContain('sensitive')
+  await expect.element(page.getByLabelText('OpenRouter API key')).toHaveValue('dummy')
+})
+test('OpenRouter summary has no form or credential read; page starts open', async () => {
+  const rpc = await mount({}, 'summary')
+  expect(rpc.call).not.toHaveBeenCalled()
+  expect(container.querySelector('details, input, button, style')).toBeNull()
+  await act(async () => root.render(React.createElement(SettingsCard, { rpc, view: 'page' })))
+  expect(container.querySelector('details').open).toBe(true)
+  expect(rpc.call).toHaveBeenCalledTimes(1)
+})
+test('pending credential write disables controls and does not refresh after disposal', async () => {
+  const rpc = await mount()
+  let reject
+  rpc.call.mockImplementation(
+    () =>
+      new Promise((_, fail) => {
+        reject = fail
+      }),
+  )
+  await act(async () => page.getByLabelText('OpenRouter API key').fill('fixture-draft'))
+  await act(async () => page.getByRole('button', { name: 'Save shared key' }).click())
+  await expect.element(page.getByLabelText('OpenRouter API key')).toBeDisabled()
+  await expect.element(page.getByRole('button', { name: 'Save shared key' })).toBeDisabled()
   await act(() => root.unmount())
   root = null
-  expect(document.querySelector('style[data-plugin-css="openrouter/settings"]')).toBeNull()
+  await act(async () => reject(new Error('disposed request')))
+  expect(container.childElementCount).toBe(0)
+  expect(rpc.call).toHaveBeenCalledTimes(2)
 })

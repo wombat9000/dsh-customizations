@@ -49,21 +49,42 @@ async function call(rpc, method, payload) {
 }
 
 //#endregion
-//#region client/styles.ts
+//#region ../../shared/client/settings.tsx
 const css = `
-      .dsh-jev { border: .5px solid var(--dsw-alias-border-l4); border-radius: 16px; background: var(--dsw-alias-bg-layer-3); color: var(--dsw-alias-label-primary); }
-      .dsh-jev summary { cursor: pointer; padding: 14px 16px; font-size: 15px; font-weight: 600; }
-      .dsh-jev[open] { background: var(--dsw-alias-bg-layer-2); }
-      .dsh-jev__body { display: grid; gap: 12px; margin: 0 16px; padding: 12px 0 16px; border-top: .5px solid var(--dsw-alias-border-l2); font-size: 13px; line-height: 1.5; }
-      .dsh-jev p { margin: 0; }
-      .dsh-jev label { display: grid; gap: 6px; }
-      .dsh-jev input { box-sizing: border-box; width: 100%; min-width: 0; height: 34px; padding: 0 10px; border: .5px solid var(--dsw-alias-border-l4); border-radius: 8px; font: inherit; color: inherit; background: var(--dsw-alias-bg-layer-3); }
-      .dsh-jev button { justify-self: end; font: inherit; color: inherit; background: transparent; border: .5px solid var(--dsw-alias-border-l4); border-radius: 8px; padding: 5px 12px; cursor: pointer; }
-      .dsh-jev button:disabled { opacity: .5; cursor: default; }
-      .dsh-jev button:focus-visible, .dsh-jev input:focus-visible, .dsh-jev summary:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary); outline-offset: 2px; }
-      .dsh-jev__hint { color: var(--dsw-alias-label-secondary); }
-      .dsh-jev [role=alert] { color: var(--dsw-alias-label-error); }
-    `;
+.dsh-settings-panel { border: .5px solid var(--dsw-alias-border-l4); border-radius: 16px; background: var(--dsw-alias-bg-layer-3); color: var(--dsw-alias-label-primary); }
+.dsh-settings-panel > summary { cursor: pointer; padding: 14px 16px; font-size: 15px; font-weight: 600; }
+.dsh-settings-panel[open] { background: var(--dsw-alias-bg-layer-2); }
+.dsh-settings-panel__body { display: grid; gap: 12px; margin: 0 16px; padding: 12px 0 16px; border-top: .5px solid var(--dsw-alias-border-l2); font-size: 13px; line-height: 1.5; }
+.dsh-settings-panel p { margin: 0; }
+.dsh-settings-panel label { display: grid; gap: 6px; }
+.dsh-settings-panel input { box-sizing: border-box; width: 100%; min-width: 0; height: 34px; padding: 0 10px; border: .5px solid var(--dsw-alias-border-l4); border-radius: 8px; font: inherit; color: inherit; background: var(--dsw-alias-bg-layer-3); }
+.dsh-settings-panel button { font: inherit; color: inherit; background: transparent; border: .5px solid var(--dsw-alias-border-l4); border-radius: 8px; padding: 5px 12px; cursor: pointer; }
+.dsh-settings-panel button:disabled, .dsh-settings-panel input:disabled { opacity: .5; cursor: default; }
+.dsh-settings-panel button:focus-visible, .dsh-settings-panel input:focus-visible, .dsh-settings-panel > summary:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary); outline-offset: 2px; }
+.dsh-settings-panel__actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.dsh-settings-panel__actions--stacked-end { display: grid; gap: 12px; justify-items: end; }
+.dsh-settings-panel__hint { color: var(--dsw-alias-label-secondary); }
+.dsh-settings-panel [role=alert] { color: var(--dsw-alias-label-error); }
+`;
+function SettingsPanel({ title, initiallyOpen, status, description, children, actions, actionLayout = "row", error, notice }) {
+	return /* @__PURE__ */ react.default.createElement("details", {
+		className: "dsh-settings-panel",
+		"aria-label": `${title} settings`,
+		open: initiallyOpen
+	}, /* @__PURE__ */ react.default.createElement("summary", null, title), /* @__PURE__ */ react.default.createElement("style", null, css), /* @__PURE__ */ react.default.createElement("div", { className: "dsh-settings-panel__body" }, /* @__PURE__ */ react.default.createElement("p", { role: "status" }, status), /* @__PURE__ */ react.default.createElement("p", { className: "dsh-settings-panel__hint" }, description), children, /* @__PURE__ */ react.default.createElement("div", { className: `dsh-settings-panel__actions dsh-settings-panel__actions--${actionLayout}` }, actions), error ? /* @__PURE__ */ react.default.createElement("p", { role: "alert" }, error) : null, notice ? /* @__PURE__ */ react.default.createElement("p", { role: "status" }, notice) : null));
+}
+function SettingsField({ label, hint, ...input }) {
+	const id = (0, react.useId)();
+	const hintId = `${id}-hint`;
+	return /* @__PURE__ */ react.default.createElement(react.default.Fragment, null, /* @__PURE__ */ react.default.createElement("label", { htmlFor: id }, label, /* @__PURE__ */ react.default.createElement("input", {
+		...input,
+		id,
+		"aria-describedby": [input["aria-describedby"], hint ? hintId : void 0].filter(Boolean).join(" ") || void 0
+	})), hint ? /* @__PURE__ */ react.default.createElement("p", {
+		id: hintId,
+		className: "dsh-settings-panel__hint"
+	}, hint) : null);
+}
 
 //#endregion
 //#region client/settings.tsx
@@ -90,14 +111,9 @@ function SettingsForm({ rpc, view }) {
 	};
 	(0, react.useEffect)(() => {
 		alive.current = true;
-		const style = document.createElement("style");
-		style.textContent = css;
-		style.dataset.pluginCss = "jev/settings";
-		document.head.appendChild(style);
 		load(true);
 		return () => {
 			alive.current = false;
-			style.remove();
 		};
 	}, [rpc]);
 	const save = async () => {
@@ -118,28 +134,35 @@ function SettingsForm({ rpc, view }) {
 			if (alive.current) setBusy(false);
 		}
 	};
-	return /* @__PURE__ */ react.default.createElement("details", {
-		className: "dsh-jev",
-		"aria-label": "Jev settings",
-		open: view === "page"
-	}, /* @__PURE__ */ react.default.createElement("summary", null, "Jev"), /* @__PURE__ */ react.default.createElement("div", { className: "dsh-jev__body" }, /* @__PURE__ */ react.default.createElement("p", { role: "status" }, status ? `Shared OpenRouter key: ${status.credential?.configured ? "Configured" : "Not configured"}` : "Checking shared OpenRouter key…"), /* @__PURE__ */ react.default.createElement("p", { className: "dsh-jev__hint" }, "Manage the shared key in the OpenRouter plugin card. Jev evaluates typed questions; it is not a chat model. Consumers choose when to send data through OpenRouter to TypeSafe."), /* @__PURE__ */ react.default.createElement("label", null, "Jev model ID", /* @__PURE__ */ react.default.createElement("input", {
+	return /* @__PURE__ */ react.default.createElement(SettingsPanel, {
+		title: "Jev",
+		initiallyOpen: view === "page",
+		status: status ? `Shared OpenRouter key: ${status.credential?.configured ? "Configured" : "Not configured"}` : "Checking shared OpenRouter key…",
+		description: "Manage the shared key in the OpenRouter plugin card. Jev evaluates typed questions; it is not a chat model. Consumers choose when to send data through OpenRouter to TypeSafe.",
+		error: error || status?.credential?.error,
+		notice,
+		actionLayout: "stacked-end",
+		actions: /* @__PURE__ */ react.default.createElement(react.default.Fragment, null, /* @__PURE__ */ react.default.createElement("button", {
+			type: "button",
+			disabled: busy || !status || !model.trim(),
+			onClick: () => {
+				save();
+			}
+		}, "Save Jev model"), /* @__PURE__ */ react.default.createElement("button", {
+			type: "button",
+			disabled: busy,
+			onClick: () => {
+				load();
+			}
+		}, "Refresh credential status"))
+	}, /* @__PURE__ */ react.default.createElement(SettingsField, {
+		label: "Jev model ID",
 		value: model,
 		disabled: busy || !status,
 		onChange: (event) => setModel(event.target.value),
-		spellCheck: false
-	})), /* @__PURE__ */ react.default.createElement("p", { className: "dsh-jev__hint" }, "Default: typesafe/jev-1.13. Use ~typesafe/jev-latest only if you want the release to change automatically."), /* @__PURE__ */ react.default.createElement("button", {
-		type: "button",
-		disabled: busy || !status || !model.trim(),
-		onClick: () => {
-			save();
-		}
-	}, "Save Jev model"), /* @__PURE__ */ react.default.createElement("button", {
-		type: "button",
-		disabled: busy,
-		onClick: () => {
-			load();
-		}
-	}, "Refresh credential status"), error || status?.credential?.error ? /* @__PURE__ */ react.default.createElement("p", { role: "alert" }, error || status?.credential.error) : null, notice ? /* @__PURE__ */ react.default.createElement("p", { role: "status" }, notice) : null));
+		spellCheck: false,
+		hint: "Default: typesafe/jev-1.13. Use ~typesafe/jev-latest only if you want the release to change automatically."
+	}));
 }
 
 //#endregion
