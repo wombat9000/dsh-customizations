@@ -268,7 +268,15 @@ export async function readPullRequest(
     return {
       ...result,
       pullRequests: restPagePR(
-        raw.map((pr) => restPullPR(pr, args)),
+        raw.map((pr) => ({
+          ...restPullPR(pr, args),
+          // REST list supplies created_at, unlike diff/commit totals. Retain it
+          // only for lists; do not add detail requests or change page semantics.
+          createdAt:
+            property(pr, 'created_at') === undefined
+              ? null
+              : textPR(property(pr, 'created_at'), true),
+        })),
         args,
       ),
     }

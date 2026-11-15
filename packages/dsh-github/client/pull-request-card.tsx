@@ -2,6 +2,7 @@ import React from 'react'
 import type { CardProps } from '../shared/contracts.ts'
 import { Link } from './common.tsx'
 import { css } from './styles.ts'
+import { PullRequestList } from './pull-request-list.tsx'
 import { object, text, rawDetails } from './validation.ts'
 import { supplied } from './read-models.ts'
 import {
@@ -114,6 +115,14 @@ function Changes({ change }: { change: Record<string, unknown> }) {
 }
 export function PullRequestCard({ toolName, block, inspect }: CardProps & { toolName: string }) {
   const model = pullRequestCardModel(toolName, block)
+  if (toolName === 'github_list_pull_requests')
+    return (
+      <PullRequestList
+        model={model}
+        {...(block ? { block } : {})}
+        {...(inspect ? { inspect } : {})}
+      />
+    )
   return (
     <section className="gh-grant gh-pr" aria-label={`GitHub ${model.title}`}>
       <style>

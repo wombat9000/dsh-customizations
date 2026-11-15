@@ -211,7 +211,14 @@ export async function readPullRequest(operation, input, request) {
         const raw = arrayPR(await request(getPR(`${root}/pulls?state=${args.state ?? 'open'}&per_page=${limit}&page=${page}`)), limit);
         return {
             ...result,
-            pullRequests: restPagePR(raw.map((pr) => restPullPR(pr, args)), args),
+            pullRequests: restPagePR(raw.map((pr) => ({
+                ...restPullPR(pr, args),
+                // REST list supplies created_at, unlike diff/commit totals. Retain it
+                // only for lists; do not add detail requests or change page semantics.
+                createdAt: property(pr, 'created_at') === undefined
+                    ? null
+                    : textPR(property(pr, 'created_at'), true),
+            })), args),
         };
     }
     if (operation === 'getPullRequestThreads') {

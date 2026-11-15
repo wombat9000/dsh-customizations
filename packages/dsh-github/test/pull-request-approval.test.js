@@ -20,6 +20,7 @@ import {
   observed,
   graphPull,
   restPull,
+  restPullList,
   review,
   stack,
 } from './pull-request-api-fixtures.js'
@@ -437,7 +438,7 @@ test('PR preflight reports account changes before later permission rejection', a
 })
 
 test('managed PR reads preserve REST nextPage and output bounds through the shared result envelope', async () => {
-  const subprocess = fakeSubprocess([json([restPull()])])
+  const subprocess = fakeSubprocess([json([restPullList()])])
   const result = await createGitHubPullRequestRuntime(subprocess).listPullRequests({
     owner: 'octocat',
     repo: 'example',

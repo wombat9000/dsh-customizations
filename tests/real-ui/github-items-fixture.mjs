@@ -90,7 +90,10 @@ export function githubItemsSeed(cwd) {
     const argumentsRaw = JSON.stringify({
       owner: 'fixture-org',
       ...(name.includes('pull_request')
-        ? { repo: 'demo', pullNumber: 61 }
+        ? {
+            repo: 'demo',
+            ...(name === 'github_list_pull_requests' ? { state: 'all' } : { pullNumber: 61 }),
+          }
         : name === 'github_search_issues'
           ? { query: 'fixture' }
           : { repo: 'demo', ...(name === 'github_get_issue' ? { issueNumber: 59 } : {}) }),

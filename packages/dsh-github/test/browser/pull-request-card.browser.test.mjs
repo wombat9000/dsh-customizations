@@ -1,6 +1,6 @@
 import React, { act } from 'react'
 import { createRoot } from 'react-dom/client'
-import { afterEach, expect, test } from 'vitest'
+import { afterEach, expect, test, vi } from 'vitest'
 import { page, userEvent } from 'vitest/browser'
 import { PullRequestCard } from '../../client/pull-request-card.tsx'
 import {
@@ -10,6 +10,7 @@ import {
   cardEnvelope,
   cardWriteEnvelope,
   cardPullRequest,
+  prListEnvelope,
 } from '../pull-request-card-fixtures.js'
 let root, container
 const h = React.createElement
@@ -17,6 +18,7 @@ globalThis.IS_REACT_ACT_ENVIRONMENT = true
 afterEach(async () => {
   await act(async () => root?.unmount())
   container?.remove()
+  vi.restoreAllMocks()
 })
 async function mount(toolName, envelope) {
   container = document.createElement('div')
@@ -37,10 +39,14 @@ async function mount(toolName, envelope) {
 }
 test.each(prReadSnapshots)(
   '%s displays a readable snapshot with no requests',
-  async (name, data) => {
-    await mount(name, cardEnvelope(data))
-    expect(container.querySelector('[role="status"]').textContent).toContain('returned')
-    expect(container.textContent).toContain('Small agent change')
+  async (name, data, envelope) => {
+    await mount(name, envelope ?? cardEnvelope(data))
+    expect(container.querySelector('[role="status"]').textContent).toContain(
+      name === 'github_list_pull_requests' ? 'fetched' : 'returned',
+    )
+    expect(container.textContent).toContain(
+      name === 'github_list_pull_requests' ? 'Keep repository settings' : 'Small agent change',
+    )
     expect(container.querySelector('details').open).toBe(false)
     const notes = Array.from(container.querySelectorAll('[role="note"]'))
       .map((note) => note.textContent)
@@ -122,6 +128,253 @@ test('expanding checks exposes every returned status, including failures after f
   expect(summary.parentElement.open).toBe(true)
   expect(container.querySelectorAll('.gh-pr-row')).toHaveLength(100)
   await expect.element(page.getByText('External failure at end', { exact: true })).toBeVisible()
+})
+
+const listEnvelope = (nodes, pageInfo = { page: 1, hasNextPage: false, nextPage: null }) =>
+  cardEnvelope({ pullRequests: { nodes, totalCount: null, pageInfo } })
+
+const keyboardToggle = async (label) => {
+  const summary = page.getByText(label, { exact: true }).element()
+  summary.focus()
+  await act(async () => userEvent.keyboard('{Enter}'))
+  return summary.parentElement
+}
+
+test('PR list puts exact titles and established states first, without readiness or branch noise', async () => {
+  const cases = [
+    [{ state: 'open', isDraft: false }, 'Open'],
+    [{ state: 'OPEN' }, 'Open'],
+    [{ state: 'open', isDraft: true }, 'Draft'],
+    [{ state: 'closed', isDraft: false }, 'Closed'],
+    [{ state: 'closed', isDraft: true }, 'Closed'],
+    [{ state: 'closed', mergedAt: '2026-10-20T09:30:00Z' }, 'Merged'],
+    [{ state: 'MERGED' }, 'Merged'],
+    [{ state: 'closed', mergedAt: '1' }, 'Closed'],
+    [{ state: 'future-state', isDraft: false }, 'State unknown'],
+    [{}, 'State unknown'],
+  ]
+  await mount(
+    'github_list_pull_requests',
+    listEnvelope(
+      cases.map(([fields], index) => ({
+        title: `Exact title ${index} <img src=x onerror=alert(1)>`,
+        number: index + 1,
+        ...fields,
+        url: index === 0 ? 'https://github.com/fixture-org/demo/pull/1' : 'javascript:alert(1)',
+      })),
+    ),
+  )
+  await keyboardToggle('Show 5 more fetched PRs')
+  const rows = [...container.querySelectorAll('.gh-pr-list-row')]
+  expect(rows.map((row) => row.querySelector('.gh-pr-list-state').textContent)).toEqual(
+    cases.map(([, state]) => state),
+  )
+  expect(rows.map((row) => row.querySelector('h4').textContent)).toEqual(
+    cases.map((_, index) => `Exact title ${index} <img src=x onerror=alert(1)>`),
+  )
+  expect(container.querySelectorAll('a')).toHaveLength(1)
+  expect(container.querySelector('a').getAttribute('rel')).toBe('noopener noreferrer')
+  expect(container.querySelector('img,script,iframe')).toBeNull()
+  expect(container.innerText).not.toContain('Ready for review')
+  expect(container.innerText).not.toContain('More available')
+})
+
+test.each([
+  ['2026-11-15T12:00:00Z', 'just now'],
+  ['2026-11-15T11:59:59.999Z', 'just now'],
+  ['2026-11-15T11:59:00Z', '1 minute ago'],
+  ['2026-11-15T11:01:00Z', '59 minutes ago'],
+  ['2026-11-15T11:00:00Z', '1 hour ago'],
+  ['2026-11-14T13:00:00Z', '23 hours ago'],
+  ['2026-11-14T12:00:00Z', '1 day ago'],
+  ['2026-11-13T12:00:00Z', '2 days ago'],
+  [undefined, null],
+  [null, null],
+  [0, null],
+  ['2026-02-29T10:00:00Z', null],
+  ['not a timestamp', null],
+  ['2026-11-15T12:00:00.001Z', null],
+])(
+  'PR opened age uses a valid supplied creation instant, never updatedAt: %j',
+  async (createdAt, age) => {
+    vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-11-15T12:00:00Z'))
+    await mount(
+      'github_list_pull_requests',
+      listEnvelope([
+        {
+          ...cardPullRequest,
+          createdAt,
+          updatedAt: '2026-11-15T11:00:00Z',
+          author: { login: 'alex' },
+        },
+      ]),
+    )
+    const row = container.querySelector('article')
+    expect(row.innerText).toContain('@alex')
+    expect(row.innerText).not.toContain('updated')
+    const time = row.querySelector('time')
+    if (age) {
+      expect(time.textContent).toBe(`opened ${age}`)
+      expect(time.getAttribute('datetime')).toBe(createdAt)
+      expect(time.getAttribute('title')).toBe(`Opened ${createdAt}`)
+      expect(time.getAttribute('aria-label')).toBe(`Opened ${createdAt}, ${age}`)
+    } else expect(time).toBeNull()
+  },
+)
+
+test('legacy PR rows escape long authors without avatars, inferred totals, CI or review claims', async () => {
+  await mount(
+    'github_list_pull_requests',
+    listEnvelope([
+      {
+        ...cardPullRequest,
+        title: 'Exact title with <svg onload=alert(1)>',
+        author: {
+          login: '<img src=x onerror=alert(1)>'.repeat(20),
+          avatarUrl: 'https://external.example/avatar',
+        },
+        // These unsupported aggregates do not become decorative list assurances.
+        additions: 0,
+        deletions: 0,
+        changedFiles: 0,
+        commits: 0,
+        checks: { state: 'SUCCESS', truncated: true },
+        reviews: { nodes: [{ state: 'APPROVED' }], pageInfo: { hasNextPage: true } },
+      },
+      { title: 'Legacy missing metadata', author: null },
+    ]),
+  )
+  container.style.width = '320px'
+  expect(container.scrollWidth).toBeLessThanOrEqual(320)
+  const rows = [...container.querySelectorAll('article')]
+  expect(rows[0].innerText).toContain('@<img src=x onerror=alert(1)>')
+  expect(rows[0].querySelector('h4').textContent).toBe('Exact title with <svg onload=alert(1)>')
+  expect(container.querySelector('img,svg,iframe,script,time')).toBeNull()
+  expect(rows[1].innerText).not.toContain('@')
+  for (const label of [
+    '0 commits',
+    '0 files',
+    'Passing',
+    'Approved',
+    'Awaiting review',
+    'Updated',
+    'opened',
+  ])
+    expect(rows.map((row) => row.innerText).join(' ')).not.toContain(label)
+})
+
+test('PR list separates remote-page uncertainty, shortened descriptions and local expansion', async () => {
+  await mount('github_list_pull_requests', prListEnvelope)
+  container.style.width = '320px'
+  expect(container.scrollWidth).toBeLessThanOrEqual(320)
+  expect(container.querySelector('[role="status"]').textContent).toBe(
+    '20 pull requests fetched · More may be available',
+  )
+  expect(container.innerText).toContain('Some descriptions are shortened in this view.')
+  expect(container.innerText).not.toContain('data.pullRequests')
+  expect(container.innerText).not.toContain('Commit')
+  expect(container.innerText).not.toContain('review/improvement-1')
+  expect(
+    [...container.querySelectorAll('.gh-pr-list-row')].filter((row) => row.checkVisibility()),
+  ).toHaveLength(5)
+  const more = await keyboardToggle('Show 15 more fetched PRs')
+  expect(more.open).toBe(true)
+  expect(
+    [...container.querySelectorAll('.gh-pr-list-row')].filter((row) => row.checkVisibility()),
+  ).toHaveLength(20)
+  expect(container.querySelector('[role="status"]').textContent).toContain(
+    '20 pull requests fetched',
+  )
+  const details = await keyboardToggle('Data details')
+  expect(details.open).toBe(true)
+  expect(details.innerText).toContain('data.pullRequests')
+  expect(details.innerText).toContain('cursor or page')
+  expect(details.innerText).toContain('Output text bound; GitHub has no text cursor.')
+  await keyboardToggle('Raw tool details')
+  expect(details.innerText).toContain('"nextPage":2')
+  const branch = container.querySelector('.gh-pr-list-branch summary')
+  branch.focus()
+  await act(async () => userEvent.keyboard('{Enter}'))
+  expect(container.innerText).toContain('review/improvement-1')
+  expect(container.innerText).toContain('a'.repeat(40))
+})
+
+test.each([
+  [undefined, 'Completeness unknown'],
+  [{ page: 1, hasNextPage: false }, null],
+  [{ page: 1, hasNextPage: true, nextPage: 2, completeness: 'known' }, 'More available'],
+  [{ hasNextPage: true }, 'Completeness unknown'],
+])('PR list retains bounded and unknown page signals: %j', async (pageInfo, signal) => {
+  await mount('github_list_pull_requests', cardEnvelope({ pullRequests: { nodes: [], pageInfo } }))
+  const status = container.querySelector('[role="status"]').textContent
+  expect(status).toContain('0 pull requests fetched')
+  if (signal) expect(status).toContain(signal)
+  else expect(status).not.toMatch(/More|unknown|Incomplete/)
+  expect(container.innerText).not.toContain('Show ')
+})
+
+test('PR-list display bounds do not turn the rendered subset into the fetched count', async () => {
+  await mount(
+    'github_list_pull_requests',
+    listEnvelope(Array.from({ length: 101 }, (_, index) => ({ title: `Fetched PR ${index + 1}` }))),
+  )
+  expect(container.querySelector('[role="status"]').textContent).toContain(
+    '101 pull requests fetched',
+  )
+  expect(container.innerText).toContain('This card has display limits')
+  await keyboardToggle('Show 95 more fetched PRs')
+  expect(container.querySelectorAll('.gh-pr-list-row')).toHaveLength(100)
+  await keyboardToggle('Data details')
+  await keyboardToggle('Raw tool details')
+  expect(container.innerText).toContain('Fetched PR 101')
+})
+
+test('card-preview text clipping is not pagination and preserves its exact source notice', async () => {
+  await mount('github_list_pull_requests', {
+    ...listEnvelope([{ title: 'No metadata needed for this exact title' }]),
+    truncated: true,
+    truncations: [
+      {
+        path: 'data.pullRequests.nodes[0].body',
+        kind: 'text',
+        reason: 'Card preview text bound; inspect raw tool details or the saved full result',
+      },
+    ],
+  })
+  expect(container.querySelector('[role="status"]').textContent).toBe(
+    '1 pull request fetched · Incomplete data',
+  )
+  expect(container.innerText).toContain('Some descriptions are shortened in this view.')
+  expect(container.innerText).not.toContain('More available')
+  expect(container.querySelector('.gh-pr-list-row').innerText).toContain('State unknown')
+  await keyboardToggle('Data details')
+  expect(container.innerText).toContain(
+    'Card preview text bound; inspect raw tool details or the saved full result',
+  )
+})
+
+test('unlocalized bounds and malformed list results retain visible limits and original raw fallback', async () => {
+  await mount('github_list_pull_requests', { ...listEnvelope([]), truncated: true })
+  expect(container.innerText).toContain('Some output is bounded or incomplete.')
+  let inspected = 0
+  await act(async () =>
+    root.render(
+      h(PullRequestCard, {
+        toolName: 'github_list_pull_requests',
+        block: cardBlock({ bad: '<unsafe> ORIGINAL_RAW_RESULT' }),
+        inspect: () => {
+          inspected++
+        },
+      }),
+    ),
+  )
+  expect(container.innerText).toContain('Result unavailable')
+  expect(container.querySelector('.gh-pr-list-row')).toBeNull()
+  await keyboardToggle('Data details')
+  await keyboardToggle('Raw tool details')
+  expect(container.innerText).toContain('<unsafe> ORIGINAL_RAW_RESULT')
+  await act(async () => page.getByRole('button', { name: 'Inspect tool call' }).click())
+  expect(inspected).toBe(1)
 })
 
 test('uncertain write remains a visible warning and hides unconfirmed resources', async () => {

@@ -142,9 +142,76 @@ async function reviewItems(app, testInfo, theme, narrow) {
   await fields.press('Enter')
 }
 
+async function reviewPRList(app, testInfo, theme, narrow) {
+  const card = app.getByRole('region', { name: 'GitHub Pull requests', exact: true })
+  await expect(card).toBeVisible()
+  await app.setViewportSize({ width: narrow ? 430 : 1100, height: 1600 })
+  await expect(app.getByRole('dialog', { name: 'Navigation', exact: true })).toBeHidden()
+  await expect.poll(async () => (await card.boundingBox()).width).toBeLessThan(narrow ? 431 : 1101)
+  await card.scrollIntoViewIfNeeded()
+  // A hidden native Navigation dialog can still be animating out after resize.
+  // Await actual hit testing, not just its responsive width or ARIA visibility.
+  await expect
+    .poll(() =>
+      card.evaluate((node) => {
+        const rect = node.getBoundingClientRect()
+        return node.contains(document.elementFromPoint(rect.left + 8, rect.top + 20))
+      }),
+    )
+    .toBe(true)
+  const path = testInfo.outputPath(`pr-list-${theme}-${narrow ? 'narrow' : 'wide'}.png`)
+  await card.screenshot({ path, animations: 'disabled' })
+  await testInfo.attach('PR list diagnostic (disposable real shell, fixture data, not baseline)', {
+    path,
+    contentType: 'image/png',
+  })
+  await expect(card.getByRole('status')).toHaveText(
+    '20 pull requests fetched · More may be available',
+  )
+  await expect(card.locator('.gh-pr-list-row:visible')).toHaveCount(5)
+  await expect(card.locator('.gh-pr-list-row:visible time')).toHaveCount(4)
+  const firstRow = card.locator('.gh-pr-list-row').first()
+  await expect(firstRow.getByText('@alex', { exact: true })).toBeVisible()
+  await expect(firstRow.locator('time')).toHaveAttribute('datetime', '2026-11-15T00:00:00Z')
+  await expect(firstRow.locator('time')).toHaveAttribute('title', 'Opened 2026-11-15T00:00:00Z')
+  await expect(firstRow.locator('time')).toHaveText(
+    /^opened (?:just now|\d+ (?:minute|hour|day)s? ago)$/,
+  )
+  await expect(card.locator('.gh-pr-list-row').nth(4).locator('time')).toHaveCount(0)
+  await expect(
+    card.getByRole('link', {
+      name: 'Keep repository settings when opening a new worktree',
+      exact: true,
+    }),
+  ).toHaveAttribute('href', 'https://github.com/fixture-org/demo/pull/80')
+  const visible = await card.innerText()
+  expect(visible).toContain('Some descriptions are shortened in this view.')
+  expect(visible).not.toContain('data.pullRequests')
+  expect(visible).not.toContain('Ready for review')
+  expect(visible).not.toContain('PR_LIST_INTERNAL')
+  expect(await card.evaluate((node) => node.scrollWidth <= node.clientWidth + 1)).toBe(true)
+  if (theme === 'light' && !narrow) {
+    const more = card.getByText('Show 15 more fetched PRs', { exact: true })
+    await more.focus()
+    await more.press('Enter')
+    await expect(card.locator('.gh-pr-list-row:visible')).toHaveCount(20)
+    await more.press('Enter')
+    const details = card.getByText('Data details', { exact: true })
+    await details.focus()
+    await details.press('Enter')
+    await expect(card.getByText(/data.pullRequests: more data/)).toBeVisible()
+    const raw = card.getByText('Raw tool details', { exact: true })
+    await raw.focus()
+    await raw.press('Enter')
+    await expect(card.locator('pre')).toContainText('PR_LIST_INTERNAL_19')
+    await raw.press('Enter')
+    await details.press('Enter')
+  }
+  await app.setViewportSize({ width: 1100, height: 850 })
+}
+
 async function reviewPullRequests(app, testInfo, theme) {
   for (const title of [
-    'Pull requests',
     'Pull request details',
     'Changed files',
     'Reviews',
@@ -266,8 +333,10 @@ test('review historical GitHub cards across themes and compact layouts', async (
           await test.step(title, () => reviewIssue(app, testInfo, title, theme, narrow))
         }
         await test.step('Project items', () => reviewItems(app, testInfo, theme, narrow))
+        await test.step('PR list hierarchy and responsive layout', () =>
+          reviewPRList(app, testInfo, theme, narrow))
         if (!narrow)
-          await test.step('All twelve PR tool views at narrow width', () =>
+          await test.step('Other eleven PR tool views at narrow width', () =>
             reviewPullRequests(app, testInfo, theme))
         expect(requests).toBe(0)
       })
