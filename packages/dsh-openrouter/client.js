@@ -59,22 +59,42 @@ async function call(rpc, method, payload) {
 }
 
 //#endregion
-//#region client/styles.ts
+//#region ../../shared/client/settings.tsx
 const css = `
-      .dsh-openrouter { border: .5px solid var(--dsw-alias-border-l4); border-radius: 16px; background: var(--dsw-alias-bg-layer-3); color: var(--dsw-alias-label-primary); }
-      .dsh-openrouter summary { cursor: pointer; padding: 14px 16px; font-size: 15px; font-weight: 600; }
-      .dsh-openrouter[open] { background: var(--dsw-alias-bg-layer-2); }
-      .dsh-openrouter__body { display: grid; gap: 12px; margin: 0 16px; padding: 12px 0 16px; border-top: .5px solid var(--dsw-alias-border-l2); font-size: 13px; line-height: 1.5; }
-      .dsh-openrouter p { margin: 0; }
-      .dsh-openrouter label { display: grid; gap: 6px; }
-      .dsh-openrouter input { box-sizing: border-box; width: 100%; min-width: 0; height: 34px; padding: 0 10px; border: .5px solid var(--dsw-alias-border-l4); border-radius: 8px; font: inherit; color: inherit; background: var(--dsw-alias-bg-layer-3); }
-      .dsh-openrouter button { font: inherit; color: inherit; background: transparent; border: .5px solid var(--dsw-alias-border-l4); border-radius: 8px; padding: 5px 12px; cursor: pointer; }
-      .dsh-openrouter button:disabled, .dsh-openrouter input:disabled { opacity: .5; cursor: default; }
-      .dsh-openrouter button:focus-visible, .dsh-openrouter input:focus-visible, .dsh-openrouter summary:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary); outline-offset: 2px; }
-      .dsh-openrouter__actions { display: flex; gap: 8px; flex-wrap: wrap; }
-      .dsh-openrouter__hint { color: var(--dsw-alias-label-secondary); }
-      .dsh-openrouter [role=alert] { color: var(--dsw-alias-label-error); }
-    `;
+.dsh-settings-panel { border: .5px solid var(--dsw-alias-border-l4); border-radius: 16px; background: var(--dsw-alias-bg-layer-3); color: var(--dsw-alias-label-primary); }
+.dsh-settings-panel > summary { cursor: pointer; padding: 14px 16px; font-size: 15px; font-weight: 600; }
+.dsh-settings-panel[open] { background: var(--dsw-alias-bg-layer-2); }
+.dsh-settings-panel__body { display: grid; gap: 12px; margin: 0 16px; padding: 12px 0 16px; border-top: .5px solid var(--dsw-alias-border-l2); font-size: 13px; line-height: 1.5; }
+.dsh-settings-panel p { margin: 0; }
+.dsh-settings-panel label { display: grid; gap: 6px; }
+.dsh-settings-panel input { box-sizing: border-box; width: 100%; min-width: 0; height: 34px; padding: 0 10px; border: .5px solid var(--dsw-alias-border-l4); border-radius: 8px; font: inherit; color: inherit; background: var(--dsw-alias-bg-layer-3); }
+.dsh-settings-panel button { font: inherit; color: inherit; background: transparent; border: .5px solid var(--dsw-alias-border-l4); border-radius: 8px; padding: 5px 12px; cursor: pointer; }
+.dsh-settings-panel button:disabled, .dsh-settings-panel input:disabled { opacity: .5; cursor: default; }
+.dsh-settings-panel button:focus-visible, .dsh-settings-panel input:focus-visible, .dsh-settings-panel > summary:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary); outline-offset: 2px; }
+.dsh-settings-panel__actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.dsh-settings-panel__actions--stacked-end { display: grid; gap: 12px; justify-items: end; }
+.dsh-settings-panel__hint { color: var(--dsw-alias-label-secondary); }
+.dsh-settings-panel [role=alert] { color: var(--dsw-alias-label-error); }
+`;
+function SettingsPanel({ title, initiallyOpen, status, description, children, actions, actionLayout = "row", error, notice }) {
+	return /* @__PURE__ */ react.default.createElement("details", {
+		className: "dsh-settings-panel",
+		"aria-label": `${title} settings`,
+		open: initiallyOpen
+	}, /* @__PURE__ */ react.default.createElement("summary", null, title), /* @__PURE__ */ react.default.createElement("style", null, css), /* @__PURE__ */ react.default.createElement("div", { className: "dsh-settings-panel__body" }, /* @__PURE__ */ react.default.createElement("p", { role: "status" }, status), /* @__PURE__ */ react.default.createElement("p", { className: "dsh-settings-panel__hint" }, description), children, /* @__PURE__ */ react.default.createElement("div", { className: `dsh-settings-panel__actions dsh-settings-panel__actions--${actionLayout}` }, actions), error ? /* @__PURE__ */ react.default.createElement("p", { role: "alert" }, error) : null, notice ? /* @__PURE__ */ react.default.createElement("p", { role: "status" }, notice) : null));
+}
+function SettingsField({ label, hint, ...input }) {
+	const id = (0, react.useId)();
+	const hintId = `${id}-hint`;
+	return /* @__PURE__ */ react.default.createElement(react.default.Fragment, null, /* @__PURE__ */ react.default.createElement("label", { htmlFor: id }, label, /* @__PURE__ */ react.default.createElement("input", {
+		...input,
+		id,
+		"aria-describedby": [input["aria-describedby"], hint ? hintId : void 0].filter(Boolean).join(" ") || void 0
+	})), hint ? /* @__PURE__ */ react.default.createElement("p", {
+		id: hintId,
+		className: "dsh-settings-panel__hint"
+	}, hint) : null);
+}
 
 //#endregion
 //#region client/settings.tsx
@@ -90,10 +110,6 @@ function SettingsForm({ rpc, view }) {
 	const alive = (0, react.useRef)(false);
 	(0, react.useEffect)(() => {
 		alive.current = true;
-		const style = document.createElement("style");
-		style.dataset.pluginCss = "openrouter/settings";
-		style.textContent = css;
-		document.head.appendChild(style);
 		call(rpc, "status", {}).then((value) => {
 			if (alive.current) setStatus(value);
 		}, () => {
@@ -101,7 +117,6 @@ function SettingsForm({ rpc, view }) {
 		});
 		return () => {
 			alive.current = false;
-			style.remove();
 		};
 	}, [rpc]);
 	const mutate = async (method) => {
@@ -134,30 +149,35 @@ function SettingsForm({ rpc, view }) {
 			if (alive.current) setBusy(false);
 		}
 	};
-	return /* @__PURE__ */ react.default.createElement("details", {
-		className: "dsh-openrouter",
-		"aria-label": "OpenRouter settings",
-		open: view === "page"
-	}, /* @__PURE__ */ react.default.createElement("summary", null, "OpenRouter"), /* @__PURE__ */ react.default.createElement("div", { className: "dsh-openrouter__body" }, /* @__PURE__ */ react.default.createElement("p", { role: "status" }, status ? `Shared key: ${status.configured ? "Configured" : "Not configured"}${status.source ? ` (${status.source})` : ""}` : "Checking shared key…"), /* @__PURE__ */ react.default.createElement("p", { className: "dsh-openrouter__hint" }, "One credential for trusted OpenRouter integrations and the built-in OpenRouter model route. Replacing or removing it affects all consumers. The key is stored in DSH credentials, never ordinary plugin settings."), status && !status.writable ? /* @__PURE__ */ react.default.createElement("p", null, "This credential source is read-only. Change it where it is configured.") : null, /* @__PURE__ */ react.default.createElement("label", null, "OpenRouter API key", /* @__PURE__ */ react.default.createElement("input", {
+	return /* @__PURE__ */ react.default.createElement(SettingsPanel, {
+		title: "OpenRouter",
+		initiallyOpen: view === "page",
+		status: status ? `Shared key: ${status.configured ? "Configured" : "Not configured"}${status.source ? ` (${status.source})` : ""}` : "Checking shared key…",
+		description: "One credential for trusted OpenRouter integrations and the built-in OpenRouter model route. Replacing or removing it affects all consumers. The key is stored in DSH credentials, never ordinary plugin settings.",
+		error: error || status?.error,
+		notice,
+		actions: /* @__PURE__ */ react.default.createElement(react.default.Fragment, null, /* @__PURE__ */ react.default.createElement("button", {
+			type: "button",
+			disabled: busy || !status?.writable || !draft.trim(),
+			onClick: () => {
+				mutate("save");
+			}
+		}, "Save shared key"), /* @__PURE__ */ react.default.createElement("button", {
+			type: "button",
+			disabled: busy || !status?.writable || !status?.configured,
+			onClick: () => {
+				mutate("clear");
+			}
+		}, "Remove shared key"))
+	}, status && !status.writable ? /* @__PURE__ */ react.default.createElement("p", null, "This credential source is read-only. Change it where it is configured.") : null, /* @__PURE__ */ react.default.createElement(SettingsField, {
+		label: "OpenRouter API key",
 		type: "password",
 		value: draft,
 		disabled: busy || !status?.writable,
 		autoComplete: "off",
 		spellCheck: false,
 		onChange: (event) => setDraft(event.target.value)
-	})), /* @__PURE__ */ react.default.createElement("div", { className: "dsh-openrouter__actions" }, /* @__PURE__ */ react.default.createElement("button", {
-		type: "button",
-		disabled: busy || !status?.writable || !draft.trim(),
-		onClick: () => {
-			mutate("save");
-		}
-	}, "Save shared key"), /* @__PURE__ */ react.default.createElement("button", {
-		type: "button",
-		disabled: busy || !status?.writable || !status?.configured,
-		onClick: () => {
-			mutate("clear");
-		}
-	}, "Remove shared key")), error || status?.error ? /* @__PURE__ */ react.default.createElement("p", { role: "alert" }, error || status?.error) : null, notice ? /* @__PURE__ */ react.default.createElement("p", { role: "status" }, notice) : null));
+	}));
 }
 
 //#endregion

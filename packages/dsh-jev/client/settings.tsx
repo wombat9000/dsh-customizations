@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 import type { JevStatus } from '../shared/contracts.ts'
 import { call, type Rpc } from './rpc.ts'
-import { css } from './styles.ts'
+import { SettingsField, SettingsPanel } from '../../../shared/client/settings.tsx'
 
 export interface SettingsProps {
   rpc: Rpc
@@ -34,14 +34,9 @@ function SettingsForm({ rpc, view }: SettingsProps) {
   }
   useEffect(() => {
     alive.current = true
-    const style = document.createElement('style')
-    style.textContent = css
-    style.dataset.pluginCss = 'jev/settings'
-    document.head.appendChild(style)
     void load(true)
     return () => {
       alive.current = false
-      style.remove()
     }
   }, [rpc])
   const save = async () => {
@@ -64,54 +59,49 @@ function SettingsForm({ rpc, view }: SettingsProps) {
     }
   }
   return (
-    <details className="dsh-jev" aria-label="Jev settings" open={view === 'page'}>
-      <summary>Jev</summary>
-      <div className="dsh-jev__body">
-        <p role="status">
-          {status
-            ? `Shared OpenRouter key: ${status.credential?.configured ? 'Configured' : 'Not configured'}`
-            : 'Checking shared OpenRouter key…'}
-        </p>
-        <p className="dsh-jev__hint">
-          Manage the shared key in the OpenRouter plugin card. Jev evaluates typed questions; it is
-          not a chat model. Consumers choose when to send data through OpenRouter to TypeSafe.
-        </p>
-        <label>
-          Jev model ID
-          <input
-            value={model}
-            disabled={busy || !status}
-            onChange={(event) => setModel(event.target.value)}
-            spellCheck={false}
-          />
-        </label>
-        <p className="dsh-jev__hint">
-          Default: typesafe/jev-1.13. Use ~typesafe/jev-latest only if you want the release to
-          change automatically.
-        </p>
-        <button
-          type="button"
-          disabled={busy || !status || !model.trim()}
-          onClick={() => {
-            void save()
-          }}
-        >
-          Save Jev model
-        </button>
-        <button
-          type="button"
-          disabled={busy}
-          onClick={() => {
-            void load()
-          }}
-        >
-          Refresh credential status
-        </button>
-        {error || status?.credential?.error ? (
-          <p role="alert">{error || status?.credential.error}</p>
-        ) : null}
-        {notice ? <p role="status">{notice}</p> : null}
-      </div>
-    </details>
+    <SettingsPanel
+      title="Jev"
+      initiallyOpen={view === 'page'}
+      status={
+        status
+          ? `Shared OpenRouter key: ${status.credential?.configured ? 'Configured' : 'Not configured'}`
+          : 'Checking shared OpenRouter key…'
+      }
+      description="Manage the shared key in the OpenRouter plugin card. Jev evaluates typed questions; it is not a chat model. Consumers choose when to send data through OpenRouter to TypeSafe."
+      error={error || status?.credential?.error}
+      notice={notice}
+      actionLayout="stacked-end"
+      actions={
+        <>
+          <button
+            type="button"
+            disabled={busy || !status || !model.trim()}
+            onClick={() => {
+              void save()
+            }}
+          >
+            Save Jev model
+          </button>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => {
+              void load()
+            }}
+          >
+            Refresh credential status
+          </button>
+        </>
+      }
+    >
+      <SettingsField
+        label="Jev model ID"
+        value={model}
+        disabled={busy || !status}
+        onChange={(event) => setModel(event.target.value)}
+        spellCheck={false}
+        hint="Default: typesafe/jev-1.13. Use ~typesafe/jev-latest only if you want the release to change automatically."
+      />
+    </SettingsPanel>
   )
 }

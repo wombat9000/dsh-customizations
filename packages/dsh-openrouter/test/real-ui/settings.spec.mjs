@@ -47,4 +47,24 @@ test('shared OpenRouter card edits only the disposable host credential', async (
       }
     }
   }
+  await test.step('Dark narrow shell keeps credential controls inside the panel', async () => {
+    const configuration = await pluginSettings(
+      app,
+      'dark',
+      '@local/dsh-openrouter',
+      'local-openrouter',
+    )
+    await app.setViewportSize({ width: 430, height: 900 })
+    const navigation = app.getByRole('dialog', { name: 'Navigation', exact: true })
+    await expect(navigation).toBeHidden()
+    const panel = configuration.getByRole('group', { name: 'OpenRouter settings' })
+    const input = panel.getByLabel('OpenRouter API key')
+    await expect(input).toBeEnabled()
+    const bounds = await input.boundingBox()
+    expect(bounds.width).toBeGreaterThan(100)
+    expect(bounds.x).toBeGreaterThanOrEqual(0)
+    expect(bounds.x + bounds.width).toBeLessThanOrEqual(430)
+    await expect(panel.getByRole('button', { name: 'Save shared key' })).toBeInViewport()
+    await expect(panel.getByRole('button', { name: 'Remove shared key' })).toBeInViewport()
+  })
 })

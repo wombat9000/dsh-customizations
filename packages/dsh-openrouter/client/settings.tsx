@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 import type { OpenRouterStatus, RpcTransport } from '../shared/contracts.js'
 import { call } from './transport.js'
-import { css } from './styles.js'
+import { SettingsField, SettingsPanel } from '../../../shared/client/settings.tsx'
 
 export interface SettingsProps {
   rpc: RpcTransport
@@ -25,10 +25,6 @@ function SettingsForm({ rpc, view }: SettingsProps) {
   const alive = useRef(false)
   useEffect(() => {
     alive.current = true
-    const style = document.createElement('style')
-    style.dataset.pluginCss = 'openrouter/settings'
-    style.textContent = css
-    document.head.appendChild(style)
     void call(rpc, 'status', {}).then(
       (value) => {
         if (alive.current) setStatus(value)
@@ -39,7 +35,6 @@ function SettingsForm({ rpc, view }: SettingsProps) {
     )
     return () => {
       alive.current = false
-      style.remove()
     }
   }, [rpc])
   const mutate = async (method: 'save' | 'clear') => {
@@ -86,34 +81,19 @@ function SettingsForm({ rpc, view }: SettingsProps) {
     }
   }
   return (
-    <details className="dsh-openrouter" aria-label="OpenRouter settings" open={view === 'page'}>
-      <summary>OpenRouter</summary>
-      <div className="dsh-openrouter__body">
-        <p role="status">
-          {status
-            ? `Shared key: ${status.configured ? 'Configured' : 'Not configured'}${status.source ? ` (${status.source})` : ''}`
-            : 'Checking shared key…'}
-        </p>
-        <p className="dsh-openrouter__hint">
-          One credential for trusted OpenRouter integrations and the built-in OpenRouter model
-          route. Replacing or removing it affects all consumers. The key is stored in DSH
-          credentials, never ordinary plugin settings.
-        </p>
-        {status && !status.writable ? (
-          <p>This credential source is read-only. Change it where it is configured.</p>
-        ) : null}
-        <label>
-          OpenRouter API key
-          <input
-            type="password"
-            value={draft}
-            disabled={busy || !status?.writable}
-            autoComplete="off"
-            spellCheck={false}
-            onChange={(event) => setDraft(event.target.value)}
-          />
-        </label>
-        <div className="dsh-openrouter__actions">
+    <SettingsPanel
+      title="OpenRouter"
+      initiallyOpen={view === 'page'}
+      status={
+        status
+          ? `Shared key: ${status.configured ? 'Configured' : 'Not configured'}${status.source ? ` (${status.source})` : ''}`
+          : 'Checking shared key…'
+      }
+      description="One credential for trusted OpenRouter integrations and the built-in OpenRouter model route. Replacing or removing it affects all consumers. The key is stored in DSH credentials, never ordinary plugin settings."
+      error={error || status?.error}
+      notice={notice}
+      actions={
+        <>
           <button
             type="button"
             disabled={busy || !status?.writable || !draft.trim()}
@@ -132,10 +112,21 @@ function SettingsForm({ rpc, view }: SettingsProps) {
           >
             Remove shared key
           </button>
-        </div>
-        {error || status?.error ? <p role="alert">{error || status?.error}</p> : null}
-        {notice ? <p role="status">{notice}</p> : null}
-      </div>
-    </details>
+        </>
+      }
+    >
+      {status && !status.writable ? (
+        <p>This credential source is read-only. Change it where it is configured.</p>
+      ) : null}
+      <SettingsField
+        label="OpenRouter API key"
+        type="password"
+        value={draft}
+        disabled={busy || !status?.writable}
+        autoComplete="off"
+        spellCheck={false}
+        onChange={(event) => setDraft(event.target.value)}
+      />
+    </SettingsPanel>
   )
 }

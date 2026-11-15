@@ -33,6 +33,14 @@ For substantial implementations, refactors, and architecture reviews, use the [d
 - Bind effects and subscriptions to the correct lifetime. Preserve stable object identities when effect dependencies rely on them. A transport wrapper that changes identity can change behavior even when its methods return the same values.
 - Preserve defensive rendering and escaping. Keep model-provided content separate from trusted labels, icons, styles, and controls.
 
+### Shared settings presentation
+
+Jev and OpenRouter use the repository-only [settings presentation](../shared/client/settings.tsx). `SettingsPanel` owns the native disclosure, status/error/notice roles, theme-token styles and action layout. `SettingsField` owns input label IDs and optional help associations. Each mounted panel renders its own scoped style element, so disposing one panel cannot remove another panel's styles. Jev retains stacked, end-aligned actions; OpenRouter retains its wrapping row.
+
+Import this browser-safe source by relative path when another approved migration needs the same presentation. The existing [client builder](../scripts/build-client.mjs) inlines it into each plugin's committed client artifact and keeps React external. It is not an installable bundle or a runtime module-table entry. Build each affected package; the root build only builds Session Environment.
+
+Keep summary-only rendering, local drafts, validation, disabled/busy decisions, RPC, confirmations, credential targets and error sanitization in the plugin controller. Shared presentation neither reads settings nor dispatches requests. Shared browser tests own disclosure, focus, label and style-lifetime contracts; consumer suites retain their behavior and generated-bundle/real-shell checks.
+
 ## Formatting
 
 - Use the repository's exact-pinned Prettier through `pnpm run format` and `pnpm run format:check` from the root. The shared `.prettierrc.json` defines style; do not introduce competing package-level configurations without a specific need.
