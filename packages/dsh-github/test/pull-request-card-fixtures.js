@@ -15,6 +15,49 @@ export const cardPullRequest = {
   head: { ref: 'feature', sha: 'a'.repeat(40) },
   base: { ref: 'main', sha: 'b'.repeat(40) },
 }
+// A realistic bounded list: twenty fetched, a possible next remote page, and
+// output-text bounds independent of the five-row local preview.
+export const prListData = {
+  repository: cardPullRequest.repository,
+  pullRequests: {
+    nodes: Array.from({ length: 20 }, (_, index) => ({
+      ...cardPullRequest,
+      id: `PR_LIST_INTERNAL_${index}`,
+      number: 80 - index,
+      title:
+        [
+          'Keep repository settings when opening a new worktree',
+          'Make session activity easier to scan',
+          'Add keyboard navigation to the project picker',
+          'Preserve exact approval details in restored sessions',
+          'Explore a smaller review summary',
+        ][index] ?? `Follow-up improvement ${index + 1}`,
+      url: `https://github.com/fixture-org/demo/pull/${80 - index}`,
+      state: index === 0 || index === 3 ? 'closed' : index === 4 ? 'future-state' : 'open',
+      isDraft: index === 2,
+      mergedAt: index === 3 ? '2026-10-20T09:30:00Z' : null,
+      author: { login: 'fixture-user' },
+      head: { ref: `review/improvement-${index + 1}`, sha: 'a'.repeat(40) },
+      body: 'A shortened description from the supplied result.',
+    })),
+    totalCount: null,
+    pageInfo: { page: 1, hasNextPage: true, nextPage: 2, completeness: 'unknown-full-page' },
+  },
+}
+export const prListEnvelope = {
+  host: 'github.com',
+  untrusted: true,
+  data: prListData,
+  truncated: true,
+  truncations: Array.from({ length: 6 }, (_, index) => ({
+    path: `data.pullRequests.nodes[${index}].body`,
+    kind: 'text',
+    returnedCharacters: 48,
+    totalCharacters: 9000,
+    continuation: null,
+    reason: 'Output text bound; GitHub has no text cursor.',
+  })),
+}
 const stack = {
   id: 'STACK_INTERNAL',
   number: 4,
@@ -32,10 +75,7 @@ const stack = {
 }
 const common = { repository: cardPullRequest.repository, pullRequest: cardPullRequest }
 export const prReadSnapshots = [
-  [
-    'github_list_pull_requests',
-    { repository: cardPullRequest.repository, pullRequests: connection([cardPullRequest]) },
-  ],
+  ['github_list_pull_requests', prListData, prListEnvelope],
   ['github_get_pull_request', common],
   [
     'github_get_pull_request_files',

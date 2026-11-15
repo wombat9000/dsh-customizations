@@ -1568,7 +1568,7 @@ function pullRequestCardModel(toolName, block) {
 		const inspection = inspectCollections(envelope, toolName);
 		const warnings = summarizeNotices(inspection.notices);
 		if (Array.isArray(data.warnings)) warnings.push(...data.warnings.filter((warning) => typeof warning === "string"));
-		if (collection.length > 5 && !COMPACT_LIST_TOOLS.has(toolName)) warnings.push(`Showing 5 of ${collection.length} returned entries. Expand remaining entries or raw tool details.`);
+		if (collection.length > 5 && !COMPACT_LIST_TOOLS.has(toolName) && toolName !== "github_list_pull_requests") warnings.push(`Showing 5 of ${collection.length} returned entries. Expand remaining entries or raw tool details.`);
 		if (collection.length > 100) warnings.push("Only the first 100 combined entries can be displayed. Additional entries are in raw tool details.");
 		return {
 			...base,
@@ -1577,6 +1577,7 @@ function pullRequestCardModel(toolName, block) {
 			warnings,
 			inspection,
 			completeness: inspection.completeness,
+			...toolName === "github_list_pull_requests" ? { list: listSummary(collection.length, data, envelope, inspection) } : {},
 			...toolName !== "github_get_pull_request" && object$1(data.pullRequest) ? { pullRequest: data.pullRequest } : {},
 			...Number.isSafeInteger(total) && Number(total) >= 0 ? { total: Number(total) } : {}
 		};
@@ -1586,6 +1587,27 @@ function pullRequestCardModel(toolName, block) {
 			error: cardResultFailure(error)
 		};
 	}
+}
+/** Compact signals use structured evidence; exact paths/instructions stay in Data details. */
+function listSummary(count, data, envelope, inspection) {
+	const pageInfo = supplied(data.pullRequests, "pageInfo");
+	const hasNext = supplied(pageInfo, "hasNextPage") === true;
+	const notices = [];
+	let summary = `${count} ${count === 1 ? "pull request" : "pull requests"} fetched`;
+	if (hasNext) summary += supplied(pageInfo, "completeness") === "known" ? " · More available" : " · More may be available";
+	if (inspection.completeness === "unknown") summary += " · Completeness unknown";
+	else if (inspection.completeness === "partial" && !hasNext) summary += " · Incomplete data";
+	const truncations = Array.isArray(envelope.truncations) ? envelope.truncations : [];
+	const descriptions = truncations.filter((notice) => supplied(notice, "kind") === "text" && /^data\.pullRequests\.nodes\[\d+\]\.body$/.test(text(supplied(notice, "path"))));
+	if (descriptions.length) notices.push("Some descriptions are shortened in this view.");
+	if (envelope.truncated === true && !truncations.length || truncations.length > descriptions.length) notices.push("Some output is bounded or incomplete.");
+	if (inspection.notices.some((notice) => notice.kind === "inspection-limit")) notices.push("Some data exceeds the card inspection limit.");
+	if (count > 100 || inspection.notices.some((notice) => notice.kind === "display-limit")) notices.push("This card has display limits; additional fetched data remains in raw details.");
+	if (Array.isArray(data.warnings) && data.warnings.some((warning) => typeof warning === "string")) notices.push("Additional data notices are available.");
+	return {
+		summary,
+		notices
+	};
 }
 function summarizeNotices(notices) {
 	const groups = /* @__PURE__ */ new Map();
@@ -1627,6 +1649,69 @@ function pullRequestEntryContext(entry) {
 }
 
 //#endregion
+//#region client/pull-request-list.tsx
+function stateLabel(entry) {
+	const state = text(entry.state).toLowerCase();
+	const mergedAt = text(entry.mergedAt);
+	if (state === "merged" || state === "closed" && /^\d{4}-\d{2}-\d{2}T/.test(mergedAt) && Number.isFinite(Date.parse(mergedAt))) return "Merged";
+	if (state === "closed") return "Closed";
+	if (state === "open") return (entry.isDraft ?? entry.draft) === true ? "Draft" : "Open";
+	return "State unknown";
+}
+function PullRequestRow({ entry }) {
+	const title = text(entry.title) || "Title unavailable";
+	const number = Number.isSafeInteger(entry.number) ? `#${entry.number}` : "";
+	const author = text(supplied(entry.author, "login"));
+	const head = text(entry.headRefName) || text(supplied(entry.head, "ref"));
+	const base = text(entry.baseRefName) || text(supplied(entry.base, "ref"));
+	const sha = text(entry.headRefOid) || text(supplied(entry.head, "sha"));
+	return /* @__PURE__ */ react.default.createElement("article", { className: "gh-pr-list-row" }, /* @__PURE__ */ react.default.createElement("h4", null, /* @__PURE__ */ react.default.createElement(Link, { url: entry.url ?? entry.html_url }, title)), /* @__PURE__ */ react.default.createElement("div", { className: "gh-pr-list-meta" }, /* @__PURE__ */ react.default.createElement("span", { className: "gh-pr-list-state" }, stateLabel(entry)), number && /* @__PURE__ */ react.default.createElement("span", null, number), author && /* @__PURE__ */ react.default.createElement("span", null, `by ${author}`), (head || base || sha) && /* @__PURE__ */ react.default.createElement("details", { className: "gh-pr-list-branch" }, /* @__PURE__ */ react.default.createElement("summary", null, "Branch & commit"), head && /* @__PURE__ */ react.default.createElement("p", null, "From ", /* @__PURE__ */ react.default.createElement("code", null, head)), base && /* @__PURE__ */ react.default.createElement("p", null, "Into ", /* @__PURE__ */ react.default.createElement("code", null, base)), sha && /* @__PURE__ */ react.default.createElement("p", null, "Commit ", /* @__PURE__ */ react.default.createElement("code", null, sha)))));
+}
+/** Historical list presentation only: no fetching, pagination or authority. */
+function PullRequestList({ model, block, inspect }) {
+	return /* @__PURE__ */ react.default.createElement("section", {
+		className: "gh-grant gh-pr-list",
+		"aria-label": "GitHub Pull requests"
+	}, /* @__PURE__ */ react.default.createElement("style", null, css$1, pullRequestListCss), /* @__PURE__ */ react.default.createElement("h3", null, "GitHub · Pull requests"), model.target && /* @__PURE__ */ react.default.createElement("small", null, model.target), /* @__PURE__ */ react.default.createElement("p", {
+		role: "status",
+		className: "gh-pr-list-status"
+	}, model.list?.summary ?? model.status, model.total === void 0 ? "" : ` · ${model.total} total reported`), model.error && /* @__PURE__ */ react.default.createElement("p", { role: "alert" }, model.error), model.list?.notices.map((notice) => /* @__PURE__ */ react.default.createElement("p", {
+		role: "note",
+		key: notice
+	}, notice, " See Data details.")), !model.list && model.warnings.map((warning, index) => /* @__PURE__ */ react.default.createElement("p", {
+		role: "note",
+		key: index
+	}, warning)), /* @__PURE__ */ react.default.createElement("div", { className: "gh-pr-list-results" }, model.entries.slice(0, 5).map((entry, index) => /* @__PURE__ */ react.default.createElement(PullRequestRow, {
+		key: index,
+		entry
+	})), model.entries.length > 5 && /* @__PURE__ */ react.default.createElement("details", { className: "gh-pr-list-more" }, /* @__PURE__ */ react.default.createElement("summary", null, `Show ${model.entries.length - 5} more fetched PRs`), model.entries.slice(5).map((entry, index) => /* @__PURE__ */ react.default.createElement(PullRequestRow, {
+		key: index,
+		entry
+	})))), /* @__PURE__ */ react.default.createElement("details", { className: "gh-pr-list-data" }, /* @__PURE__ */ react.default.createElement("summary", null, "Data details"), model.warnings.map((warning, index) => /* @__PURE__ */ react.default.createElement("p", { key: index }, warning)), /* @__PURE__ */ react.default.createElement("details", null, /* @__PURE__ */ react.default.createElement("summary", null, "Raw tool details"), /* @__PURE__ */ react.default.createElement("pre", { tabIndex: 0 }, rawDetails(block) || "No raw tool result is available yet.")), inspect && /* @__PURE__ */ react.default.createElement("button", {
+		type: "button",
+		onClick: inspect
+	}, "Inspect tool call")));
+}
+const pullRequestListCss = `
+.gh-grant.gh-pr-list { background:transparent; }
+.gh-pr-list > small { margin:2px 0 10px; }
+.gh-pr-list .gh-pr-list-status { font-size:13px; color:var(--dsw-alias-label-secondary); margin:8px 0; }
+.gh-pr-list .gh-pr-list-results { margin-top:12px; }
+.gh-pr-list .gh-pr-list-row { padding:12px 0; border-top:1px solid color-mix(in srgb,var(--dsw-alias-border-standard,#8885) 65%,transparent); }
+.gh-pr-list .gh-pr-list-row h4 { margin:0 0 6px; font-size:14px; line-height:1.5; font-weight:600; }
+.gh-pr-list .gh-pr-list-row h4 a { color:inherit; text-decoration:none; }
+.gh-pr-list .gh-pr-list-row h4 a:hover,.gh-pr-list .gh-pr-list-row h4 a:focus-visible { color:var(--dsw-alias-brand-primary,#486ed4); text-decoration:underline; }
+.gh-pr-list .gh-pr-list-meta { display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 12px; color:var(--dsw-alias-label-secondary); font-size:12px; }
+.gh-pr-list .gh-pr-list-state { color:var(--dsw-alias-label-primary); border:1px solid var(--dsw-alias-border-standard,#8885); border-radius:10px; padding:0 7px; }
+.gh-pr-list .gh-pr-list-branch { min-width:0; margin:0; }
+.gh-pr-list .gh-pr-list-branch[open] { flex-basis:100%; }
+.gh-pr-list .gh-pr-list-branch p { margin:4px 0; }
+.gh-pr-list .gh-pr-list-more { margin:2px 0 12px; }
+.gh-pr-list .gh-pr-list-more > summary { padding:4px 0; }
+.gh-pr-list .gh-pr-list-data { font-size:12px; color:var(--dsw-alias-label-secondary); margin-bottom:0; }
+`;
+
+//#endregion
 //#region client/pull-request-card.tsx
 function Entry({ entry }) {
 	const memberConnection = entry.pullRequests ?? entry.pull_requests;
@@ -1642,6 +1727,11 @@ function Changes({ change }) {
 }
 function PullRequestCard({ toolName, block, inspect }) {
 	const model = pullRequestCardModel(toolName, block);
+	if (toolName === "github_list_pull_requests") return /* @__PURE__ */ react.default.createElement(PullRequestList, {
+		model,
+		...block ? { block } : {},
+		...inspect ? { inspect } : {}
+	});
 	return /* @__PURE__ */ react.default.createElement("section", {
 		className: "gh-grant gh-pr",
 		"aria-label": `GitHub ${model.title}`

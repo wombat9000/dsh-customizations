@@ -142,7 +142,9 @@ Native stack endpoints are in public preview. Requests pin REST API version `202
 
 ### PR conversation cards
 
-All twelve PR tools have concise historical session cards. They show the action, repository/PR, branch direction, draft/readiness or review state, relevant counts, and stack layers where supplied. Long collections and exact changes expand on demand. Pagination, missing-patch, error, and uncertain-outcome warnings remain visible. An approved review is not a ready PR or a merge.
+All twelve PR tools have concise historical session cards. They show the action, repository/PR, relevant counts, and supplied state. The PR list leads with exact linked titles and textual Open, Draft, Merged, Closed, or unknown-state badges. Branches and full commit SHAs expand on demand. Closed alone never means merged, and missing draft metadata never means ready for review.
+
+The PR list keeps compact completeness signals visible. **More may be available** identifies a full REST page without a known total; **Show 15 more fetched PRs** expands only already-fetched rows and makes no request. Shortened descriptions, unknown completeness, and display or inspection limits remain distinct from that local expansion. **Data details** retains exact continuation paths, truncation reasons, raw output, and the tool inspector. Other PR cards retain their existing pagination, missing-patch, error, and uncertain-outcome warnings. An approved review is not a ready PR or a merge.
 
 Cards render only supplied arguments/results. They make no additional HTTP or GitHub requests and expose no write, retry, or approval controls. Missing or malformed results never establish success. **Raw tool details** remain available, including after restoration.
 

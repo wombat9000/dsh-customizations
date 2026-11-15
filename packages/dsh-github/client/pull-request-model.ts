@@ -37,6 +37,7 @@ export interface PRCardModel {
   change?: Record<string, unknown>
   pullRequest?: Record<string, unknown>
   total?: number
+  list?: { summary: string; notices: string[] }
 }
 /** Tools whose entries render as one compact row each, all visible without expanding. */
 export const COMPACT_LIST_TOOLS: ReadonlySet<string> = new Set(['github_get_pull_request_files'])
@@ -177,7 +178,11 @@ export function pullRequestCardModel(toolName: string, block?: ToolBlock): PRCar
       warnings.push(
         ...data.warnings.filter((warning): warning is string => typeof warning === 'string'),
       )
-    if (collection.length > 5 && !COMPACT_LIST_TOOLS.has(toolName))
+    if (
+      collection.length > 5 &&
+      !COMPACT_LIST_TOOLS.has(toolName) &&
+      toolName !== 'github_list_pull_requests'
+    )
       warnings.push(
         `Showing 5 of ${collection.length} returned entries. Expand remaining entries or raw tool details.`,
       )
@@ -192,6 +197,9 @@ export function pullRequestCardModel(toolName: string, block?: ToolBlock): PRCar
       warnings,
       inspection,
       completeness: inspection.completeness,
+      ...(toolName === 'github_list_pull_requests'
+        ? { list: listSummary(collection.length, data, envelope, inspection) }
+        : {}),
       ...(toolName !== 'github_get_pull_request' && object(data.pullRequest)
         ? { pullRequest: data.pullRequest }
         : {}),
@@ -203,6 +211,45 @@ export function pullRequestCardModel(toolName: string, block?: ToolBlock): PRCar
       error: cardResultFailure(error),
     }
   }
+}
+
+/** Compact signals use structured evidence; exact paths/instructions stay in Data details. */
+function listSummary(
+  count: number,
+  data: Record<string, unknown>,
+  envelope: Record<string, unknown>,
+  inspection: BoundedInspection,
+): { summary: string; notices: string[] } {
+  const pageInfo = supplied(data.pullRequests, 'pageInfo')
+  const hasNext = supplied(pageInfo, 'hasNextPage') === true
+  const notices: string[] = []
+  let summary = `${count} ${count === 1 ? 'pull request' : 'pull requests'} fetched`
+  if (hasNext)
+    summary +=
+      supplied(pageInfo, 'completeness') === 'known'
+        ? ' · More available'
+        : ' · More may be available'
+  if (inspection.completeness === 'unknown') summary += ' · Completeness unknown'
+  else if (inspection.completeness === 'partial' && !hasNext) summary += ' · Incomplete data'
+  const truncations = Array.isArray(envelope.truncations) ? envelope.truncations : []
+  const descriptions = truncations.filter(
+    (notice) =>
+      supplied(notice, 'kind') === 'text' &&
+      /^data\.pullRequests\.nodes\[\d+\]\.body$/.test(text(supplied(notice, 'path'))),
+  )
+  if (descriptions.length) notices.push('Some descriptions are shortened in this view.')
+  if (
+    (envelope.truncated === true && !truncations.length) ||
+    truncations.length > descriptions.length
+  )
+    notices.push('Some output is bounded or incomplete.')
+  if (inspection.notices.some((notice) => notice.kind === 'inspection-limit'))
+    notices.push('Some data exceeds the card inspection limit.')
+  if (count > 100 || inspection.notices.some((notice) => notice.kind === 'display-limit'))
+    notices.push('This card has display limits; additional fetched data remains in raw details.')
+  if (Array.isArray(data.warnings) && data.warnings.some((warning) => typeof warning === 'string'))
+    notices.push('Additional data notices are available.')
+  return { summary, notices }
 }
 
 // Per-entry notices that repeat one message (one per file patch, say) collapse
