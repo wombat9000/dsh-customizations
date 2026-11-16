@@ -2,7 +2,7 @@
 // The browser sends identities and a decision only; never prompts, models, or targets.
 
 export type ProposalState =
-  'pending' | 'rejected' | 'expired' | 'executing' | 'succeeded' | 'failed' | 'uncertain'
+  'pending' | 'queued' | 'rejected' | 'expired' | 'executing' | 'succeeded' | 'failed' | 'uncertain'
 
 export interface ProposalStatus {
   proposalId: string
@@ -64,7 +64,16 @@ export interface WorkerStatus {
   lastReport?: { kind: string; summary: string; createdAt: string }
 }
 
+export interface ActivityStatus {
+  coordinatorId: string
+  occupied: number
+  active: number | null
+  queued: number
+  workers: { workerId: string; title: string }[]
+}
+
 export interface RpcEndpoints {
+  activity: { input: { sessionId: string }; result: ActivityStatus | null }
   status: { input: { sessionId: string; callId: string }; result: ProposalStatus }
   workers: { input: { sessionId: string }; result: WorkerStatus[] }
   decide: {
@@ -89,8 +98,4 @@ export const STATUS_TOOLS = [
   'dispatch_get_session_status',
   'dispatch_wait_session',
 ] as const
-export const CARD_TOOLS = [
-  'dispatch_create_session',
-  'dispatch_add_session',
-  'dispatch_send_message',
-] as const
+export const CARD_TOOLS = ['dispatch_add_session'] as const

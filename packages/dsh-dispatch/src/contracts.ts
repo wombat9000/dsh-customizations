@@ -40,7 +40,7 @@ export interface CheckoutTarget {
   readonly head: string
 }
 
-/** Exactly what the user approves. Never mutated after preparation. */
+/** Exact submitted assignment; adoption additionally binds user consent. Never mutated. */
 export interface ProposalPayload {
   readonly kind: 'create' | 'adopt' | 'assign'
   readonly intent: string
@@ -56,7 +56,10 @@ export interface ProposalPayload {
 }
 
 export type ProposalState =
-  'pending' | 'rejected' | 'expired' | 'executing' | 'succeeded' | 'failed' | 'uncertain'
+  'pending' | 'queued' | 'rejected' | 'expired' | 'executing' | 'succeeded' | 'failed' | 'uncertain'
+
+/** Fixed per-conversation limits; these bound execution, not semantic task authority. */
+export const POOL_LIMITS = { occupied: 3, queued: 5 } as const
 
 export const CHECKPOINTS = [
   'approved',
@@ -80,6 +83,11 @@ export interface ProposalRecord {
   /** Host lifetime that prepared it; proposals from another lifetime are expired, never consumed. */
   readonly hostEpoch: string
   state: ProposalState
+  /** Additive v3 fields: old proposals keep their original user-decision binding. */
+  sequence?: number
+  previousAssignmentId?: string
+  /** Allocated before native create, retained even if its response is lost. */
+  requestedSessionId?: string
   checkpoints: Checkpoint[]
   decidedAt?: string
   workerSessionId?: string
@@ -130,6 +138,8 @@ export interface AssignmentRecord {
    * needs a new approved assignment.
    */
   closedAt?: string
+  /** Capacity retires only after explicit terminal state and a native idle reservation. */
+  slotReleasedAt?: string
   closedBy?: 'worker' | 'coordinator'
   /** Who last set workState: the worker's report, or an attributed coordinator administrative status. */
   stateSource: 'worker' | 'coordinator'
@@ -224,6 +234,7 @@ export type DispatchErrorCode =
   | 'unavailable'
   | 'ineligible'
   | 'uncertain'
+  | 'queue-full'
 
 /** Error whose message is safe to show to the model and the user. */
 export class DispatchError extends Error {

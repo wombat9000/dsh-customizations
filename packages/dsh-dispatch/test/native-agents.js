@@ -96,6 +96,7 @@ export async function nativeAgents(t, { workingDirectory = false } = {}) {
     }
   }
   return {
+    ctx,
     create,
     human,
     holdTurn,

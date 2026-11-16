@@ -65,12 +65,18 @@ export class Sessions {
     llm;
     presets;
     workspaces;
-    constructor(controller, directories, llm = () => undefined, presets = () => undefined, workspaces = () => undefined) {
+    liveAgent;
+    constructor(controller, directories, llm = () => undefined, presets = () => undefined, workspaces = () => undefined, liveAgent = () => undefined) {
         this.controller = controller;
         this.directories = directories;
         this.llm = llm;
         this.presets = presets;
         this.workspaces = workspaces;
+        this.liveAgent = liveAgent;
+    }
+    /** Native registry lookup only: activity reads must not resume dormant workers. */
+    live(id) {
+        return this.liveAgent(id);
     }
     requireController() {
         const controller = this.controller();
@@ -95,6 +101,7 @@ export class Sessions {
         return this.requireController().create({
             cwd: input.cwd,
             agentPreset: input.preset,
+            sessionId: input.sessionId,
         });
     }
     /**

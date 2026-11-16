@@ -34,6 +34,10 @@ export function createRpcHandler(service) {
                     value: await service.proposalStatus(input.sessionId, input.callId),
                 };
             }
+            if (endpoint === 'activity') {
+                const input = exact(payload, ['sessionId']);
+                return { ok: true, value: await service.activityOf(input.sessionId) };
+            }
             if (endpoint === 'workers') {
                 const input = exact(payload, ['sessionId']);
                 return { ok: true, value: await service.workersOf(input.sessionId) };

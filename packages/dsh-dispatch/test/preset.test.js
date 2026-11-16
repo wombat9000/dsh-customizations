@@ -242,6 +242,43 @@ test(
     // Exercise the installed preset guard through the real tool executor, not
     // only the service's isProvisioning predicate. Neither tool may run.
     const dispatch = h.ctx.get('localDispatch')
+    // An admitted worker still traverses the real native approval service. Pool
+    // admission must not register a global auto-answerer or alter worker policy.
+    if (!h.ctx.get('approval')) {
+      const module = await installed('@deepseek-ai/dsh-user-approval')
+      await h.ctx.plugin(module.default ?? module, { policy: 'ask' }).await()
+    }
+    await dispatch.store.transaction((tables) =>
+      tables.workers.put(worker.id, workerRecord(worker.id)),
+    )
+    worker.session.append('turn/start', { turn: 0 })
+    let asked = 0
+    let sensitiveEffect = false
+    h.ctx.on('approval/request', async () => {
+      asked++
+      return 'rejected'
+    })
+    worker.ctx.get('tools').register({
+      ...definition('sensitive_operation_probe'),
+      async execute(_args, exec) {
+        const outcome = await h.ctx.get('approval').request({
+          agent: exec.agent,
+          toolName: 'sensitive_operation_probe',
+          callId: exec.callId,
+        })
+        if (outcome === 'allowed-once') sensitiveEffect = true
+        return outcome
+      },
+    })
+    const sensitive = await executeOne(h.tools, 'sensitive_operation_probe', {}, { agent: worker })
+    assert.equal(sensitive.value, 'rejected')
+    assert.equal(asked, 1)
+    assert.equal(sensitiveEffect, false)
+    assert.equal(
+      worker.session.snapshotEvents().findLast((e) => e.type === 'approval/decided').data.outcome,
+      'rejected',
+    )
+    worker.session.append('turn/end', { turn: 0, reason: { kind: 'completed' } })
     await dispatch.store.transaction((tables) =>
       tables.workers.put(worker.id, workerRecord(worker.id, 'pending')),
     )

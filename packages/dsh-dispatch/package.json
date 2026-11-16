@@ -2,7 +2,7 @@
   "name": "@local/dsh-dispatch",
   "version": "0.1.0",
   "private": true,
-  "description": "Dispatch: coordinate approved worker sessions on linked Git worktrees for DSH 0.2.2-rc.3",
+  "description": "Dispatch: coordinate a bounded worker pool on linked Git worktrees for DSH 0.2.2-rc.3",
   "type": "module",
   "main": "dist/src/index.js",
   "exports": {

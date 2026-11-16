@@ -15,7 +15,7 @@ export interface CardProps {
   openSession?: ((sessionId: string) => void) | undefined
 }
 
-const LIVE = new Set(['pending', 'executing'])
+const LIVE = new Set(['pending', 'queued', 'executing'])
 
 export function validStatus(value: unknown): value is ProposalStatus {
   if (!value || typeof value !== 'object') return false
@@ -66,11 +66,12 @@ const TITLES: Record<ProposalStatus['kind'], string> = {
 }
 
 const STATES: Record<ProposalStatus['state'], string> = {
-  pending: 'Waiting for your decision. Nothing has been created or sent.',
+  pending: 'Waiting for your adoption decision. Nothing has been claimed or sent.',
+  queued: 'Queued. Dispatch has not created or delivered this assignment yet.',
   rejected: 'Rejected. Nothing was created or sent.',
   expired: 'Expired. This card can no longer authorize anything.',
-  executing: 'Approved. Dispatch is carrying out this exact proposal.',
-  succeeded: 'Done. The worker received the approved prompt.',
+  executing: 'Dispatch is carrying out this exact assignment.',
+  succeeded: 'Delivered. The worker received the exact prompt.',
   failed: 'Failed. Retained artifacts are listed below; nothing was retried.',
   uncertain: 'Outcome uncertain. Inspect retained artifacts before trying again.',
 }

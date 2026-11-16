@@ -106,6 +106,7 @@ export interface SessionControllerLike {
     workspaceId?: string
     cwd?: string
     agentPreset?: string
+    sessionId?: string
   }): Promise<{ sessionId: string; agentPreset?: string }>
   resolveAgent(
     sessionId: string,

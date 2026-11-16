@@ -16,7 +16,7 @@ export const name = 'dispatch-shell-fixture'
 export const inject = ['llm']
 export const PROVIDER = 'dispatch-fixture'
 export const MODEL = 'scripted'
-export const START = 'Start the fixture worker.'
+export const START = 'Review this repository with focused documentation, safety, and UI checks.'
 export const INTENT = 'Review the fixture README'
 
 const ASSIGNMENT = /Dispatch assignment ([0-9a-f-]{36})/u
@@ -82,20 +82,20 @@ export function script(messages, repository) {
   }
   if (prompt.includes(START)) {
     if (!calls.length) return { tool: 'dispatch_refresh_base', args: { directory: repository } }
-    if (calls.length === 1) {
-      const base = parse(text(lastResult))
+    if (calls.length >= 1 && calls.length <= 6) {
+      const base = parse(text(results[0]))
       if (!base?.commit) return { text: `Refresh failed: ${text(lastResult).slice(0, 300)}` }
       return {
         tool: 'dispatch_create_session',
         args: {
-          intent: INTENT,
+          intent: `${INTENT} ${calls.length}`,
           prompt: 'Review README.md and report back with dispatch_report.',
           base,
-          branch: 'dispatch/journey',
+          branch: `dispatch/journey-${calls.length}`,
         },
       }
     }
-    return { text: 'The approval card is ready.' }
+    return { text: 'I split the review into focused assignments. Worker reports will arrive here.' }
   }
   return { text: 'Fixture model reply.' }
 }

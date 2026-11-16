@@ -21,7 +21,7 @@ export async function apply(ctx, config = {}) {
     if (!ctx.storageDomain)
         throw new Error('Dispatch requires the DSH storage domain.');
     const store = await domainStore(ctx.storageDomain);
-    const sessions = new Sessions(() => ctx.get('sessionController'), () => ctx.get('workingDirectory'), () => ctx.get('llm'), () => ctx.get('agentPresets'), () => ctx.get('workspaceRegistry'));
+    const sessions = new Sessions(() => ctx.get('sessionController'), () => ctx.get('workingDirectory'), () => ctx.get('llm'), () => ctx.get('agentPresets'), () => ctx.get('workspaceRegistry'), (id) => ctx.get('agents')?.get(id));
     const world = managedWorld(() => Object.fromEntries(EXECUTION.map((name) => [name, ctx.get(name)])), {
         ...(config.gitCommand !== undefined ? { gitCommand: config.gitCommand } : {}),
         ...(config.gitTimeoutMs !== undefined ? { timeoutMs: config.gitTimeoutMs } : {}),
@@ -40,8 +40,10 @@ export async function apply(ctx, config = {}) {
     });
     ctx.effect(() => () => service.dispose());
     ctx.provide('localDispatch', service);
+    ctx.on?.('agent/status', ({ agent }) => service.runtimeChanged(agent));
+    ctx.on?.('agent/inbox/discarded', ({ agent }) => service.runtimeChanged(agent));
     // Reconcile after the session controller can resolve coordinators; never blocks Host start.
-    ctx.inject(['sessionController'], () => {
+    ctx.inject(['sessionController', 'worktrees', 'agentPresets', ...EXECUTION], () => {
         void service.recover().catch(() => ctx.logger?.warn('Dispatch recovery left items pending.'));
     });
     ctx.inject(['connection', 'webServer'], (scope) => {

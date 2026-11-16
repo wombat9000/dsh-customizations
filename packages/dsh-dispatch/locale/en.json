@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "Dispatch",
-    "description": "Coordinate approved worker sessions, each on its own linked Git worktree. Every new worker, adoption, and new assignment needs your approval on its card."
+    "description": "Coordinate a bounded pool of workers on linked Git worktrees: 3 occupied slots and 5 queued assignments per conversation. Existing-session adoption still requires your consent; sensitive-operation approvals stay unchanged."
   }
 }
