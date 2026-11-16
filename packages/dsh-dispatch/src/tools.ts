@@ -71,7 +71,7 @@ export const COORDINATOR_TOOL_NAMES = [
 /** Global helpers a coordinator keeps; everything else is denied for its scope. */
 export const COORDINATOR_HELPERS = ['ask_user_question', 'todo_write', 'skill'] as const
 
-/** Orchestration routes a managed worker must not use instead of approved Dispatch creation. */
+/** Orchestration routes a managed worker must not use instead of managed Dispatch creation. */
 export const WORKER_DENIED = new Set([
   'subagent',
   'subagent_fork',
@@ -134,7 +134,7 @@ export function coordinatorTools(service: DispatchService, wait: WaitFn): ToolDe
       'dispatch_create_session',
       'Submit a worker assignment to this coordinator’s bounded pool: 3 occupied slots and 5 queued assignments. Returns executing or queued; no individual Dispatch approval card. Queued work creates no session, branch, or worktree until admission. A full queue returns queue-full; do not retry until capacity changes. Uses the exact pinned base from dispatch_refresh_base. This does not approve underlying sensitive operations.',
       {
-        intent: str('One-line purpose shown on the card.'),
+        intent: str('One-line purpose retained with the exact assignment.'),
         prompt: str('Complete first message for the worker. Retained and delivered exactly.'),
         base: { type: 'object', description: 'Exact snapshot returned by dispatch_refresh_base.' },
         branch: str('Optional new branch name; generated when omitted.'),
