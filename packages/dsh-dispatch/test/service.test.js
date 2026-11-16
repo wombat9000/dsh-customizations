@@ -7,8 +7,10 @@ import test from 'node:test'
 import { DispatchService } from '../dist/src/service.js'
 import { Repositories } from '../dist/src/repositories.js'
 import { Sessions } from '../dist/src/sessions.js'
-import { memoryStore } from '../dist/src/store.js'
+import { memoryStore, domainStore } from '../dist/src/store.js'
+import { installed } from '../../dsh-product-mode/test/fixtures.js'
 import { createRpcHandler } from '../dist/src/routes.js'
+import { coordinatorTools } from '../dist/src/tools.js'
 import { nativeAgents } from './native-agents.js'
 
 // Owner boundary: real DispatchService, store, Git (temporary repositories and a
@@ -88,6 +90,7 @@ async function harness(
     automaticDispose = true,
     workspaceRegistry,
     renameGate = async () => {},
+    durable = false,
   } = {},
 ) {
   const native = await nativeAgents(t, { workingDirectory: nativeDirectory })
@@ -118,9 +121,10 @@ async function harness(
     return agent
   }
   const controller = {
-    async create({ cwd, agentPreset }) {
+    async create({ cwd, agentPreset, sessionId: requested }) {
       await createGate()
-      const sessionId = `worker-${++created}`
+      const sessionId = requested ?? `worker-${created + 1}`
+      created++
       await makeAgent(sessionId, { cwd, preset: agentPreset })
       return { sessionId, agentPreset }
     },
@@ -161,9 +165,21 @@ async function harness(
     () => llm,
     () => native.presetRegistry,
     () => workspaceRegistry,
+    (id) => agents.get(id),
   )
+  if (durable) {
+    const root = await mkdtemp(join(tmpdir(), 'dispatch-pool-domain-'))
+    t.after(() => rm(root, { recursive: true, force: true }))
+    await native.ctx.plugin((await installed('@deepseek-ai/dsh-storage')).default).await()
+    await native.ctx.plugin(await installed('@deepseek-ai/dsh-storage-json'), { root }).await()
+    await native.ctx
+      .plugin(await installed('@deepseek-ai/dsh-storage-domain'), { backend: 'json' })
+      .await()
+  }
+  const openStore = () =>
+    durable ? domainStore(native.ctx.get('storageDomain')) : Promise.resolve(memoryStore())
   const service = new DispatchService({
-    store: memoryStore(),
+    store: await openStore(),
     sessions,
     repositories: new Repositories(testWorld(gate)),
     worktrees: () => worktrees,
@@ -187,6 +203,8 @@ async function harness(
     controller,
     sessions,
     worktrees,
+    openStore,
+    created: () => created,
     ...native,
   }
 }
@@ -196,7 +214,7 @@ async function settled(service, coordinatorId, callId) {
   const deadline = Date.now() + 20_000
   while (Date.now() < deadline) {
     const status = await service.proposalStatus(coordinatorId, callId)
-    if (status.state !== 'executing') return status
+    if (!['executing', 'queued'].includes(status.state)) return status
     await new Promise((done) => setTimeout(done, 10))
   }
   throw new Error('proposal did not settle')
@@ -204,175 +222,85 @@ async function settled(service, coordinatorId, callId) {
 
 const owner = { principal: { kind: 'owner' } }
 
-test('refresh, prepare, reject, and approve once: one worker on its own linked worktree', async (t) => {
+test('ordinary creation starts without a decision and pins the exact base, prompt, model and workspace', async (t) => {
   const { main, remote } = await repository(t)
-  const members = ['retained-session']
-  const workspaceRegistry = {
-    list: () => [
-      { path: `${main}-unrelated`, attachSession: async () => assert.fail('unrelated workspace') },
-      {
-        path: main,
-        async attachSession(id) {
-          const proposal = h.service.store.tables.proposals
-            .values()
-            .find((p) => p.workerSessionId === id)
-          assert.ok(proposal.checkpoints.includes('session-created'), 'identity is durable first')
-          assert.equal(h.agents.get(id).session.header.cwd, main)
-          members.push(id)
+  const members = []
+  const h = await harness(t, {
+    workspaceRegistry: {
+      list: () => [
+        {
+          path: main,
+          attachSession: async (id) => members.push(id),
         },
-      },
-    ],
-  }
-  const h = await harness(t, { workspaceRegistry })
+      ],
+    },
+  })
   const coordinator = await h.makeAgent('coord-1', { cwd: main, preset: 'dispatch' })
   const base = await h.service.refreshBase(coordinator, { directory: main })
-  assert.equal(base.remote, 'origin')
-  assert.equal(base.branch, 'main')
   assert.equal(base.commit, git(remote, 'rev-parse', 'main'))
-  // A moving remote: a later refresh pins the new commit without touching the main checkout.
   const other = join(main, '..', 'other')
   execFileSync('git', ['clone', '-q', remote, other])
   await writeFile(join(other, 'two.md'), 'two\n')
   git(other, 'add', '.')
   git(other, 'commit', '-m', 'two')
   git(other, 'push', '-q', 'origin', 'main')
-  const before = git(main, 'rev-parse', 'HEAD')
+  const head = git(main, 'rev-parse', 'HEAD')
   const moved = await h.service.refreshBase(coordinator, { directory: main })
   assert.notEqual(moved.commit, base.commit)
-  assert.equal(moved.commit, git(remote, 'rev-parse', 'main'))
-  assert.equal(git(main, 'rev-parse', 'HEAD'), before)
+  assert.equal(git(main, 'rev-parse', 'HEAD'), head)
   assert.equal(git(main, 'status', '--porcelain'), '')
-
-  const prompt = 'Implement the thing.\n'.repeat(200)
-  const intent = '  Implement\n  the thing  '
-  const rejected = await h.service.prepareCreate(coordinator, 'call-a', {
-    intent: 'A',
-    prompt,
-    base,
-  })
-  assert.equal(rejected.state, 'pending')
-  assert.equal(h.agents.size, 1, 'preparing creates no session')
-  assert.equal(h.worktreeCalls.length, 0)
-  const rpc = createRpcHandler(h.service)
-  const card = await rpc(
-    'status',
-    { sessionId: 'coord-1', callId: 'call-a' },
-    new AbortController().signal,
-    owner,
-  )
-  assert.equal(card.ok, true)
-  assert.equal(card.value.prompt, prompt, 'the complete prompt is on the card')
-  const decision = (callId, value, extra = {}) =>
-    rpc(
-      'decide',
-      {
-        sessionId: 'coord-1',
-        callId,
-        proposalId: value.proposalId,
-        digest: value.digest,
-        decision: 'approve',
-        ...extra,
-      },
-      new AbortController().signal,
-      owner,
-    )
-  const reject = await decision('call-a', card.value, { decision: 'reject' })
-  assert.equal(reject.value.state, 'rejected')
-  assert.equal(
-    (await decision('call-a', card.value)).ok,
-    false,
-    'a decided card cannot approve later',
-  )
-  assert.equal(h.agents.size, 1)
-
-  await h.service.prepareCreate(coordinator, 'call-b', {
-    intent,
+  const prompt = 'Implement exactly.\n'.repeat(200)
+  const receipt = await h.service.prepareCreate(coordinator, 'create', {
+    intent: '  Implement\n the thing  ',
     prompt,
     base,
     branch: 'feature/b',
   })
-  const pending = (
-    await rpc(
-      'status',
-      { sessionId: 'coord-1', callId: 'call-b' },
-      new AbortController().signal,
-      owner,
-    )
-  ).value
-  // Agent-originated paths and wrong identities never decide.
-  const agentPeer = { principal: { kind: 'agent' } }
-  assert.equal(
-    (
-      await rpc(
-        'decide',
-        {
-          sessionId: 'coord-1',
-          callId: 'call-b',
-          proposalId: pending.proposalId,
-          digest: pending.digest,
-          decision: 'approve',
-        },
-        new AbortController().signal,
-        agentPeer,
-      )
-    ).error.code,
-    'forbidden',
+  assert.equal(receipt.state, 'executing')
+  const card = await h.service.proposalStatus(coordinator.id, 'create')
+  const refused = await createRpcHandler(h.service)(
+    'decide',
+    {
+      sessionId: coordinator.id,
+      callId: 'create',
+      proposalId: card.proposalId,
+      digest: card.digest,
+      decision: 'approve',
+    },
+    new AbortController().signal,
+    owner,
   )
-  assert.equal(
-    (await decision('call-b', { ...pending, digest: '0'.repeat(64) })).error.code,
-    'expired',
-  )
-  assert.equal((await decision('other-call', pending)).error.code, 'expired')
-  const approvals = await Promise.all([decision('call-b', pending), decision('call-b', pending)])
-  assert.equal(approvals.filter((r) => r.ok).length, 1, 'approval is consumed once')
-  const done = await settled(h.service, 'coord-1', 'call-b')
+  assert.equal(refused.ok, false, 'ordinary admission has no approval backdoor')
+  const done = await settled(h.service, coordinator.id, 'create')
   assert.equal(done.state, 'succeeded', done.message)
   assert.deepEqual(done.checkpoints, [
-    'approved',
     'session-created',
     'worktree-created',
     'verified',
     'claimed',
     'delivered',
   ])
-  assert.equal(h.worktreeCalls.length, 1)
-  assert.equal(
-    h.worktreeCalls[0].agent,
-    done.workerSessionId,
-    'the worker Agent creates its own worktree',
-  )
-  assert.equal(h.directories.get('coord-1'), main, 'coordinator directory is unchanged')
-  assert.deepEqual(members, ['retained-session', done.workerSessionId])
+  assert.equal(done.workerSessionId, done.requestedSessionId)
+  assert.deepEqual(members, [done.workerSessionId])
   const worker = h.agents.get(done.workerSessionId)
+  assert.equal(worker.session.header.cwd, main)
   assert.equal(
-    worker.session.header.cwd,
-    main,
-    'native membership keeps the original approved root',
-  )
-  assert.equal(
-    worker.session.snapshotEvents().findLast((event) => event.type === 'session/title')?.data.title,
+    worker.session.snapshotEvents().findLast((e) => e.type === 'session/title').data.title,
     'Implement the thing',
-    'the approved intent becomes a native normalized title, not the assignment prompt',
   )
-  assert.equal(
-    coordinator.session.snapshotEvents().some((event) => event.type === 'session/title'),
-    false,
-    'naming never touches the coordinator',
-  )
-
-  const workerDir = h.directories.get(done.workerSessionId)
-  assert.notEqual(workerDir, main)
-  assert.equal(git(workerDir, 'rev-parse', '--abbrev-ref', 'HEAD'), 'feature/b')
-  assert.equal(git(workerDir, 'rev-parse', 'HEAD'), base.commit)
-
+  assert.equal(h.directories.get(coordinator.id), main)
+  const directory = h.directories.get(worker.id)
+  assert.equal(git(directory, 'rev-parse', '--abbrev-ref', 'HEAD'), 'feature/b')
+  assert.equal(git(directory, 'rev-parse', 'HEAD'), base.commit)
+  assert.deepEqual(worker.model.current(), { provider: 'fixture', model: 'm1' })
   const [first] = h.delivered
-  assert.equal(first.to, done.workerSessionId)
+  assert.equal(first.to, worker.id)
   assert.deepEqual(first.message.source, {
     kind: 'agent-message',
     form: 'relay',
-    senderSessionId: 'coord-1',
+    senderSessionId: coordinator.id,
   })
-  assert.ok(first.message.content[0].text.endsWith(prompt), 'the exact approved prompt is sent')
+  assert.ok(first.message.content[0].text.endsWith(prompt))
   assert.ok(Object.isFrozen(first.message))
 })
 
@@ -444,8 +372,8 @@ test('new-worker metadata failures retain the checkpointed session and never adm
       await h.service.prepareCreate(coordinator, 'create', { intent: 'Name', prompt: 'go', base })
       const result = await approve(h.service, coordinator.id, 'create')
       assert.equal(result.state, 'uncertain', result.message)
-      assert.equal(result.workerSessionId, 'worker-1')
-      assert.deepEqual(result.checkpoints, ['approved', 'session-created'])
+      assert.equal(result.workerSessionId, result.requestedSessionId)
+      assert.deepEqual(result.checkpoints, ['session-created'])
       assert.ok(h.agents.has(result.workerSessionId))
       assert.match(
         result.message,
@@ -478,21 +406,6 @@ test('reports bind to the executing worker and its association', async (t) => {
   const base = await h.service.refreshBase(coordinator, { directory: main })
   const rpc = createRpcHandler(h.service)
   await h.service.prepareCreate(coordinator, 'c1', { intent: 'W', prompt: 'go', base })
-  const card = (
-    await rpc('status', { sessionId: 'coord-1', callId: 'c1' }, new AbortController().signal, owner)
-  ).value
-  await rpc(
-    'decide',
-    {
-      sessionId: 'coord-1',
-      callId: 'c1',
-      proposalId: card.proposalId,
-      digest: card.digest,
-      decision: 'approve',
-    },
-    new AbortController().signal,
-    owner,
-  )
   const { workerSessionId } = await settled(h.service, 'coord-1', 'c1')
   const worker = h.agents.get(workerSessionId)
 
@@ -774,8 +687,15 @@ test('failures retain artifacts, never retry, and restarts never replay approval
     'an unclaimed partial worker stays guarded',
   )
 
-  // A proposal prepared in an earlier Host lifetime is expired on recovery and cannot be approved.
-  await h.service.prepareCreate(coordinator, 'old', { intent: 'i', prompt: 'p', base })
+  // Only undecided adoption consent expires across Host lifetimes.
+  const oldDirectory = join(main, '..', 'old-adoptee')
+  git(main, 'worktree', 'add', '-b', 'old-adoptee', oldDirectory)
+  await h.makeAgent('old-adoptee', { cwd: await realpath(oldDirectory) })
+  await h.service.prepareAdopt(coordinator, 'old', {
+    sessionId: 'old-adoptee',
+    intent: 'i',
+    prompt: 'p',
+  })
   const old = (
     await rpc(
       'status',
@@ -859,6 +779,10 @@ async function approve(service, coordinatorId, callId, decision = 'approve') {
   const card = (
     await rpc('status', { sessionId: coordinatorId, callId }, new AbortController().signal, owner)
   ).value
+  if (card.state !== 'pending') {
+    assert.equal(decision, 'approve', 'only adoption still has a decision')
+    return settled(service, coordinatorId, callId)
+  }
   const result = await rpc(
     'decide',
     {
@@ -936,6 +860,14 @@ test('an in-flight targeted operation cannot deliver after an ownership handoff'
   finishFollowup.resolve()
   await worker.whenIdle()
   await h.service.release(coordinator, { workerId })
+  const releasedTask = h.service.store.tables.workers.get(workerId).assignment
+  assert.ok(releasedTask.closedAt)
+  assert.equal(releasedTask.closedBy, 'coordinator')
+  assert.equal(
+    releasedTask.workState,
+    'working',
+    'explicit cancellation does not falsify the displayed work state',
+  )
   const before = h.delivered.length
   // B adopts the released worker; A's next send, already started, is refused at admission.
   await h.service.prepareAdopt(b, 'adopt-b', { sessionId: workerId, intent: 'i', prompt: 'p' })
@@ -957,7 +889,7 @@ test('an in-flight targeted operation cannot deliver after an ownership handoff'
 })
 
 test('a closed assignment stays closed: status edits never reopen send authority', async (t) => {
-  const { h, coordinator, workerId, worker } = await managedWorker(t)
+  const { h, coordinator, workerId, worker, base } = await managedWorker(t)
   const { assignmentId } = await h.service.status(coordinator, workerId)
   await h.service.report(worker, { assignmentId, kind: 'done', summary: 'finished' })
   await assert.rejects(
@@ -979,8 +911,25 @@ test('a closed assignment stays closed: status edits never reopen send authority
     h.service.report(worker, { assignmentId, kind: 'progress', summary: 'again' }),
     /assignment is closed/,
   )
-  // Reopening needs the new-assignment approval path.
-  await h.service.prepareAssign(coordinator, 'next', { workerId, intent: 'n', prompt: 'next' })
+  // A new assignment reacquires capacity; the closed task is never reopened.
+  const occupied = []
+  for (let i = 0; i < 3; i++) {
+    await h.service.prepareCreate(coordinator, `replacement-${i}`, {
+      intent: 'Other work',
+      prompt: 'Other work',
+      base,
+    })
+    occupied.push(await settled(h.service, coordinator.id, `replacement-${i}`))
+  }
+  const receipt = await h.service.prepareAssign(coordinator, 'next', {
+    workerId,
+    intent: 'n',
+    prompt: 'next',
+  })
+  assert.equal(receipt.state, 'queued')
+  assert.equal((await h.service.status(coordinator, workerId)).assignmentId, assignmentId)
+  assert.equal((await h.service.status(coordinator, workerId)).assignmentOpen, false)
+  await h.service.update(coordinator, { workerId: occupied[0].workerSessionId, workState: 'done' })
   const next = await approve(h.service, 'coord-a', 'next')
   assert.equal(next.state, 'succeeded', next.message)
   const renewed = await h.service.status(coordinator, workerId)
@@ -1658,7 +1607,7 @@ test('a failed session-created checkpoint retains the known native session ID an
   assert.equal(failures(), 1)
   assert.equal(
     failed.workerSessionId,
-    'worker-1',
+    failed.requestedSessionId,
     'the known created ID survives checkpoint failure',
   )
   assert.equal(failed.state, 'uncertain', 'a native effect already succeeded')
@@ -1679,7 +1628,14 @@ test('shutdown closes storage even when expiring a pending proposal fails', asyn
   const h = await harness(t, { automaticDispose: false })
   const coordinator = await h.makeAgent('coord-a', { cwd: main, preset: 'dispatch' })
   const base = await h.service.refreshBase(coordinator, { directory: main })
-  await h.service.prepareCreate(coordinator, 'pending', { intent: 'W', prompt: 'go', base })
+  const directory = join(main, '..', 'pending-adoptee')
+  git(main, 'worktree', 'add', '-b', 'pending-adoptee', directory)
+  await h.makeAgent('pending-adoptee', { cwd: await realpath(directory) })
+  await h.service.prepareAdopt(coordinator, 'pending', {
+    sessionId: 'pending-adoptee',
+    intent: 'W',
+    prompt: 'go',
+  })
   const failures = rejectNextPut(
     t,
     h.service.store.tables.proposals,
@@ -1703,59 +1659,427 @@ test('shutdown closes storage even when expiring a pending proposal fails', asyn
   )
 })
 
-test('shutdown waits for in-flight provisioning to record its worker before closing storage', async (t) => {
-  let release
-  let entered
-  const held = new Promise((done) => (release = done))
-  const reached = new Promise((done) => (entered = done))
-  let holdNext = false
-  const repo = await repository(t)
+test('shutdown drains uncertain native creation, fences new submissions and retains queued records', async (t) => {
+  const held = Promise.withResolvers()
+  const reached = Promise.withResolvers()
+  const { main } = await repository(t)
   const h = await harness(t, {
     createGate: async () => {
-      if (!holdNext) return
-      holdNext = false
-      entered()
-      await held // native session creation takes no abort signal
+      reached.resolve()
+      await held.promise
     },
   })
-  const coordinator = await h.makeAgent('coord-a', { cwd: repo.main, preset: 'dispatch' })
-  const base = await h.service.refreshBase(coordinator, { directory: repo.main })
-  await h.service.prepareCreate(coordinator, 'create', { intent: 'W', prompt: 'go', base })
-  await h.service.prepareCreate(coordinator, 'late', { intent: 'L', prompt: 'go', base })
-  holdNext = true
-  const rpc = createRpcHandler(h.service)
-  const card = async (callId) =>
-    (await rpc('status', { sessionId: 'coord-a', callId }, new AbortController().signal, owner))
-      .value
-  const decide = async (callId) => {
-    const view = await card(callId)
-    return rpc(
+  const coordinator = await h.makeAgent('coord-a', { cwd: main, preset: 'dispatch' })
+  const base = await h.service.refreshBase(coordinator, { directory: main })
+  try {
+    for (let i = 0; i < 4; i++)
+      await h.service.prepareCreate(coordinator, `shutdown-${i}`, {
+        intent: 'W',
+        prompt: 'go',
+        base,
+      })
+    await reached.promise
+    const queued = await h.service.proposalStatus(coordinator.id, 'shutdown-3')
+    assert.equal(queued.state, 'queued')
+    let closed = false
+    const disposing = h.service.dispose().then(() => {
+      closed = true
+    })
+    await new Promise((done) => setImmediate(done))
+    assert.equal(closed, false, 'storage remains open for admitted native effects')
+    await assert.rejects(
+      h.service.prepareCreate(coordinator, 'late', { intent: 'late', prompt: 'go', base }),
+      /shutting down/,
+    )
+    held.resolve()
+    await disposing
+    const records = h.service.store.tables.proposals.values()
+    assert.equal(records.find((p) => p.callId === 'shutdown-3').state, 'queued')
+    for (const p of records.filter((p) => p.callId !== 'shutdown-3')) {
+      assert.equal(p.state, 'uncertain')
+      assert.ok(p.workerSessionId)
+      assert.deepEqual(p.checkpoints, ['session-created'])
+      assert.match(p.message, /no worktree was created/)
+    }
+    assert.deepEqual(h.worktreeCalls, [])
+  } finally {
+    held.resolve()
+  }
+})
+
+// Pool contracts live here at the real owner. Simultaneous submissions share
+// one in-process native fixture, not many DSH subprocesses or model calls.
+test('pool atomically admits 3, queues 5 without artifacts, rejects overflow and drains FIFO only after terminal + quiescent', async (t) => {
+  const { main } = await repository(t)
+  const gate = Promise.withResolvers()
+  const h = await harness(t, { createGate: () => gate.promise })
+  const coordinator = await h.makeAgent('pool', { cwd: main, preset: 'dispatch' })
+  const base = await h.service.refreshBase(coordinator, { directory: main })
+  const wt = join(main, '..', 'consent-candidate')
+  git(main, 'worktree', 'add', '-b', 'consent-candidate', wt)
+  const candidate = await h.makeAgent('consent-candidate', { cwd: await realpath(wt) })
+  const adoption = await h.service.prepareAdopt(coordinator, 'adoption', {
+    sessionId: candidate.id,
+    intent: 'Adopt',
+    prompt: 'Exact adoption',
+  })
+  assert.equal(adoption.state, 'pending')
+  const card = await h.service.proposalStatus('pool', 'adoption')
+  const admissions = []
+  let results
+  let queuedAdmissions
+  try {
+    results = await Promise.allSettled(
+      Array.from({ length: 9 }, (_, i) =>
+        h.service
+          .prepareCreate(coordinator, `pool-${i}`, {
+            intent: `Task ${i}`,
+            prompt: `Exact prompt ${i}`,
+            base,
+            branch: `pool/task-${i}`,
+          })
+          .then((view) => {
+            admissions.push({ view, callId: `pool-${i}` })
+            return view
+          }),
+      ),
+    )
+    assert.equal(
+      results.filter((r) => r.status === 'fulfilled' && r.value.state === 'executing').length,
+      3,
+    )
+    assert.equal(
+      results.filter((r) => r.status === 'fulfilled' && r.value.state === 'queued').length,
+      5,
+    )
+    const overflow = results.find((r) => r.status === 'rejected')
+    assert.equal(overflow.reason.code, 'queue-full')
+    assert.equal(
+      h.agents.size,
+      2,
+      'queued/admission reservations create no session beyond coordinator and adoption candidate',
+    )
+    assert.deepEqual(h.worktreeCalls, [])
+    const queued = h.service.store.tables.proposals.values().filter((p) => p.state === 'queued')
+    queuedAdmissions = admissions.filter((a) => a.view.state === 'queued')
+    assert.deepEqual(
+      queued.map((p) => p.id),
+      queuedAdmissions.map((a) => a.view.proposalId),
+    )
+    for (const p of queued) {
+      assert.equal(p.workerSessionId, undefined)
+      assert.equal(p.worktree, undefined)
+      assert.equal(git(main, 'branch', '--list', p.payload.branch), '')
+      assert.deepEqual(p.payload.base, base)
+    }
+    assert.deepEqual(await h.service.activityOf('pool'), {
+      coordinatorId: 'pool',
+      occupied: 3,
+      active: 0,
+      queued: 5,
+      workers: [],
+    })
+  } finally {
+    gate.resolve()
+  }
+  const started = await Promise.all(
+    admissions
+      .filter((a) => a.view.state === 'executing')
+      .map((a) => settled(h.service, 'pool', a.callId)),
+  )
+  assert.ok(started.every((p) => p.state === 'succeeded'))
+  assert.equal(h.created(), 3)
+  assert.equal(h.worktreeCalls.length, 3)
+  const peeked = h.agents.get(started[0].workerSessionId)
+  const resolveAgent = h.controller.resolveAgent
+  h.agents.delete(peeked.id)
+  h.controller.resolveAgent = async (id) => {
+    assert.equal(id, coordinator.id, 'activity must not resolve or wake a dormant worker')
+    return resolveAgent(id)
+  }
+  try {
+    const unknown = await h.service.activityOf('pool')
+    assert.equal(unknown.active, null)
+    assert.equal(unknown.occupied, 3, 'unknown runtime retains honest durable occupancy')
+  } finally {
+    h.agents.set(peeked.id, peeked)
+    h.controller.resolveAgent = resolveAgent
+  }
+  // Native idle is not completion. Neither review nor input waiting frees a slot.
+  await h.service.update(coordinator, {
+    workerId: started[1].workerSessionId,
+    workState: 'ready-for-review',
+  })
+  await h.service.update(coordinator, {
+    workerId: started[2].workerSessionId,
+    workState: 'waiting-for-user',
+  })
+  assert.equal((await h.service.activityOf('pool')).occupied, 3)
+  assert.equal(h.created(), 3)
+
+  const decide = (peer, extra = {}) =>
+    createRpcHandler(h.service)(
       'decide',
       {
-        sessionId: 'coord-a',
-        callId,
-        proposalId: view.proposalId,
-        digest: view.digest,
+        sessionId: 'pool',
+        callId: 'adoption',
+        proposalId: card.proposalId,
+        digest: card.digest,
         decision: 'approve',
+        ...extra,
       },
       new AbortController().signal,
-      owner,
+      peer,
     )
+  assert.equal((await decide({ principal: { kind: 'agent' } })).error.code, 'forbidden')
+  assert.equal((await decide(owner, { digest: '0'.repeat(64) })).error.code, 'expired')
+  assert.equal((await decide(owner)).error.code, 'queue-full')
+  assert.equal((await h.service.proposalStatus('pool', 'adoption')).state, 'pending')
+  assert.equal(h.service.isManaged(candidate.id), false)
+  const worker = h.agents.get(started[0].workerSessionId)
+  const active = await h.holdTurn(worker)
+  await h.service.report(worker, {
+    assignmentId: started[0].assignmentId,
+    kind: 'done',
+    summary: 'Explicitly finished',
+  })
+  assert.equal((await h.service.activityOf('pool')).occupied, 3)
+  assert.equal(h.created(), 3, 'terminal but still running retains capacity')
+  await assert.rejects(
+    h.service.send(coordinator, {
+      workerId: worker.id,
+      assignmentId: started[0].assignmentId,
+      message: 'reopen',
+    }),
+    /assignment is closed/,
+  )
+  await active.release()
+  const firstQueued = await settled(h.service, 'pool', queuedAdmissions[0].callId)
+  assert.equal(firstQueued.state, 'succeeded', firstQueued.message)
+  assert.equal(h.created(), 4)
+  assert.notEqual(
+    firstQueued.workerSessionId,
+    worker.id,
+    'creation does not invent a worker reuse heuristic',
+  )
+  assert.equal(
+    h.delivered
+      .find((d) => d.to === firstQueued.workerSessionId)
+      .message.content[0].text.endsWith(`Exact prompt ${queuedAdmissions[0].callId.slice(5)}`),
+    true,
+  )
+  assert.equal((await h.service.activityOf('pool')).queued, 4)
+  const acceptedAdoption = await decide(owner)
+  assert.equal(acceptedAdoption.value.state, 'queued', 'consent cannot bypass capacity')
+  assert.equal((await decide(owner)).ok, false, 'consent is consumed once')
+  assert.equal(h.service.isManaged(candidate.id), false)
+  const other = await h.makeAgent('other-coordinator', { cwd: main, preset: 'dispatch' })
+  const independent = await h.service.prepareCreate(other, 'independent', {
+    intent: 'Other',
+    prompt: 'Other',
+    base,
+  })
+  assert.equal(independent.state, 'executing')
+  assert.equal((await settled(h.service, other.id, 'independent')).state, 'succeeded')
+  assert.equal((await h.service.activityOf('pool')).queued, 5)
+  assert.equal((await h.service.activityOf(other.id)).occupied, 1)
+  await assert.rejects(
+    h.service.prepareAssign(other, 'steal', {
+      workerId: worker.id,
+      intent: 'steal',
+      prompt: 'steal',
+    }),
+    /Another Dispatch coordinator/,
+  )
+  const maintenanceWorker = h.agents.get(started[1].workerSessionId)
+  const heldMaintenance = Promise.withResolvers()
+  const maintenance = maintenanceWorker.runMaintenance(() => heldMaintenance.promise)
+  const beforeMaintenance = h.created()
+  try {
+    assert.equal(maintenanceWorker.status, 'idle', 'native maintenance is not visible as running')
+    await h.service.update(coordinator, { workerId: maintenanceWorker.id, workState: 'failed' })
+    assert.equal((await h.service.activityOf('pool')).occupied, 3)
+    assert.equal(
+      h.created(),
+      beforeMaintenance,
+      'terminal + public idle does not retire active maintenance',
+    )
+  } finally {
+    heldMaintenance.resolve()
+    await maintenance
   }
-  assert.equal((await decide('create')).ok, true)
-  await reached
-  let closed = false
-  const disposing = h.service.dispose().then(() => (closed = true))
-  await new Promise((done) => setTimeout(done, 50))
-  assert.equal(closed, false, 'storage stays open while provisioning is in flight')
-  const late = await decide('late')
-  assert.equal(late.ok, false, 'no new effect is admitted during shutdown')
-  release()
-  await disposing
-  const proposal = h.service.store.tables.proposals.values().find((p) => p.callId === 'create')
-  assert.equal(proposal.state, 'uncertain')
-  assert.ok(proposal.workerSessionId, 'the partial worker is discoverable from its proposal')
-  assert.deepEqual(proposal.checkpoints, ['approved', 'session-created'])
-  assert.match(proposal.message, /no worktree was created/)
+  assert.equal((await settled(h.service, 'pool', queuedAdmissions[1].callId)).state, 'succeeded')
+  assert.equal(h.created(), beforeMaintenance + 1)
+  // A definite failure before any native effect releases its reservation and
+  // advances the finite queue; it does not leave an executing slot stuck.
+  h.worktrees.config.retainOnArchive.get = () => false
+  const beforeFailure = h.created()
+  await h.service.update(coordinator, { workerId: started[2].workerSessionId, workState: 'failed' })
+  for (const queued of queuedAdmissions.slice(2))
+    assert.equal((await settled(h.service, 'pool', queued.callId)).state, 'failed')
+  assert.equal((await settled(h.service, 'pool', 'adoption')).state, 'failed')
+  assert.equal((await h.service.activityOf('pool')).queued, 0)
+  assert.equal(h.created(), beforeFailure, 'pre-effect failure creates no native artifacts')
+  assert.equal(h.service.isManaged(candidate.id), false)
+})
+
+test('JSON-domain restart preserves queue and uncertain identity without duplicate creation', async (t) => {
+  const { main } = await repository(t)
+  let loseCheckoutResponse = true
+  const h = await harness(t, {
+    durable: true,
+    automaticDispose: false,
+    worktreeGate: async () => {
+      if (loseCheckoutResponse) {
+        loseCheckoutResponse = false
+        throw new Error('response lost after native checkout')
+      }
+    },
+  })
+  const coordinator = await h.makeAgent('durable-pool', { cwd: main, preset: 'dispatch' })
+  const base = await h.service.refreshBase(coordinator, { directory: main })
+  const create = h.controller.create.bind(h.controller)
+  let loseResponse = true
+  h.controller.create = async (input) => {
+    const result = await create(input)
+    if (loseResponse) {
+      loseResponse = false
+      throw new Error('response lost after native create')
+    }
+    return result
+  }
+  for (let i = 0; i < 3; i++) {
+    await h.service.prepareCreate(coordinator, `start-${i}`, {
+      intent: `Start ${i}`,
+      prompt: `Start ${i}`,
+      base,
+    })
+    const result = await settled(h.service, coordinator.id, `start-${i}`)
+    assert.equal(result.state, i < 2 ? 'uncertain' : 'succeeded', result.message)
+  }
+  const uncertain = await h.service.proposalStatus(coordinator.id, 'start-0')
+  assert.equal(uncertain.workerSessionId, null)
+  assert.ok(h.agents.has(uncertain.requestedSessionId), 'effect exists despite lost response')
+  await h.service.prepareCreate(coordinator, 'retained-queue', {
+    intent: 'Retained',
+    prompt: 'Retained exact prompt',
+    base,
+  })
+  assert.equal((await h.service.proposalStatus(coordinator.id, 'retained-queue')).state, 'queued')
+  await h.service.dispose()
+  const restarted = new DispatchService({
+    store: await h.openStore(),
+    sessions: h.sessions,
+    repositories: new Repositories(testWorld()),
+    worktrees: () => h.worktrees,
+    defaultModel: () => undefined,
+    presets: async () => ['dispatch-worker'],
+    hostEpoch: 'restarted',
+  })
+  try {
+    await restarted.recover()
+    await restarted.recover()
+    const reconciled = await restarted.proposalStatus(coordinator.id, 'start-0')
+    assert.equal(reconciled.workerSessionId, uncertain.requestedSessionId)
+    assert.equal(reconciled.state, 'uncertain')
+    assert.equal(restarted.isProvisioning(uncertain.requestedSessionId), true)
+    const checkout = await restarted.proposalStatus(coordinator.id, 'start-1')
+    assert.ok(
+      checkout.worktree,
+      'recovery recognizes the retained registered checkout after a lost response',
+    )
+    assert.equal(git(checkout.worktree.path, 'rev-parse', 'HEAD'), base.commit)
+    assert.equal(h.worktreeCalls.length, 2, 'recovery never repeats worktree creation')
+    assert.equal(h.created(), 3, 'restart reconciles retained identity rather than creating again')
+    assert.equal((await restarted.activityOf(coordinator.id)).occupied, 3)
+    assert.equal((await restarted.activityOf(coordinator.id)).queued, 1)
+    const second = await restarted.proposalStatus(coordinator.id, 'start-2')
+    await restarted.update(coordinator, { workerId: second.workerSessionId, workState: 'failed' })
+    assert.equal((await settled(restarted, coordinator.id, 'retained-queue')).state, 'succeeded')
+    assert.equal(h.created(), 4)
+    assert.equal(h.delivered.filter((d) => d.to === uncertain.requestedSessionId).length, 0)
+    const queuedWorker = await restarted.proposalStatus(coordinator.id, 'retained-queue')
+    await restarted.update(coordinator, {
+      workerId: queuedWorker.workerSessionId,
+      workState: 'done',
+    })
+    await restarted.prepareAdopt(coordinator, 'recover-checkout', {
+      sessionId: checkout.workerSessionId,
+      intent: 'Recover retained checkout',
+      prompt: 'Reviewed recovery assignment',
+    })
+    const recovered = await approve(restarted, coordinator.id, 'recover-checkout')
+    assert.equal(recovered.state, 'succeeded', recovered.message)
+    assert.equal(h.created(), 4, 'consented adoption reuses the exact retained native session')
+    await restarted.update(coordinator, { workerId: recovered.workerSessionId, workState: 'done' })
+    assert.equal(
+      (await restarted.activityOf(coordinator.id)).occupied,
+      1,
+      'retiring the explicitly adopted assignment also retires the superseded creation reservation',
+    )
+  } finally {
+    await restarted.dispose()
+  }
+})
+
+test('public submissions reject malformed input and cancellation before durable admission', async (t) => {
+  const { main } = await repository(t)
+  const controller = new AbortController()
+  let cancelDuringLookup = false
+  const h = await harness(t, {
+    gate: async (_session, _directory, args) => {
+      if (cancelDuringLookup && args[0] === 'show-ref') controller.abort()
+    },
+  })
+  const coordinator = await h.makeAgent('input-owner', { cwd: main, preset: 'dispatch' })
+  const base = await h.service.refreshBase(coordinator, { directory: main })
+  const tools = coordinatorTools(h.service, async () => undefined)
+  const create = tools.find((tool) => tool.name === 'dispatch_create_session')
+  const send = tools.find((tool) => tool.name === 'dispatch_send_message')
+  const exec = { agent: coordinator, callId: 'invalid', signal: controller.signal }
+  for (const input of [
+    null,
+    { intent: 'Task', prompt: 'p', base, surprise: true },
+    { intent: 'Task', prompt: 7, base },
+    { intent: 'Task', prompt: 'p', base, preset: 'standard' },
+    { intent: 'Task', prompt: 'p', base: { ...base, repositoryRoot: 'x'.repeat(4097) } },
+    { intent: 'Task', prompt: 'p', base, branch: '--unsafe' },
+  ])
+    await assert.rejects(create.execute(input, exec))
+  await assert.rejects(
+    send.execute({ workerId: 'not-owned', message: 'p', newAssignment: 'yes' }, exec),
+    /boolean/,
+  )
+  cancelDuringLookup = true
+  await assert.rejects(
+    create.execute({ intent: 'Task', prompt: 'p', base }, exec),
+    /cancelled before admission/,
+  )
+  assert.equal(h.service.store.tables.proposals.values().length, 0)
+  assert.equal(h.created(), 0)
   assert.deepEqual(h.worktreeCalls, [])
+  const rpc = createRpcHandler(h.service)
+  assert.equal(
+    (
+      await rpc(
+        'activity',
+        { sessionId: coordinator.id, extra: '<script>' },
+        new AbortController().signal,
+        owner,
+      )
+    ).error.code,
+    'invalid',
+  )
+  assert.equal(
+    (await rpc('activity', { sessionId: coordinator.id }, controller.signal, owner)).error.code,
+    'unavailable',
+  )
+  assert.equal(
+    (
+      await rpc('activity', { sessionId: coordinator.id }, new AbortController().signal, {
+        principal: { kind: 'agent' },
+      })
+    ).error.code,
+    'forbidden',
+  )
 })

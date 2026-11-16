@@ -10,6 +10,8 @@ export const WORK_STATES = [
     'failed',
 ];
 export const DECISIONS = ['approve', 'reject'];
+/** Fixed per-conversation limits; these bound execution, not semantic task authority. */
+export const POOL_LIMITS = { occupied: 3, queued: 5 };
 export const CHECKPOINTS = [
     'approved',
     'session-created',

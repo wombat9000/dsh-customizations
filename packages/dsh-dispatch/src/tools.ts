@@ -71,7 +71,7 @@ export const COORDINATOR_TOOL_NAMES = [
 /** Global helpers a coordinator keeps; everything else is denied for its scope. */
 export const COORDINATOR_HELPERS = ['ask_user_question', 'todo_write', 'skill'] as const
 
-/** Orchestration routes a managed worker must not use instead of approved Dispatch creation. */
+/** Orchestration routes a managed worker must not use instead of managed Dispatch creation. */
 export const WORKER_DENIED = new Set([
   'subagent',
   'subagent_fork',
@@ -132,10 +132,10 @@ export function coordinatorTools(service: DispatchService, wait: WaitFn): ToolDe
     ),
     tool(
       'dispatch_create_session',
-      'Prepare a new worker assignment for user approval. Creates nothing: returns a pending proposal shown as an approval card. After the user approves, Dispatch creates an ordinary session on its own new linked Git worktree and branch at the pinned base, then sends the exact prompt. Requires a base snapshot from dispatch_refresh_base.',
+      'Submit a worker assignment to this coordinator’s bounded pool: 3 occupied slots and 5 queued assignments. Returns executing or queued; no individual Dispatch approval card. Queued work creates no session, branch, or worktree until admission. A full queue returns queue-full; do not retry until capacity changes. Uses the exact pinned base from dispatch_refresh_base. This does not approve underlying sensitive operations.',
       {
-        intent: str('One-line purpose shown on the card.'),
-        prompt: str('Complete first message for the worker. Sent exactly as approved.'),
+        intent: str('One-line purpose retained with the exact assignment.'),
+        prompt: str('Complete first message for the worker. Retained and delivered exactly.'),
         base: { type: 'object', description: 'Exact snapshot returned by dispatch_refresh_base.' },
         branch: str('Optional new branch name; generated when omitted.'),
         preset: str('Optional; only dispatch-worker is accepted.'),
@@ -143,18 +143,23 @@ export function coordinatorTools(service: DispatchService, wait: WaitFn): ToolDe
       },
       ['intent', 'prompt', 'base'],
       (input, exec) =>
-        service.prepareCreate(exec.agent, exec.callId, {
-          intent: input.intent,
-          prompt: input.prompt,
-          base: input.base,
-          branch: input.branch,
-          preset: input.preset,
-          model: input.model,
-        }),
+        service.prepareCreate(
+          exec.agent,
+          exec.callId,
+          {
+            intent: input.intent,
+            prompt: input.prompt,
+            base: input.base,
+            branch: input.branch,
+            preset: input.preset,
+            model: input.model,
+          },
+          exec.signal,
+        ),
     ),
     tool(
       'dispatch_send_message',
-      'Send an attributed follow-up to one of your workers within its current approved assignment (queue, or steer the current turn). A finished or superseded assignment stays closed; status updates never reopen it. With newAssignment true, prepare a new assignment approval card for an idle worker instead; nothing is delivered until the user approves, and approval closes the previous assignment.',
+      'Send an attributed follow-up within a worker’s current open assignment (queue or steer). Finished or superseded assignments stay closed. With newAssignment true, submit a separate exact assignment for this owned idle worker to the bounded pool, without an individual Dispatch approval card. It returns executing or queued; queue-full means not accepted. Existing assignment authority changes only at successful delivery. Normal sensitive-operation approvals remain unchanged.',
       {
         workerId,
         assignmentId: str('Current assignment ID (required unless newAssignment).'),
@@ -164,19 +169,27 @@ export function coordinatorTools(service: DispatchService, wait: WaitFn): ToolDe
         intent: str('One-line purpose for a new assignment.'),
       },
       ['workerId', 'message'],
-      async (input, exec) =>
-        input.newAssignment === true
-          ? service.prepareAssign(exec.agent, exec.callId, {
-              workerId: input.workerId,
-              intent: input.intent,
-              prompt: input.message,
-            })
+      async (input, exec) => {
+        if (input.newAssignment !== undefined && typeof input.newAssignment !== 'boolean')
+          throw new DispatchError('invalid', 'Use newAssignment as a boolean.')
+        return input.newAssignment === true
+          ? service.prepareAssign(
+              exec.agent,
+              exec.callId,
+              {
+                workerId: input.workerId,
+                intent: input.intent,
+                prompt: input.message,
+              },
+              exec.signal,
+            )
           : service.send(exec.agent, {
               workerId: input.workerId,
               assignmentId: input.assignmentId,
               message: input.message,
               mode: input.mode,
-            }),
+            })
+      },
     ),
     tool(
       'dispatch_get_session_status',
@@ -227,7 +240,7 @@ export function coordinatorTools(service: DispatchService, wait: WaitFn): ToolDe
     ),
     tool(
       'dispatch_add_session',
-      'Prepare user-approved adoption of an existing, idle dispatch-worker session that sits on its own registered linked worktree. Creates nothing until approved; refuses sessions another coordinator manages.',
+      'Prepare user-consented adoption of an idle dispatch-worker session on its own registered linked worktree. Approval remains required and does not bypass the 3-slot/5-queued pool. After approval, returns executing or queued; a full queue leaves adoption pending. Refuses sessions another coordinator manages.',
       {
         sessionId: str('Existing session ID.'),
         intent: str('One-line purpose shown on the card.'),
@@ -235,11 +248,16 @@ export function coordinatorTools(service: DispatchService, wait: WaitFn): ToolDe
       },
       ['sessionId', 'intent', 'prompt'],
       (input, exec) =>
-        service.prepareAdopt(exec.agent, exec.callId, {
-          sessionId: input.sessionId,
-          intent: input.intent,
-          prompt: input.prompt,
-        }),
+        service.prepareAdopt(
+          exec.agent,
+          exec.callId,
+          {
+            sessionId: input.sessionId,
+            intent: input.intent,
+            prompt: input.prompt,
+          },
+          exec.signal,
+        ),
     ),
     tool(
       'dispatch_remove_session',

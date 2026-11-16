@@ -7,6 +7,7 @@ import { domainStore } from './store.js'
 import type { WaitFn } from './tools.js'
 import type {
   AgentPresetsLike,
+  AgentLike,
   ConnectionLike,
   DefaultModelLike,
   Dispose,
@@ -32,6 +33,10 @@ export interface HostContext {
   inject(names: string[], callback: (scope: HostContext) => void): unknown
   storageDomain?: StorageDomainLike
   logger?: { warn(message: string): void }
+  on?(
+    event: 'agent/status' | 'agent/inbox/discarded',
+    listener: (payload: { agent: AgentLike }) => void,
+  ): Dispose
 }
 
 export const name = 'local-dispatch'
@@ -58,6 +63,7 @@ export async function apply(ctx: HostContext, config: Config = {}) {
     () => ctx.get('llm') as LlmLike | undefined,
     () => ctx.get('agentPresets') as AgentPresetsLike | undefined,
     () => ctx.get('workspaceRegistry') as WorkspaceRegistryLike | undefined,
+    (id) => (ctx.get('agents') as { get(id: string): AgentLike | undefined } | undefined)?.get(id),
   )
   const world = managedWorld(
     () =>
@@ -83,8 +89,10 @@ export async function apply(ctx: HostContext, config: Config = {}) {
   })
   ctx.effect(() => () => service.dispose())
   ctx.provide('localDispatch', service)
+  ctx.on?.('agent/status', ({ agent }) => service.runtimeChanged(agent))
+  ctx.on?.('agent/inbox/discarded', ({ agent }) => service.runtimeChanged(agent))
   // Reconcile after the session controller can resolve coordinators; never blocks Host start.
-  ctx.inject(['sessionController'], () => {
+  ctx.inject(['sessionController', 'worktrees', 'agentPresets', ...EXECUTION], () => {
     void service.recover().catch(() => ctx.logger?.warn('Dispatch recovery left items pending.'))
   })
   ctx.inject(['connection', 'webServer'], (scope) => {

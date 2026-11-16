@@ -20,22 +20,21 @@ const prompt = '<img src=x onerror="window.pwned=1">\n' + 'Do the work.\n'.repea
 const status = (state, extra = {}) => ({
   proposalId: 'p1',
   state,
-  kind: 'create',
+  kind: 'adopt',
   intent: 'Fix the login retry',
   prompt,
   preset: 'dispatch-worker',
-  model: 'fixture/m1',
+  model: 'unchanged',
   branch: 'dispatch/abc',
-  base: {
+  base: null,
+  target: {
     provider: 'LocalFileSystem',
+    worktreeKey: '/repo/linked',
+    worktreePath: '/repo/linked',
     repositoryRoot: '/repo',
-    remote: 'origin',
-    branch: 'main',
-    ref: 'refs/remotes/origin/main',
-    commit: 'a'.repeat(40),
-    fetchedAt: '2026-11-13T10:00:00.000Z',
+    branch: 'dispatch/abc',
+    head: 'a'.repeat(40),
   },
-  target: null,
   workerSessionId: null,
   assignmentId: 'as1',
   checkpoints: [],
@@ -66,9 +65,11 @@ test('shows exact proposal details, keeps untrusted prompt inert, and sends iden
       current = status('rejected', { decidedAt: '2026-11-13T10:00:02.000Z' })
     return current
   })
-  await expect.element(page.getByRole('heading', { name: 'Create Dispatch worker' })).toBeVisible()
-  await expect.element(page.getByText('fixture/m1')).toBeVisible()
-  await expect.element(page.getByText(/refs\/remotes\/origin\/main @ aaaaaaaaaaaa/)).toBeVisible()
+  await expect
+    .element(page.getByRole('heading', { name: 'Adopt session as Dispatch worker' }))
+    .toBeVisible()
+  await expect.element(page.getByText('unchanged')).toBeVisible()
+  await expect.element(page.getByText('aaaaaaaaaaaa', { exact: true })).toBeVisible()
   await act(async () => page.getByText(/Complete prompt/).click())
   expect(container.querySelector('pre').textContent).toBe(prompt)
   expect(container.querySelector('img')).toBeNull()
@@ -263,7 +264,7 @@ function registeredTail(request, toolData) {
 const settled = (callId = 'call', extra = {}) => ({
   kind: 'tool-result',
   callId,
-  name: 'dispatch_create_session',
+  name: 'dispatch_add_session',
   isError: false,
   subCalls: [],
   ...extra,
@@ -282,6 +283,8 @@ test('the registered footer follows settled nested proposals and cleans up its l
 
   const filtered = [
     settled('unrelated', { name: 'read' }),
+    settled('ordinary-create', { name: 'dispatch_create_session' }),
+    settled('ordinary-assign', { name: 'dispatch_send_message' }),
     settled('error', { isError: true }),
     { name: 'dispatch_create_session', phase: 'preparing', callId: 'preparing' },
     { name: 'dispatch_create_session', phase: 'start', callId: 'running' },
@@ -308,7 +311,7 @@ test('the registered footer follows settled nested proposals and cleans up its l
     true,
   )
   await act(async () => page.getByRole('button', { name: 'Approve', exact: true }).click())
-  await expect.element(page.getByText(/carrying out this exact proposal/)).toBeVisible()
+  await expect.element(page.getByText(/carrying out this exact assignment/)).toBeVisible()
   expect(page.getByRole('button', { name: 'Approve' }).query()).toBeNull()
   expect(calls.find(({ endpoint }) => endpoint === 'decide').input).toMatchObject({
     sessionId: 'coord',

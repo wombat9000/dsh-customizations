@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import type { ActivityStatus } from '../shared/contracts.js'
 import type {
   AssignmentRecord,
   BaseSnapshot,
@@ -15,6 +16,7 @@ import type {
 import {
   DispatchError,
   LIMITS,
+  POOL_LIMITS,
   RECORD_VERSION,
   proposalDigest,
   reportWorkState,
@@ -60,6 +62,7 @@ export interface ProposalView {
   checkpoints: Checkpoint[]
   message?: string
   worktree?: ProposalRecord['worktree']
+  requestedSessionId?: string
 }
 
 /** Card-facing view: includes the complete prompt and binding digest. */
@@ -129,6 +132,8 @@ export class DispatchService {
   /** Admitted executions and report deliveries; shutdown drains them before closing storage. */
   private readonly inflight = new Set<Promise<unknown>>()
   private disposing: Promise<void> | undefined
+  /** At most one native-quiescence observation per terminal owned worker. */
+  private readonly idleObservers = new Set<string>()
 
   private readonly options: ServiceOptions
   constructor(options: ServiceOptions) {
@@ -197,6 +202,11 @@ export class DispatchService {
     return this.now().toISOString()
   }
 
+  private checkSubmission(signal?: AbortSignal) {
+    if (signal?.aborted)
+      throw new DispatchError('unavailable', 'Dispatch submission was cancelled before admission.')
+  }
+
   // ---- identities -------------------------------------------------------
 
   /** The caller must be a live, top-level Dispatch coordinator. */
@@ -229,6 +239,207 @@ export class DispatchService {
     return workerId === null ? 0 : (tables.workers.get(workerId)?.generation ?? 0)
   }
 
+  // ---- bounded coordinator pools -----------------------------------------
+
+  private nextSequence(tables: Tables, coordinatorId: string) {
+    return (
+      tables.proposals
+        .values()
+        .reduce(
+          (last, p) => (p.coordinatorId === coordinatorId ? Math.max(last, p.sequence ?? 0) : last),
+          0,
+        ) + 1
+    )
+  }
+
+  private queued(tables: Tables, coordinatorId: string) {
+    return tables.proposals
+      .values()
+      .filter((p) => p.coordinatorId === coordinatorId && p.state === 'queued')
+      .sort((a, b) => (a.sequence ?? 0) - (b.sequence ?? 0))
+  }
+
+  /** Workers and in-flight/uncertain provisioning share one durable slot identity. */
+  private slots(tables: Tables, coordinatorId: string): Set<string> {
+    const slots = new Set<string>()
+    for (const w of this.activeClaims(tables))
+      if (w.coordinatorId === coordinatorId && !w.assignment.slotReleasedAt)
+        slots.add(`worker:${w.workerId}`)
+    for (const p of tables.proposals.values()) {
+      if (p.coordinatorId !== coordinatorId || !['executing', 'uncertain'].includes(p.state))
+        continue
+      const id = p.workerSessionId ?? p.payload.workerSessionId
+      const worker = id ? tables.workers.get(id) : undefined
+      // A retained record with an explicitly retired/released assignment needs no second slot.
+      if (
+        worker &&
+        (worker.released ||
+          worker.coordinatorId !== coordinatorId ||
+          (worker.generation > p.generation && worker.assignment.id !== p.payload.assignmentId) ||
+          (worker.assignment.id === p.payload.assignmentId && worker.assignment.slotReleasedAt))
+      )
+        continue
+      slots.add(id ? `worker:${id}` : `proposal:${p.id}`)
+    }
+    return slots
+  }
+
+  private replacesOccupied(tables: Tables, record: ProposalRecord) {
+    const id = record.payload.workerSessionId
+    const worker = id ? tables.workers.get(id) : undefined
+    return (
+      record.payload.kind === 'assign' &&
+      worker &&
+      !worker.released &&
+      worker.coordinatorId === record.coordinatorId &&
+      !worker.assignment.slotReleasedAt
+    )
+  }
+
+  /** A terminal display state alone is insufficient: reserve true native idle first. */
+  private async retireSlots(tables: Tables, coordinatorId: string) {
+    for (const worker of this.activeClaims(tables)) {
+      const task = worker.assignment
+      if (
+        worker.coordinatorId !== coordinatorId ||
+        task.slotReleasedAt ||
+        !task.closedAt ||
+        task.admission !== 'admitted' ||
+        !['done', 'failed'].includes(task.workState)
+      )
+        continue
+      let live: AgentLike | undefined
+      try {
+        live = await this.options.sessions.resolve(worker.workerId)
+        if (!this.options.sessions.quiescent(live)) {
+          if (live.status === 'running') this.observeIdle(live, coordinatorId)
+          continue
+        }
+        await this.options.sessions.reserve(live, this.lifetime.signal, async (reservation) => {
+          reservation.check()
+          this.fence()
+          await tables.workers.put(worker.workerId, {
+            ...worker,
+            assignment: { ...task, slotReleasedAt: this.stamp() },
+          })
+        })
+      } catch (error) {
+        // Native maintenance reports idle publicly. Follow its true idle promise;
+        // unavailable sessions or failed durable writes never release capacity.
+        if (
+          live &&
+          error instanceof DispatchError &&
+          error.code === 'ineligible' &&
+          this.options.sessions.quiescent(live)
+        )
+          this.observeIdle(live, coordinatorId)
+      }
+    }
+  }
+
+  private observeIdle(agent: AgentLike, coordinatorId: string) {
+    if (!agent.whenIdle || this.idleObservers.has(agent.id) || this.disposed) return
+    this.idleObservers.add(agent.id)
+    const signal = this.lifetime.signal
+    const waiting = new Promise<void>((resolve) => {
+      const finish = () => {
+        signal.removeEventListener('abort', finish)
+        resolve()
+      }
+      signal.addEventListener('abort', finish, { once: true })
+      agent.whenIdle!().then(finish, finish)
+      if (signal.aborted) finish()
+    }).then(async () => {
+      this.idleObservers.delete(agent.id)
+      if (!this.disposed) await this.drain(coordinatorId)
+    })
+    void this.track(waiting).catch(() => undefined)
+  }
+
+  /** Native activity events notify only the worker's persisted coordinator. */
+  runtimeChanged(agent: AgentLike) {
+    const worker = this.store.tables.workers.get(agent.id)
+    if (!worker || worker.released || this.disposed) return
+    this.notify(worker.coordinatorId)
+    if (worker.assignment.closedAt && !worker.assignment.slotReleasedAt) {
+      if (agent.status === 'running') this.observeIdle(agent, worker.coordinatorId)
+      else void this.drain(worker.coordinatorId).catch(() => undefined)
+    }
+  }
+
+  private async start(tables: Tables, record: ProposalRecord) {
+    this.fence()
+    const executing = { ...record, state: 'executing' as const }
+    await tables.proposals.put(record.id, executing)
+    void this.track(this.execute(executing)).catch(() => undefined)
+    return executing
+  }
+
+  private async advance(tables: Tables, coordinatorId: string) {
+    for (const proposal of this.queued(tables, coordinatorId)) {
+      if (
+        this.slots(tables, coordinatorId).size >= POOL_LIMITS.occupied &&
+        !this.replacesOccupied(tables, proposal)
+      )
+        break
+      await this.start(tables, proposal)
+    }
+  }
+
+  /** Serialized drain is scoped to the retained coordinator, never the visible conversation. */
+  private drain(coordinatorId: string) {
+    if (this.disposed) return Promise.resolve()
+    return this.track(
+      this.options.store
+        .transaction(async (tables) => {
+          this.fence()
+          await this.retireSlots(tables, coordinatorId)
+          if (!this.queued(tables, coordinatorId).length) return
+          try {
+            const coordinator = await this.options.sessions.resolve(coordinatorId)
+            if (this.options.sessions.currentPreset(coordinator) !== COORDINATOR_PRESET) return
+          } catch {
+            return
+          }
+          await this.advance(tables, coordinatorId)
+        })
+        .then(() => this.notify(coordinatorId)),
+    )
+  }
+
+  /** Small chrome snapshot: durable occupancy plus live runtime, no Git/history reads. */
+  async activityOf(coordinatorId: string): Promise<ActivityStatus | null> {
+    this.fence()
+    const coordinator = await this.options.sessions.resolve(coordinatorId)
+    if (this.options.sessions.currentPreset(coordinator) !== COORDINATOR_PRESET) return null
+    return this.options.store.transaction(async (tables) => {
+      const workers = this.activeClaims(tables).filter(
+        (w) => w.coordinatorId === coordinatorId && !w.assignment.slotReleasedAt,
+      )
+      let active: number | null = 0
+      for (const w of workers) {
+        const live = this.options.sessions.live(w.workerId)
+        if (!live || live.status === undefined) active = null
+        else if (
+          live.status === 'running' &&
+          w.assignment.workState === 'working' &&
+          active !== null
+        )
+          active++
+      }
+      return {
+        coordinatorId,
+        occupied: this.slots(tables, coordinatorId).size,
+        active,
+        queued: this.queued(tables, coordinatorId).length,
+        workers: workers.map((w) => ({
+          workerId: w.workerId,
+          title: w.title ?? w.assignment.intent,
+        })),
+      }
+    })
+  }
+
   // ---- proposals ---------------------------------------------------------
 
   private resolveModel(requested: string | undefined) {
@@ -244,11 +455,16 @@ export class DispatchService {
     callId: string,
     payload: ProposalPayload,
     validate: (tables: Tables) => void,
+    signal?: AbortSignal,
   ): Promise<ProposalView> {
     if (typeof callId !== 'string' || !callId)
       throw new DispatchError('invalid', 'Missing tool call identity.')
     const proposal = await this.options.store.transaction(async (tables) => {
+      this.fence()
+      this.checkSubmission(signal)
       validate(tables)
+      await this.retireSlots(tables, coordinator.id)
+      await this.advance(tables, coordinator.id)
       const id = randomUUID()
       const generation = this.generationOf(tables, payload.workerSessionId)
       const record: ProposalRecord = {
@@ -267,7 +483,14 @@ export class DispatchService {
         }),
         createdAt: this.stamp(),
         hostEpoch: this.hostEpoch,
-        state: 'pending',
+        state: payload.kind === 'adopt' ? 'pending' : 'queued',
+        sequence: this.nextSequence(tables, coordinator.id),
+        ...(payload.kind === 'create' ? { requestedSessionId: `session-dispatch-${id}` } : {}),
+        ...(payload.kind === 'assign'
+          ? {
+              previousAssignmentId: tables.workers.get(payload.workerSessionId!)!.assignment.id,
+            }
+          : {}),
         checkpoints: [],
       }
       if (
@@ -276,6 +499,20 @@ export class DispatchService {
           .some((other) => other.coordinatorId === coordinator.id && other.callId === callId)
       )
         throw new DispatchError('conflict', 'This tool call already prepared a proposal.')
+      this.checkSubmission(signal)
+      if (record.state === 'queued') {
+        if (
+          this.queued(tables, coordinator.id).length === 0 &&
+          (this.slots(tables, coordinator.id).size < POOL_LIMITS.occupied ||
+            this.replacesOccupied(tables, record))
+        )
+          return this.start(tables, record)
+        if (this.queued(tables, coordinator.id).length >= POOL_LIMITS.queued)
+          throw new DispatchError(
+            'queue-full',
+            'Dispatch is full: 3 occupied worker slots and 5 queued assignments. Wait for explicit completion and quiescence before submitting more work.',
+          )
+      }
       await tables.proposals.put(id, record)
       return record
     })
@@ -300,10 +537,11 @@ export class DispatchService {
       checkpoints: [...record.checkpoints],
       ...(record.message !== undefined ? { message: record.message } : {}),
       ...(record.worktree !== undefined ? { worktree: record.worktree } : {}),
+      ...(record.requestedSessionId ? { requestedSessionId: record.requestedSessionId } : {}),
     }
   }
 
-  /** Prepare a new worker on its own linked worktree. Creates nothing. */
+  /** Submit exact creation to the bounded pool; queueing creates no native artifacts. */
   async prepareCreate(
     agent: AgentLike | undefined,
     callId: string,
@@ -315,8 +553,10 @@ export class DispatchService {
       preset?: unknown
       model?: unknown
     },
+    signal?: AbortSignal,
   ): Promise<ProposalView> {
     const coordinator = this.coordinatorOf(agent)
+    this.checkSubmission(signal)
     const intent = bounded(input.intent, 'intent', LIMITS.intent)!
     const prompt = bounded(input.prompt, 'prompt', LIMITS.prompt)!
     const preset = bounded(input.preset, 'preset', 100, { required: false }) ?? WORKER_PRESET
@@ -342,7 +582,12 @@ export class DispatchService {
     if (!validBranchName(branch))
       throw new DispatchError('invalid', 'Use a plain, new branch name.')
     if (
-      await this.options.repositories.branchExists(coordinator.session, base.repositoryRoot, branch)
+      await this.options.repositories.branchExists(
+        coordinator.session,
+        base.repositoryRoot,
+        branch,
+        signal,
+      )
     )
       throw new DispatchError('conflict', `Branch ${branch} already exists; choose a new branch.`)
     return this.persistProposal(
@@ -365,7 +610,7 @@ export class DispatchService {
           .values()
           .some(
             (other) =>
-              ['pending', 'executing'].includes(other.state) &&
+              ['pending', 'queued', 'executing', 'uncertain'].includes(other.state) &&
               other.payload.branch === branch &&
               other.payload.base?.repositoryRoot === base.repositoryRoot,
           )
@@ -383,6 +628,7 @@ export class DispatchService {
             `Branch ${branch} is already reserved by another proposal or worker.`,
           )
       },
+      signal,
     )
   }
 
@@ -405,13 +651,13 @@ export class DispatchService {
         'Pass the exact base snapshot returned by dispatch_refresh_base; refresh first if none exists.',
       )
     return {
-      provider: base.provider,
-      repositoryRoot: base.repositoryRoot,
-      remote: base.remote,
-      branch: base.branch,
-      ref: base.ref,
+      provider: bounded(base.provider, 'base provider', 200)!,
+      repositoryRoot: bounded(base.repositoryRoot, 'base repositoryRoot', 4096)!,
+      remote: bounded(base.remote, 'base remote', 64)!,
+      branch: bounded(base.branch, 'base branch', LIMITS.branch)!,
+      ref: bounded(base.ref, 'base ref', 512)!,
       commit: base.commit,
-      fetchedAt: base.fetchedAt,
+      fetchedAt: bounded(base.fetchedAt, 'base fetchedAt', 64)!,
     }
   }
 
@@ -420,8 +666,10 @@ export class DispatchService {
     agent: AgentLike | undefined,
     callId: string,
     input: { sessionId: unknown; intent: unknown; prompt: unknown },
+    signal?: AbortSignal,
   ): Promise<ProposalView> {
     const coordinator = this.coordinatorOf(agent)
+    this.checkSubmission(signal)
     const sessionId = bounded(input.sessionId, 'sessionId', 200)!
     const intent = bounded(input.intent, 'intent', LIMITS.intent)!
     const prompt = bounded(input.prompt, 'prompt', LIMITS.prompt)!
@@ -440,7 +688,7 @@ export class DispatchService {
         'Only a quiescent session can be adopted; wait until it is idle with nothing queued.',
       )
     this.requireRetention()
-    const target = this.targetOf(await this.checkout(candidate))
+    const target = this.targetOf(await this.checkout(candidate, signal))
     return this.persistProposal(
       coordinator,
       callId,
@@ -467,6 +715,7 @@ export class DispatchService {
             'That session or checkout is already managed by a Dispatch coordinator.',
           )
       },
+      signal,
     )
   }
 
@@ -475,8 +724,10 @@ export class DispatchService {
     agent: AgentLike | undefined,
     callId: string,
     input: { workerId?: unknown; intent: unknown; prompt: unknown },
+    signal?: AbortSignal,
   ): Promise<ProposalView> {
     const coordinator = this.coordinatorOf(agent)
+    this.checkSubmission(signal)
     const workerId = bounded(input.workerId, 'workerId', 200)!
     const intent = bounded(input.intent, 'intent', LIMITS.intent)!
     const prompt = bounded(input.prompt, 'prompt', LIMITS.prompt)!
@@ -489,7 +740,7 @@ export class DispatchService {
         'ineligible',
         'A new assignment needs an idle worker with nothing queued, so the previous task cannot report on the new one. Wait, or interrupt it first.',
       )
-    const identity = await this.checkout(live)
+    const identity = await this.checkout(live, signal)
     if (!this.sameCheckout(snapshot, identity) || !identity.linked || !identity.registered)
       throw new DispatchError(
         'ineligible',
@@ -513,9 +764,27 @@ export class DispatchService {
       },
       (tables) => {
         const current = this.ownedWorker(tables, coordinator.id, workerId)
-        if (current.generation !== snapshot.generation)
+        if (
+          current.generation !== snapshot.generation ||
+          current.assignment.id !== snapshot.assignment.id
+        )
           throw new DispatchError('conflict', 'Ownership changed while preparing; prepare again.')
+        if (
+          current.assignment.admission !== 'admitted' ||
+          tables.proposals
+            .values()
+            .some(
+              (p) =>
+                p.payload.workerSessionId === workerId &&
+                ['pending', 'queued', 'executing', 'uncertain'].includes(p.state),
+            )
+        )
+          throw new DispatchError(
+            'conflict',
+            'An assignment for this worker is already pending, queued, executing, or uncertain. Inspect it before submitting another.',
+          )
       },
+      signal,
     )
   }
 
@@ -593,14 +862,25 @@ export class DispatchService {
       if (input.decision === 'reject') {
         proposal.state = 'rejected'
       } else {
-        proposal.state = 'executing'
+        await this.retireSlots(tables, proposal.coordinatorId)
+        await this.advance(tables, proposal.coordinatorId)
         proposal.checkpoints = ['approved']
+        // Consent enters the queue now, not when the undecided card was prepared.
+        proposal.sequence = this.nextSequence(tables, proposal.coordinatorId)
+        proposal.state = 'queued'
+        if (
+          this.queued(tables, proposal.coordinatorId).length === 0 &&
+          (this.slots(tables, proposal.coordinatorId).size < POOL_LIMITS.occupied ||
+            this.replacesOccupied(tables, proposal))
+        )
+          return this.start(tables, proposal)
+        if (this.queued(tables, proposal.coordinatorId).length >= POOL_LIMITS.queued)
+          throw new DispatchError(
+            'queue-full',
+            'Dispatch is full: 3 occupied worker slots and 5 queued assignments. This adoption remains pending; nothing was claimed or delivered.',
+          )
       }
       await tables.proposals.put(proposal.id, proposal)
-      // Execution continues after the decision reply; its checkpoints are visible on the
-      // card. It is admitted here, inside the decision, so shutdown always drains it.
-      if (proposal.state === 'executing')
-        void this.track(this.execute(structuredClone(proposal))).catch(() => undefined)
       return proposal
     })
     this.notify(record.coordinatorId)
@@ -659,6 +939,8 @@ export class DispatchService {
           ),
         )
       }
+    } finally {
+      if (!this.disposed) await this.drain(record.coordinatorId)
     }
   }
 
@@ -671,10 +953,26 @@ export class DispatchService {
     this.requireRetention()
     // 1. Ordinary session, dispatch-worker preset. Its guard denies every tool until admission.
     this.fence()
-    const createdSession = await this.options.sessions.create({
-      cwd: base.repositoryRoot,
-      preset: payload.preset,
-    })
+    if (!record.requestedSessionId) {
+      const requestedSessionId = `session-dispatch-${record.id}`
+      record.requestedSessionId = requestedSessionId
+      await this.checkpoint(record.id, (p) => {
+        p.requestedSessionId = requestedSessionId
+      })
+    }
+    let createdSession: Awaited<ReturnType<Sessions['create']>>
+    try {
+      createdSession = await this.options.sessions.create({
+        cwd: base.repositoryRoot,
+        preset: payload.preset,
+        sessionId: record.requestedSessionId,
+      })
+    } catch (error) {
+      throw new DispatchError(
+        'uncertain',
+        `Session creation could not be confirmed for ${record.requestedSessionId}: ${error instanceof Error ? error.message : 'unknown error'}. Reconcile this retained identity; do not retry creation.`,
+      )
+    }
     const workerId = createdSession.sessionId
     record.workerSessionId = workerId
     await this.checkpoint(record.id, (proposal) => {
@@ -814,6 +1112,11 @@ export class DispatchService {
     if (record.payload.kind === 'assign') {
       if (!existing || existing.released || existing.coordinatorId !== record.coordinatorId)
         throw new DispatchError('conflict', 'This coordinator no longer manages the worker.')
+      if (record.previousAssignmentId && existing.assignment.id !== record.previousAssignmentId)
+        throw new DispatchError(
+          'conflict',
+          'The targeted assignment changed before admission; nothing was delivered.',
+        )
     } else if (existing && !existing.released)
       throw new DispatchError('conflict', 'Another coordinator claimed this session.')
     for (const other of this.activeClaims(tables))
@@ -1050,13 +1353,17 @@ export class DispatchService {
         .filter(
           (proposal) =>
             proposal.coordinatorId === coordinator.id &&
-            ['pending', 'executing', 'failed', 'uncertain'].includes(proposal.state),
+            ['pending', 'queued', 'executing', 'failed', 'uncertain'].includes(proposal.state),
         )
         .map((proposal) => this.view(proposal)),
     )
     const items = []
     for (const worker of workers) items.push(await this.statusFor(coordinator.id, worker.workerId))
-    return { workers: items, operations: proposals }
+    return {
+      workers: items,
+      operations: proposals,
+      activity: await this.activityOf(coordinator.id),
+    }
   }
 
   async status(agent: AgentLike | undefined, workerId: unknown): Promise<WorkerStatus> {
@@ -1189,7 +1496,7 @@ export class DispatchService {
       if (assignment.closedAt !== undefined)
         throw new DispatchError(
           'conflict',
-          'The assignment is closed. New work needs a new approved assignment.',
+          'The assignment is closed. New work needs a new assignment submission.',
         )
       const envelope = agentMessage(
         coordinator,
@@ -1268,7 +1575,7 @@ export class DispatchService {
         if (workState !== undefined && assignment.closedAt !== undefined)
           throw new DispatchError(
             'conflict',
-            'The assignment is closed; its state cannot change. New work needs a new approved assignment.',
+            'The assignment is closed; its state cannot change. New work needs a new assignment submission.',
           )
         const now = this.stamp()
         const closing = workState === 'done' || workState === 'failed'
@@ -1288,6 +1595,7 @@ export class DispatchService {
       })
     })
     this.notify(coordinator.id)
+    await this.drain(coordinator.id)
     return this.status(coordinator, workerId)
   }
 
@@ -1314,12 +1622,12 @@ export class DispatchService {
           .some(
             (proposal) =>
               proposal.payload.workerSessionId === workerId &&
-              ['pending', 'executing'].includes(proposal.state),
+              ['pending', 'queued', 'executing'].includes(proposal.state),
           )
       )
         throw new DispatchError(
           'conflict',
-          'A proposal for this worker is still pending or executing.',
+          'An assignment for this worker is still pending, queued, or executing.',
         )
       const release = async (reservation?: IdleReservation) => {
         for (const report of tables.reports.values())
@@ -1346,6 +1654,7 @@ export class DispatchService {
       else await release()
     })
     this.notify(coordinator.id)
+    await this.drain(coordinator.id)
     return { released: true, retained: ['session', 'history', 'branch', 'checkout'] }
   }
 
@@ -1366,7 +1675,7 @@ export class DispatchService {
       .some(
         (proposal) =>
           ['executing', 'uncertain'].includes(proposal.state) &&
-          proposal.workerSessionId === agentId &&
+          (proposal.workerSessionId === agentId || proposal.requestedSessionId === agentId) &&
           !proposal.checkpoints.includes('claimed'),
       )
   }
@@ -1453,6 +1762,7 @@ export class DispatchService {
       return record
     })
     this.notify(report.coordinatorId)
+    if (kind === 'done' || kind === 'failed') this.observeIdle(agent, report.coordinatorId)
     const delivered = await this.deliverReport(report.id, agent)
     return { accepted: true, reportId: report.id, delivered }
   }
@@ -1645,6 +1955,71 @@ export class DispatchService {
         .filter((report) => report.delivery === 'pending')
         .map((report) => report.id)
     })
+    // Native creation may have completed before its response/checkpoint. Resolve the
+    // retained requested identity; never issue another create or replay an assignment.
+    for (const proposal of this.store.tables.proposals.values()) {
+      if (
+        proposal.state !== 'uncertain' ||
+        proposal.payload.kind !== 'create' ||
+        (proposal.workerSessionId && proposal.worktree)
+      )
+        continue
+      const id = proposal.workerSessionId ?? proposal.requestedSessionId
+      const base = proposal.payload.base
+      if (!id || !base) continue
+      const claim = this.store.tables.workers.get(id)
+      if (claim && !claim.released && claim.coordinatorId !== proposal.coordinatorId) continue
+      try {
+        const live = await this.options.sessions.resolve(id)
+        if (
+          this.options.sessions.currentPreset(live) !== WORKER_PRESET ||
+          live.session.header.cwd !== proposal.payload.base?.repositoryRoot
+        )
+          continue
+        let worktree = proposal.worktree
+        if (!worktree) {
+          try {
+            const identity = await this.checkout(live)
+            if (
+              identity.linked &&
+              identity.registered &&
+              identity.branch !== null &&
+              identity.branch === proposal.payload.branch &&
+              identity.provider === base.provider &&
+              identity.repositoryRoot === base.repositoryRoot &&
+              identity.head === base.commit
+            )
+              worktree = {
+                path: identity.worktreePath,
+                branch: identity.branch,
+                baseCommit: identity.head,
+                repositoryRoot: identity.repositoryRoot,
+              }
+          } catch {
+            /* retain the known session even when Git inspection is unavailable */
+          }
+        }
+        if (!proposal.workerSessionId || (!proposal.worktree && worktree))
+          await this.checkpoint(proposal.id, (p) => {
+            p.workerSessionId = live.id
+            if (worktree) p.worktree = worktree
+            p.message = `${p.message ?? ''} Reconciled retained session ${live.id}${worktree ? ' and linked checkout' : ''}; provisioning and assignment delivery were not retried.`
+          })
+      } catch {
+        /* absence/unavailability is not permission to create again */
+      }
+    }
     for (const id of pendingReports) await this.deliverReport(id).catch(() => false)
+    const coordinators = new Set([
+      ...this.store.tables.proposals
+        .values()
+        .filter((p) => p.state === 'queued')
+        .map((p) => p.coordinatorId),
+      ...this.store.tables.workers
+        .values()
+        .filter((w) => !w.released)
+        .map((w) => w.coordinatorId),
+    ])
+    for (const id of coordinators) await this.drain(id)
   }
 }

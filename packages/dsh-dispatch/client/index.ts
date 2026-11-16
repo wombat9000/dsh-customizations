@@ -9,6 +9,8 @@ import { ProposalTurnTail } from './turn-tail.js'
 import type { TurnTailProps } from './turn-tail.js'
 import { SidebarRoleIcon, SidebarRoleHover } from './sidebar-role.js'
 import type { SidebarRoleProps } from './sidebar-role.js'
+import { ActivityPill } from './activity.js'
+import type { ActivityProps, ConnectionStateSource } from './activity.js'
 
 interface ClientContext {
   get?(name: string): unknown
@@ -20,14 +22,17 @@ interface ClientContext {
         | {
             name:
               | 'conversation.chat.turnTail'
+              | 'conversation.session.header.utilities'
               | 'sidebar.session.row.trailing'
               | 'sidebar.session.row.hover'
             id: string
+            order?: number
           },
       component: ComponentType<P>,
     ): unknown
   }
   connection: {
+    state: ConnectionStateSource
     rpc: {
       call(
         channel: string,
@@ -78,6 +83,21 @@ export default {
       ctx.get?.('uiWorkspace') as { openSession(sessionId: string): void } | undefined
     const openSession = (sessionId: string) => workspace()?.openSession(sessionId)
     const navigation = () => (workspace() ? openSession : undefined)
+    // rc.3: additive session-scoped list, ascending order, no native controls
+    // replaced; hooks come from the native standard kit. Registrations and
+    // subscriptions unwind with their owning Cordis scope and React mount.
+    ctx.slots.inject('conversation.session.header.utilities', () =>
+      ctx.slots.register<ActivityProps>(
+        { name: 'conversation.session.header.utilities', id: 'local-dispatch-activity', order: 20 },
+        (props) =>
+          React.createElement(ActivityPill, {
+            ...props,
+            request,
+            connection: ctx.connection.state,
+            openSession: navigation(),
+          }),
+      ),
+    )
     // The completed-turn footer is the only approval surface; native tool
     // output stays read-only while the coordinator is running.
     function TurnTail(props: TurnTailProps) {

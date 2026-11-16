@@ -98,18 +98,26 @@ export class Sessions {
   private readonly llm: () => LlmLike | undefined
   private readonly presets: () => AgentPresetsLike | undefined
   private readonly workspaces: () => WorkspaceRegistryLike | undefined
+  private readonly liveAgent: (id: string) => AgentLike | undefined
   constructor(
     controller: () => SessionControllerLike | undefined,
     directories: () => WorkingDirectoryLike | undefined,
     llm: () => LlmLike | undefined = () => undefined,
     presets: () => AgentPresetsLike | undefined = () => undefined,
     workspaces: () => WorkspaceRegistryLike | undefined = () => undefined,
+    liveAgent: (id: string) => AgentLike | undefined = () => undefined,
   ) {
     this.controller = controller
     this.directories = directories
     this.llm = llm
     this.presets = presets
     this.workspaces = workspaces
+    this.liveAgent = liveAgent
+  }
+
+  /** Native registry lookup only: activity reads must not resume dormant workers. */
+  live(id: string): AgentLike | undefined {
+    return this.liveAgent(id)
   }
 
   private requireController() {
@@ -131,11 +139,12 @@ export class Sessions {
     }
   }
 
-  create(input: { cwd: string; preset: string }) {
+  create(input: { cwd: string; preset: string; sessionId: string }) {
     // The caller records the native identity before validating the returned preset.
     return this.requireController().create({
       cwd: input.cwd,
       agentPreset: input.preset,
+      sessionId: input.sessionId,
     })
   }
 

@@ -40,21 +40,21 @@ const STATUS_TOOLS = [
 	"dispatch_get_session_status",
 	"dispatch_wait_session"
 ];
-const CARD_TOOLS = [
-	"dispatch_create_session",
-	"dispatch_add_session",
-	"dispatch_send_message"
-];
+const CARD_TOOLS = ["dispatch_add_session"];
 
 //#endregion
 //#region client/card.tsx
-const LIVE = /* @__PURE__ */ new Set(["pending", "executing"]);
+const LIVE = /* @__PURE__ */ new Set([
+	"pending",
+	"queued",
+	"executing"
+]);
 function validStatus(value) {
 	if (!value || typeof value !== "object") return false;
 	const v = value;
 	return typeof v.proposalId === "string" && typeof v.state === "string" && Object.hasOwn(STATES, v.state) && typeof v.kind === "string" && Object.hasOwn(TITLES, v.kind) && typeof v.coordinatorId === "string" && typeof v.intent === "string" && typeof v.prompt === "string" && typeof v.preset === "string" && typeof v.model === "string" && typeof v.digest === "string" && /^[0-9a-f]{64}$/u.test(v.digest) && Array.isArray(v.checkpoints);
 }
-const css = `
+const css$1 = `
 .dsp-card { font: 13px/1.5 var(--dsw-font-family, system-ui, sans-serif); color: var(--dsw-alias-label-primary);
   padding: 14px 16px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 12px; display: grid; gap: 10px; }
 .dsp-card * { box-sizing: border-box; }
@@ -81,11 +81,12 @@ const TITLES = {
 	assign: "New Dispatch assignment"
 };
 const STATES = {
-	pending: "Waiting for your decision. Nothing has been created or sent.",
+	pending: "Waiting for your adoption decision. Nothing has been claimed or sent.",
+	queued: "Queued. Dispatch has not created or delivered this assignment yet.",
 	rejected: "Rejected. Nothing was created or sent.",
 	expired: "Expired. This card can no longer authorize anything.",
-	executing: "Approved. Dispatch is carrying out this exact proposal.",
-	succeeded: "Done. The worker received the approved prompt.",
+	executing: "Dispatch is carrying out this exact assignment.",
+	succeeded: "Delivered. The worker received the exact prompt.",
 	failed: "Failed. Retained artifacts are listed below; nothing was retried.",
 	uncertain: "Outcome uncertain. Inspect retained artifacts before trying again."
 };
@@ -111,7 +112,7 @@ function ProposalView({ status, busy, error, decide, openSession }) {
 	return /* @__PURE__ */ react.default.createElement("section", {
 		className: "dsp-card",
 		"aria-label": TITLES[status.kind] ?? "Dispatch proposal"
-	}, /* @__PURE__ */ react.default.createElement("style", null, css), /* @__PURE__ */ react.default.createElement("h3", null, TITLES[status.kind] ?? "Dispatch proposal"), /* @__PURE__ */ react.default.createElement("p", null, status.intent), /* @__PURE__ */ react.default.createElement("dl", null, rows.map(([label, value]) => /* @__PURE__ */ react.default.createElement(react.default.Fragment, { key: label }, /* @__PURE__ */ react.default.createElement("dt", null, label), /* @__PURE__ */ react.default.createElement("dd", null, value)))), /* @__PURE__ */ react.default.createElement("details", null, /* @__PURE__ */ react.default.createElement("summary", null, "Complete prompt (", status.prompt.length, " characters)"), /* @__PURE__ */ react.default.createElement("pre", null, status.prompt)), /* @__PURE__ */ react.default.createElement("p", {
+	}, /* @__PURE__ */ react.default.createElement("style", null, css$1), /* @__PURE__ */ react.default.createElement("h3", null, TITLES[status.kind] ?? "Dispatch proposal"), /* @__PURE__ */ react.default.createElement("p", null, status.intent), /* @__PURE__ */ react.default.createElement("dl", null, rows.map(([label, value]) => /* @__PURE__ */ react.default.createElement(react.default.Fragment, { key: label }, /* @__PURE__ */ react.default.createElement("dt", null, label), /* @__PURE__ */ react.default.createElement("dd", null, value)))), /* @__PURE__ */ react.default.createElement("details", null, /* @__PURE__ */ react.default.createElement("summary", null, "Complete prompt (", status.prompt.length, " characters)"), /* @__PURE__ */ react.default.createElement("pre", null, status.prompt)), /* @__PURE__ */ react.default.createElement("p", {
 		className: "dsp-muted",
 		role: "status"
 	}, STATES[status.state] ?? status.state), status.message ? /* @__PURE__ */ react.default.createElement("p", { className: "dsp-muted" }, status.message) : null, error ? /* @__PURE__ */ react.default.createElement("p", {
@@ -266,7 +267,7 @@ function WorkersView({ workers, openSession, refresh, error }) {
 	return /* @__PURE__ */ react.default.createElement("section", {
 		className: "dsp-card",
 		"aria-label": "Dispatch workers"
-	}, /* @__PURE__ */ react.default.createElement("style", null, css), /* @__PURE__ */ react.default.createElement("h3", null, "Dispatch workers"), workers.length === 0 ? /* @__PURE__ */ react.default.createElement("p", { className: "dsp-muted" }, "No managed workers.") : null, workers.map((worker) => {
+	}, /* @__PURE__ */ react.default.createElement("style", null, css$1), /* @__PURE__ */ react.default.createElement("h3", null, "Dispatch workers"), workers.length === 0 ? /* @__PURE__ */ react.default.createElement("p", { className: "dsp-muted" }, "No managed workers.") : null, workers.map((worker) => {
 		const rows = [
 			["Work state", `${WORK_STATES[worker.workState] ?? worker.workState} (${worker.stateSource})`],
 			["Assignment", `${worker.assignmentId} · ${worker.assignmentOpen ? "open" : "closed"}`],
@@ -395,6 +396,104 @@ function SidebarRoleHover(props) {
 }
 
 //#endregion
+//#region client/activity.tsx
+function validActivity(value, sessionId) {
+	if (!value || typeof value !== "object") return false;
+	const v = value;
+	return v.coordinatorId === sessionId && Number.isSafeInteger(v.occupied) && v.occupied >= 0 && Number.isSafeInteger(v.queued) && v.queued >= 0 && v.queued <= 5 && (v.active === null || Number.isSafeInteger(v.active) && v.active >= 0 && v.active <= v.occupied) && Array.isArray(v.workers) && v.workers.every((w) => w && typeof w.workerId === "string" && typeof w.title === "string");
+}
+const css = `
+.dsp-activity { display: inline-flex; flex-shrink: 0; align-items: center; gap: 7px; min-height: 30px;
+  box-sizing: border-box; padding: 4px 10px; border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 999px; background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-secondary);
+  box-shadow: 0 1px 2px #00000008; font: 12px/1.4 var(--dsw-font-family, system-ui, sans-serif);
+  white-space: nowrap; transition: color 160ms ease, border-color 160ms ease, background 160ms ease; }
+button.dsp-activity { cursor: pointer; }
+button.dsp-activity:hover { border-color: var(--dsw-alias-label-tertiary); color: var(--dsw-alias-label-primary); }
+button.dsp-activity:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary); outline-offset: 3px; }
+.dsp-activity[data-busy=true] .dsp-activity-glyph { color: var(--dsw-alias-brand-primary); }
+.dsp-activity-count { font-variant-numeric: tabular-nums; color: var(--dsw-alias-label-primary); font-weight: 600; }
+.dsp-activity-queue { padding: 1px 6px; border-radius: 999px; background: var(--dsw-alias-bg-layer-2); }
+.dsp-activity-detail { font-size: 11px; }
+@media (max-width: 700px) { .dsp-activity { gap: 5px; padding: 4px 8px; } .dsp-activity-detail { display: none; } }
+@media (prefers-reduced-motion: reduce) { .dsp-activity { transition: none; } }
+`;
+/** One native header contribution. Null removes only this additive list entry. */
+function ActivityPill(props) {
+	if (props.useProjection("agentPreset") !== "dispatch") return null;
+	return /* @__PURE__ */ react.default.createElement(OwnedActivity, {
+		key: props.sessionId,
+		...props
+	});
+}
+function OwnedActivity({ sessionId, request, connection, openSession }) {
+	const connected = react.default.useSyncExternalStore(connection.subscribe, connection.getSnapshot, connection.getSnapshot);
+	const [status, setStatus] = react.default.useState(null);
+	const [error, setError] = react.default.useState(false);
+	react.default.useEffect(() => {
+		setStatus(null);
+		setError(false);
+		if (connected !== "connected") return;
+		const controller = new AbortController();
+		let timer;
+		async function read() {
+			try {
+				const value = await request("activity", { sessionId }, controller.signal);
+				if (controller.signal.aborted) return;
+				if (!validActivity(value, sessionId)) throw new Error("Unavailable activity");
+				setStatus(value);
+				setError(false);
+			} catch {
+				if (controller.signal.aborted) return;
+				setStatus(null);
+				setError(true);
+			}
+			timer = setTimeout(() => void read(), 2e3);
+		}
+		read();
+		return () => {
+			controller.abort();
+			if (timer) clearTimeout(timer);
+		};
+	}, [
+		sessionId,
+		request,
+		connection,
+		connected
+	]);
+	const known = connected === "connected" && !error ? status : null;
+	const unavailable = connected !== "connected" || error;
+	const label = known ? `Dispatch activity: ${known.occupied} occupied, ${known.active ?? "unknown"} active, ${known.queued} queued${known.queued === 5 ? ". Queue full" : ""}` : `Dispatch activity: ${unavailable ? "unavailable" : "loading"}`;
+	const worker = known?.workers[0];
+	const navigate = worker && openSession ? () => openSession(worker.workerId) : void 0;
+	const content = /* @__PURE__ */ react.default.createElement(react.default.Fragment, null, /* @__PURE__ */ react.default.createElement("svg", {
+		className: "dsp-activity-glyph",
+		width: "14",
+		height: "14",
+		viewBox: "0 0 16 16",
+		fill: "none",
+		stroke: "currentColor",
+		strokeWidth: "1.4",
+		strokeLinecap: "round",
+		"aria-hidden": "true"
+	}, /* @__PURE__ */ react.default.createElement("path", { d: "M2 8h3l2-4 2 8 2-4h3" })), known ? /* @__PURE__ */ react.default.createElement(react.default.Fragment, null, /* @__PURE__ */ react.default.createElement("span", null, /* @__PURE__ */ react.default.createElement("span", { className: "dsp-activity-count" }, known.occupied), " occupied"), /* @__PURE__ */ react.default.createElement("span", { className: "dsp-activity-detail" }, known.active === null ? "activity unknown" : known.active ? `${known.active} active` : known.occupied ? "waiting" : "idle"), known.queued > 0 ? /* @__PURE__ */ react.default.createElement("span", { className: "dsp-activity-queue" }, /* @__PURE__ */ react.default.createElement("span", { className: "dsp-activity-count" }, known.queued), " queued") : null) : /* @__PURE__ */ react.default.createElement("span", null, "Dispatch · ", unavailable ? "unavailable" : "loading…"));
+	const common = {
+		className: "dsp-activity",
+		"aria-label": label,
+		"data-busy": Boolean(known?.active),
+		title: `${label}${navigate && worker ? `. Open worker: ${worker.title}` : ""}`
+	};
+	return /* @__PURE__ */ react.default.createElement(react.default.Fragment, null, /* @__PURE__ */ react.default.createElement("style", null, css), navigate ? /* @__PURE__ */ react.default.createElement("button", {
+		...common,
+		type: "button",
+		onClick: navigate
+	}, content) : /* @__PURE__ */ react.default.createElement("span", {
+		...common,
+		role: "status"
+	}, content));
+}
+
+//#endregion
 //#region client/index.ts
 function createRequest(ctx) {
 	return async (endpoint, input, signal) => {
@@ -423,6 +522,16 @@ var client_default = {
 		const workspace = () => ctx.get?.("uiWorkspace");
 		const openSession = (sessionId) => workspace()?.openSession(sessionId);
 		const navigation = () => workspace() ? openSession : void 0;
+		ctx.slots.inject("conversation.session.header.utilities", () => ctx.slots.register({
+			name: "conversation.session.header.utilities",
+			id: "local-dispatch-activity",
+			order: 20
+		}, (props) => react.default.createElement(ActivityPill, {
+			...props,
+			request,
+			connection: ctx.connection.state,
+			openSession: navigation()
+		})));
 		function TurnTail(props) {
 			return react.default.createElement(ProposalTurnTail, {
 				...props,
