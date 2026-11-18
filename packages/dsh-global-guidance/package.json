@@ -1,8 +1,8 @@
 {
   "name": "@local/dsh-global-guidance",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "private": true,
-  "description": "Independently toggleable global guidance themes for DSH 0.2.2-rc.3",
+  "description": "Independently toggleable global guidance themes for DSH 0.2.2-rc.4",
   "type": "module",
   "exports": {
     "./visual-evidence": "./dist/src/visual-evidence.js",
@@ -31,7 +31,7 @@
     }
   },
   "peerDependencies": {
-    "@deepseek-ai/dsh": "0.2.2-rc.3"
+    "@deepseek-ai/dsh": "0.2.2-rc.4"
   },
   "license": "UNLICENSED"
 }

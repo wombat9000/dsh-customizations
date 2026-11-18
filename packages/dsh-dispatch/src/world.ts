@@ -4,7 +4,7 @@ import type { SessionLike } from './types.js'
 /**
  * Git execution inside DSH's managed execution world (`ctx.subprocess`,
  * `ctx.sandbox`, `ctx.sandboxPolicy`, `ctx.fs`), mirroring the
- * `@deepseek-ai/dsh-experimental-worktree` 0.2.2-rc.3 runner: executable lookup
+ * `@deepseek-ai/dsh-experimental-worktree` 0.2.2-rc.4 runner: executable lookup
  * and process spawning belong to the mounted subprocess provider, every command
  * is confined under the calling Session's resolved sandbox policy, and paths
  * are canonicalized by the mounted filesystem provider. Dispatch never uses the
@@ -32,7 +32,7 @@ export interface GitWorld {
   ): Promise<{ path: string; key: string }>
 }
 
-/** `ctx.subprocess` (dsh-subprocess 0.2.2-rc.3), consumed members only. */
+/** `ctx.subprocess` (dsh-subprocess 0.2.2-rc.4), consumed members only. */
 export interface SubprocessLike {
   resolveExecutable(command: string, env?: undefined, signal?: AbortSignal): Promise<string>
   spawn(spec: {
@@ -62,12 +62,12 @@ export interface SandboxPolicyValue {
   readonly [key: string]: unknown
 }
 
-/** `ctx.sandboxPolicy` (dsh-sandbox-policy 0.2.2-rc.3). */
+/** `ctx.sandboxPolicy` (dsh-sandbox-policy 0.2.2-rc.4). */
 export interface SandboxPolicyLike {
   resolve(request?: { session?: SessionLike }): SandboxPolicyValue
 }
 
-/** `ctx.sandbox` (dsh-sandbox 0.2.2-rc.3). */
+/** `ctx.sandbox` (dsh-sandbox 0.2.2-rc.4). */
 export interface SandboxLike {
   confine(
     argv: readonly string[],
@@ -76,7 +76,7 @@ export interface SandboxLike {
   ): Promise<{ argv: readonly string[] }>
 }
 
-/** `ctx.fs` (dsh-fs 0.2.2-rc.3), consumed members only. */
+/** `ctx.fs` (dsh-fs 0.2.2-rc.4), consumed members only. */
 export interface FileSystemLike {
   resolve(
     path: string,

@@ -371,7 +371,7 @@ export function installWorker(tools: ToolsRegistry, service: DispatchService): D
 /**
  * Narrow one coordinator Agent's visible tools to Dispatch tools and helpers.
  * A restriction in the preset scope would also mask the preset's own rows for
- * its Agents (0.2.2-rc.3 `ToolsService.view`), so it is installed in each
+ * its Agents (0.2.2-rc.4 `ToolsService.view`), so it is installed in each
  * Agent's own scope on `agent/created`, before its first step. The allowlist is
  * live: globals registered later stay hidden. A missing helper fails closed.
  */
