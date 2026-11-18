@@ -8,7 +8,7 @@ import { Context, installed } from '../../dsh-product-mode/test/fixtures.js'
 import { Repositories } from '../dist/src/repositories.js'
 import { managedWorld } from '../dist/src/world.js'
 
-// Primary boundary for Dispatch's Git execution: the real DSH 0.2.2-rc.3 local
+// Primary boundary for Dispatch's Git execution: the real DSH 0.2.2-rc.4 local
 // subprocess and filesystem providers and sandbox policy, with a recording
 // sandbox provider. No Host child_process or filesystem call is made by Dispatch.
 

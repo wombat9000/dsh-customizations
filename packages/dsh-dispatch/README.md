@@ -1,6 +1,6 @@
 # Dispatch
 
-Dispatch is a Host/Client bundle for DSH `0.2.2-rc.3` with two additive agent presets:
+Dispatch is a Host/Client bundle for DSH `0.2.2-rc.4` with two additive agent presets:
 
 | Preset          | ID                | Role                                                                                                                                                  |
 | --------------- | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -73,7 +73,7 @@ Dispatch is in the `personal-web` recipe. Installing it, applying the profile, a
 
 Dispatch admits workers only when the Git Worktrees plugin's `retainOnArchive` is `true`. DSH's default (`false`) reclaims a clean, unreferenced checkout when the session that created it is archived, so until it is set, submitting or executing a create or adoption fails with that instruction.
 
-## Target contracts (DSH 0.2.2-rc.3)
+## Target contracts (DSH 0.2.2-rc.4)
 
 | Contract            | Evidence and adapter                                                                                                                                                                                                                                                                                                                   |
 | ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -99,7 +99,7 @@ Dispatch admits workers only when the Git Worktrees plugin's `retainOnArchive` i
 - Checkout identity uses the filesystem provider's class name and opaque target key. Moving a Host to a different filesystem provider makes existing claims ineligible until released.
 - Reports are queued on the coordinator's inbox without extra coalescing. Recovery recognizes an already admitted copy; it is not exactly-once delivery in general.
 - The real-shell journey drives real agent loops with a scripted model route. It proves wiring, attribution, and page reload, not how a real model plans or reports. It covers bounded creation, persistent chrome, native navigation, disconnect and reload. Adoption consent and new-assignment safety are owned by `test/service.test.js`; component variations are owned by the browser tests.
-- DSH 0.2.2-rc.3 persona templates know only `{{provider}}` and `{{model}}`; any other variable fails the first turn. The personas therefore do not name the working directory, which DSH's runtime context already gives the model.
+- DSH 0.2.2-rc.4 persona templates know only `{{provider}}` and `{{model}}`; any other variable fails the first turn. The personas therefore do not name the working directory, which DSH's runtime context already gives the model.
 - Adoption status refreshes poll every 2 seconds while pending, queued or executing. The activity pill polls while mounted and connected. An unavailable worker runtime leaves activity unknown, not zero. Uncertain provisioning may retain a slot until its outcome is investigated; the queue never bypasses it.
 
 ## Development

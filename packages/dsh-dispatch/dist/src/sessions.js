@@ -12,7 +12,7 @@ function deepFreeze(value) {
 }
 /**
  * Build one user-role message attributed to another Agent. Mirrors
- * `createUserMessage` from `@deepseek-ai/dsh-llm` 0.2.2-rc.3 (structured clone,
+ * `createUserMessage` from `@deepseek-ai/dsh-llm` 0.2.2-rc.4 (structured clone,
  * fresh UUID identity, deep freeze) without a runtime dependency, and uses the
  * `agent-message` source that `@deepseek-ai/dsh-subagent` registers. The sender
  * is always the exact live executing Agent; callers cannot supply it.
@@ -58,7 +58,7 @@ function eventText(event) {
         text: text.length > TEXT_LIMIT ? `${text.slice(0, TEXT_LIMIT)}…` : text,
     };
 }
-/** Ordinary-session access through public 0.2.2-rc.3 Host services. */
+/** Ordinary-session access through public 0.2.2-rc.4 Host services. */
 export class Sessions {
     controller;
     directories;
