@@ -1,5 +1,5 @@
 # Dispatch: one Host-scoped owner plus two additive presets.
-# Dispatch Worker is derived from dsh-web-app 0.2.2-rc.4 Standard; see presets/dispatch-worker/LICENSE.standard.
+# Dispatch Worker is derived from dsh-web-app 0.2.2-rc.5 Standard; see presets/dispatch-worker/LICENSE.standard.
 # Intentional worker differences: persona guidance, dispatch_report, and no delegation group
 # (subagents, workflows) or plugin-manager tools. Standard and saved defaults are unchanged.
 - insert:

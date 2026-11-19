@@ -54,6 +54,6 @@
   },
   "license": "UNLICENSED",
   "peerDependencies": {
-    "@deepseek-ai/dsh": "0.2.2-rc.4"
+    "@deepseek-ai/dsh": "0.2.2-rc.5"
   }
 }
