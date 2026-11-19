@@ -1,4 +1,4 @@
-// Narrow adapters for the DSH 0.2.2-rc.4 Host surfaces Dispatch consumes.
+// Narrow adapters for the DSH 0.2.2-rc.5 Host surfaces Dispatch consumes.
 // Evidence for each contract is recorded in README.md ("Target contracts").
 // These describe trusted in-process services, never browser- or model-supplied values.
 
@@ -100,7 +100,7 @@ export interface ToolDefinition {
   execute(args: unknown, exec: ToolExecution): Promise<unknown>
 }
 
-/** `ctx.sessionController` host methods (dsh-api-session-controller 0.2.2-rc.4). */
+/** `ctx.sessionController` host methods (dsh-api-session-controller 0.2.2-rc.5). */
 export interface SessionControllerLike {
   create(request: {
     workspaceId?: string
@@ -132,19 +132,19 @@ export interface ModelSelectionLike {
   model: string
 }
 
-/** `ctx.llm` (dsh-llm 0.2.2-rc.4): the same validation the session controller applies. */
+/** `ctx.llm` (dsh-llm 0.2.2-rc.5): the same validation the session controller applies. */
 export interface LlmLike {
   listProviders(): readonly { id: string }[]
   listModels(provider: string): Promise<readonly { id: string }[]>
   resolveCallConfig(selection: ModelSelectionLike): Promise<unknown>
 }
 
-/** `ctx.agentDefaultModel` (dsh-agent-default-model 0.2.2-rc.4). */
+/** `ctx.agentDefaultModel` (dsh-agent-default-model 0.2.2-rc.5). */
 export interface DefaultModelLike {
   currentSelection(): { provider: string; model: string }
 }
 
-/** `ctx.worktrees` (dsh-experimental-worktree 0.2.2-rc.4). */
+/** `ctx.worktrees` (dsh-experimental-worktree 0.2.2-rc.5). */
 export interface WorktreesLike {
   create(
     agent: AgentLike,

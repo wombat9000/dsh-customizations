@@ -2,7 +2,7 @@
   "name": "@local/dsh-dispatch",
   "version": "0.1.1",
   "private": true,
-  "description": "Dispatch: coordinate a bounded worker pool on linked Git worktrees for DSH 0.2.2-rc.4",
+  "description": "Dispatch: coordinate a bounded worker pool on linked Git worktrees for DSH 0.2.2-rc.5",
   "type": "module",
   "main": "dist/src/index.js",
   "exports": {
@@ -45,6 +45,6 @@
   },
   "license": "UNLICENSED",
   "peerDependencies": {
-    "@deepseek-ai/dsh": "0.2.2-rc.4"
+    "@deepseek-ai/dsh": "0.2.2-rc.5"
   }
 }
