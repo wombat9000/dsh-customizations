@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto'
 import { createRequire } from 'node:module'
 import { dirname, join, resolve } from 'node:path'
 import { test } from 'node:test'
-import { parse } from 'yaml'
+import { parse, parseAllDocuments } from 'yaml'
 
 const root = resolve(import.meta.dirname, '..')
 const json = (path) => JSON.parse(readFileSync(path, 'utf8'))
@@ -40,7 +40,10 @@ test('DSH declarations and normal lockfile resolve the target release, including
       }
     }
   }
-  const lock = parse(readFileSync(join(root, 'pnpm-lock.yaml'), 'utf8'))
+  // pnpm 12 prepends a document that pins pnpm itself; the dependency graph is the last one.
+  const lock = parseAllDocuments(readFileSync(join(root, 'pnpm-lock.yaml'), 'utf8'))
+    .at(-1)
+    .toJS()
   let count = 0
   for (const name of Object.keys(lock.packages)) {
     if (!name.startsWith('@deepseek-ai/dsh')) continue

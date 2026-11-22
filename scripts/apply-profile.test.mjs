@@ -94,7 +94,7 @@ if (a[0] === 'plugin') {
 }
 `,
   )
-  put('bin/pnpm', `#!${process.execPath}\nconsole.log('11.9.0')`)
+  put('bin/pnpm', `#!${process.execPath}\nconsole.log('12.21.0')`)
   chmodSync(join(dir, 'node_modules/.bin/dsh'), 0o755)
   chmodSync(join(dir, 'bin/pnpm'), 0o755)
   cpSync(resolve(root, 'node_modules/yaml'), join(dir, 'node_modules/yaml'), {

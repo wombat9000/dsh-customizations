@@ -10,7 +10,7 @@ Install these tools before you use the repository:
 
 - The checkout-local, patched DSH `0.2.2-rc.5` launcher installed by the frozen dependency command below (a global DSH installation is not upgraded or used by `apply`)
 - Node.js `^22.19.0 || >=24.0.0`
-- pnpm 11.9.0, already available locally (not an unverified downloader shim)
+- pnpm 12.21.0, already available locally (not an unverified downloader shim)
 
 Before dependency work in any checkout or worktree, follow the [repository setup skill](.agents/skills/repository-setup/SKILL.md). It covers dependency ownership, pinned executable availability, offline cache limitations, and approval boundaries. You can read this Markdown directly without a plugin.
 
@@ -262,7 +262,7 @@ docker run --rm --platform linux/arm64 --ipc=host \
   node node_modules/@playwright/test/cli.js test
 ```
 
-If your host dependencies target another OS or architecture, use a separate checkout for container testing. Follow the repository setup procedure there: verify a locally available pnpm 11.9.0 executable, checkout-owned dependencies, and a compatible offline cache before an approved install. Do not invoke a downloader to provision pnpm automatically. If the executable or Linux cache is unavailable, obtain separate provisioning approval. This changes that checkout's `node_modules`; do not run it over shared dependencies or dependencies you need for macOS. Then run the comparison command. To run the fast suite in the container, use `node node_modules/vitest/vitest.mjs run --config vitest.browser.config.mjs`. Outside the container, browser tests require `pnpm exec playwright install --with-deps chromium`; visual results may differ.
+If your host dependencies target another OS or architecture, use a separate checkout for container testing. Follow the repository setup procedure there: verify a locally available pnpm 12.21.0 executable, checkout-owned dependencies, and a compatible offline cache before an approved install. Do not invoke a downloader to provision pnpm automatically. If the executable or Linux cache is unavailable, obtain separate provisioning approval. This changes that checkout's `node_modules`; do not run it over shared dependencies or dependencies you need for macOS. Then run the comparison command. To run the fast suite in the container, use `node node_modules/vitest/vitest.mjs run --config vitest.browser.config.mjs`. Outside the container, browser tests require `pnpm exec playwright install --with-deps chromium`; visual results may differ.
 
 To update intentional visual changes, append `--update-snapshots` to the container command. The equivalent local script is `pnpm run test:visual:update`. Review every changed PNG in `packages/*/test/real-ui/*-snapshots/`, then run comparisons twice without updating. Normal runs fail on missing or changed baselines and never create reference images.
 
