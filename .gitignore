@@ -14,6 +14,8 @@ oauth.env
 
 # Build and test output
 lib/
+packages/*/dist/
+packages/**/client.js
 coverage/
 .vitest/
 # Diagnostic captures and run metadata; visual baselines live under packages/.

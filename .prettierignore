@@ -11,41 +11,8 @@ artifacts/
 
 # Package-manager and build-generated files have their own writers/checks.
 /pnpm-lock.yaml
-/packages/dsh-browser-recording/dist/
-/packages/dsh-codex-compat/client.js
-/packages/dsh-codex-compat/oauth/client.js
-/packages/dsh-codex-compat/dist/
-/packages/dsh-openrouter/client.js
-/packages/dsh-openrouter/dist/
-/packages/dsh-jev/client.js
-/packages/dsh-jev/dist/
-/packages/dsh-web-firecrawl/client.js
-/packages/dsh-web-firecrawl/dist/
-/packages/dsh-google-auth/client.js
-/packages/dsh-google-auth/dist/
-/packages/dsh-tool-trivy/client.js
-/packages/dsh-tool-trivy/dist/
-/packages/dsh-tool-imagegen/client.js
-/packages/dsh-tool-imagegen/dist/
-/packages/dsh-linear/client.js
-/packages/dsh-linear/dist/
-/packages/dsh-dispatch/client.js
-/packages/dsh-dispatch/dist/
-/packages/dsh-google-drive/client.js
-/packages/dsh-google-drive/dist/
-/packages/dsh-session-recap/client.js
-/packages/dsh-session-recap/dist/
-/packages/dsh-suggest-replies/client.js
-/packages/dsh-suggest-replies/dist/
-/packages/dsh-ship-it/client.js
-/packages/dsh-file-intuition/dist/
-/packages/dsh-global-guidance/dist/
-/packages/dsh-github/client.js
-/packages/dsh-github/dist/
-/packages/dsh-projects/client.js
-/packages/dsh-projects/dist/
-/packages/dsh-tool-youtube/client.js
-/packages/dsh-tool-youtube/dist/
+/packages/*/dist/
+/packages/**/client.js
 /packages/dsh-google-drive/test/fixtures/sheets-preview.json
 
 # Preserve exact patch payloads, upstream legal text, and visual baselines.

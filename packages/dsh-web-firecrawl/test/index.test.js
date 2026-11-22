@@ -1,7 +1,5 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { buildHost } from '../scripts/build-host.mjs'
-import { checkHost } from '../../../scripts/build-host.mjs'
 import {
   FIRECRAWL_DEFAULT_BASE_URL,
   apply,
@@ -327,8 +325,4 @@ test('rejects malformed successful envelopes', async () => {
       error.code === 'WEB_PROVIDER_ERROR' &&
       error.message.includes('unprocessable search response'),
   )
-})
-
-test('strict host contracts and generated host artifacts remain current', () => {
-  checkHost(buildHost())
 })

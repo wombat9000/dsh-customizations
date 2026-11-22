@@ -2,18 +2,8 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import vm from 'node:vm'
-import { buildHost } from '../scripts/build-host.mjs'
-import { buildClient, clientPath } from '../scripts/build-client.mjs'
-import { checkHost } from '../../../scripts/build-host.mjs'
-import { typecheck } from '../scripts/typecheck.mjs'
 
-const client = readFileSync(clientPath, 'utf8')
-
-test('strict host/client contracts and generated artifacts remain current', async () => {
-  await typecheck()
-  checkHost(buildHost())
-  assert.equal(await buildClient(), client)
-})
+const client = readFileSync(new URL('../client.js', import.meta.url), 'utf8')
 
 test('generated client retains lazy package identity and native settings registration', () => {
   let declaration

@@ -20,12 +20,12 @@
     "docs/sheets.md"
   ],
   "scripts": {
-    "build": "node scripts/build-host.mjs && node scripts/build-client.mjs",
-    "build:host": "node scripts/build-host.mjs",
-    "build:client": "node scripts/build-client.mjs",
-    "typecheck": "node ../../node_modules/typescript/bin/tsc -p tsconfig.host.json && node scripts/typecheck-client.mjs",
-    "typecheck:host": "node ../../node_modules/typescript/bin/tsc -p tsconfig.host.json",
-    "typecheck:client": "node scripts/typecheck-client.mjs",
+    "build": "node ../../scripts/build.mjs dsh-google-drive",
+    "build:host": "node ../../scripts/build.mjs --host dsh-google-drive",
+    "build:client": "node ../../scripts/build.mjs --client dsh-google-drive",
+    "typecheck": "node ../../scripts/build.mjs --typecheck dsh-google-drive",
+    "typecheck:host": "node ../../scripts/build.mjs --typecheck --host dsh-google-drive",
+    "typecheck:client": "node ../../scripts/build.mjs --typecheck --client dsh-google-drive",
     "test": "node --test test/*.test.js"
   },
   "engines": {

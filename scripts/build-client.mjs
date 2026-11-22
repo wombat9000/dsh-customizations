@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { build } from 'tsdown'
 
@@ -6,7 +6,7 @@ const allowedExternals = new Set(['react'])
 
 // RC2 serves one ./client file and invalidates its package ID during HMR.
 // Author TypeScript/TSX; wrap the bundled CommonJS output in one lazy factory.
-// This bundling API does not replace type checking; the CLI and test suite run it.
+// This bundling API does not replace type checking; scripts/build.mjs runs it.
 export async function buildClient({ packageRoot, defaultExport = false }) {
   const manifest = JSON.parse(readFileSync(new URL('package.json', packageRoot), 'utf8'))
   const root = fileURLToPath(packageRoot)
@@ -56,21 +56,5 @@ export async function buildClient({ packageRoot, defaultExport = false }) {
     return chunk.code
   } finally {
     for (const bundle of bundles) await bundle[Symbol.asyncDispose]()
-  }
-}
-
-export async function runBuildClient({ buildClient, clientPath, typecheck, command }) {
-  const args = process.argv.slice(2)
-  if (args.length && (args.length !== 1 || args[0] !== '--check')) {
-    throw new Error('Usage: node scripts/build-client.mjs [--check]')
-  }
-  await typecheck()
-  const output = await buildClient()
-  if (args[0] === '--check') {
-    if (readFileSync(clientPath, 'utf8') !== output) {
-      throw new Error(`client.js is stale. Run ${command} from the repository root.`)
-    }
-  } else {
-    writeFileSync(clientPath, output)
   }
 }

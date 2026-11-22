@@ -19,8 +19,8 @@
     "README.md"
   ],
   "scripts": {
-    "build": "node scripts/build-client.mjs",
-    "typecheck": "node scripts/typecheck.mjs",
+    "build": "node ../../scripts/build.mjs --client dsh-ship-it",
+    "typecheck": "node ../../scripts/build.mjs --typecheck dsh-ship-it",
     "test": "node --test test/*.test.mjs"
   },
   "engines": {

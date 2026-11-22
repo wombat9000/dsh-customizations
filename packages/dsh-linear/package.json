@@ -28,11 +28,11 @@
   "scripts": {
     "test": "node --test test/*.test.js",
     "test:integration": "node --test test/profile.integration.test.js",
-    "build": "node scripts/build-host.mjs && node scripts/build-client.mjs",
-    "build:host": "node scripts/build-host.mjs",
-    "build:client": "node scripts/build-client.mjs",
-    "typecheck": "node scripts/typecheck.mjs",
-    "check:artifacts": "node scripts/build-host.mjs --check && node scripts/build-client.mjs --check"
+    "build": "node ../../scripts/build.mjs dsh-linear",
+    "build:host": "node ../../scripts/build.mjs --host dsh-linear",
+    "build:client": "node ../../scripts/build.mjs --client dsh-linear",
+    "typecheck": "node ../../scripts/build.mjs --typecheck dsh-linear",
+    "check:artifacts": "node ../../scripts/build.mjs --check dsh-linear"
   },
   "engines": {
     "node": "^22.19.0 || >=24.0.0"

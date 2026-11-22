@@ -11,10 +11,9 @@ const managerRequire = createRequire(
 const { SlotCore } = await import(managerRequire.resolve('@deepseek-ai/dsh-client-ui-slots'))
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { buildClient, clientPath } from '../scripts/build-client.mjs'
 import { CARD_LABELS, CARD_TITLES } from '../dist/src/cards.js'
 
-const source = readFileSync(clientPath, 'utf8')
+const source = readFileSync(new URL('../client.js', import.meta.url), 'utf8')
 
 function loadBundle(react = {}) {
   const registrations = []
@@ -32,12 +31,6 @@ function loadBundle(react = {}) {
   })
   return { plugin, requested }
 }
-
-test('committed client entry matches reproducible tsdown output', async () => {
-  const first = await buildClient()
-  assert.equal(first, await buildClient())
-  assert.equal(source, first, 'Run node packages/dsh-session-recap/scripts/build-client.mjs')
-})
 
 test('built client registers one lazy factory with the existing plugin surface', () => {
   const { plugin, requested } = loadBundle()

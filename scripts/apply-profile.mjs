@@ -124,7 +124,37 @@ function isLocalSource(source) {
   return source.startsWith('.') || isAbsolute(source)
 }
 
-function resolveBundleSource(bundle, recipeDirectory) {
+function resolveExportPath(entry) {
+  if (typeof entry === 'string') return entry
+  if (entry && typeof entry === 'object') {
+    for (const key of ['default', 'import', 'node']) {
+      if (typeof entry[key] === 'string') return entry[key]
+    }
+  }
+  return undefined
+}
+
+function verifyBuiltArtifacts(bundleName, source, manifest) {
+  const candidates = new Set()
+  if (typeof manifest.main === 'string') candidates.add(manifest.main)
+  if (typeof manifest.dsh?.client === 'string') candidates.add(manifest.dsh.client)
+  const clientExport = resolveExportPath(manifest.exports?.['./client'])
+  if (clientExport) candidates.add(clientExport)
+  for (const rel of candidates) {
+    if (!existsSync(resolve(source, rel))) {
+      fail(
+        `local package ${bundleName} is missing built artifact ${rel}; run "pnpm run build" first`,
+      )
+    }
+  }
+  const oauthManifestPath = join(source, 'oauth', 'package.json')
+  if (existsSync(oauthManifestPath)) {
+    const oauthManifest = readJson(oauthManifestPath, `local package ${bundleName}/oauth`)
+    verifyBuiltArtifacts(`${bundleName}/oauth`, join(source, 'oauth'), oauthManifest)
+  }
+}
+
+function resolveBundleSource(bundle, recipeDirectory, { dryRun }) {
   if (!isLocalSource(bundle.source)) return bundle.source
 
   const source = resolve(recipeDirectory, bundle.source)
@@ -139,6 +169,7 @@ function resolveBundleSource(bundle, recipeDirectory) {
   if (typeof patch !== 'string' || !existsSync(resolve(source, patch))) {
     fail(`${manifestPath} does not declare an existing dsh.bundle.patch`)
   }
+  if (!dryRun) verifyBuiltArtifacts(bundle.name, source, manifest)
   return source
 }
 
@@ -228,7 +259,7 @@ const profileDirectory = join(dshHome, 'profiles', profile)
 const patchSource = resolve(recipeDirectory, recipe.patch)
 if (!existsSync(patchSource)) fail(`recipe patch not found: ${patchSource}`)
 const sources = recipe.bundles.map((bundle) => {
-  const source = resolveBundleSource(bundle, recipeDirectory)
+  const source = resolveBundleSource(bundle, recipeDirectory, options)
   if (!bundle.name.startsWith('@deepseek-ai/dsh')) return source
   if (source !== bundle.name && source !== `${bundle.name}@${version}`)
     fail(`unsupported DSH bundle source ${source}; this migration requires ${version}`)

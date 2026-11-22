@@ -37,7 +37,7 @@ For substantial implementations, refactors, and architecture reviews, use the [d
 
 Jev and OpenRouter use the repository-only [settings presentation](../shared/client/settings.tsx). `SettingsPanel` owns the native disclosure, status/error/notice roles, theme-token styles and action layout. `SettingsField` owns input label IDs and optional help associations. Each mounted panel renders its own scoped style element, so disposing one panel cannot remove another panel's styles. Jev retains stacked, end-aligned actions; OpenRouter retains its wrapping row.
 
-Import this browser-safe source by relative path when another approved migration needs the same presentation. The existing [client builder](../scripts/build-client.mjs) inlines it into each plugin's committed client artifact and keeps React external. It is not an installable bundle or a runtime module-table entry. Build each affected package; the root build only builds Session Environment.
+Import this browser-safe source by relative path when another approved migration needs the same presentation. The [client builder](../scripts/build-client.mjs) inlines it into each plugin's generated `client.js` artifact and keeps React external. It is not an installable bundle or a runtime module-table entry. Run `pnpm run build` (or `node scripts/build.mjs <package>`) to rebuild affected packages.
 
 Keep summary-only rendering, local drafts, validation, disabled/busy decisions, RPC, confirmations, credential targets and error sanitization in the plugin controller. Shared presentation neither reads settings nor dispatches requests. Shared browser tests own disclosure, focus, label and style-lifetime contracts; consumer suites retain their behavior and generated-bundle/real-shell checks.
 
@@ -58,7 +58,7 @@ Choose tests according to the responsibility and risk of the change. Do not requ
 | Pure logic and state transitions                    | Source-module tests with controlled inputs and effects           |
 | React rendering and interactions                    | Real React and DOM tests that import source components           |
 | Settings, persistence, RPC ownership, and lifecycle | In-process integration with real services and temporary state    |
-| Generated artifacts and plugin registration         | Reproducibility, freshness, loader, and registration checks      |
+| Generated artifacts and plugin registration         | Reproducibility, loader, and registration checks                 |
 | DSH mounting, inherited styles, and layout          | Targeted real-shell interaction tests and screenshot comparisons |
 
 - Do not use fake React renderers as a substitute for component tests. Keep virtual-machine bundle tests focused on packaging and registration.
@@ -72,7 +72,7 @@ Choose tests according to the responsibility and risk of the change. Do not requ
 - Identify the contracts a refactor must preserve: exports, RPC shapes, settings, labels, styling, lifecycle, and persistence behavior. Separate intentional behavior changes from structural changes and add regressions for them.
 - When moving or replacing tests, map the old regression cases to their new coverage. A reduced test count can be valid; silently losing assertions is not.
 - Review cleanup order, subscriptions, cancellation, stale responses, session isolation, and object identity where affected. Matching rendered output alone does not prove equivalent behavior.
-- Treat generated bundles as outputs. Edit source, regenerate through the package build, and check reproducibility and freshness. If the package tracks generated artifacts, include source and artifact updates in the same commit once committing is authorized.
+- Treat generated bundles (`dist/`, `client.js`, `lib/`) as build outputs excluded from Git. Edit source, regenerate through `pnpm run build` (or `node scripts/build.mjs <package>`), and verify determinism via `node scripts/build.mjs --check`.
 - Do not update screenshot baselines to make a behavior-preserving refactor pass. Investigate differences; update baselines only for intentional visual changes under the existing review procedure.
 
 Keep compiler versions, loader workarounds, and package-specific commands in package configuration and READMEs rather than general policy. [Session Recap's development guide](../packages/dsh-session-recap/README.md#development) provides an example of these boundaries and test layers; its layout is not a mandatory template for every package.

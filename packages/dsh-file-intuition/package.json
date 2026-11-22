@@ -15,13 +15,12 @@
     "assets",
     "cordis.patch.yml",
     "README.md",
-    "scripts/*.mjs",
-    "tsconfig.json"
+    "tsconfig.host.json"
   ],
   "scripts": {
-    "build": "node scripts/build-host.mjs",
-    "typecheck": "node scripts/typecheck.mjs",
-    "test": "node scripts/typecheck.mjs && node --test test/*.test.js"
+    "build": "node ../../scripts/build.mjs --host dsh-file-intuition",
+    "typecheck": "node ../../scripts/build.mjs --typecheck dsh-file-intuition",
+    "test": "node ../../scripts/build.mjs --typecheck dsh-file-intuition && node --test test/*.test.js"
   },
   "engines": {
     "node": "^22.19.0 || >=24.0.0"

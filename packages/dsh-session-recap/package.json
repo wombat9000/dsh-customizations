@@ -15,7 +15,6 @@
     "client/**/*.ts",
     "client/**/*.tsx",
     "shared/**/*.ts",
-    "scripts/*.mjs",
     "tsconfig.json",
     "cordis.patch.yml",
     "src/**/*.ts",
@@ -24,10 +23,10 @@
     "README.md"
   ],
   "scripts": {
-    "typecheck": "node scripts/typecheck.mjs",
-    "build": "node scripts/build-host.mjs && node scripts/build-client.mjs",
-    "build:host": "node scripts/build-host.mjs",
-    "build:client": "node scripts/build-client.mjs",
+    "typecheck": "node ../../scripts/build.mjs --typecheck dsh-session-recap",
+    "build": "node ../../scripts/build.mjs dsh-session-recap",
+    "build:host": "node ../../scripts/build.mjs --host dsh-session-recap",
+    "build:client": "node ../../scripts/build.mjs --client dsh-session-recap",
     "test": "node --test test/*.test.*"
   },
   "engines": {

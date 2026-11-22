@@ -28,16 +28,15 @@
     "client/**/*.ts",
     "client/**/*.tsx",
     "client.js",
-    "scripts/*.mjs",
     "tsconfig*.json",
     "cordis.patch.yml",
     "README.md"
   ],
   "scripts": {
-    "build": "node scripts/build-host.mjs && node scripts/build-client.mjs",
-    "build:host": "node scripts/build-host.mjs",
-    "build:client": "node scripts/build-client.mjs",
-    "typecheck": "node scripts/typecheck.mjs",
+    "build": "node ../../scripts/build.mjs dsh-jev",
+    "build:host": "node ../../scripts/build.mjs --host dsh-jev",
+    "build:client": "node ../../scripts/build.mjs --client dsh-jev",
+    "typecheck": "node ../../scripts/build.mjs --typecheck dsh-jev",
     "test": "node --test test/*.test.js"
   },
   "engines": {

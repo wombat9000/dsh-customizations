@@ -21,9 +21,9 @@
     "oauth/package.json"
   ],
   "scripts": {
-    "build": "node scripts/build-host.mjs && node scripts/build-client.mjs",
-    "typecheck": "node scripts/typecheck.mjs",
-    "test": "node scripts/typecheck.mjs && node --test test/*.test.js"
+    "build": "node ../../scripts/build.mjs dsh-codex-compat",
+    "typecheck": "node ../../scripts/build.mjs --typecheck dsh-codex-compat",
+    "test": "node ../../scripts/build.mjs --typecheck dsh-codex-compat && node --test test/*.test.js"
   },
   "engines": {
     "node": "^22.19.0 || >=24.0.0"

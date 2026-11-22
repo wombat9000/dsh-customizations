@@ -26,7 +26,6 @@
     "client/**/*.ts",
     "client/**/*.tsx",
     "shared/**/*.ts",
-    "scripts/*.mjs",
     "cordis.patch.yml",
     "README.md",
     "dist/**/*.js",
@@ -35,11 +34,11 @@
     "tsconfig*.json"
   ],
   "scripts": {
-    "typecheck": "node scripts/typecheck.mjs",
-    "build": "node scripts/build-host.mjs && node scripts/build-client.mjs",
-    "build:client": "node scripts/build-client.mjs",
+    "typecheck": "node ../../scripts/build.mjs --typecheck dsh-github",
+    "build": "node ../../scripts/build.mjs dsh-github",
+    "build:client": "node ../../scripts/build.mjs --client dsh-github",
     "test": "node --test test/*.test.js",
-    "build:host": "node scripts/build-host.mjs"
+    "build:host": "node ../../scripts/build.mjs --host dsh-github"
   },
   "engines": {
     "node": "^22.19.0 || >=24.0.0"

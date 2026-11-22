@@ -59,6 +59,9 @@ test('optional declarations expose checked host contracts without changing defau
     'false',
   ])
   assert.ok((await readFile(join(directory, 'dist/index.d.ts'), 'utf8')).length > 0)
+  await writeFile(join(directory, 'dist/obsolete.js'), '// stale\n')
+  writeHost(output)
+  checkHost(output)
   await rm(join(directory, 'dist/index.d.ts'))
   assert.throws(() => checkHost(output), /Host artifact file set is stale/)
 })
