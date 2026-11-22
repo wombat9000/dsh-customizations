@@ -5,7 +5,11 @@ import {
   TRIVY_STATUS_RECHECK,
 } from '../shared/contracts.js'
 import type { PublicTrivyStatus, StatusRpc } from '../shared/contracts.js'
-import { styles } from './styles.js'
+import {
+  SettingsDetailList,
+  SettingsPanel,
+  type SettingsStatusTone,
+} from '../../../shared/client/settings.tsx'
 
 export const INSTALL_URL = 'https://trivy.dev/latest/getting-started/installation/'
 export interface SettingsProps {
@@ -16,14 +20,17 @@ export interface SettingsProps {
 function messageOf(error: unknown) {
   return error instanceof Error ? error.message : String(error)
 }
-export function presentation(status: PublicTrivyStatus | undefined, failure: string | undefined) {
-  if (failure !== undefined) return { label: 'Unavailable', color: '#ef4444' }
-  if (status === undefined) return { label: 'Checking…', color: '#94a3b8' }
-  if (status.state === 'ready') return { label: 'Ready', color: '#22c55e' }
-  if (status.state === 'not-found') return { label: 'Not found', color: '#ef4444' }
+export function presentation(
+  status: PublicTrivyStatus | undefined,
+  failure: string | undefined,
+): { label: string; color: string; tone: SettingsStatusTone } {
+  if (failure !== undefined) return { label: 'Unavailable', color: '#ef4444', tone: 'error' }
+  if (status === undefined) return { label: 'Checking…', color: '#94a3b8', tone: 'muted' }
+  if (status.state === 'ready') return { label: 'Ready', color: '#22c55e', tone: 'ok' }
+  if (status.state === 'not-found') return { label: 'Not found', color: '#ef4444', tone: 'error' }
   if (status.state === 'unsupported-version')
-    return { label: 'Unsupported version', color: '#f59e0b' }
-  return { label: 'Execution failed', color: '#ef4444' }
+    return { label: 'Unsupported version', color: '#f59e0b', tone: 'warn' }
+  return { label: 'Execution failed', color: '#ef4444', tone: 'error' }
 }
 function formatCheckedAt(value: string | undefined) {
   if (typeof value !== 'string') return undefined
@@ -77,76 +84,48 @@ export function TrivySettingsSection({ rpc, subscribe }: SettingsProps) {
   const state = presentation(status, failure)
   const checkedAt = formatCheckedAt(status?.checkedAt)
   return (
-    <section style={styles.section} aria-labelledby="trivy-settings-title">
-      <h2 id="trivy-settings-title" style={styles.heading}>
-        Trivy
-      </h2>
-      <p style={styles.intro}>
-        Check the pre-installed Trivy CLI used by vulnerability audits. DSH never installs or
-        updates the executable.
-      </p>
-      <div style={styles.card} role="group" aria-labelledby="trivy-card-title">
-        <div style={styles.row}>
-          <h3 id="trivy-card-title" style={styles.title}>
-            Trivy CLI
-          </h3>
-          <span style={styles.badge} role="status">
-            <span style={styles.dot(state.color)} aria-hidden={true} />
-            {state.label}
-          </span>
-        </div>
-        {status === undefined ? null : (
-          <div style={styles.details}>
-            {status.version === undefined ? null : (
-              <>
-                <span style={styles.key}>Version</span>
-                <span style={styles.value}>{status.version}</span>
-              </>
-            )}
-            {status.path === undefined ? null : (
-              <>
-                <span style={styles.key}>Executable</span>
-                <span style={styles.value}>{status.path}</span>
-              </>
-            )}
-            <>
-              <span style={styles.key}>Required</span>
-              <span style={styles.value}>{`Trivy ${status.minimumVersion}+`}</span>
-            </>
-            {checkedAt === undefined ? null : (
-              <>
-                <span style={styles.key}>Last checked</span>
-                <span style={styles.value}>{checkedAt}</span>
-              </>
-            )}
-          </div>
-        )}
-        {status?.message === undefined ? null : <p style={styles.hint}>{status.message}</p>}
-        <p style={styles.hint}>
-          If Trivy works in a terminal but is not found here, DSH may have a different effective
-          PATH. The first audit may download or update Trivy’s vulnerability database.
-        </p>
-        <div style={styles.actions}>
+    <SettingsPanel
+      as="section"
+      title="Trivy"
+      subtitle="Check the pre-installed Trivy CLI used by vulnerability audits. DSH never installs or updates the executable."
+      groupTitle="Trivy CLI"
+      status={state.label}
+      statusTone={state.tone}
+      error={failure}
+      actions={
+        <>
           <button
             type="button"
             disabled={busy}
-            style={{ ...styles.button, opacity: busy ? 0.55 : 1 }}
             onClick={() => {
               void recheck()
             }}
           >
             {busy ? 'Checking…' : 'Recheck'}
           </button>
-          <a href={INSTALL_URL} target="_blank" rel="noreferrer" style={styles.link}>
+          <a href={INSTALL_URL} target="_blank" rel="noreferrer">
             Official installation instructions
           </a>
-        </div>
-        {failure === undefined ? null : (
-          <p style={styles.error} role="alert">
-            {failure}
-          </p>
-        )}
-      </div>
-    </section>
+        </>
+      }
+    >
+      {status === undefined ? null : (
+        <SettingsDetailList
+          items={[
+            status.version === undefined ? null : ['Version', status.version],
+            status.path === undefined ? null : ['Executable', status.path],
+            ['Required', `Trivy ${status.minimumVersion}+`],
+            checkedAt === undefined ? null : ['Last checked', checkedAt],
+          ]}
+        />
+      )}
+      {status?.message === undefined ? null : (
+        <p className="dsh-settings-panel__hint">{status.message}</p>
+      )}
+      <p className="dsh-settings-panel__hint">
+        If Trivy works in a terminal but is not found here, DSH may have a different effective PATH.
+        The first audit may download or update Trivy’s vulnerability database.
+      </p>
+    </SettingsPanel>
   )
 }

@@ -1,22 +1,10 @@
 import assert from 'node:assert/strict'
-import { readFile } from 'node:fs/promises'
-import vm from 'node:vm'
 import test from 'node:test'
-const source = await readFile(new URL('../client.js', import.meta.url), 'utf8')
-function load(fetch) {
-  let record
-  vm.runInNewContext(source, {
-    window: {
-      fetch,
-      __ModuleLoader__: {
-        load(value) {
-          record = value
-        },
-      },
-    },
-  })
-  return { record, plugin: record.factory(() => ({ createElement() {} })) }
-}
+import { loadClientBundle } from '../../../tests/helpers/load-client-bundle.mjs'
+
+const clientUrl = new URL('../client.js', import.meta.url)
+const load = (fetch) =>
+  loadClientBundle(clientUrl, { react: { createElement() {} }, window: { fetch } })
 test('registers verified keyed tool and additive root overlay seats with one owned store', () => {
   const { record, plugin } = load()
   const rows = [],

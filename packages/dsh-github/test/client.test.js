@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict'
-import { readFile } from 'node:fs/promises'
-import vm from 'node:vm'
 import test from 'node:test'
+import { loadClientBundle } from '../../../tests/helpers/load-client-bundle.mjs'
 
 import { registerTypeScript } from './source-loader.mjs'
 registerTypeScript()
@@ -11,27 +10,8 @@ const plugin = {
   ...(await import('../client/transport.ts')),
 }
 // Keep this loader solely for the generated-artifact registration regression.
-const source = await readFile(new URL('../client.js', import.meta.url), 'utf8')
-function load(react = {}) {
-  let record
-  vm.runInNewContext(source, {
-    window: {
-      __ModuleLoader__: {
-        load(value) {
-          record = value
-        },
-      },
-    },
-    URL,
-  })
-  return {
-    record,
-    plugin: record.factory((name) => {
-      assert.equal(name, 'react')
-      return react
-    }),
-  }
-}
+const clientUrl = new URL('../client.js', import.meta.url)
+const load = (react = {}) => loadClientBundle(clientUrl, { react, globals: { URL } })
 const scope = {
   account: { id: 'U_1', login: 'fixture' },
   operations: ['setProjectItemField', 'addIssueDependency'],

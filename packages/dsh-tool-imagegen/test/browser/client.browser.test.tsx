@@ -2,9 +2,9 @@ import React, { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, expect, test, vi } from 'vitest'
 import { page } from 'vitest/browser'
-import { GenerateImageToolView } from '../client/tool-view.tsx'
-import { ImagePreview } from '../client/image-preview.tsx'
-import type { AttachmentPayload, ReadAttachment } from '../shared/contracts.ts'
+import { GenerateImageToolView } from '../../client/tool-view.tsx'
+import { ImagePreview } from '../../client/image-preview.tsx'
+import type { AttachmentPayload, ReadAttachment } from '../../shared/contracts.ts'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 
 // Real React/DOM; only session reads and object-URL allocation are fixtures.

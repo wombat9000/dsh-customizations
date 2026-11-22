@@ -1,28 +1,12 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
-import vm from 'node:vm'
-
-const client = readFileSync(new URL('../client.js', import.meta.url), 'utf8')
+import { loadClientBundle } from '../../../tests/helpers/load-client-bundle.mjs'
 
 test('generated client retains lazy package identity and native settings registration', () => {
-  let declaration
-  vm.runInNewContext(client, {
-    window: {
-      __ModuleLoader__: {
-        load(value) {
-          declaration = value
-        },
-      },
-    },
+  const { plugin, requested } = loadClientBundle(new URL('../client.js', import.meta.url), {
+    expectedId: '@local/dsh-jev',
   })
-  assert.equal(declaration.id, '@local/dsh-jev')
-  let required
-  const plugin = declaration.factory((name) => {
-    required = name
-    return {}
-  })
-  assert.equal(required, 'react')
+  assert.deepEqual(requested, ['react'])
   assert.deepEqual(Array.from(plugin.inject), ['slots', 'connection'])
   assert.equal(typeof plugin.SettingsCard, 'function')
   const rpc = {}

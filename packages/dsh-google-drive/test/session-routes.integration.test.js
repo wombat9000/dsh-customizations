@@ -1,13 +1,12 @@
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
 import { once } from 'node:events'
-import { readFile } from 'node:fs/promises'
-import vm from 'node:vm'
 import test from 'node:test'
+import { loadClientBundle } from '../../../tests/helpers/load-client-bundle.mjs'
 import { allowedRequest, createHandler } from '../dist/src/routes.js'
 import { SessionDriveTools } from '../dist/src/session-tools.js'
 
-const source = await readFile(new URL('../client.js', import.meta.url), 'utf8')
+const clientUrl = new URL('../client.js', import.meta.url)
 async function fixture(t) {
   const live = new Map(),
     roots = new Set(),
@@ -92,19 +91,13 @@ async function fixture(t) {
     })
     return { status: response.status, headers: response.headers, result: await response.json() }
   }
-  let record
-  vm.runInNewContext(source, {
+  const { plugin } = loadClientBundle(clientUrl, {
+    react: { createElement() {} },
     window: {
-      __ModuleLoader__: {
-        load: (value) => {
-          record = value
-        },
-      },
       fetch: (url, options) =>
         fetch(origin + url, { ...options, headers: { ...headers, ...options.headers } }),
     },
   })
-  const plugin = record.factory(() => ({ createElement() {} }))
   t.after(async () => {
     manager.dispose()
     for (const dispose of [...cleanups]) {

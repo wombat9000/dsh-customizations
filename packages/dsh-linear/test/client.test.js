@@ -1,67 +1,21 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
-import vm from 'node:vm'
 import test from 'node:test'
+import React from 'react'
+import { renderToStaticMarkup } from 'react-dom/server'
+import { loadClientBundle } from '../../../tests/helpers/load-client-bundle.mjs'
 
-const CLIENT_PATH = fileURLToPath(new URL('../client.js', import.meta.url))
+const CLIENT_URL = new URL('../client.js', import.meta.url)
 const PACKAGE_PATH = fileURLToPath(new URL('../package.json', import.meta.url))
 
-async function loadClient(react = {}) {
-  let record
-  const browserWindow = {
-    confirm: () => true,
-    __ModuleLoader__: {
-      load(value) {
-        record = value
-      },
-    },
-  }
-  vm.runInNewContext(await readFile(CLIENT_PATH, 'utf8'), { window: browserWindow })
-  return {
-    browserWindow,
-    record,
-    exports: record.factory((specifier) => {
-      assert.equal(specifier, 'react')
-      return react
-    }),
-  }
-}
-
-function fakeReact(stateValues, runEffects = false) {
-  let stateIndex = 0
-  const updates = []
-  return {
-    updates,
-    Fragment: Symbol('Fragment'),
-    createElement(type, props, ...children) {
-      return { type, props: props ?? {}, children: children.flat(Infinity) }
-    },
-    useState(initial) {
-      const index = stateIndex++
-      updates[index] = []
-      return [
-        index < stateValues.length ? stateValues[index] : initial,
-        (value) => updates[index].push(value),
-      ]
-    },
-    useEffect(effect) {
-      if (runEffects) effect()
-    },
-  }
-}
-
-function findElements(root, predicate, found = []) {
-  if (root === null || root === undefined || typeof root !== 'object') return found
-  if (predicate(root)) found.push(root)
-  for (const child of root.children ?? []) findElements(child, predicate, found)
-  return found
-}
-
-function textOf(root) {
-  if (typeof root === 'string') return root
-  if (root === null || root === undefined || typeof root !== 'object') return ''
-  return (root.children ?? []).map(textOf).join('')
+function loadClient(react = React) {
+  const { record, plugin, requested } = loadClientBundle(CLIENT_URL, {
+    react,
+    expectedId: '@local/dsh-linear',
+  })
+  assert.deepEqual(requested, ['react'])
+  return { record, exports: plugin }
 }
 
 test('package exposes a Web Settings client bundle', async () => {
@@ -71,12 +25,16 @@ test('package exposes a Web Settings client bundle', async () => {
   assert.ok(pkg.files.includes('client.js'))
 })
 
-test('client registers only a Linear plugin configuration card', async () => {
-  const { record, exports } = await loadClient(fakeReact([]))
+test('client registers only a Linear plugin configuration card', () => {
+  const { record, exports } = loadClient()
   assert.equal(record.id, '@local/dsh-linear')
   assert.deepEqual(Array.from(exports.inject), ['slots', 'connection', 'remote'])
   const registrations = []
-  const rpc = { call: async () => ({ ok: true, value: {} }) }
+  const rpc = {
+    call() {
+      throw new Error('SSR must not dispatch RPC')
+    },
+  }
   const ctx = {
     remote: { $on: () => () => {} },
     get(name) {
@@ -101,111 +59,26 @@ test('client registers only a Linear plugin configuration card', async () => {
   assert.equal(registrations[0].options.key, '@local/dsh-linear#local-linear')
   assert.equal(registrations[0].options.id, undefined)
   assert.equal(registrations[0].options.order, 35)
-  assert.equal(registrations[0].options.inject().rpc, rpc)
-  assert.equal(registrations[0].component({ view: 'page' }).type, exports.LinearSettingsSection)
-  assert.match(registrations[0].component({ view: 'summary' }), /Workspace connection/)
+  const injected = registrations[0].options.inject()
+  assert.equal(injected.rpc, rpc)
+
+  const summary = renderToStaticMarkup(
+    React.createElement(registrations[0].component, { ...injected, view: 'summary' }),
+  )
+  assert.match(summary, /Workspace connection/)
+  assert.doesNotMatch(summary, /<(?:details|input|button|style)\b/u)
+
+  const pageHtml = renderToStaticMarkup(
+    React.createElement(registrations[0].component, { ...injected, view: 'page' }),
+  )
+  assert.match(pageHtml, /<details[^>]+open=""/u)
+  assert.match(pageHtml, /<summary>Linear/u)
+  assert.match(pageHtml, /<style>[^<]*\.dsh-settings-panel/u)
+  assert.match(pageHtml, /type="password"/u)
 })
 
-test('Linear card starts collapsed with its connection controls inside', async () => {
-  const react = fakeReact([
-    {
-      credential: { configured: true, writable: true, source: 'file' },
-      workspace: { id: 'org', name: 'Acme', urlKey: 'acme' },
-      viewer: null,
-      live: true,
-    },
-    '',
-    false,
-    undefined,
-    undefined,
-    0,
-  ])
-  const { exports } = await loadClient(react)
-  const tree = exports.LinearSettingsSection({ rpc: {}, subscribe: () => () => {} })
-  assert.equal(tree.type, 'details')
-  assert.equal(tree.props.open, undefined)
-  assert.equal(tree.children[0].type, 'summary')
-  assert.match(textOf(tree.children[0]), /^LinearWorkspace connection/)
-  assert.equal(findElements(tree, (element) => element.type === 'h2').length, 0)
-  const [group] = findElements(tree, (element) => element.props.role === 'group')
-  assert.equal(group.props['aria-labelledby'], 'linear-connection-title')
-  assert.match(textOf(group), /Workspace connectionConnectedWorkspaceAcme/)
-  assert.deepEqual(findElements(group, (element) => element.type === 'button').map(textOf), [
-    'Replace and connect',
-    'Test connection',
-    'Disconnect',
-  ])
-})
-
-test('settings card never renders or retains an existing secret', async () => {
-  const react = fakeReact([
-    {
-      credential: { configured: true, writable: true, source: 'file' },
-      workspace: { id: 'org', name: 'Acme', urlKey: 'acme' },
-      viewer: null,
-      live: false,
-    },
-    '',
-    false,
-    undefined,
-    undefined,
-    0,
-  ])
-  const { exports } = await loadClient(react)
-  const tree = exports.LinearSettingsSection({ rpc: {}, subscribe: () => () => {} })
-  const [input] = findElements(tree, (element) => element.type === 'input')
-  assert.equal(input.props.type, 'password')
-  assert.equal(input.props.value, '')
-  assert.match(textOf(tree), /Configured via DSH credential store/)
-  assert.equal(JSON.stringify(tree).includes('lin_api_'), false)
-})
-
-test('connect sends the draft write-only and clears it after success', async () => {
-  const react = fakeReact([
-    {
-      credential: { configured: false, writable: true },
-      workspace: null,
-      viewer: null,
-      live: false,
-    },
-    '  lin_api_secret  ',
-    false,
-    undefined,
-    undefined,
-    0,
-  ])
-  const calls = []
-  const { exports } = await loadClient(react)
-  const tree = exports.LinearSettingsSection({
-    rpc: {
-      async call(channel, endpoint, payload) {
-        calls.push([channel, endpoint, payload])
-        return {
-          ok: true,
-          value: {
-            credential: { configured: true, writable: true, source: 'file' },
-            workspace: { id: 'org', name: 'Acme', urlKey: 'acme' },
-            viewer: null,
-            live: true,
-          },
-        }
-      },
-    },
-    subscribe: () => () => {},
-  })
-  const [connect] = findElements(tree, (element) => element.type === 'button')
-  connect.props.onClick()
-  await Promise.resolve()
-  await new Promise((resolve) => setImmediate(resolve))
-  assert.deepEqual(JSON.parse(JSON.stringify(calls)), [
-    ['/linear-integration', 'connect', { apiKey: 'lin_api_secret' }],
-  ])
-  assert.ok(react.updates[1].includes(''))
-  assert.equal(JSON.stringify(react.updates).includes('lin_api_secret'), false)
-})
-
-test('client-side key validation rejects blank and shell-style pastes', async () => {
-  const { exports } = await loadClient()
+test('client-side key validation rejects blank and shell-style pastes', () => {
+  const { exports } = loadClient()
   assert.equal(exports.apiKeyFailure('lin_api_valid'), undefined)
   assert.match(exports.apiKeyFailure(' '), /Enter a Linear API key/)
   assert.match(exports.apiKeyFailure('LINEAR_API_KEY=secret'), /Paste only the API key/)

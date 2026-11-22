@@ -1,26 +1,14 @@
 import assert from 'node:assert/strict'
-import { readFile } from 'node:fs/promises'
-import vm from 'node:vm'
 import test from 'node:test'
+import { loadClientBundle } from '../../../tests/helpers/load-client-bundle.mjs'
 
-const source = await readFile(new URL('../client.js', import.meta.url), 'utf8')
+const clientUrl = new URL('../client.js', import.meta.url)
 function load(fetch) {
-  let record, registration
-  vm.runInNewContext(source, {
-    URL,
-    Error,
-    window: {
-      fetch,
-      __ModuleLoader__: {
-        load(value) {
-          record = value
-        },
-      },
-    },
-  })
-  const plugin = record.factory((name) => {
-    assert.equal(name, 'react')
-    return { createElement() {} }
+  let registration
+  const { record, plugin } = loadClientBundle(clientUrl, {
+    react: { createElement() {} },
+    window: { fetch },
+    globals: { URL, Error },
   })
   plugin.apply({
     slots: {

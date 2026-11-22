@@ -1,4 +1,11 @@
 {
   "extends": "../../tsconfig.client.json",
-  "include": ["client/**/*.ts", "client/**/*.tsx", "shared/**/*.ts", "test/client-types/**/*.ts"]
+  "include": [
+    "client/**/*.ts",
+    "client/**/*.tsx",
+    "shared/**/*.ts",
+    "test/client-types/**/*.ts",
+    "test/browser/**/*.tsx",
+    "../../shared/client/test/react-dom.d.ts"
+  ]
 }

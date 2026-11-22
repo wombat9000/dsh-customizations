@@ -1,8 +1,8 @@
 import { readFileSync } from 'node:fs'
-import vm from 'node:vm'
 import { createRequire } from 'node:module'
 import React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
+import { loadClientBundle } from '../../../tests/helpers/load-client-bundle.mjs'
 
 const require = createRequire(import.meta.url)
 const managerRequire = createRequire(
@@ -13,23 +13,16 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { CARD_LABELS, CARD_TITLES } from '../dist/src/cards.js'
 
-const source = readFileSync(new URL('../client.js', import.meta.url), 'utf8')
+const clientUrl = new URL('../client.js', import.meta.url)
+const source = readFileSync(clientUrl, 'utf8')
 
 function loadBundle(react = {}) {
-  const registrations = []
-  const window = { __ModuleLoader__: { load: (registration) => registrations.push(registration) } }
-  // No require, module, exports, process, or React globals exist at script load.
-  vm.runInNewContext(source, { window, setTimeout, clearTimeout })
-  assert.equal(registrations.length, 1)
-  const [{ id, factory }] = registrations
-  assert.equal(id, '@wombat9000/dsh-session-recap')
-  const requested = []
-  const plugin = factory((name) => {
-    requested.push(name)
-    assert.equal(name, 'react', 'all client externals must be supplied by DSH')
-    return react
+  return loadClientBundle(clientUrl, {
+    source,
+    react,
+    expectedId: '@wombat9000/dsh-session-recap',
+    globals: { setTimeout, clearTimeout },
   })
-  return { plugin, requested }
 }
 
 test('built client registers one lazy factory with the existing plugin surface', () => {

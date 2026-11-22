@@ -2,7 +2,7 @@ import React, { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, expect, test } from 'vitest'
 import { page, userEvent } from 'vitest/browser'
-import { SettingsField, SettingsPanel } from '../../settings.tsx'
+import { SettingsDetailList, SettingsField, SettingsPanel } from '../../settings.tsx'
 
 // The shared presentation owns keyboard, labels, feedback and style lifetime.
 // Consumer suites own transport, credential and draft behavior.
@@ -114,4 +114,27 @@ test('concurrent panels keep independent labels, disclosure and styles after sib
   } finally {
     outside.remove()
   }
+})
+
+test('section variant renders heading, group badge, and detail list without disclosure', async () => {
+  const { container } = await mount({
+    as: 'section',
+    title: 'Tool Status',
+    subtitle: 'Inspect external binary.',
+    groupTitle: 'CLI details',
+    status: 'Ready',
+    statusTone: 'ok',
+    description: undefined,
+    children: React.createElement(SettingsDetailList, {
+      items: [['Version', '1.2.3'], null, ['Required', '1.0.0+']],
+    }),
+  })
+  expect(container.querySelector('details')).toBeNull()
+  expect(container.querySelector('section h2').textContent).toBe('Tool Status')
+  await expect.element(page.getByRole('group', { name: 'CLI details' })).toBeVisible()
+  await expect.element(page.getByRole('status')).toHaveTextContent('Ready')
+  expect(container.querySelector('.dsh-settings-panel__dot--ok')).not.toBeNull()
+  expect(container.textContent).toContain('Version')
+  expect(container.textContent).toContain('1.2.3')
+  expect(container.textContent).toContain('Required')
 })
