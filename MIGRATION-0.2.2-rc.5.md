@@ -4,7 +4,7 @@ This repository targets **DSH `0.2.2-rc.5` only**. Upgrade the runtime and plugi
 
 The official target is [`dsh-v0.2.2-rc.5`](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.2.2-rc.5), commit `9c2670d3bce5275e0d1610272958121af87787bb`.
 
-The [0.2.2-rc.3](MIGRATION-0.2.2-rc.3.md) and earlier handoffs remain unchanged historical records. There is no separate rc.4 handoff: this repository moved from rc.3 straight to rc.5; the [0.2.2-rc.2](MIGRATION-0.2.2-rc.2.md) handoff still describes the Agent registry removals and the Standard preset re-sync.
+Prior release migration handoffs are preserved in Git history. This repository moved from `0.2.2-rc.3` straight to `0.2.2-rc.5`.
 
 ## Migration scope
 
@@ -14,7 +14,7 @@ The [0.2.2-rc.3](MIGRATION-0.2.2-rc.3.md) and earlier handoffs remain unchanged 
 
 ## Required RPC-owner patch
 
-The published `@deepseek-ai/dsh-client-connection@0.2.2-rc.5` artifact still reads `const owner = this.ctx` in its `rpc` getter. The [target-version RPC-owner patch](patches/dsh-client-connection-0.2.2-rc.5-rpc-owner.patch) is the rc.3 patch renamed; its content applies unchanged.
+The published `@deepseek-ai/dsh-client-connection@0.2.2-rc.5` artifact still reads `const owner = this.ctx` in its `rpc` getter. The [target-version RPC-owner patch](patches/dsh-client-connection-0.2.2-rc.5-rpc-owner.patch) normalizes the consumer context with `getTraceable(this.ctx, this.ctx)`.
 
 ## Release-age exceptions
 
@@ -26,7 +26,12 @@ The global `minimumReleaseAge: 5760` stays. The exact-version exception list cov
 
 ## Host operator acceptance sequence
 
-The sequence in the [0.2.0-rc.2 handoff](MIGRATION-0.2.0-rc.2.md) still applies: back up retained state, apply the profile only with explicit approval, and restart through the usual service mechanism after selecting the verified checkout-local launcher.
+1. Record old and target runtime/plugin revisions and prepare a complete rollback snapshot (profile config/patches, credentials, settings, sessions, attachments, YouTube archive).
+2. Verify the target launcher graph, RPC-owner patch, independent profile graph, and machine-owned extensions.
+3. Validate settings and copied parent/child state on an isolated copy; compare effective permissions, telemetry choices, and preset defaults.
+4. Check plugin forms, existing-session rendering, session switching, native approvals, and preset selection without external mutations.
+5. Only after explicit deployment approval, update the retained instance and restart through its existing service mechanism.
+6. Recheck effective settings and logs. If acceptance fails, restore the complete snapshot.
 
 ## Validation results
 

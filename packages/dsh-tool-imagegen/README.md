@@ -57,11 +57,11 @@ node packages/dsh-tool-imagegen/scripts/build-client.mjs
 node packages/dsh-tool-imagegen/scripts/build-host.mjs --check
 node packages/dsh-tool-imagegen/scripts/build-client.mjs --check
 node --test packages/dsh-tool-imagegen/test/*.test.js
-node node_modules/vitest/vitest.mjs run --config packages/dsh-tool-imagegen/vitest.config.mjs --configLoader native
+node node_modules/vitest/vitest.mjs run --config vitest.browser.config.mjs packages/dsh-tool-imagegen/test/client.browser.test.tsx
 ```
 
 The normal Node suite checks strict source contracts and host/client artifact freshness without rewriting outputs. The package also exposes `build`, `build:host`, `build:client`, `typecheck`, `test`, `test:integration`, and `test:browser` scripts. Regenerate and include both host and client artifacts after source changes; never edit generated JavaScript directly.
 
-Tests use fixture provider responses and attachment reads. They make no Gemini requests and consume no credits. The integration suite checks recipe/manifest composition, apply dry-run, and shared credential rotation; it neither installs a profile nor generates images. Browser tests use real React/DOM to check previews, lightbox interaction, retry, data-URL fallback, stale responses, and object-URL cleanup. The package-local Vitest configuration keeps caches and failure screenshots in `.vitest/`; native config loading avoids writes into borrowed `node_modules`.
+Tests use fixture provider responses and attachment reads. They make no Gemini requests and consume no credits. The integration suite checks recipe/manifest composition, apply dry-run, and shared credential rotation; it neither installs a profile nor generates images. Browser tests use real React/DOM to check previews, lightbox interaction, retry, data-URL fallback, stale responses, and object-URL cleanup. The root Vitest browser configuration keeps caches in `.vitest/cache` and failure screenshots in `artifacts/browser/`.
 
 The existing `node tests/real-ui/migration-boot.mjs` checks all recipe bundles in a disposable Loader/Web host without provider requests. Source and component tests do not prove native slot election or real-shell layout. Running that shared smoke test, applying a production profile, restarting DSH, and calling the provider remain separate validation or deployment steps.

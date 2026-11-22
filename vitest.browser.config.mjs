@@ -1,7 +1,10 @@
+import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'vitest/config'
 import { playwright } from '@vitest/browser-playwright'
 
 export default defineConfig({
+  // Keep Vite caches checkout-local so read-only borrowed node_modules work in worktrees.
+  cacheDir: fileURLToPath(new URL('./.vitest/cache', import.meta.url)),
   test: {
     include: [
       'packages/*/test/browser/*.browser.test.mjs',

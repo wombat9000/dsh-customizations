@@ -50,6 +50,6 @@ Host tests use synthetic credentials and real DSH Settings, ConfigEditor, and Lo
 
 ## Settings migration
 
-Since DSH `0.1.7-rc.2`, settings derive from active Loader entries instead of separately registered sections. This plugin has an empty Config and stores no ordinary preferences. Its custom page uses the `plugins.row.config` key `@local/dsh-openrouter#local-openrouter`; credential selection reads the live `llm-pi-ai` Config projection through `settings.describe()`.
+Settings derive from active Loader entries instead of separately registered sections. This plugin has an empty Config and stores no ordinary preferences. Its custom page uses the `plugins.row.config` key `@local/dsh-openrouter#local-openrouter`; credential selection reads the live `llm-pi-ai` Config projection through `settings.describe()`.
 
 An old `openrouter` section in `settings.yaml` does not match the `local-openrouter` entry and has no editable fields to import. DSH renames the legacy file to `settings.yaml.imported` before attempting section imports. That section is not a credential backup: keys remain in the existing credential store or credential reference. The record key `llm-pi-ai/openrouter` and reference names do not change.
