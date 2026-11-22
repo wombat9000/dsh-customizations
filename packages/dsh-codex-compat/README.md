@@ -107,7 +107,8 @@ src/fast/index.ts        Fast Host entrypoint
 src/fast/runtime.ts      persisted policy and authenticated RPC
 src/fast/bridge.ts       private adapter compatibility boundary
 client/fast/controls.tsx composer and integration controls
-client/index.ts         package-wide native slot registration
+client/index.ts         Fast slot registration
+oauth/client/index.ts   Models card registration owned by the OAuth row
 shared/contracts.ts     typed Fast RPC contracts
 ```
 
@@ -123,7 +124,7 @@ node node_modules/@playwright/test/cli.js test --config packages/dsh-codex-compa
 
 `pnpm test` checks this package’s types and committed artifact freshness. Regenerate artifacts after changing source. `pnpm run test:visual` runs shared journeys followed by this bundle’s isolated-profile journey.
 
-OAuth tests use native authorization/credential services with synthetic local flows and temporary records. A separate native pi flow test substitutes only the provider’s login result, holds the real store’s record lock, and proves the documented late-write cancellation limit. It does not execute the OAuth protocol. Fast tests use the installed native adapter/SDK with controlled provider, storage and transport effects. The shell journey uses fixture sign-in replies, disables the OAuth Host component in the fixture profile, and makes no inference calls. It reuses native Host/authentication/navigation helpers with configured Codex discovery/defaults that conflict with the shared unconfigured-provider profile.
+OAuth tests use native authorization/credential services with synthetic local flows and temporary records. A separate native pi flow test substitutes only the provider’s login result, holds the real store’s record lock, and proves the documented late-write cancellation limit. It does not execute the OAuth protocol. Fast tests use the installed native adapter/SDK with controlled provider, storage and transport effects. The shell journey seeds a synthetic credential, disables the Fast component, and uses fixture sign-in replies without making an inference call. It reuses native Host/authentication/navigation helpers with configured Codex discovery/defaults that conflict with the shared unconfigured-provider profile.
 
 Screenshots are diagnostic test-suite captures of the real isolated DSH application with fixture data, not regression baselines or deployment evidence. No ordinary test reads personal credentials, logs in to OpenAI or performs paid inference.
 
