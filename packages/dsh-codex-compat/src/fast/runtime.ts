@@ -1,3 +1,4 @@
+import { registerRpc } from '../register-rpc.js'
 import type { Context } from '@deepseek-ai/cordis'
 import { isAgentLoopRequest } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions } from '@deepseek-ai/dsh-llm'
@@ -71,10 +72,18 @@ export class CodexFastRuntime {
     this.ctx = ctx
     this.domain = domain
     this.bridge = new CodexFastBridge(ctx.llm)
-    this.bridge.observe()
+    this.observeAdapters()
   }
   observeAdapters() {
-    this.bridge.observe()
+    if (!this.enabled()) {
+      this.bridge.observe()
+      return
+    }
+    try {
+      this.bridge.enable()
+    } catch {
+      // The provider can register later. Status reports its current availability.
+    }
   }
   private enabled() {
     return this.active && !!this.domain?.global.get().enabled && !this.forceOff
@@ -99,13 +108,10 @@ export class CodexFastRuntime {
       : 'Fast settings storage is unavailable. Standard inference is unchanged.'
     let available = false
     if (this.enabled()) {
-      try {
-        this.bridge.enable()
-        available = this.bridge.check()
-      } catch {
+      available = this.bridge.check()
+      if (!available)
         error =
           'Fast bridge is unavailable. Standard inference is unchanged while Fast is off. Disable the integration to recover a session that requests Fast.'
-      }
     }
     return { enabled: this.enabled(), revision: global.revision, available, error }
   }
@@ -224,9 +230,7 @@ export class CodexFastRuntime {
         ? childRequested()
         : parent?.model === options.model && parent.provider === options.provider)
     if (!target || !owner) return this.bridge.stream(options, next, null)
-    try {
-      this.bridge.enable()
-    } catch {
+    if (!this.bridge.check()) {
       this.observations.set(String(options.sessionId), { model: options.model, kind: 'error' })
       throw new FastBridgeError()
     }
@@ -527,7 +531,7 @@ export async function mountCodexFast(ctx: Context) {
   const runtime = new CodexFastRuntime(ctx, domain)
   ctx.effect(() => () => runtime.dispose())
   ctx.effect(() =>
-    ctx.connection.rpc.handle(CHANNEL, (endpoint, payload, signal) =>
+    registerRpc(ctx, CHANNEL, (endpoint, payload, signal) =>
       runtime.rpc(endpoint, payload, signal),
     ),
   )

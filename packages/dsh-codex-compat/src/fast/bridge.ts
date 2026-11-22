@@ -254,8 +254,16 @@ export class CodexFastBridge {
   check(): boolean {
     if (!this.enabled) return false
     try {
-      this.instrument(this.adapter())
-      return true
+      const adapter = this.adapter()
+      const wrapper = this.patched.get(adapter)?.get('streamWithSnapshot')
+      if (wrapper === undefined || Reflect.get(adapter, 'streamWithSnapshot') !== wrapper)
+        return false
+      const snapshot = method(adapter, 'current').call(adapter)
+      return (
+        isObject(snapshot) &&
+        isObject(snapshot.models) &&
+        typeof snapshot.models.streamSimple === 'function'
+      )
     } catch {
       return false
     }

@@ -6,10 +6,10 @@ The bundle is opt-in and is not included in `personal-web`. Source review, build
 
 ## Components and controls
 
-| Component                       | Cordis row          | Responsibility                                                               |
-| ------------------------------- | ------------------- | ---------------------------------------------------------------------------- |
+| Component                             | Cordis row          | Responsibility                                                               |
+| ------------------------------------- | ------------------- | ---------------------------------------------------------------------------- |
 | `./oauth/index.js` (exports `/oauth`) | `local-codex-oauth` | Connect Codex from the Models page or a terminal using native authorization. |
-| `@local/dsh-codex-compat/fast`  | `local-codex-fast`  | Own the optional request-tier bridge, persisted choices and Fast controls.   |
+| `@local/dsh-codex-compat/fast`        | `local-codex-fast`  | Own the optional request-tier bridge, persisted choices and Fast controls.   |
 
 The OAuth row loads its own browser module for **Reconnect Codex**. The Fast row owns the composer and integration settings controls. Both ship in this bundle.
 
@@ -28,7 +28,7 @@ The Web action uses the authenticated browser connection and starts only when cl
 
 The OAuth component adapts the locally authored helper from the adjacent `dsh-sandbox` repository. It does not implement PKCE, callback listeners, device-code exchange, token refresh, credential locking or grant writes. The native authorization service and pi-ai provide those operations.
 
-At activation, the helper checks that the native `llm-pi-ai/openai-codex` flow offers OAuth. It then starts its login task without waiting for human interaction before Web startup finishes:
+Desktop and other non-interactive launches wait for a click on **Reconnect Codex**. An interactive terminal launch (or an explicit `DSH_CODEX_REAUTH=1` launch) runs the terminal sign-in helper:
 
 1. Read credential **metadata**, not the token-bearing record.
 2. If the record exists, leave it unchanged and skip login.
@@ -124,7 +124,7 @@ node node_modules/@playwright/test/cli.js test --config packages/dsh-codex-compa
 
 `pnpm test` checks this package’s types and committed artifact freshness. Regenerate artifacts after changing source. `pnpm run test:visual` runs shared journeys followed by this bundle’s isolated-profile journey.
 
-OAuth tests use native authorization/credential services with synthetic local flows and temporary records. A separate native pi flow test substitutes only the provider’s login result, holds the real store’s record lock, and proves the documented late-write cancellation limit. It does not execute the OAuth protocol. Fast tests use the installed native adapter/SDK with controlled provider, storage and transport effects. The shell journey seeds a synthetic credential, disables the Fast component, and uses fixture sign-in replies without making an inference call. It reuses native Host/authentication/navigation helpers with configured Codex discovery/defaults that conflict with the shared unconfigured-provider profile.
+OAuth tests use native authorization/credential services with synthetic local flows and temporary records. A separate native pi flow test substitutes only the provider’s login result, holds the real store’s record lock, and proves the documented late-write cancellation limit. It does not execute the OAuth protocol. Fast tests use the installed native adapter/SDK with controlled provider, storage and transport effects. The shell journey starts with an empty credential store, disables Fast, checks the real reconnect route, and uses fixture sign-in replies without making an inference call. It reuses native Host/authentication/navigation helpers with configured Codex discovery/defaults that conflict with the shared unconfigured-provider profile.
 
 Screenshots are diagnostic test-suite captures of the real isolated DSH application with fixture data, not regression baselines or deployment evidence. No ordinary test reads personal credentials, logs in to OpenAI or performs paid inference.
 

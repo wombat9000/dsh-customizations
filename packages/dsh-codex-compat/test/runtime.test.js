@@ -89,6 +89,20 @@ async function fixture(t, stored, profile) {
   }
 }
 
+test('status reads leave a replacement adapter untouched until its registration event', async (t) => {
+  const f = await fixture(t)
+  f.registration()
+  const replacement = f.makeAdapter()
+  const original = replacement.streamWithSnapshot
+  f.ctx.llm.registerAdapter(['openai-codex'], replacement)
+  assert.equal((await f.rpc('integration-status')).value.available, false)
+  await f.rpc('session-status', { sessionId: 'fast-session' })
+  assert.equal(replacement.streamWithSnapshot, original)
+  f.runtime.observeAdapters()
+  assert.equal((await f.rpc('integration-status')).value.available, true)
+  assert.notEqual(replacement.streamWithSnapshot, original)
+})
+
 test('Off → All → Main → Off persists without affecting fresh sessions or auxiliary calls', async (t) => {
   const f = await fixture(t)
   assert.equal(f.runtime.sessionStatus('fast-session').requested, false)

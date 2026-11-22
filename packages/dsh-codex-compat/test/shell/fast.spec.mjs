@@ -110,6 +110,19 @@ test('Fast choices persist and Codex reconnect remains available with the Fast i
     await expect(fast()).toHaveCount(0)
   })
   await test.step('reconnect from the native Models card with Fast off', async () => {
+    // Exercise the actual authenticated route before substituting provider responses.
+    const receipt = await page.request.post(new URL('/codex-reconnect/status', page.url()).href, {
+      data: {
+        type: 'client-request',
+        rpcId: 'reconnect-probe',
+        method: 'status',
+        payload: { id: 'missing' },
+      },
+    })
+    expect(receipt.status()).toBe(200)
+    expect((await receipt.json()).result.error.message).toBe(
+      'This Codex sign-in attempt has ended.',
+    )
     let authorized = false
     // Exercise the generated Client and native Models slot with fixture replies. No real OAuth.
     await page.route('**/codex-reconnect/**', async (route) => {

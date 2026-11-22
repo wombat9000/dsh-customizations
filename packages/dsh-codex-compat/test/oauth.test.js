@@ -378,7 +378,7 @@ test(
   async (t) => {
     const f = await fixture(t)
     const previousReauth = process.env.DSH_CODEX_REAUTH
-    delete process.env.DSH_CODEX_REAUTH
+    process.env.DSH_CODEX_REAUTH = '1'
     t.after(() => {
       if (previousReauth === undefined) delete process.env.DSH_CODEX_REAUTH
       else process.env.DSH_CODEX_REAUTH = previousReauth

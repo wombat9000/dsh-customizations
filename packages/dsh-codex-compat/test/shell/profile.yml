@@ -1,4 +1,4 @@
-# The setup seeds a synthetic credential to skip automatic sign-in.
+# Non-interactive startup waits for a user request to sign in.
 - id: llm-pi-ai
   config:
     providers:

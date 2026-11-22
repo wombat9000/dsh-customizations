@@ -49,7 +49,7 @@ export default async function setup() {
 
 // Shared by Playwright and the browser-free migration smoke check. Keep all
 // credential isolation, authentication and process cleanup in this one path.
-export async function startDisposableHost({ additionalPlugins = [], profilePatch, prepareHome } = {}) {
+export async function startDisposableHost({ additionalPlugins = [], profilePatch } = {}) {
   const bundles = [...plugins, ...additionalPlugins]
   const directory = await mkdtemp(join(tmpdir(), 'dsh-real-ui-'))
   const home = join(directory, 'home')
@@ -81,7 +81,6 @@ export async function startDisposableHost({ additionalPlugins = [], profilePatch
   process.once('SIGTERM', terminated)
   try {
     for (const path of [home, workspace, profile]) await mkdir(path, { recursive: true })
-    await prepareHome?.(dshHome)
     for (const plugin of bundles) {
       const target = join(profile, 'node_modules', plugin.name)
       await mkdir(dirname(target), { recursive: true })

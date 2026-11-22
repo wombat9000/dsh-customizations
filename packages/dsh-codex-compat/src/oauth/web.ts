@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { registerRpc } from '../register-rpc.js'
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-client-connection'
 import type { CredentialKey } from '@deepseek-ai/dsh-credentials'
@@ -63,54 +64,51 @@ export function mountWebReconnect(ctx: Context, key: CredentialKey) {
 
   ctx.effect(() => {
     let closed = false
-    const unregister = connection.rpc.handle(
-      OAUTH_CHANNEL,
-      async (endpoint, input, signal, peer) => {
-        if (closed || peer !== connection.browserPeer || signal.aborted || peer.signal.aborted)
-          return failure('Open Codex settings in the DSH browser to reconnect.')
-        if (endpoint === 'start') {
-          if (!isObject(input) || Object.keys(input).length !== 0)
-            return failure('Invalid Codex sign-in request.')
-          const flow = ctx.authorization.describe(key)
-          if (!flow?.methods.some(({ id }) => id === 'oauth'))
-            return failure('Codex sign-in is unavailable.')
-          if (active || flow.inFlight) return { ok: true, value: { busy: true } }
-
-          const id = randomUUID()
-          const controller = new AbortController()
-          // A closed tab or lost start response cannot hold the native flow until its full expiry.
-          const lease = setTimeout(() => controller.abort(), 90_000).unref()
-          const attempt: Attempt = { controller, lease, status: { phase: 'starting' } }
-          active = attempt
-          // Bound the number of terminal receipts. A new attempt cannot evict a pending one.
-          const oldest = attempts.keys().next().value
-          if (attempts.size >= 8 && oldest !== undefined) attempts.delete(oldest)
-          attempts.set(id, attempt)
-          void reconnect(ctx.authorization, key, attempt, peer.signal).finally(() => {
-            clearTimeout(lease)
-            active = undefined
-          })
-          return { ok: true, value: { id } }
-        }
-
-        if (!isObject(input) || typeof input.id !== 'string' || Object.keys(input).length !== 1)
+    const unregister = registerRpc(ctx, OAUTH_CHANNEL, async (endpoint, input, signal, peer) => {
+      if (closed || peer !== connection.browserPeer || signal.aborted || peer.signal.aborted)
+        return failure('Open Codex settings in the DSH browser to reconnect.')
+      if (endpoint === 'start') {
+        if (!isObject(input) || Object.keys(input).length !== 0)
           return failure('Invalid Codex sign-in request.')
-        const attempt = attempts.get(input.id)
-        if (!attempt) return failure('This Codex sign-in attempt has ended.')
-        if (endpoint === 'status') {
-          if (attempt === active && !attempt.controller.signal.aborted) attempt.lease.refresh()
-          return { ok: true, value: attempt.status }
-        }
-        if (endpoint === 'cancel') {
-          if (attempt === active && ['starting', 'code'].includes(attempt.status.phase)) {
-            attempt.status = { phase: 'cancelling' }
-            attempt.controller.abort()
-          }
-          return { ok: true, value: null }
-        }
+        const flow = ctx.authorization.describe(key)
+        if (!flow?.methods.some(({ id }) => id === 'oauth'))
+          return failure('Codex sign-in is unavailable.')
+        if (active || flow.inFlight) return { ok: true, value: { busy: true } }
+
+        const id = randomUUID()
+        const controller = new AbortController()
+        // A closed tab or lost start response cannot hold the native flow until its full expiry.
+        const lease = setTimeout(() => controller.abort(), 90_000).unref()
+        const attempt: Attempt = { controller, lease, status: { phase: 'starting' } }
+        active = attempt
+        // Bound the number of terminal receipts. A new attempt cannot evict a pending one.
+        const oldest = attempts.keys().next().value
+        if (attempts.size >= 8 && oldest !== undefined) attempts.delete(oldest)
+        attempts.set(id, attempt)
+        void reconnect(ctx.authorization, key, attempt, peer.signal).finally(() => {
+          clearTimeout(lease)
+          active = undefined
+        })
+        return { ok: true, value: { id } }
+      }
+
+      if (!isObject(input) || typeof input.id !== 'string' || Object.keys(input).length !== 1)
         return failure('Invalid Codex sign-in request.')
-      },
-    )
+      const attempt = attempts.get(input.id)
+      if (!attempt) return failure('This Codex sign-in attempt has ended.')
+      if (endpoint === 'status') {
+        if (attempt === active && !attempt.controller.signal.aborted) attempt.lease.refresh()
+        return { ok: true, value: attempt.status }
+      }
+      if (endpoint === 'cancel') {
+        if (attempt === active && ['starting', 'code'].includes(attempt.status.phase)) {
+          attempt.status = { phase: 'cancelling' }
+          attempt.controller.abort()
+        }
+        return { ok: true, value: null }
+      }
+      return failure('Invalid Codex sign-in request.')
+    })
     return async () => {
       closed = true
       active?.controller.abort()
