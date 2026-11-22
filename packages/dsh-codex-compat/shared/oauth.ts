@@ -3,12 +3,28 @@ import { isObject } from './contracts.js'
 export const OAUTH_CHANNEL = '/codex-reconnect'
 export const CODEX_DEVICE_URL = 'https://auth.openai.com/codex/device'
 
+export type SignInMethod = 'browser' | 'device_code'
+
+export function isBrowserSignInUrl(value: unknown): value is string {
+  if (typeof value !== 'string' || !URL.canParse(value)) return false
+  const url = new URL(value)
+  return (
+    url.origin === 'https://auth.openai.com' &&
+    url.pathname === '/oauth/authorize' &&
+    !url.username &&
+    !url.password &&
+    !url.hash &&
+    url.searchParams.get('redirect_uri') === 'http://localhost:1455/auth/callback'
+  )
+}
+
 export type ReconnectStatus =
   | { phase: 'starting' | 'cancelling' | 'authorized' | 'cancelled' | 'failed' }
   | { phase: 'code'; code: string }
+  | { phase: 'browser'; url: string }
 
 export interface ReconnectEndpoints {
-  start: { input: Record<string, never>; result: { id: string } | { busy: true } }
+  start: { input: { method?: SignInMethod }; result: { id: string } | { busy: true } }
   status: { input: { id: string }; result: ReconnectStatus }
   cancel: { input: { id: string }; result: null }
 }
@@ -22,6 +38,8 @@ export function isDeviceCode(code: unknown): code is string {
 export function isReconnectStatus(status: unknown): status is ReconnectStatus {
   if (!isObject(status)) return false
   switch (status.phase) {
+    case 'browser':
+      return isBrowserSignInUrl(status.url)
     case 'code':
       return isDeviceCode(status.code)
     case 'starting':

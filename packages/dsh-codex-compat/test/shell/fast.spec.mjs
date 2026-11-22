@@ -124,22 +124,38 @@ test('Fast choices persist and Codex reconnect remains available with the Fast i
       'This Codex sign-in attempt has ended.',
     )
     let authorized = false
+    let choice
+    const browserUrl =
+      'https://auth.openai.com/oauth/authorize?redirect_uri=http%3A%2F%2Flocalhost%3A1455%2Fauth%2Fcallback&state=fixture'
     // Exercise the generated Client and native Models slot with fixture replies. No real OAuth.
     await page.route('**/codex-reconnect/**', async (route) => {
       const { rpcId, method, payload } = route.request().postDataJSON()
+      if (method === 'start') choice = payload.method
       if (method === 'status') expect(payload).toEqual({ id: 'fixture-attempt' })
       const value =
         method === 'start'
           ? { id: 'fixture-attempt' }
           : authorized
             ? { phase: 'authorized' }
-            : { phase: 'code', code: 'CODE-123' }
+            : choice === 'browser'
+              ? { phase: 'browser', url: browserUrl }
+              : { phase: 'code', code: 'CODE-123' }
       await route.fulfill({ json: { type: 'server-response', rpcId, result: { ok: true, value } } })
     })
 
     await openSettings(page)
     await page.getByRole('button', { name: 'Models', exact: true }).click()
-    const reconnect = page.getByRole('button', { name: 'Reconnect Codex', exact: true })
+    const browser = page.getByRole('button', { name: 'Sign in with browser', exact: true })
+    const reconnect = page.getByRole('button', { name: 'Sign in with device code', exact: true })
+    await browser.click()
+    await expect(page.getByRole('link', { name: 'Open OpenAI sign-in' })).toHaveAttribute(
+      'href',
+      browserUrl,
+    )
+    await expect(reconnect).toBeDisabled()
+    authorized = true
+    await expect(browser).toBeEnabled()
+    authorized = false
     await expect(reconnect).toBeEnabled()
     await reconnect.click()
     await expect(page.getByText('CODE-123', { exact: true })).toBeVisible()

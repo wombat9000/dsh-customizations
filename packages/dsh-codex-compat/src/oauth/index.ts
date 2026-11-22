@@ -3,6 +3,7 @@ import { createInterface } from 'node:readline/promises'
 import { setTimeout as delay } from 'node:timers/promises'
 import type { AuthorizationInteraction, AuthorizationService } from '@deepseek-ai/dsh-authorization'
 import { credentialKey } from '@deepseek-ai/dsh-credentials'
+import { waitForAbort } from './interaction.js'
 import { mountWebReconnect } from './web.js'
 
 export const name = 'local-codex-oauth'
@@ -31,18 +32,6 @@ async function waitForCodexFlow(
       throw new Error('Codex OAuth flow was not registered by dsh-llm-pi-ai.')
     await delay(25, undefined, { signal })
   }
-}
-
-function waitForAbort(signal: AbortSignal | undefined): Promise<string> {
-  if (!signal)
-    return Promise.reject(new Error('Headless Codex callback prompts require cancellation.'))
-  return new Promise((_, reject) => {
-    if (signal.aborted) {
-      reject(signal.reason)
-      return
-    }
-    signal.addEventListener('abort', () => reject(signal.reason), { once: true })
-  })
 }
 
 /** Non-secret native notices and optional callback text only; no token payloads. */

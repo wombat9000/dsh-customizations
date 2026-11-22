@@ -11,24 +11,24 @@ The bundle is opt-in and is not included in `personal-web`. Source review, build
 | `./oauth/index.js` (exports `/oauth`) | `local-codex-oauth` | Connect Codex from the Models page or a terminal using native authorization. |
 | `@local/dsh-codex-compat/fast`        | `local-codex-fast`  | Own the optional request-tier bridge, persisted choices and Fast controls.   |
 
-The OAuth row loads its own browser module for **Reconnect Codex**. The Fast row owns the composer and integration settings controls. Both ship in this bundle.
+The OAuth row loads its own browser module for the two sign-in buttons. The Fast row owns the composer and integration settings controls. Both ship in this bundle.
 
 The components have separate native enable/disable controls. The Fast component also has its own **Fast integration** switch, so you can remove its request modifications without unloading its recovery controls. Neither component depends on the other.
 
 - **Composer → two-bolt Fast button:** Click to cycle **Off → Everything Fast → Main thread only → Off**. The left bolt represents the main thread; the right represents eligible Codex subagents, including nested subagents. Filled bolts indicate Fast. The tooltip names the current and next state and notes higher usage. New sessions start Off; the first click enables everything. There is no subagents-only mode.
 - **Plugins → `@local/dsh-codex-compat` → `local-codex-fast` → Configure → Fast integration:** Turn the Fast integration off. Codex login and Standard inference remain available.
-- **OAuth component Off:** Close this helper’s interaction, request cancellation of its attempt, and stop future automatic terminal login. An already-queued native credential write can still complete, as explained below. Reconnect Codex requires this component. Native refresh and inference remain available.
-- **Fast component Off:** Unloads the request bridge and Fast controls. Reconnect Codex remains available while OAuth is running.
+- **OAuth component Off:** Close this helper’s interaction, request cancellation of its attempt, and stop future automatic terminal login. An already-queued native credential write can still complete, as explained below. Both sign-in buttons require this component. Native refresh and inference remain available.
+- **Fast component Off:** Unloads the request bridge and Fast controls. Both sign-in buttons remain available while OAuth is running.
 
 ## Sign-in helper
 
-Open **Settings → Models** and select **Reconnect Codex** on the configured OpenAI Codex card. Open the sign-in link in a new tab and enter the one-time code. If OpenAI blocks device sign-in, check your ChatGPT security settings or workspace permissions. After DSH confirms the connection, retry the failed turn in the same chat. The running DSH instance saves the new grant. If sign-in is already in progress, finish it in the browser tab or terminal that started it.
+Open **Settings → Models** and choose **Sign in with browser** on the configured OpenAI Codex card when your browser runs on the same machine as DSH. Open the OpenAI link and finish sign-in. Choose **Sign in with device code** for a remote host or to enter a one-time code instead. If OpenAI blocks device sign-in, check your ChatGPT security settings or workspace permissions. After DSH confirms the connection, retry the failed turn in the same chat. The running DSH instance saves the new grant. If sign-in is already in progress, finish it in the browser tab or terminal that started it.
 
-The Web action uses the authenticated browser connection and starts only when clicked. The originating card can read and cancel its own attempt. Closing the card cancels the attempt when the connection is available. An abandoned attempt also expires when its tab stops checking progress. The code is held in memory until the attempt ends. The browser receives the one-time code and status only. The native flow owns the grant.
+The Web action uses the authenticated browser connection and starts only when clicked. The originating card can read and cancel its own attempt. Closing the card cancels the attempt when the connection is available. An abandoned attempt also expires when its tab stops checking progress. The code is held in memory until the attempt ends. The card receives the selected flow’s authorization link or device code and its status. The native flow owns the grant.
 
 The OAuth component adapts the locally authored helper from the adjacent `dsh-sandbox` repository. It does not implement PKCE, callback listeners, device-code exchange, token refresh, credential locking or grant writes. The native authorization service and pi-ai provide those operations.
 
-Desktop and other non-interactive launches wait for a click on **Reconnect Codex**. An interactive terminal launch (or an explicit `DSH_CODEX_REAUTH=1` launch) runs the terminal sign-in helper:
+Desktop and other non-interactive launches wait for a sign-in button click. An interactive terminal launch (or an explicit `DSH_CODEX_REAUTH=1` launch) runs the terminal sign-in helper:
 
 1. Read credential **metadata**, not the token-bearing record.
 2. If the record exists, leave it unchanged and skip login.
