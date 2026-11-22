@@ -50,6 +50,7 @@ async function fixture(t, stored, profile) {
   let selection = { provider: 'openai-codex', model: 'gpt-6-sol' }
   f.ctx.provide('agents', { get: (id) => agents.get(id) })
   f.ctx.provide('agentDefaultModel', { currentSelection: () => selection })
+  const originalDispatch = f.adapter.streamWithSnapshot
   const runtime = new CodexFastRuntime(f.ctx, domain)
   f.ctx.on('llm/stream', (options, next) => runtime.stream(options, next))
   t.after(() => runtime.dispose())
@@ -63,6 +64,7 @@ async function fixture(t, stored, profile) {
   }
   return {
     ...f,
+    originalDispatch,
     runtime,
     rpc,
     setSession,
@@ -88,6 +90,20 @@ async function fixture(t, stored, profile) {
     },
   }
 }
+
+test('status reads leave a replacement adapter untouched until its registration event', async (t) => {
+  const f = await fixture(t)
+  f.registration()
+  const replacement = f.makeAdapter()
+  const original = replacement.streamWithSnapshot
+  f.ctx.llm.registerAdapter(['openai-codex'], replacement)
+  assert.equal((await f.rpc('integration-status')).value.available, false)
+  await f.rpc('session-status', { sessionId: 'fast-session' })
+  assert.equal(replacement.streamWithSnapshot, original)
+  f.runtime.observeAdapters()
+  assert.equal((await f.rpc('integration-status')).value.available, true)
+  assert.notEqual(replacement.streamWithSnapshot, original)
+})
 
 test('Off → All → Main → Off persists without affecting fresh sessions or auxiliary calls', async (t) => {
   const f = await fixture(t)
@@ -621,7 +637,7 @@ for (const revoke of ['off', 'main']) {
 
 test('integration Off is a durable recovery switch, even with a stale UI revision', async (t) => {
   const f = await fixture(t)
-  const original = f.adapter.streamWithSnapshot
+  const original = f.originalDispatch
   assert.equal((await f.setSession(true)).ok, true)
   await consume(f.loop())
   assert.equal((await f.rpc('integration-set', { enabled: false, revision: 999 })).ok, true)

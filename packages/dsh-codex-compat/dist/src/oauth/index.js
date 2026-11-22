@@ -109,15 +109,14 @@ export async function authorizeCodex(ctx, signal, { forceLogin = false, output =
 }
 /** Mount terminal sign-in and, when Connection is present, browser reconnect. */
 export async function apply(ctx) {
-    const activation = new AbortController();
-    const release = ctx.effect(() => () => activation.abort(new Error('Codex OAuth component disposed.')));
-    await waitForCodexFlow(ctx.authorization, activation.signal);
-    release();
     ctx.inject(['connection', 'webServer'], (connected) => mountWebReconnect(connected, CODEX_CREDENTIAL_KEY));
+    const forceLogin = process.env.DSH_CODEX_REAUTH === '1';
+    if (!forceLogin && !(process.stdin.isTTY && process.stderr.isTTY))
+        return;
     ctx.effect(() => {
         const controller = new AbortController();
         void authorizeCodex(ctx, controller.signal, {
-            forceLogin: process.env.DSH_CODEX_REAUTH === '1',
+            forceLogin,
         }).catch(() => {
             if (controller.signal.aborted)
                 return;

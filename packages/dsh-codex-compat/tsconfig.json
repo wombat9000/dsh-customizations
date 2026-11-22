@@ -1,4 +1,4 @@
 {
   "extends": "../../tsconfig.client.json",
-  "include": ["client/**/*.ts", "client/**/*.tsx", "shared/**/*.ts"]
+  "include": ["client/**/*.ts", "client/**/*.tsx", "shared/**/*.ts", "oauth/client/**/*.ts"]
 }

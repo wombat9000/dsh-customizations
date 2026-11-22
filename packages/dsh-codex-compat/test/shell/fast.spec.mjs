@@ -89,7 +89,40 @@ test('Fast choices persist and Codex reconnect remains available with the Fast i
     await setTheme(page, 'light')
     await page.screenshot({ path: testInfo.outputPath('fast-off.png') })
   })
+  await test.step('turn off the Fast component and keep OAuth running', async () => {
+    await page.getByRole('button', { name: 'Plugins', exact: true }).click()
+    const panel = page.locator('[data-plugin-panel]')
+    for (let depth = 0; depth < 2; depth++) {
+      const back = panel.getByRole('button', { name: /^Back to/ }).first()
+      if (!(await back.isVisible())) break
+      await back.click()
+    }
+    await page
+      .locator('[data-plugin-package="@local/dsh-codex-compat"]')
+      .getByRole('button', { name: /^View/ })
+      .click()
+    const fastSwitch = panel.locator('[data-plugin-row$="local-codex-fast"]').getByRole('switch')
+    await fastSwitch.click()
+    await expect(fastSwitch).not.toBeChecked()
+    await expect(panel.locator('[data-plugin-row$="local-codex-oauth"]')).toContainText('Running')
+    await page.getByRole('button', { name: 'Plugins', exact: true }).click()
+    await openSeededSession(page)
+    await expect(fast()).toHaveCount(0)
+  })
   await test.step('reconnect from the native Models card with Fast off', async () => {
+    // Exercise the actual authenticated route before substituting provider responses.
+    const receipt = await page.request.post(new URL('/codex-reconnect/status', page.url()).href, {
+      data: {
+        type: 'client-request',
+        rpcId: 'reconnect-probe',
+        method: 'status',
+        payload: { id: 'missing' },
+      },
+    })
+    expect(receipt.status()).toBe(200)
+    expect((await receipt.json()).result.error.message).toBe(
+      'This Codex sign-in attempt has ended.',
+    )
     let authorized = false
     // Exercise the generated Client and native Models slot with fixture replies. No real OAuth.
     await page.route('**/codex-reconnect/**', async (route) => {
