@@ -35,7 +35,7 @@ For substantial implementations, refactors, and architecture reviews, use the [d
 
 ### Shared settings presentation
 
-Jev and OpenRouter use the repository-only [settings presentation](../shared/client/settings.tsx). `SettingsPanel` owns the native disclosure, status/error/notice roles, theme-token styles and action layout. `SettingsField` owns input label IDs and optional help associations. Each mounted panel renders its own scoped style element, so disposing one panel cannot remove another panel's styles. Jev retains stacked, end-aligned actions; OpenRouter retains its wrapping row.
+Settings-panel plugins (`dsh-jev`, `dsh-openrouter`, `dsh-web-firecrawl`, `dsh-linear`, `dsh-tool-youtube`, `dsh-tool-trivy`, and `dsh-google-auth`) share the repository-only [settings presentation](../shared/client/settings.tsx). `SettingsPanel` owns disclosure or section framing, optional group header and status badge, error/notice roles, theme-token styles, and action layout. `SettingsField` owns input label IDs and optional help associations, and `SettingsDetailList` renders read-only key/value metadata rows. Each mounted panel renders its own scoped style element, so disposing one panel cannot remove another panel's styles. Jev retains stacked, end-aligned actions; other cards retain wrapping action rows.
 
 Import this browser-safe source by relative path when another approved migration needs the same presentation. The [client builder](../scripts/build-client.mjs) inlines it into each plugin's generated `client.js` artifact and keeps React external. It is not an installable bundle or a runtime module-table entry. Run `pnpm run build` (or `node scripts/build.mjs <package>`) to rebuild affected packages.
 

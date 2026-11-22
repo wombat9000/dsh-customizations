@@ -1,35 +1,15 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
-import vm from 'node:vm'
 import test from 'node:test'
 import React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
+import { loadClientBundle } from '../../../tests/helpers/load-client-bundle.mjs'
 
 const CLIENT_PATH = fileURLToPath(new URL('../client.js', import.meta.url))
 const PACKAGE_PATH = fileURLToPath(new URL('../package.json', import.meta.url))
 
-async function loadClient(react = React) {
-  let record
-  const source = await readFile(CLIENT_PATH, 'utf8')
-  vm.runInNewContext(source, {
-    window: {
-      __ModuleLoader__: {
-        load(value) {
-          record = value
-        },
-      },
-    },
-  })
-  assert.ok(record)
-  return {
-    record,
-    exports: record.factory((specifier) => {
-      assert.equal(specifier, 'react')
-      return react
-    }),
-  }
-}
+const loadClient = (react = React) => loadClientBundle(CLIENT_PATH, { react })
 
 function plain(value) {
   return JSON.parse(JSON.stringify(value))

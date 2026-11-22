@@ -1,35 +1,20 @@
 import assert from 'node:assert/strict'
-import { readFile } from 'node:fs/promises'
-import vm from 'node:vm'
 import test from 'node:test'
 import React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
+import { loadClientBundle } from '../../../tests/helpers/load-client-bundle.mjs'
 
 for (const [packageName, rowId] of [
   ['dsh-openrouter', 'local-openrouter'],
   ['dsh-jev', 'local-jev'],
   ['dsh-google-auth', 'local-google-auth'],
 ]) {
-  test(`${packageName} registers its exact row and renders a side-effect-free summary`, async () => {
-    const source = await readFile(
+  test(`${packageName} registers its exact row and renders a side-effect-free summary`, () => {
+    let registration
+    const { record, plugin } = loadClientBundle(
       new URL(`../../${packageName}/client.js`, import.meta.url),
-      'utf8',
+      { react: React, globals: { URL } },
     )
-    let record, registration
-    vm.runInNewContext(source, {
-      window: {
-        __ModuleLoader__: {
-          load(value) {
-            record = value
-          },
-        },
-      },
-      URL,
-    })
-    const plugin = record.factory((name) => {
-      assert.equal(name, 'react')
-      return React
-    })
     // Registration argument contract only; real-shell election remains a separate test.
     plugin.apply({
       slots: {

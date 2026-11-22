@@ -4,6 +4,7 @@
     "client/**/*.ts",
     "client/**/*.tsx",
     "test/client-types/**/*.ts",
-    "test/client.browser.test.tsx"
+    "test/browser/**/*.tsx",
+    "../../shared/client/test/react-dom.d.ts"
   ]
 }

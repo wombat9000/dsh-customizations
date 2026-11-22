@@ -1,10 +1,11 @@
 import React from 'react'
 import type { ChangeEvent } from 'react'
-import { styles, external } from './styles.js'
+import { SettingsPanel } from '../../../shared/client/settings.tsx'
 import type { ClientStatus } from './transport.js'
 import { authorizationUrl, validStatus } from './transport.js'
 import { isRecord } from '../shared/contracts.js'
 import type { SettingsRequest, SettingsAction } from '../shared/contracts.js'
+const external = { target: '_blank', rel: 'noopener noreferrer' } as const
 export interface SettingsProps {
   api: SettingsRequest
   subscribe: (listener: () => void) => (() => void) | undefined
@@ -206,10 +207,10 @@ function GoogleAuthSettingsForm({ api: request, subscribe, view }: SettingsProps
             : status.configured
               ? 'Not connected'
               : 'Not configured'
+  const jsonId = React.useId()
   const button = (label: string, method: Action, disabled = false) => (
     <button
       type={'button'}
-      style={styles.button}
       disabled={busy || disabled || (status?.pending && method !== 'cancel')}
       onClick={() => {
         void act(method)
@@ -227,189 +228,177 @@ function GoogleAuthSettingsForm({ api: request, subscribe, view }: SettingsProps
         ? account.id
         : 'Google account'
   return (
-    <details style={styles.card} open={view === 'page'}>
-      <summary style={{ cursor: 'pointer' }}>
-        <span style={styles.title}>{'Google accounts'}</span>
-        <p style={styles.hint}>{'Shared account and integration permissions.'}</p>
-      </summary>
-      <div style={styles.section} role={'group'} aria-labelledby={'google-auth-card-title'}>
-        <h3 id={'google-auth-card-title'} style={styles.title}>
-          {'Google accounts'}
-        </h3>
-        <p role={'status'} style={styles.hint}>
-          {label}
+    <SettingsPanel
+      title="Google accounts"
+      subtitle="Shared account and integration permissions."
+      groupTitle="Google accounts"
+      initiallyOpen={view === 'page'}
+      status={label}
+      error={message}
+    >
+      {status?.connected ? (
+        <p className="dsh-settings-panel__hint">
+          {'Account: '}
+          {accountLabel}
         </p>
-        {status?.connected ? (
-          <p style={styles.hint}>
-            {'Account: '}
-            {accountLabel}
-          </p>
-        ) : null}
-        <p style={styles.hint}>
+      ) : null}
+      <p className="dsh-settings-panel__hint">
+        {
+          'This version supports one Google account per credential store, shared by all enabled integrations.'
+        }
+      </p>
+      <p className="dsh-settings-panel__hint">
+        {
+          'Google sign-in also requests openid and email identity access to bind permissions to your account. Additional consent retains existing granted scopes.'
+        }
+      </p>
+      <p className="dsh-settings-panel__hint">
+        {
+          'In Google Cloud Console, create an OAuth client of type Desktop app. Download its JSON and paste it below. DSH stores it on this host and never returns it to this page. Keep credentials out of Git. '
+        }
+        <a
+          {...external}
+          href={'https://developers.google.com/identity/protocols/oauth2/native-app'}
+        >
+          {'Google OAuth setup documentation'}
+        </a>
+      </p>
+      <label className="dsh-settings-panel__checkbox dsh-settings-panel__hint">
+        <input
+          type={'checkbox'}
+          checked={status?.useSandbox === true}
+          disabled={busy || !status}
+          onChange={(event: ChangeEvent<HTMLInputElement>) => {
+            void setCallbackMode(event.target.checked)
+          }}
+        />
+        {'Use sandbox callback forwarding'}
+      </label>
+      <p className="dsh-settings-panel__hint">
+        {
+          'Off: receive the Google callback directly on the DSH host. On: forward the callback from Docker through the sandbox bridge.'
+        }
+      </p>
+      {sandboxUnavailable ? (
+        <p role={'alert'}>
           {
-            'This version supports one Google account per credential store, shared by all enabled integrations.'
+            'Sandbox callback bridge unavailable. Restore the Docker sandbox bridge or turn off sandbox callback forwarding before connecting. DSH will not fall back to a direct host callback.'
           }
         </p>
-        <p style={styles.hint}>
-          {
-            'Google sign-in also requests openid and email identity access to bind permissions to your account. Additional consent retains existing granted scopes.'
-          }
-        </p>
-        <p style={styles.hint}>
-          {
-            'In Google Cloud Console, create an OAuth client of type Desktop app. Download its JSON and paste it below. DSH stores it on this host and never returns it to this page. Keep credentials out of Git. '
-          }
-          <a
-            {...external}
-            href={'https://developers.google.com/identity/protocols/oauth2/native-app'}
-          >
-            {'Google OAuth setup documentation'}
-          </a>
-        </p>
-        <label style={styles.hint}>
-          <input
-            type={'checkbox'}
-            checked={status?.useSandbox === true}
-            disabled={busy || !status}
-            onChange={(event: ChangeEvent<HTMLInputElement>) => {
-              void setCallbackMode(event.target.checked)
-            }}
-          />
-          {'Use sandbox callback forwarding'}
-        </label>
-        <p style={styles.hint}>
-          {
-            'Off: receive the Google callback directly on the DSH host. On: forward the callback from Docker through the sandbox bridge.'
-          }
-        </p>
-        {sandboxUnavailable ? (
-          <p role={'alert'} style={{ ...styles.hint, color: '#ef4444' }}>
+      ) : null}
+      <label className="dsh-settings-panel__hint" htmlFor={jsonId}>
+        {'Desktop OAuth client JSON'}
+      </label>
+      <textarea
+        id={jsonId}
+        value={draft}
+        disabled={busy || status?.pending}
+        maxLength={32768}
+        rows={5}
+        autoComplete={'off'}
+        spellCheck={false}
+        placeholder={
+          status?.configured
+            ? 'Paste new JSON to replace the stored configuration'
+            : 'Paste downloaded Desktop OAuth client JSON'
+        }
+        onChange={(event: ChangeEvent<HTMLTextAreaElement>) => setDraft(event.target.value)}
+      />
+      <div className="dsh-settings-panel__actions">
+        {button('Save client configuration', 'configure', !status || !draft.trim())}
+        {status?.configured ? button('Remove client configuration', 'clear-config') : null}
+      </div>
+      {status?.integrations.length ? (
+        <section aria-label={'Account permissions'}>
+          <h4>{'Permissions for all enabled integrations'}</h4>
+          <p className="dsh-settings-panel__hint">
             {
-              'Sandbox callback bridge unavailable. Restore the Docker sandbox bridge or turn off sandbox callback forwarding before connecting. DSH will not fall back to a direct host callback.'
+              'One Google login requests all required scopes below, plus identity access. Enabling an integration later may require additional consent. Existing granted scopes are retained.'
             }
           </p>
-        ) : null}
-        <label style={styles.hint} htmlFor={'google-auth-client-json'}>
-          {'Desktop OAuth client JSON'}
-        </label>
-        <textarea
-          id={'google-auth-client-json'}
-          value={draft}
-          disabled={busy || status?.pending}
-          maxLength={32768}
-          rows={5}
-          autoComplete={'off'}
-          spellCheck={false}
-          placeholder={
-            status?.configured
-              ? 'Paste new JSON to replace the stored configuration'
-              : 'Paste downloaded Desktop OAuth client JSON'
-          }
-          style={{ ...styles.button, width: '100%', boxSizing: 'border-box', cursor: 'text' }}
-          onChange={(event: ChangeEvent<HTMLTextAreaElement>) => setDraft(event.target.value)}
-        />
-        <div style={styles.actions}>
-          {button('Save client configuration', 'configure', !status || !draft.trim())}
-          {status?.configured ? button('Remove client configuration', 'clear-config') : null}
-        </div>
-        {status?.integrations.length ? (
-          <section aria-label={'Account permissions'}>
-            <h4 style={styles.title}>{'Permissions for all enabled integrations'}</h4>
-            <p style={styles.hint}>
+          <ul>
+            {status.requiredScopes.map((scope) => (
+              <li key={scope}>{scope}</li>
+            ))}
+          </ul>
+          {status.requiredScopes.includes('https://www.googleapis.com/auth/spreadsheets') ? (
+            <p className="dsh-settings-panel__hint">
               {
-                'One Google login requests all required scopes below, plus identity access. Enabling an integration later may require additional consent. Existing granted scopes are retained.'
+                'Warning: Google Sheets edit permission is account-wide. Google can authorize editing all your spreadsheets, not only files selected in DSH. DSH still requires separate session read/edit grants and approval for each write.'
               }
             </p>
-            <ul>
-              {status.requiredScopes.map((scope) => (
-                <li key={scope}>{scope}</li>
-              ))}
-            </ul>
-            {status.requiredScopes.includes('https://www.googleapis.com/auth/spreadsheets') ? (
-              <p style={styles.hint}>
-                {
-                  'Warning: Google Sheets edit permission is account-wide. Google can authorize editing all your spreadsheets, not only files selected in DSH. DSH still requires separate session read/edit grants and approval for each write.'
-                }
-              </p>
-            ) : null}
-            {status.pending || (status.connected && !status.missingScopes.length)
-              ? null
-              : button(
-                  status.connected ? 'Grant additional permissions' : 'Connect Google account',
-                  'connect',
-                  !status.configured || sandboxUnavailable,
-                )}
-          </section>
-        ) : null}
-        {(status?.integrations ?? []).map((item) => (
-          <section key={item.id} aria-label={item.label}>
-            <h4 style={styles.title}>{item.label}</h4>
-            <p style={styles.hint}>{'Required scopes:'}</p>
-            <ul>
-              {item.scopes.map((scope) => (
-                <li key={scope}>{scope}</li>
-              ))}
-            </ul>
-            {item.authorized ? (
-              <p style={styles.hint}>{'Granted / Ready'}</p>
-            ) : (
-              <div>
-                <p style={styles.hint}>{'Missing permissions:'}</p>
-                <ul>
-                  {item.missingScopes.map((scope) => (
-                    <li key={scope}>{scope}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
-          </section>
-        ))}
-        {status && !status.integrations.length ? (
-          <p style={styles.hint}>
-            {'Install and enable a Google integration first. No integrations are registered.'}
-          </p>
-        ) : null}
-        {status?.pending && !link ? (
-          <p style={styles.hint}>
-            {
-              'Complete authorization in the Google tab you already opened, or cancel and connect again to get a new link.'
-            }
-          </p>
-        ) : null}
-        {link && status?.pending ? (
-          <a {...external} href={link}>
-            {'Continue with Google'}
-          </a>
-        ) : null}
-        <div style={styles.actions}>
-          {status?.pending ? button('Cancel', 'cancel') : null}
-          {status?.connected ? button('Disconnect', 'disconnect') : null}
-          <button
-            type={'button'}
-            style={styles.button}
-            disabled={busy || status?.pending}
-            onClick={() => {
-              setFailure(undefined)
-              setRevision((value) => value + 1)
-            }}
-          >
-            {'Refresh status'}
-          </button>
-        </div>
-        <p style={styles.hint}>
-          {
-            'Disconnect removes only local DSH credentials for ALL integrations. It does not revoke Google access. '
-          }
-          <a {...external} href={'https://myaccount.google.com/connections'}>
-            {'Manage Google account permissions'}
-          </a>
+          ) : null}
+          {status.pending || (status.connected && !status.missingScopes.length)
+            ? null
+            : button(
+                status.connected ? 'Grant additional permissions' : 'Connect Google account',
+                'connect',
+                !status.configured || sandboxUnavailable,
+              )}
+        </section>
+      ) : null}
+      {(status?.integrations ?? []).map((item) => (
+        <section key={item.id} aria-label={item.label}>
+          <h4>{item.label}</h4>
+          <p className="dsh-settings-panel__hint">{'Required scopes:'}</p>
+          <ul>
+            {item.scopes.map((scope) => (
+              <li key={scope}>{scope}</li>
+            ))}
+          </ul>
+          {item.authorized ? (
+            <p className="dsh-settings-panel__hint">{'Granted / Ready'}</p>
+          ) : (
+            <div>
+              <p className="dsh-settings-panel__hint">{'Missing permissions:'}</p>
+              <ul>
+                {item.missingScopes.map((scope) => (
+                  <li key={scope}>{scope}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </section>
+      ))}
+      {status && !status.integrations.length ? (
+        <p className="dsh-settings-panel__hint">
+          {'Install and enable a Google integration first. No integrations are registered.'}
         </p>
-        {message === undefined ? null : (
-          <p role={'alert'} style={{ ...styles.hint, color: '#ef4444' }}>
-            {message}
-          </p>
-        )}
+      ) : null}
+      {status?.pending && !link ? (
+        <p className="dsh-settings-panel__hint">
+          {
+            'Complete authorization in the Google tab you already opened, or cancel and connect again to get a new link.'
+          }
+        </p>
+      ) : null}
+      {link && status?.pending ? (
+        <a {...external} href={link}>
+          {'Continue with Google'}
+        </a>
+      ) : null}
+      <div className="dsh-settings-panel__actions">
+        {status?.pending ? button('Cancel', 'cancel') : null}
+        {status?.connected ? button('Disconnect', 'disconnect') : null}
+        <button
+          type={'button'}
+          disabled={busy || status?.pending}
+          onClick={() => {
+            setFailure(undefined)
+            setRevision((value) => value + 1)
+          }}
+        >
+          {'Refresh status'}
+        </button>
       </div>
-    </details>
+      <p className="dsh-settings-panel__hint">
+        {
+          'Disconnect removes only local DSH credentials for ALL integrations. It does not revoke Google access. '
+        }
+        <a {...external} href={'https://myaccount.google.com/connections'}>
+          {'Manage Google account permissions'}
+        </a>
+      </p>
+    </SettingsPanel>
   )
 }

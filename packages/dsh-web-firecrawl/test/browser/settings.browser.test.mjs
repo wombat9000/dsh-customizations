@@ -1,7 +1,7 @@
 import { act } from 'react'
 import { afterEach, expect, test, vi } from 'vitest'
-import { page } from 'vitest/browser'
-import { deferred, failure, mountSettings, REF } from './harness.mjs'
+import { page, userEvent } from 'vitest/browser'
+import { deferred, failure, mountSettings, ok, REF } from './harness.mjs'
 
 // Interaction coverage only; no host startup, paid requests, or visual baselines.
 let fixture
@@ -159,6 +159,13 @@ test.each([
     () => Promise.reject(new Error('Transport disconnected')),
     'Transport disconnected',
   ],
+  [
+    'synchronous throw',
+    () => {
+      throw new Error('Remote unavailable')
+    },
+    'Remote unavailable',
+  ],
 ])(
   'describe %s is an alert, not a misleading loopback instruction',
   async (_name, describe, message) => {
@@ -177,26 +184,88 @@ test.each([
   },
 )
 
-test.each(['set', 'unset'])(
-  '%s error envelopes preserve the draft and never claim success',
-  async (method) => {
-    fixture = await mountSettings({
-      credential: { configured: true, writable: true, source: 'file' },
-      overrides: { [method]: async () => failure('Credential write denied') },
-    })
-    vi.spyOn(window, 'confirm').mockReturnValue(true)
-    await toggle()
-    await fill(input(), 'fc-retry-draft')
-    await click(method === 'set' ? save() : page.getByRole('button', { name: 'Remove key' }))
-    expect(fixture.credentials[method]).toHaveBeenCalledTimes(1)
-    await expect.element(page.getByRole('alert')).toHaveTextContent('Credential write denied')
-    await expect.element(input()).toHaveValue('fc-retry-draft')
-    await expect.element(input()).toBeEnabled()
-    await expect.element(save()).toBeEnabled()
-    await expect
-      .element(page.getByRole('status'))
-      .toHaveTextContent('Configured via DSH credential store')
-    expect(fixture.container.textContent).not.toMatch(/API key saved|API key removed|loopback/i)
-    expect(fixture.credentials.describe).toHaveBeenCalledTimes(1)
-  },
-)
+test('absent credential reference renders not configured and read-only', async () => {
+  fixture = await mountSettings({ overrides: { describe: async () => ok({}) } })
+  await toggle()
+  await expect.element(page.getByRole('status')).toHaveTextContent('Not configured')
+  await expect.element(input()).toBeDisabled()
+  await expect.element(save()).toBeDisabled()
+  await expect.element(page.getByRole('button', { name: 'Remove key' })).not.toBeInTheDocument()
+})
+
+test.each([
+  ['set', 'error envelope', async () => failure('Credential write denied')],
+  ['set', 'rejection', async () => Promise.reject(new Error('Credential write denied'))],
+  ['unset', 'error envelope', async () => failure('Credential write denied')],
+  ['unset', 'rejection', async () => Promise.reject(new Error('Credential write denied'))],
+])('%s %s preserves the draft and never claims success', async (method, _kind, impl) => {
+  fixture = await mountSettings({
+    credential: { configured: true, writable: true, source: 'file' },
+    overrides: { [method]: impl },
+  })
+  vi.spyOn(window, 'confirm').mockReturnValue(true)
+  await toggle()
+  await fill(input(), 'fc-retry-draft')
+  await click(method === 'set' ? save() : page.getByRole('button', { name: 'Remove key' }))
+  expect(fixture.credentials[method]).toHaveBeenCalledTimes(1)
+  await expect.element(page.getByRole('alert')).toHaveTextContent('Credential write denied')
+  await expect.element(input()).toHaveValue('fc-retry-draft')
+  await expect.element(input()).toBeEnabled()
+  await expect.element(save()).toBeEnabled()
+  await expect
+    .element(page.getByRole('status'))
+    .toHaveTextContent('Configured via DSH credential store')
+  expect(fixture.container.textContent).not.toMatch(/API key saved|API key removed|loopback/i)
+  expect(fixture.credentials.describe).toHaveBeenCalledTimes(1)
+})
+
+test('invalid draft is rejected locally and Enter saves a valid draft', async () => {
+  fixture = await mountSettings()
+  await toggle()
+  await fill(input(), 'FIRECRAWL_API_KEY=fc-key')
+  await click(save())
+  await expect.element(page.getByRole('alert')).toHaveTextContent('Paste only the API key')
+  expect(fixture.credentials.set).not.toHaveBeenCalled()
+  await fill(input(), 'fc-valid')
+  await act(() => userEvent.keyboard('{Escape}'))
+  expect(fixture.credentials.set).not.toHaveBeenCalled()
+  await act(() => userEvent.keyboard('{Enter}'))
+  expect(fixture.credentials.set).toHaveBeenCalledExactlyOnceWith(REF, 'fc-valid')
+  await expect.element(page.getByRole('alert')).not.toBeInTheDocument()
+})
+
+test('credential events and connection reset refresh; unmount unsubscribes both', async () => {
+  fixture = await mountSettings()
+  expect(fixture.listeners.size).toBe(2)
+  await act(async () => fixture.listeners.get('credentials/reference-updated')('OTHER_KEY'))
+  expect(fixture.credentials.describe).toHaveBeenCalledTimes(1)
+  await act(async () => fixture.listeners.get('credentials/reference-updated')(REF))
+  expect(fixture.credentials.describe).toHaveBeenCalledTimes(2)
+  await act(async () => fixture.listeners.get('connection/reset')())
+  expect(fixture.credentials.describe).toHaveBeenCalledTimes(3)
+  await fixture.unmount()
+  fixture = undefined
+})
+
+test('a stale describe response cannot overwrite the latest refreshed status', async () => {
+  const pending = deferred()
+  let count = 0
+  fixture = await mountSettings({
+    overrides: {
+      describe: () =>
+        ++count === 1
+          ? pending.promise
+          : Promise.resolve(ok({ [REF]: { configured: true, writable: true, source: 'file' } })),
+    },
+  })
+  await toggle()
+  await act(async () => fixture.listeners.get('connection/reset')())
+  await expect
+    .element(page.getByRole('status'))
+    .toHaveTextContent('Configured via DSH credential store')
+  await act(async () => pending.resolve(failure('Stale failure')))
+  await expect
+    .element(page.getByRole('status'))
+    .toHaveTextContent('Configured via DSH credential store')
+  await expect.element(page.getByRole('alert')).not.toBeInTheDocument()
+})

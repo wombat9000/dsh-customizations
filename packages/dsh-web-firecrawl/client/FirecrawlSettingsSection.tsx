@@ -3,7 +3,7 @@ import type { CredentialInfo } from '@deepseek-ai/dsh-api-remotes/client'
 import { CREDENTIAL_REF } from '../shared/contracts.js'
 import type { CredentialAPI, Subscribe } from '../shared/contracts.js'
 import { apiKeyFailure, messageOf, sourceLabel } from './validation.js'
-import { styles } from './styles.js'
+import { SettingsField, SettingsPanel } from '../../../shared/client/settings.tsx'
 
 export interface FirecrawlSettingsProps {
   api: CredentialAPI
@@ -113,59 +113,20 @@ export function FirecrawlSettingsSection(props: FirecrawlSettingsProps) {
           : 'Not configured'
 
   return (
-    <details style={{ ...styles.card, display: 'block' }} open={props.view === 'page' || undefined}>
-      <summary style={{ cursor: 'pointer' }}>
-        <span style={styles.title}>Firecrawl</span>
-        <p style={{ ...styles.hint, marginTop: '4px' }}>
-          Web search and page fetching via Firecrawl.
-        </p>
-      </summary>
-      <div
-        style={{ ...styles.section, marginTop: '16px' }}
-        role="group"
-        aria-labelledby="firecrawl-card-title"
-      >
-        <div style={styles.row}>
-          <h3 id="firecrawl-card-title" style={styles.title}>
-            Firecrawl
-          </h3>
-          <span style={styles.badge} role="status">
-            <span style={styles.dot(configured)} aria-hidden="true" />
-            {status}
-          </span>
-        </div>
-        <label style={styles.label}>
-          {configured ? 'Replace API key' : 'API key'}
-          <input
-            type="password"
-            value={draft}
-            disabled={busy || !writable}
-            autoComplete="off"
-            spellCheck={false}
-            placeholder={configured ? 'Enter a new key' : 'fc-…'}
-            style={styles.input}
-            onChange={(event) => setDraft(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter' && !busy && writable) void save()
-            }}
-          />
-        </label>
-        <p style={styles.hint}>
-          {credential === undefined
-            ? 'Checking credential access…'
-            : credential === null
-              ? 'Could not check credential access. See the error below.'
-              : writable
-                ? 'The key is sent write-only to DSH’s credential store and is never returned to this page.'
-                : configured
-                  ? 'This key comes from a read-only source. Remove it from that source before managing it here.'
-                  : 'Credential writes are unavailable from this browser. Open DSH on its loopback URL.'}
-        </p>
-        <div style={styles.actions}>
+    <SettingsPanel
+      title="Firecrawl"
+      subtitle="Web search and page fetching via Firecrawl."
+      groupTitle="Firecrawl"
+      initiallyOpen={props.view === 'page'}
+      status={status}
+      statusTone={configured ? 'ok' : 'error'}
+      error={failure}
+      notice={success}
+      actions={
+        <>
           <button
             type="button"
             disabled={busy || !writable}
-            style={{ ...styles.button, opacity: busy || !writable ? 0.5 : 1 }}
             onClick={() => {
               void save()
             }}
@@ -175,8 +136,8 @@ export function FirecrawlSettingsSection(props: FirecrawlSettingsProps) {
           {configured && writable ? (
             <button
               type="button"
+              className="dsh-settings-panel__button--danger"
               disabled={busy}
-              style={{ ...styles.button, ...styles.danger, opacity: busy ? 0.5 : 1 }}
               onClick={() => {
                 void remove()
               }}
@@ -184,18 +145,33 @@ export function FirecrawlSettingsSection(props: FirecrawlSettingsProps) {
               Remove key
             </button>
           ) : null}
-        </div>
-        {failure === undefined ? null : (
-          <p style={styles.message(true)} role="alert">
-            {failure}
-          </p>
-        )}
-        {success === undefined ? null : (
-          <p style={styles.message(false)} role="status">
-            {success}
-          </p>
-        )}
-      </div>
-    </details>
+        </>
+      }
+    >
+      <SettingsField
+        label={configured ? 'Replace API key' : 'API key'}
+        hint={
+          credential === undefined
+            ? 'Checking credential access…'
+            : credential === null
+              ? 'Could not check credential access. See the error below.'
+              : writable
+                ? 'The key is sent write-only to DSH’s credential store and is never returned to this page.'
+                : configured
+                  ? 'This key comes from a read-only source. Remove it from that source before managing it here.'
+                  : 'Credential writes are unavailable from this browser. Open DSH on its loopback URL.'
+        }
+        type="password"
+        value={draft}
+        disabled={busy || !writable}
+        autoComplete="off"
+        spellCheck={false}
+        placeholder={configured ? 'Enter a new key' : 'fc-…'}
+        onChange={(event) => setDraft(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' && !busy && writable) void save()
+        }}
+      />
+    </SettingsPanel>
   )
 }

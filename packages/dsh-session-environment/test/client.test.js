@@ -1,36 +1,25 @@
 import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
-import { readFile } from 'node:fs/promises'
-import vm from 'node:vm'
 import test from 'node:test'
+import { loadClientBundle } from '../../../tests/helpers/load-client-bundle.mjs'
 
 const require = createRequire(import.meta.url)
-const bundle = await readFile(new URL('../lib/client.js', import.meta.url), 'utf8')
+const bundleUrl = new URL('../lib/client.js', import.meta.url)
 
 function loadClient() {
-  let registration
-  const window = {
-    __ModuleLoader__: {
-      load(value) {
-        registration = value
-      },
+  return loadClientBundle(bundleUrl, {
+    react: require('react'),
+    expectedId: '@local/dsh-session-environment',
+    globals: {
+      console,
+      AbortController,
+      AbortSignal,
+      setTimeout,
+      clearTimeout,
+      setInterval,
+      clearInterval,
     },
-  }
-  vm.runInNewContext(bundle, {
-    window,
-    console,
-    AbortController,
-    AbortSignal,
-    setTimeout,
-    clearTimeout,
-    setInterval,
-    clearInterval,
-  })
-  assert.equal(registration.id, '@local/dsh-session-environment')
-  return registration.factory((specifier) => {
-    if (specifier === 'react') return require('react')
-    throw new Error(`unexpected external ${specifier}`)
-  })
+  }).plugin
 }
 
 test('selects only one mainView-retained session and ignores obsolete current selection', () => {

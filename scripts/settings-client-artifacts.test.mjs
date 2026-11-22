@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import vm from 'node:vm'
 import test from 'node:test'
 import React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
+import { loadClientBundle } from '../tests/helpers/load-client-bundle.mjs'
 
 // Execute only the shipped artifact, with the same React-only module table as
 // the browser loader. No repository/shared-source resolver exists in this VM.
@@ -14,25 +14,11 @@ for (const [directory, title, field] of [
   test(`${title} standalone client inlines shared settings and uses only host React`, () => {
     const root = new URL(`../packages/${directory}/`, import.meta.url)
     const manifest = JSON.parse(readFileSync(new URL('package.json', root), 'utf8'))
-    const source = readFileSync(new URL(manifest.exports['./client'], root), 'utf8')
-    let declaration
-    vm.runInNewContext(source, {
-      window: {
-        __ModuleLoader__: {
-          load: (value) => {
-            declaration = value
-          },
-        },
-      },
+    const { plugin, requested } = loadClientBundle(new URL(manifest.exports['./client'], root), {
+      react: React,
+      expectedId: manifest.name,
     })
-    assert.equal(declaration.id, manifest.name)
-    const imports = []
-    const plugin = declaration.factory((name) => {
-      imports.push(name)
-      assert.equal(name, 'react', 'file snapshots must not require repository shared source')
-      return React
-    })
-    assert.deepEqual(imports, ['react'])
+    assert.deepEqual(requested, ['react'])
     const rpc = {
       call: () => {
         throw new Error('Rendering must not dispatch RPC')

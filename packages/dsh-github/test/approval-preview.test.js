@@ -1,8 +1,7 @@
 import assert from 'node:assert/strict'
-import { readFile } from 'node:fs/promises'
-import vm from 'node:vm'
 import test from 'node:test'
 import React from 'react'
+import { loadClientBundle } from '../../../tests/helpers/load-client-bundle.mjs'
 import { createGitHubWriteRuntime, renderWritePreview } from '../dist/src/write-runtime.js'
 import { args, snapshot } from './write-payloads.js'
 import {
@@ -22,21 +21,13 @@ import {
   approvalReason,
   approvalTool,
 } from './approval-preview-fixtures.js'
-let record
-vm.runInNewContext(await readFile(new URL('../client.js', import.meta.url), 'utf8'), {
-  window: {
-    __ModuleLoader__: {
-      load: (value) => {
-        record = value
-      },
-    },
-  },
-  URL,
+const { plugin: bundledPlugin } = loadClientBundle(new URL('../client.js', import.meta.url), {
+  react: React,
+  globals: { URL },
 })
 import { registerTypeScript } from './source-loader.mjs'
 registerTypeScript()
 const plugin = await import('../client/approval-model.ts')
-const bundledPlugin = record.factory(() => React)
 test('all seven previews derive exactly from actual immutable runtime preparations; template copies too', async () => {
   for (const name of Object.keys(args)) {
     const operation = name === 'copyProject' ? 'createProject' : name

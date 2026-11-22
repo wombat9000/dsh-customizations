@@ -7,10 +7,8 @@ export default defineConfig({
   cacheDir: fileURLToPath(new URL('./.vitest/cache', import.meta.url)),
   test: {
     include: [
-      'packages/*/test/browser/*.browser.test.mjs',
+      'packages/*/test/browser/*.browser.test.{mjs,tsx}',
       'shared/client/test/browser/*.browser.test.mjs',
-      'packages/dsh-tool-youtube/test/client.browser.test.tsx',
-      'packages/dsh-tool-imagegen/test/client.browser.test.tsx',
     ],
     // Component interactions only. Real-host visual comparisons use playwright.config.mjs.
     browser: {

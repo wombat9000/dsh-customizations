@@ -1,30 +1,19 @@
 import assert from 'node:assert/strict'
-import { readFile } from 'node:fs/promises'
-import vm from 'node:vm'
 import test from 'node:test'
 import React from 'react'
+import { loadClientBundle } from '../../../tests/helpers/load-client-bundle.mjs'
 import { createGitHubRuntime } from '../dist/src/runtime.js'
 import { fakeSubprocess, json, connection } from './fixtures.js'
 import { project, issue, detailedProject, detailedIssue, projectItem } from './payloads.js'
 
-let registration
-const source = await readFile(new URL('../client.js', import.meta.url), 'utf8')
-vm.runInNewContext(source, {
-  window: {
-    __ModuleLoader__: {
-      load(value) {
-        registration = value
-      },
+const { plugin: client } = loadClientBundle(new URL('../client.js', import.meta.url), {
+  react: React,
+  globals: {
+    URL,
+    fetch() {
+      throw new Error('Read cards must not fetch')
     },
   },
-  URL,
-  fetch() {
-    throw new Error('Read cards must not fetch')
-  },
-})
-const client = registration.factory((name) => {
-  assert.equal(name, 'react')
-  return React
 })
 const block = (data) => ({
   kind: 'tool-result',

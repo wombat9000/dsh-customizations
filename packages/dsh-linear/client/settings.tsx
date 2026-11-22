@@ -6,8 +6,12 @@ import {
   type RpcEndpoints,
 } from '../shared/rpc.js'
 import { apiKeyFailure } from '../shared/api-key.js'
-import { styles } from './styles.js'
 import { messageOf, sourceLabel } from './labels.js'
+import {
+  SettingsDetailList,
+  SettingsField,
+  SettingsPanel,
+} from '../../../shared/client/settings.tsx'
 export interface SettingsProps {
   rpc: SettingsRpc
   subscribe(listener: () => void): () => void
@@ -99,70 +103,23 @@ export function LinearSettingsSection(props: SettingsProps) {
         : configured
           ? `Configured${source === undefined ? '' : ` via ${source}`}`
           : 'Not configured'
+  const statusTone = status?.live ? 'ok' : configured ? 'warn' : 'error'
   return (
-    <details style={{ ...styles.card, display: 'block' }} open={props.view === 'page' || undefined}>
-      <summary style={{ cursor: 'pointer' }}>
-        <span style={styles.title}>Linear</span>
-        <p style={{ ...styles.hint, marginTop: '4px' }}>
-          Workspace connection for issue discovery and approval-gated project management.
-        </p>
-      </summary>
-      <div
-        style={{ ...styles.section, marginTop: '16px' }}
-        role="group"
-        aria-labelledby="linear-connection-title"
-      >
-        <div style={styles.row}>
-          <h3 id="linear-connection-title" style={styles.title}>
-            Workspace connection
-          </h3>
-          <span style={styles.badge} role="status">
-            <span style={styles.dot(configured, status?.live === true)} aria-hidden="true" />
-            {badge}
-          </span>
-        </div>
-        {status?.workspace == null ? null : (
-          <div style={styles.details}>
-            <span style={styles.term}>Workspace</span>
-            <span>{status.workspace.name}</span>
-            <span style={styles.term}>Workspace key</span>
-            <span>{status.workspace.urlKey || '—'}</span>
-            {status.viewer == null ? null : (
-              <React.Fragment>
-                <span style={styles.term}>Authenticated as</span>
-                <span>{status.viewer.email ?? status.viewer.name}</span>
-              </React.Fragment>
-            )}
-          </div>
-        )}
-        <label style={styles.label}>
-          {configured ? 'Replace API key' : 'Linear API key'}
-          <input
-            type="password"
-            value={draft}
-            disabled={busy || !writable}
-            autoComplete="off"
-            spellCheck={false}
-            placeholder={configured ? 'Enter a replacement key' : 'lin_api_…'}
-            style={styles.input}
-            onChange={(event) => setDraft(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter' && !busy && writable) void connect()
-            }}
-          />
-        </label>
-        <p style={styles.hint}>
-          {writable
-            ? 'DSH validates the key against Linear, binds the returned workspace ID, and stores the key write-only in the credential store.'
-            : configured
-              ? 'This key comes from a read-only source. Remove it there before managing it in this page.'
-              : 'Credential writes are unavailable from this browser. Open DSH on its loopback URL.'}
-        </p>
-        <div style={styles.actions}>
+    <SettingsPanel
+      title="Linear"
+      subtitle="Workspace connection for issue discovery and approval-gated project management."
+      groupTitle="Workspace connection"
+      initiallyOpen={props.view === 'page'}
+      status={badge}
+      statusTone={statusTone}
+      error={failure}
+      notice={success}
+      actions={
+        <>
           <button
             type="button"
+            className="dsh-settings-panel__button--primary"
             disabled={busy || !writable}
-            style={{ ...styles.button, ...styles.primary, opacity: busy || !writable ? 0.5 : 1 }}
             onClick={() => {
               void connect()
             }}
@@ -173,7 +130,6 @@ export function LinearSettingsSection(props: SettingsProps) {
             <button
               type="button"
               disabled={busy}
-              style={{ ...styles.button, opacity: busy ? 0.5 : 1 }}
               onClick={() => {
                 void test()
               }}
@@ -184,8 +140,8 @@ export function LinearSettingsSection(props: SettingsProps) {
           {configured && writable ? (
             <button
               type="button"
+              className="dsh-settings-panel__button--danger"
               disabled={busy}
-              style={{ ...styles.button, ...styles.danger, opacity: busy ? 0.5 : 1 }}
               onClick={() => {
                 void disconnect()
               }}
@@ -193,19 +149,41 @@ export function LinearSettingsSection(props: SettingsProps) {
               Disconnect
             </button>
           ) : null}
-        </div>
-        {failure === undefined ? null : (
-          <p style={styles.message(true)} role="alert">
-            {failure}
-          </p>
-        )}
-        {success === undefined ? null : (
-          <p style={styles.message(false)} role="status">
-            {success}
-          </p>
-        )}
-      </div>
-    </details>
+        </>
+      }
+    >
+      {status?.workspace == null ? null : (
+        <SettingsDetailList
+          items={[
+            ['Workspace', status.workspace.name],
+            ['Workspace key', status.workspace.urlKey || '—'],
+            status.viewer == null
+              ? null
+              : ['Authenticated as', status.viewer.email ?? status.viewer.name],
+          ]}
+        />
+      )}
+      <SettingsField
+        label={configured ? 'Replace API key' : 'Linear API key'}
+        hint={
+          writable
+            ? 'DSH validates the key against Linear, binds the returned workspace ID, and stores the key write-only in the credential store.'
+            : configured
+              ? 'This key comes from a read-only source. Remove it there before managing it in this page.'
+              : 'Credential writes are unavailable from this browser. Open DSH on its loopback URL.'
+        }
+        type="password"
+        value={draft}
+        disabled={busy || !writable}
+        autoComplete="off"
+        spellCheck={false}
+        placeholder={configured ? 'Enter a replacement key' : 'lin_api_…'}
+        onChange={(event) => setDraft(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' && !busy && writable) void connect()
+        }}
+      />
+    </SettingsPanel>
   )
 }
 

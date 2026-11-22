@@ -1,13 +1,12 @@
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
 import { once } from 'node:events'
-import { readFile } from 'node:fs/promises'
-import vm from 'node:vm'
 import test from 'node:test'
+import { loadClientBundle } from '../../../tests/helpers/load-client-bundle.mjs'
 import { createHandler } from '../dist/src/routes.js'
 import { DriveAccessRuntime } from '../dist/src/runtime.js'
 
-const source = await readFile(new URL('../client.js', import.meta.url), 'utf8')
+const clientUrl = new URL('../client.js', import.meta.url)
 const folder = {
   id: 'folder',
   name: 'Reports',
@@ -86,19 +85,13 @@ async function fixture(t) {
     })
     return { status: response.status, headers: response.headers, result: await response.json() }
   }
-  let record
-  vm.runInNewContext(source, {
+  const { plugin } = loadClientBundle(clientUrl, {
+    react: { createElement() {} },
     window: {
-      __ModuleLoader__: {
-        load: (value) => {
-          record = value
-        },
-      },
       fetch: (url, options) =>
         fetch(origin + url, { ...options, headers: { ...headers, ...options.headers } }),
     },
   })
-  const plugin = record.factory(() => ({ createElement() {} }))
   const identity = { sessionId: 'session', callId: 'call' }
   const outcome = runtime.request(agent, { callId: 'call', reason: 'Read selected reports' })
   // Yield past connected() before the first HTTP request reaches the handler.

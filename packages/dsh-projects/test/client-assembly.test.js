@@ -1,21 +1,12 @@
 import assert from 'node:assert/strict'
-import { readFile } from 'node:fs/promises'
-import vm from 'node:vm'
 import test from 'node:test'
 import React from 'react'
+import { loadClientBundle } from '../../../tests/helpers/load-client-bundle.mjs'
 
-const clientPath = new URL('../client.js', import.meta.url)
-
-test('Projects lazy factory registers exact root seats and releases registrations', async () => {
-  const registrations = []
-  vm.runInNewContext(await readFile(clientPath, 'utf8'), {
-    window: { __ModuleLoader__: { load: (value) => registrations.push(value) } },
-  })
-  assert.equal(registrations.length, 1)
-  assert.equal(registrations[0].id, '@local/dsh-projects')
-  const plugin = registrations[0].factory((name) => {
-    assert.equal(name, 'react')
-    return React
+test('Projects lazy factory registers exact root seats and releases registrations', () => {
+  const { plugin } = loadClientBundle(new URL('../client.js', import.meta.url), {
+    react: React,
+    expectedId: '@local/dsh-projects',
   })
   assert.deepEqual(Array.from(plugin.inject), ['slots', 'connection', 'locale'])
   const seats = [],
