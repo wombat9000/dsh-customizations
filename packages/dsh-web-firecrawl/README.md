@@ -121,12 +121,8 @@ node packages/dsh-web-firecrawl/scripts/build-host.mjs
 node packages/dsh-web-firecrawl/scripts/build-client.mjs
 node packages/dsh-web-firecrawl/scripts/build-host.mjs --check
 node packages/dsh-web-firecrawl/scripts/build-client.mjs --check
-node node_modules/vitest/vitest.mjs run --config packages/dsh-web-firecrawl/vitest.browser.config.mjs
+node node_modules/vitest/vitest.mjs run --config vitest.browser.config.mjs packages/dsh-web-firecrawl/test/browser
 ```
-
-The package's [browser configuration](vitest.browser.config.mjs) reuses the root setup
-but keeps runner caches and failure screenshots in the package's ignored `.cache/`
-directory. Use it when dependencies are borrowed read-only in a worktree.
 
 Both normal Node test files enforce strict contracts and artifact freshness, so the
 root's explicit test list needs no additional entry. Compile-time negative cases
@@ -154,10 +150,10 @@ uses `ctx.remote.credentials.describe([ref])`, `set(ref, value)`, and `unset(ref
 Responses use `{ ok, value/error }`, never `response.result`. The
 `plugins.row.config` slot key is `@local/dsh-web-firecrawl#local-web-firecrawl`,
 matching the bundle package and host row ID. Summary rendering is static; page
-rendering opens the existing credential form. DSH `0.1.7-rc.2` removed
-`settings.installSection`, and row-page discovery needs no empty settings namespace.
-The host runs without Settings; secrets are edited only through the credential API.
-Provider options remain ordinary Cordis configuration, not volatile form fields.
+rendering opens the existing credential form. Row-page discovery needs no empty
+settings namespace. The host runs without Settings; secrets are edited only through
+the credential API. Provider options remain ordinary Cordis configuration, not
+volatile form fields.
 
 The scoped browser tests use real React and Chromium with mocked credential RPCs
 and slot registration. They cover static summaries, the open row page, and credential

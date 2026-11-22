@@ -51,7 +51,7 @@ For headless use, the provider also resolves GEMINI_API_KEY from the environment
 
 Environment and `.env` credentials are read-only on the configuration page and take precedence over the managed credential store. An optional literal `apiKey` plugin setting exists for headless composition but should not be committed.
 
-The client registers `plugins.row.config` with key `@local/dsh-tool-youtube#local-tool-youtube`. Summary rendering is static; page rendering opens the credential form. DSH `0.1.7-rc.2` removed `settings.installSection`, so the host no longer registers an empty `youtube` settings section. Row-page discovery does not require that section. The host runs without Settings, and keys remain in the credential store. Model and operation limits remain ordinary Cordis configuration rather than volatile form fields.
+The client registers `plugins.row.config` with key `@local/dsh-tool-youtube#local-tool-youtube`. Summary rendering is static; page rendering opens the credential form. Row-page discovery does not require an empty `youtube` settings section. The host runs without Settings, and keys remain in the credential store. Model and operation limits remain ordinary Cordis configuration rather than volatile form fields.
 
 ## Configuration
 
