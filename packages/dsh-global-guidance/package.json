@@ -19,7 +19,7 @@
     "README.md"
   ],
   "scripts": {
-    "build": "node scripts/build-host.mjs",
+    "build": "node ../../scripts/build.mjs --host dsh-global-guidance",
     "test": "node --test test/*.test.js"
   },
   "engines": {

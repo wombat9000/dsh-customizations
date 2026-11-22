@@ -18,7 +18,7 @@ Set `DSH_HOME` before applying a profile if your Harness home is not `~/.dsh`.
 
 ### Amp orbs
 
-The executable `.agents/setup` prepares fresh Amp orbs with Node.js 24.20.0 (matching CI), the manifest-pinned pnpm, frozen workspace dependencies, and the matching Playwright Chromium and system dependencies. It checks the repository and builds Session Environment. Node downloads are checksum-verified; toolchains stay under `~/.local/share/dsh-customizations-orb`, and a checkout-scoped login-shell hook makes them available to agents and supervised services.
+The executable `.agents/setup` prepares fresh Amp orbs with Node.js 24.20.0 (matching CI), the manifest-pinned pnpm, frozen workspace dependencies, and the matching Playwright Chromium and system dependencies. It checks the repository and builds all local packages. Node downloads are checksum-verified; toolchains stay under `~/.local/share/dsh-customizations-orb`, and a checkout-scoped login-shell hook makes them available to agents and supervised services.
 
 Network provisioning is approved for this orb lifecycle script only. Dependency lifecycle scripts remain disabled; the release-age policy and required DSH patch remain enforced. Normal agent dependency work still follows the offline-first setup procedure above. Setup refuses symlinked dependency directories and never applies a profile, authenticates a user, or starts a persistent DSH host.
 
@@ -32,7 +32,7 @@ The `personal-web` recipe selects the standard DSH base and Web bundles plus [Gl
 
 Existing installations need a coordinated DSH and plugin upgrade, not a plugin-only restart on the old runtime. The host operator owns backups, legacy settings adoption, profile composition, and restart. No intermediate plugin release is required. After the upgrade, key changes take effect on the next request without a restart. Keys stay in DSH's credential store (or the launching environment), never in this repository.
 
-1. After the setup procedure's ownership, executable, cache, and approval checks, install dependencies, validate the repository, and build Session Environment. If the offline install fails, stop; obtain separate approval for cache population rather than retrying online:
+1. After the setup procedure's ownership, executable, cache, and approval checks, install dependencies, validate the repository, and build all local packages. If the offline install fails, stop; obtain separate approval for cache population rather than retrying online:
 
    ```sh
    pnpm install --offline --frozen-lockfile --ignore-scripts
@@ -171,7 +171,7 @@ pnpm run build
 pnpm run apply -- personal-web
 ```
 
-If a package needs a build step, run its workspace build before applying the profile. Restart a running DSH process after a host or client plugin changes.
+Run `pnpm run build` before applying the profile (`packages/*/dist/` and `packages/**/client.js` are build outputs excluded from Git, and `apply-profile` verifies they exist). Restart a running DSH process after a host or client plugin changes.
 
 ## Formatting
 
@@ -184,7 +184,7 @@ pnpm run format
 
 `format:check` reports differences without changing files. `format` rewrites maintained source, tests, configuration, and documentation. For a focused edit, use `node node_modules/prettier/bin/prettier.cjs --write <paths>` instead of reformatting unrelated files or invoking pnpm's implicit dependency synchronization. Configure your editor to use the repository's local Prettier and `.prettierrc.json`.
 
-The configuration uses two spaces, single quotes, no semicolons, and a 100-column print width. It preserves prose wrapping and disables embedded-language formatting. `.prettierignore` excludes generated bundles, the pnpm lockfile, byte-controlled fixtures, patch payloads, legal text, and visual baselines. CI runs `pnpm run format:check` for pull requests and pushes to `main`, including workflow files. No Git hook is installed. Formatting source can change generated output, so rebuild affected packages and run their freshness checks afterward. See the [engineering guide](docs/engineering.md#formatting).
+The configuration uses two spaces, single quotes, no semicolons, and a 100-column print width. It preserves prose wrapping and disables embedded-language formatting. `.prettierignore` excludes generated bundles, the pnpm lockfile, byte-controlled fixtures, patch payloads, legal text, and visual baselines. CI runs `pnpm run format:check` for pull requests and pushes to `main`, including workflow files. No Git hook is installed. See the [engineering guide](docs/engineering.md#formatting).
 
 [Prettier](https://prettier.io/docs/install) is an MIT-licensed development tool from the [official Prettier repository](https://github.com/prettier/prettier). The pinned package has no runtime dependencies, install scripts, or native binary downloads. No third-party formatter plugins are added.
 
@@ -192,11 +192,9 @@ The configuration uses two spaces, single quotes, no semicolons, and a 100-colum
 
 See the [migration validation results](MIGRATION-0.2.2-rc.5.md#validation-results) for actual target-version evidence and limitations. Prior test counts and screenshots remain historical evidence, not proof of current compatibility.
 
-If dependencies are missing, follow the [repository setup skill](.agents/skills/repository-setup/SKILL.md) before an approved offline install. Run repository checks with `pnpm run check` and the Node.js unit and host-integration tests with `pnpm test`. The test command first runs `pnpm run build`, which type-checks and bundles Session Environment's TypeScript host and client. Its integration tests validate recipe wiring and generated entrypoints without starting DSH; the real-shell suite below also checks the Environment card's Remote reads, session identity and foreground Files visibility.
+If dependencies are missing, follow the [repository setup skill](.agents/skills/repository-setup/SKILL.md) before an approved offline install. Run repository checks with `pnpm run check`, strict type checking across all packages with `pnpm run typecheck`, and the Node.js unit and host-integration tests with `pnpm test`. The test command first runs `pnpm run build` (`node scripts/build.mjs`), which strictly type-checks and builds every local host (`dist/`), client (`client.js`), and Session Environment (`lib/`) bundle. You can target a single package with `node scripts/build.mjs [--host|--client|--typecheck|--check] <package>`.
 
-GitHub and Session Recap share client build/type-check helpers and exact-pinned root development tooling. Their Node suites enforce strict client/contract type checks and committed-bundle freshness. GitHub's browser suites import source components; real-shell tests load its generated bundle. See [GitHub client development](packages/dsh-github/README.md#client-development).
-
-The Node suite also checks Session Recap's TypeScript backend, source-logic tests, emitted host freshness, and in-process backend integration. The root build does not regenerate Session Recap's committed client or host output; use its [development commands](packages/dsh-session-recap/README.md#development) after editing sources. Its browser coverage includes direct TSX component tests as well as generated-bundle slot tests.
+Generated `dist/`, `client.js`, and `lib/` outputs are excluded from Git and produced by `pnpm run build`. Browser suites import source TSX components directly as well as testing built client bundles; real-shell tests load the built bundles into a disposable DSH instance.
 
 ### Browser interactions and real DSH screenshots
 

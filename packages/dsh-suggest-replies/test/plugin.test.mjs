@@ -1,12 +1,8 @@
 import assert from 'node:assert/strict'
-import { readFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { pathToFileURL } from 'node:url'
 import test from 'node:test'
 import * as plugin from '../dist/src/index.js'
-import { buildHost } from '../scripts/build-host.mjs'
-import { buildClient, clientPath } from '../scripts/build-client.mjs'
-import { checkHost } from '../../../scripts/build-host.mjs'
 import { executeOne } from '../../dsh-github/test/approval-fixture.js'
 
 const cli = createRequire(createRequire(import.meta.url).resolve('@deepseek-ai/dsh/package.json'))
@@ -60,9 +56,4 @@ test('tool runs through the real registry with bounded results and plugin-owned 
     ),
     false,
   )
-})
-
-test('strict builds reproduce published host and client artifacts', async () => {
-  checkHost(buildHost())
-  assert.equal(await buildClient(), await readFile(clientPath, 'utf8'))
 })

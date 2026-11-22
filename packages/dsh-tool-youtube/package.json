@@ -19,15 +19,14 @@
     "src/**/*.ts",
     "client/**/*.ts",
     "client/**/*.tsx",
-    "scripts/*.mjs",
     "tsconfig*.json"
   ],
   "scripts": {
-    "build": "node scripts/build-host.mjs && node scripts/build-client.mjs",
-    "build:host": "node scripts/build-host.mjs",
-    "build:client": "node scripts/build-client.mjs",
-    "typecheck": "node scripts/typecheck.mjs",
-    "test": "node scripts/typecheck.mjs && node --test test/*.test.js",
+    "build": "node ../../scripts/build.mjs dsh-tool-youtube",
+    "build:host": "node ../../scripts/build.mjs --host dsh-tool-youtube",
+    "build:client": "node ../../scripts/build.mjs --client dsh-tool-youtube",
+    "typecheck": "node ../../scripts/build.mjs --typecheck dsh-tool-youtube",
+    "test": "node ../../scripts/build.mjs --typecheck dsh-tool-youtube && node --test test/*.test.js",
     "test:integration": "node --test test/profile.integration.test.js"
   },
   "engines": {

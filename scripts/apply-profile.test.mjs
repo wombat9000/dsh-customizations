@@ -320,3 +320,35 @@ test('conflicting required patch and symlinked dependencies fail closed', (t) =>
   assert.match(result.stderr, /symlinked profile path/)
   assert.equal(existsSync(join(f.dir, 'calls')), false)
 })
+
+test('missing local built artifacts fail closed on real apply while dry-run remains unbuilt-safe', (t) => {
+  const f = fixture(t)
+  f.put(
+    'packages/demo/package.json',
+    JSON.stringify({
+      name: '@local/demo',
+      main: 'dist/src/index.js',
+      dsh: { client: './client.js', bundle: { patch: './cordis.patch.yml' } },
+    }),
+  )
+  f.put('packages/demo/cordis.patch.yml', '[]\n')
+  f.put(
+    'profiles/example/recipe.json',
+    JSON.stringify({
+      profile: 'example',
+      bundles: [
+        { name: '@deepseek-ai/dsh-web-app', source: '@deepseek-ai/dsh-web-app' },
+        { name: '@local/demo', source: '../../packages/demo' },
+      ],
+      patch: 'cordis.patch.yml',
+    }),
+  )
+  const dry = f.run(['--dry-run'])
+  assert.equal(dry.status, 0, dry.stderr)
+
+  const real = f.run()
+  assert.notEqual(real.status, 0)
+  assert.match(real.stderr, /missing built artifact dist\/src\/index\.js.*pnpm run build/)
+  assert.equal(existsSync(f.home), false)
+  assert.equal(existsSync(join(f.dir, 'calls')), false)
+})

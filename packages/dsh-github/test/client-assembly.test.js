@@ -2,28 +2,8 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import vm from 'node:vm'
 import test from 'node:test'
-import { buildClient, clientPath } from '../scripts/build-client.mjs'
-import { buildHost } from '../scripts/build-host.mjs'
-import { checkHost } from '../../../scripts/build-host.mjs'
-import { typecheck } from '../scripts/typecheck.mjs'
 
-test('GitHub host, client and compile-only contract regressions pass strict typechecking', async () => {
-  await typecheck()
-})
-
-test('committed GitHub client matches reproducible source assembly', async () => {
-  const first = await buildClient()
-  assert.equal(first, await buildClient())
-  assert.equal(
-    await readFile(clientPath, 'utf8'),
-    first,
-    'Run node packages/dsh-github/scripts/build-client.mjs',
-  )
-})
-
-test('committed GitHub host matches checked TypeScript modules', () => {
-  checkHost(buildHost())
-})
+const clientPath = new URL('../client.js', import.meta.url)
 
 test('GitHub assembly registers one lazy factory with the loader contract and React external', async () => {
   const source = await readFile(clientPath, 'utf8')

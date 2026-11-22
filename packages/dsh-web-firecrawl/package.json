@@ -19,10 +19,10 @@
   "scripts": {
     "test": "node --test test/index.test.js test/client.test.js",
     "test:integration": "node --test test/profile.integration.test.js",
-    "build": "node scripts/build-host.mjs && node scripts/build-client.mjs",
-    "build:host": "node scripts/build-host.mjs",
-    "build:client": "node scripts/build-client.mjs",
-    "typecheck": "node scripts/typecheck.mjs"
+    "build": "node ../../scripts/build.mjs dsh-web-firecrawl",
+    "build:host": "node ../../scripts/build.mjs --host dsh-web-firecrawl",
+    "build:client": "node ../../scripts/build.mjs --client dsh-web-firecrawl",
+    "typecheck": "node ../../scripts/build.mjs --typecheck dsh-web-firecrawl"
   },
   "engines": {
     "node": "^22.19.0 || >=24.0.0"

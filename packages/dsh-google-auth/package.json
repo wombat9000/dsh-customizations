@@ -19,12 +19,12 @@
   ],
   "scripts": {
     "test": "node --test test/*.test.js",
-    "build": "node scripts/build-host.mjs && node scripts/build-client.mjs",
-    "build:host": "node scripts/build-host.mjs",
-    "build:client": "node scripts/build-client.mjs",
-    "typecheck": "node scripts/typecheck.mjs && node scripts/typecheck-host.mjs",
-    "typecheck:host": "node scripts/typecheck-host.mjs",
-    "typecheck:client": "node scripts/typecheck.mjs"
+    "build": "node ../../scripts/build.mjs dsh-google-auth",
+    "build:host": "node ../../scripts/build.mjs --host dsh-google-auth",
+    "build:client": "node ../../scripts/build.mjs --client dsh-google-auth",
+    "typecheck": "node ../../scripts/build.mjs --typecheck dsh-google-auth",
+    "typecheck:host": "node ../../scripts/build.mjs --typecheck --host dsh-google-auth",
+    "typecheck:client": "node ../../scripts/build.mjs --typecheck --client dsh-google-auth"
   },
   "engines": {
     "node": "^22.19.0 || >=24.0.0"

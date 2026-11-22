@@ -17,10 +17,10 @@
     "README.md"
   ],
   "scripts": {
-    "build": "node scripts/build-host.mjs && node scripts/build-client.mjs",
-    "build:host": "node scripts/build-host.mjs",
-    "build:client": "node scripts/build-client.mjs",
-    "typecheck": "node scripts/typecheck.mjs",
+    "build": "node ../../scripts/build.mjs dsh-openrouter",
+    "build:host": "node ../../scripts/build.mjs --host dsh-openrouter",
+    "build:client": "node ../../scripts/build.mjs --client dsh-openrouter",
+    "typecheck": "node ../../scripts/build.mjs --typecheck dsh-openrouter",
     "test": "node --test test/*.test.js"
   },
   "engines": {

@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import ts from 'typescript'
@@ -12,9 +12,7 @@ function fail(diagnostics) {
   if (diagnostics.length) throw new Error(ts.formatDiagnostics(diagnostics, diagnosticHost))
 }
 
-// Compile checked ESM modules rather than bundle copies of shared classes/services.
-// Return bytes first, so freshness tests never rewrite the artifact they inspect.
-export function buildHost(projectUrl, { declaration = false } = {}) {
+function parseProject(projectUrl, overrides = {}) {
   const project = fileURLToPath(projectUrl)
   const config = ts.readConfigFile(project, ts.sys.readFile)
   if (config.error) fail([config.error])
@@ -22,16 +20,34 @@ export function buildHost(projectUrl, { declaration = false } = {}) {
     config.config,
     ts.sys,
     dirname(project),
-    {
-      noEmit: false,
-      noEmitOnError: true,
-      sourceMap: false,
-      declaration,
-      declarationMap: false,
-    },
+    overrides,
     project,
   )
   fail(parsed.errors)
+  return parsed
+}
+
+export function typecheckProject(projectUrl, label) {
+  const parsed = parseProject(projectUrl, { noEmit: true })
+  const program = ts.createProgram(parsed.fileNames, parsed.options)
+  const diagnostics = ts.getPreEmitDiagnostics(program)
+  if (diagnostics.length) {
+    throw new Error(
+      `${label ? `${label} type checking failed:\n` : ''}${ts.formatDiagnostics(diagnostics, diagnosticHost)}`,
+    )
+  }
+}
+
+// Compile checked ESM modules rather than bundle copies of shared classes/services.
+// Return bytes first, so freshness tests never rewrite the artifact they inspect.
+export function buildHost(projectUrl, { declaration = false } = {}) {
+  const parsed = parseProject(projectUrl, {
+    noEmit: false,
+    noEmitOnError: true,
+    sourceMap: false,
+    declaration,
+    declarationMap: false,
+  })
   const program = ts.createProgram(parsed.fileNames, parsed.options)
   fail(ts.getPreEmitDiagnostics(program))
   const output = new Map()
@@ -56,6 +72,7 @@ export function buildHost(projectUrl, { declaration = false } = {}) {
 }
 
 export function writeHost({ outDir, files }) {
+  rmSync(outDir, { recursive: true, force: true })
   for (const [name, content] of files) {
     const path = resolve(outDir, name)
     mkdirSync(dirname(path), { recursive: true })
@@ -75,7 +92,7 @@ export function checkHost({ outDir, files }) {
   }
   for (const [name, content] of files) {
     if (readFileSync(resolve(outDir, name), 'utf8') !== content) {
-      throw new Error(`Host artifact ${name} is stale. Run the package build:host command.`)
+      throw new Error(`Host artifact ${name} is stale. Run pnpm run build.`)
     }
   }
 }

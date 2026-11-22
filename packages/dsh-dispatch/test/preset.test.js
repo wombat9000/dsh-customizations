@@ -434,11 +434,3 @@ test('retained v2 authority fails closed without resetting or renaming its stora
   assert.deepEqual(reopened.table('assignments').get(oldTask.id), oldTask)
   await reopened.close()
 })
-
-test('generated host and client artifacts are fresh', async () => {
-  const { buildHost } = await import('../scripts/build-host.mjs')
-  const { checkHost } = await import('../../../scripts/build-host.mjs')
-  checkHost(buildHost())
-  const { buildClient, clientPath } = await import('../scripts/build-client.mjs')
-  assert.equal(await readFile(clientPath, 'utf8'), await buildClient())
-})

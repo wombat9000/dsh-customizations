@@ -3,8 +3,6 @@ import { cp, mkdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import test from 'node:test'
-import { buildHost } from '../scripts/build-host.mjs'
-import { checkHost } from '../../../scripts/build-host.mjs'
 import {
   declarations,
   fixture,
@@ -39,12 +37,6 @@ async function guidanceHost(t) {
   ])
   return { ...(await host(t, f, rows)), packaged, directory: f.directory }
 }
-
-test('strict host build and committed publication output stay reproducible', () => {
-  const first = buildHost()
-  assert.deepEqual([...first.files], [...buildHost().files])
-  checkHost(first)
-})
 
 test('published guidance reaches preset and child scopes and follows the real Loader lifetime', async (t) => {
   const { ctx, tree, packaged } = await guidanceHost(t)

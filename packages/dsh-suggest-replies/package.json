@@ -19,7 +19,7 @@
     "README.md"
   ],
   "scripts": {
-    "build": "node scripts/build-host.mjs && node scripts/build-client.mjs",
+    "build": "node ../../scripts/build.mjs dsh-suggest-replies",
     "test": "node --test test/*.test.mjs"
   },
   "engines": {

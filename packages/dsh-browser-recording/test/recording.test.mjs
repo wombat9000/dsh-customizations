@@ -10,12 +10,6 @@ import * as Tools from '@deepseek-ai/dsh-tools'
 import * as Prompt from '@deepseek-ai/dsh-system-prompt'
 import * as Recording from '../dist/src/index.js'
 import { validateAction, mergeIntervals, record } from '../dist/src/runner.js'
-import { buildHost } from '../scripts/build-host.mjs'
-import { checkHost } from '../../../scripts/build-host.mjs'
-
-test('strict host build and published execution-world runner stay current', () => {
-  checkHost(buildHost())
-})
 
 test('recorded actions cannot become CLI options, shell commands, JavaScript or clipboard reads', async () => {
   for (const args of [

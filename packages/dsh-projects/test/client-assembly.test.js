@@ -3,17 +3,9 @@ import { readFile } from 'node:fs/promises'
 import vm from 'node:vm'
 import test from 'node:test'
 import React from 'react'
-import { buildClient, clientPath } from '../scripts/build-client.mjs'
-import { typecheck } from '../scripts/typecheck.mjs'
 
-test('Projects client passes strict typechecking', async () => {
-  await typecheck()
-})
-test('Projects committed client is reproducible and fresh', async () => {
-  const first = await buildClient()
-  assert.equal(first, await buildClient())
-  assert.equal(await readFile(clientPath, 'utf8'), first)
-})
+const clientPath = new URL('../client.js', import.meta.url)
+
 test('Projects lazy factory registers exact root seats and releases registrations', async () => {
   const registrations = []
   vm.runInNewContext(await readFile(clientPath, 'utf8'), {
