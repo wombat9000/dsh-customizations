@@ -288,10 +288,12 @@ test(
       kind: 'grant',
       payload: { access: 'synthetic-new', refresh: 'synthetic-new' },
     }
-    const entered = [gate(), gate()]
-    const finish = [gate(), gate()]
+    const entered = [gate(), gate(), gate()]
+    const finish = [gate(), gate(), gate()]
     t.after(() => finish.forEach(({ resolve }) => resolve()))
-    const outcomes = [gate(), gate()]
+    const outcomes = [gate(), gate(), gate()]
+    const browserUrl =
+      'https://auth.openai.com/oauth/authorize?redirect_uri=http%3A%2F%2Flocalhost%3A1455%2Fauth%2Fcallback&state=fixture'
     let sequence = 0
     let settled = 0
     f.ctx.on('authorization/settled', (key, status) => {
@@ -302,11 +304,24 @@ test(
       try {
         assert.equal(
           await session.prompt({ kind: 'select', message: 'Choose', options: methods }),
-          'device_code',
+          turn === 2 ? 'browser' : 'device_code',
         )
         session.notify({ url: 'https://untrusted.invalid', code: 'BAD-CODE', message: 'Ignore' })
         if (turn === 1)
           session.notify({ url: CODEX_DEVICE_URL, code: 'CODE-123', message: 'Enter code' })
+        if (turn === 2) {
+          session.notify({ url: browserUrl, message: 'Open browser' })
+          const manual = new AbortController()
+          const prompt = session.prompt({
+            kind: 'text',
+            message: 'Manual fallback',
+            signal: manual.signal,
+          })
+          entered[turn].resolve()
+          await finish[turn].promise
+          manual.abort()
+          await assert.rejects(prompt)
+        }
         entered[turn].resolve()
         await finish[turn].promise
         session.signal.throwIfAborted()
@@ -367,6 +382,15 @@ test(
     await new Promise(setImmediate)
     assert.deepEqual(await call('status', successful), { ok: true, value: { phase: 'authorized' } })
     assert.deepEqual(await f.readRecord(nativeKey), nextGrant)
+    assert.equal((await call('start', { method: 'other' })).ok, false)
+    const browser = (await call('start', { method: 'browser' })).value
+    await entered[2].promise
+    assert.deepEqual(await call('status', browser), {
+      ok: true,
+      value: { phase: 'browser', url: browserUrl },
+    })
+    finish[2].resolve()
+    await outcomes[2].promise
     await helper.dispose()
     assert.equal(handler, undefined)
   },

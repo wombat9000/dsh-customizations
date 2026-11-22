@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react'
 import { isObject } from '../../shared/contracts.js'
 import type { RpcTransport } from '../../shared/contracts.js'
 import { CODEX_DEVICE_URL, isReconnectStatus, OAUTH_CHANNEL } from '../../shared/oauth.js'
-import type { ReconnectEndpoints, ReconnectStatus } from '../../shared/oauth.js'
+import type { ReconnectEndpoints, ReconnectStatus, SignInMethod } from '../../shared/oauth.js'
 
 export interface ReconnectCodexProps {
   provider: { provider: string }
@@ -26,13 +26,14 @@ const control: React.CSSProperties = {
 
 const unavailable = 'Codex reconnect is unavailable. Check that Codex OAuth is enabled in Plugins.'
 const descriptions: Record<ReconnectStatus['phase'], string> = {
-  starting: 'Requesting a one-time code…',
+  starting: 'Starting Codex sign-in…',
+  browser:
+    'Open the sign-in link on the computer running DSH. If DSH is on another machine, use device code.',
   code: 'Enter this one-time code on the OpenAI page.',
   cancelling: 'Cancelling sign-in…',
   authorized: 'Codex reconnected. You can retry your turn.',
   cancelled: 'Stopped waiting. If you already approved sign-in, DSH may still save the connection.',
-  failed:
-    'Codex sign-in failed. Check that your ChatGPT account allows device sign-in, then try again.',
+  failed: 'Codex sign-in failed. Try again or choose the other sign-in method.',
 }
 
 function ReconnectControl({ rpc }: Pick<ReconnectCodexProps, 'rpc'>) {
@@ -54,7 +55,7 @@ function ReconnectControl({ rpc }: Pick<ReconnectCodexProps, 'rpc'>) {
     [],
   )
 
-  async function start() {
+  async function start(method: SignInMethod) {
     if (run.current) return
     const current: Run = { abandoned: false }
     run.current = current
@@ -63,7 +64,7 @@ function ReconnectControl({ rpc }: Pick<ReconnectCodexProps, 'rpc'>) {
     setStatus({ phase: 'starting' })
     let finished = false
     try {
-      const started = await call('start', {})
+      const started = await call('start', { method })
       if (!started.ok || !isObject(started.value)) throw new Error(unavailable)
       if ('busy' in started.value && started.value.busy === true) {
         if (!current.abandoned) {
@@ -121,8 +122,16 @@ function ReconnectControl({ rpc }: Pick<ReconnectCodexProps, 'rpc'>) {
   return (
     <div style={{ display: 'grid', gap: 8 }}>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-        <button type="button" style={control} onClick={() => void start()} disabled={busy}>
-          Reconnect Codex
+        <button type="button" style={control} onClick={() => void start('browser')} disabled={busy}>
+          Sign in with browser
+        </button>
+        <button
+          type="button"
+          style={control}
+          onClick={() => void start('device_code')}
+          disabled={busy}
+        >
+          Sign in with device code
         </button>
         {busy && run.current?.id && (
           <button
@@ -137,6 +146,11 @@ function ReconnectControl({ rpc }: Pick<ReconnectCodexProps, 'rpc'>) {
       </div>
       {status && (
         <div role="status">{descriptions[cancelPending ? 'cancelling' : status.phase]}</div>
+      )}
+      {status?.phase === 'browser' && !cancelPending && (
+        <a href={status.url} target="_blank" rel="noopener noreferrer">
+          Open OpenAI sign-in
+        </a>
       )}
       {status?.phase === 'code' && !cancelPending && (
         <div>

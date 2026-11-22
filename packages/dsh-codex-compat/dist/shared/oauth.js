@@ -2,6 +2,17 @@
 import { isObject } from './contracts.js';
 export const OAUTH_CHANNEL = '/codex-reconnect';
 export const CODEX_DEVICE_URL = 'https://auth.openai.com/codex/device';
+export function isBrowserSignInUrl(value) {
+    if (typeof value !== 'string' || !URL.canParse(value))
+        return false;
+    const url = new URL(value);
+    return (url.origin === 'https://auth.openai.com' &&
+        url.pathname === '/oauth/authorize' &&
+        !url.username &&
+        !url.password &&
+        !url.hash &&
+        url.searchParams.get('redirect_uri') === 'http://localhost:1455/auth/callback');
+}
 /** Device codes are short display strings. The sign-in link is fixed separately. */
 export function isDeviceCode(code) {
     return typeof code === 'string' && /^[A-Z0-9-]{4,32}$/iu.test(code);
@@ -11,6 +22,8 @@ export function isReconnectStatus(status) {
     if (!isObject(status))
         return false;
     switch (status.phase) {
+        case 'browser':
+            return isBrowserSignInUrl(status.url);
         case 'code':
             return isDeviceCode(status.code);
         case 'starting':

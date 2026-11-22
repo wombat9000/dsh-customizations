@@ -41,6 +41,11 @@ function isObject(value) {
 //#region ../shared/oauth.ts
 const OAUTH_CHANNEL = "/codex-reconnect";
 const CODEX_DEVICE_URL = "https://auth.openai.com/codex/device";
+function isBrowserSignInUrl(value) {
+	if (typeof value !== "string" || !URL.canParse(value)) return false;
+	const url = new URL(value);
+	return url.origin === "https://auth.openai.com" && url.pathname === "/oauth/authorize" && !url.username && !url.password && !url.hash && url.searchParams.get("redirect_uri") === "http://localhost:1455/auth/callback";
+}
 /** Device codes are short display strings. The sign-in link is fixed separately. */
 function isDeviceCode(code) {
 	return typeof code === "string" && /^[A-Z0-9-]{4,32}$/iu.test(code);
@@ -49,6 +54,7 @@ function isDeviceCode(code) {
 function isReconnectStatus(status) {
 	if (!isObject(status)) return false;
 	switch (status.phase) {
+		case "browser": return isBrowserSignInUrl(status.url);
 		case "code": return isDeviceCode(status.code);
 		case "starting":
 		case "cancelling":
@@ -71,12 +77,13 @@ const control = {
 };
 const unavailable = "Codex reconnect is unavailable. Check that Codex OAuth is enabled in Plugins.";
 const descriptions = {
-	starting: "Requesting a one-time code…",
+	starting: "Starting Codex sign-in…",
+	browser: "Open the sign-in link on the computer running DSH. If DSH is on another machine, use device code.",
 	code: "Enter this one-time code on the OpenAI page.",
 	cancelling: "Cancelling sign-in…",
 	authorized: "Codex reconnected. You can retry your turn.",
 	cancelled: "Stopped waiting. If you already approved sign-in, DSH may still save the connection.",
-	failed: "Codex sign-in failed. Check that your ChatGPT account allows device sign-in, then try again."
+	failed: "Codex sign-in failed. Try again or choose the other sign-in method."
 };
 function ReconnectControl({ rpc }) {
 	const run = (0, react.useRef)();
@@ -88,7 +95,7 @@ function ReconnectControl({ rpc }) {
 	(0, react.useEffect)(() => () => {
 		if (run.current) run.current.abandoned = true;
 	}, []);
-	async function start() {
+	async function start(method) {
 		if (run.current) return;
 		const current = { abandoned: false };
 		run.current = current;
@@ -97,7 +104,7 @@ function ReconnectControl({ rpc }) {
 		setStatus({ phase: "starting" });
 		let finished = false;
 		try {
-			const started = await call("start", {});
+			const started = await call("start", { method });
 			if (!started.ok || !isObject(started.value)) throw new Error(unavailable);
 			if ("busy" in started.value && started.value.busy === true) {
 				if (!current.abandoned) {
@@ -161,14 +168,23 @@ function ReconnectControl({ rpc }) {
 	} }, /* @__PURE__ */ react.default.createElement("button", {
 		type: "button",
 		style: control,
-		onClick: () => void start(),
+		onClick: () => void start("browser"),
 		disabled: busy
-	}, "Reconnect Codex"), busy && run.current?.id && /* @__PURE__ */ react.default.createElement("button", {
+	}, "Sign in with browser"), /* @__PURE__ */ react.default.createElement("button", {
+		type: "button",
+		style: control,
+		onClick: () => void start("device_code"),
+		disabled: busy
+	}, "Sign in with device code"), busy && run.current?.id && /* @__PURE__ */ react.default.createElement("button", {
 		type: "button",
 		style: control,
 		onClick: () => void cancel(),
 		disabled: cancelPending
-	}, "Cancel sign-in")), status && /* @__PURE__ */ react.default.createElement("div", { role: "status" }, descriptions[cancelPending ? "cancelling" : status.phase]), status?.phase === "code" && !cancelPending && /* @__PURE__ */ react.default.createElement("div", null, /* @__PURE__ */ react.default.createElement("a", {
+	}, "Cancel sign-in")), status && /* @__PURE__ */ react.default.createElement("div", { role: "status" }, descriptions[cancelPending ? "cancelling" : status.phase]), status?.phase === "browser" && !cancelPending && /* @__PURE__ */ react.default.createElement("a", {
+		href: status.url,
+		target: "_blank",
+		rel: "noopener noreferrer"
+	}, "Open OpenAI sign-in"), status?.phase === "code" && !cancelPending && /* @__PURE__ */ react.default.createElement("div", null, /* @__PURE__ */ react.default.createElement("a", {
 		href: "https://auth.openai.com/codex/device",
 		target: "_blank",
 		rel: "noopener noreferrer"

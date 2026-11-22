@@ -2,13 +2,14 @@
 import { randomUUID } from 'node:crypto';
 import { registerRpc } from '../register-rpc.js';
 import { isObject } from '../../shared/contracts.js';
-import { CODEX_DEVICE_URL, isDeviceCode, OAUTH_CHANNEL } from '../../shared/oauth.js';
+import { CODEX_DEVICE_URL, isBrowserSignInUrl, isDeviceCode, OAUTH_CHANNEL, } from '../../shared/oauth.js';
+import { waitForAbort } from './interaction.js';
 const failure = (message) => ({
     ok: false,
     error: { code: 'invalid-request', message, details: {} },
 });
-/** Run the native device flow for one browser attempt and keep only its public state. */
-async function reconnect(authorization, key, attempt, peerSignal) {
+/** Run the selected native flow for one browser attempt and keep only its public state. */
+async function reconnect(authorization, key, attempt, method, peerSignal) {
     const deadline = AbortSignal.timeout(16 * 60_000);
     const signal = AbortSignal.any([attempt.controller.signal, deadline, peerSignal]);
     try {
@@ -20,14 +21,19 @@ async function reconnect(authorization, key, attempt, peerSignal) {
                 async prompt(prompt) {
                     signal.throwIfAborted();
                     prompt.signal?.throwIfAborted();
-                    if (prompt.kind === 'select' && prompt.options.some(({ id }) => id === 'device_code'))
-                        return 'device_code';
-                    throw new Error('Codex device sign-in is unavailable.');
+                    if (prompt.kind === 'select' && prompt.options.some(({ id }) => id === method))
+                        return method;
+                    // Native pi races its optional manual input with the loopback callback.
+                    if (method === 'browser' && prompt.kind === 'text')
+                        return waitForAbort(prompt.signal ? AbortSignal.any([signal, prompt.signal]) : signal);
+                    throw new Error('The selected Codex sign-in method is unavailable.');
                 },
                 notify({ url, code }) {
-                    if (signal.aborted || code === undefined)
+                    if (signal.aborted)
                         return;
-                    if (url === CODEX_DEVICE_URL && isDeviceCode(code))
+                    if (method === 'browser' && isBrowserSignInUrl(url))
+                        attempt.status = { phase: 'browser', url };
+                    if (method === 'device_code' && url === CODEX_DEVICE_URL && isDeviceCode(code))
                         attempt.status = { phase: 'code', code };
                 },
             },
@@ -52,8 +58,12 @@ export function mountWebReconnect(ctx, key) {
             if (closed || peer !== connection.browserPeer || signal.aborted || peer.signal.aborted)
                 return failure('Open Codex settings in the DSH browser to reconnect.');
             if (endpoint === 'start') {
-                if (!isObject(input) || Object.keys(input).length !== 0)
+                if (!isObject(input) || Object.keys(input).some((key) => key !== 'method'))
                     return failure('Invalid Codex sign-in request.');
+                // Older clients send {} for device sign-in.
+                const method = input.method === undefined ? 'device_code' : input.method;
+                if (method !== 'browser' && method !== 'device_code')
+                    return failure('Invalid Codex sign-in method.');
                 const flow = ctx.authorization.describe(key);
                 if (!flow?.methods.some(({ id }) => id === 'oauth'))
                     return failure('Codex sign-in is unavailable.');
@@ -70,7 +80,7 @@ export function mountWebReconnect(ctx, key) {
                 if (attempts.size >= 8 && oldest !== undefined)
                     attempts.delete(oldest);
                 attempts.set(id, attempt);
-                void reconnect(ctx.authorization, key, attempt, peer.signal).finally(() => {
+                void reconnect(ctx.authorization, key, attempt, method, peer.signal).finally(() => {
                     clearTimeout(lease);
                     active = undefined;
                 });
@@ -87,7 +97,7 @@ export function mountWebReconnect(ctx, key) {
                 return { ok: true, value: attempt.status };
             }
             if (endpoint === 'cancel') {
-                if (attempt === active && ['starting', 'code'].includes(attempt.status.phase)) {
+                if (attempt === active && ['starting', 'code', 'browser'].includes(attempt.status.phase)) {
                     attempt.status = { phase: 'cancelling' };
                     attempt.controller.abort();
                 }
