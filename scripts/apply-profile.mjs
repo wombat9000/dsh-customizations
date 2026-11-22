@@ -392,7 +392,7 @@ if (options.dryRun) {
   const reported = run(dsh, ['--version'], { capture: true }).trim()
   if (reported !== version) fail(`launcher reported unsupported version ${reported}`)
   const pnpmVersion = run('pnpm', ['--version'], { capture: true }).trim()
-  if (pnpmVersion !== '11.9.0') fail(`pnpm 11.9.0 is required; found ${pnpmVersion}`)
+  if (pnpmVersion !== '12.21.0') fail(`pnpm 12.21.0 is required; found ${pnpmVersion}`)
   await configureProfileDependencies()
   const manifestPath = join(profileDirectory, 'package.json')
   if (existsSync(manifestPath))

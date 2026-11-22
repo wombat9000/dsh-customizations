@@ -104,7 +104,7 @@ Dispatch admits workers only when the Git Worktrees plugin's `retainOnArchive` i
 
 ## Development
 
-From the repository root, with the verified pnpm 11.9.0 and installed dependencies:
+From the repository root, with the verified pnpm 12.21.0 and installed dependencies:
 
 ```sh
 node packages/dsh-dispatch/scripts/build-host.mjs        # dist/ (checked TypeScript)
