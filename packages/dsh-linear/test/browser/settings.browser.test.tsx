@@ -124,7 +124,9 @@ test('connect validates locally, sends trimmed draft write-only, and clears draf
   const input = page.getByLabelText('Linear API key', { exact: true })
   await act(async () => input.fill('LINEAR_API_KEY=bad'))
   await act(async () => page.getByRole('button', { name: 'Connect', exact: true }).click())
-  await expect.element(page.getByRole('alert')).toHaveTextContent('Paste only the API key')
+  await expect
+    .element(page.getByRole('alert'))
+    .toHaveTextContent('Paste only the API key, without LINEAR_API_KEY= or surrounding quotes.')
   expect(call).toHaveBeenCalledTimes(1)
 
   await act(async () => input.fill('  lin_api_secret  '))
