@@ -1,0 +1,16 @@
+{
+  "name": "@local/dsh-codex-compat-oauth",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./client": "./client.js"
+  },
+  "dsh": {
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-settings-models"
+      ]
+    }
+  }
+}

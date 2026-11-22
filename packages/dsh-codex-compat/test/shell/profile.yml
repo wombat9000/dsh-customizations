@@ -1,7 +1,4 @@
-# Isolated Fast fixture: never start automatic login or use credentials/inference.
-# OAuth is validated separately with native services and a synthetic flow.
-- id: local-codex-oauth
-  disabled: true
+# The setup seeds a synthetic credential to skip automatic sign-in.
 - id: llm-pi-ai
   config:
     providers:

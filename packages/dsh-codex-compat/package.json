@@ -15,7 +15,10 @@
     "dist",
     "client.js",
     "cordis.patch.yml",
-    "README.md"
+    "README.md",
+    "oauth/index.js",
+    "oauth/client.js",
+    "oauth/package.json"
   ],
   "scripts": {
     "build": "node scripts/build-host.mjs && node scripts/build-client.mjs",

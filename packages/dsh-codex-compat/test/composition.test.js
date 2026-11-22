@@ -216,17 +216,19 @@ for (const legacy of [false, true]) {
       ]) {
         const matches = entries.filter((entry) => entry.options.id === id)
         assert.equal(matches.length, 1, `${id} must have exactly one runtime owner`)
-        // RC2 requires a bare package row to discover Fast's Client half. Its root
-        // Host export must still resolve to the public /fast component entry.
-        const loaderName = component === 'fast' ? bundleName : `${bundleName}/oauth`
-        assert.equal(matches[0].options.name, loaderName)
+        if (component === 'oauth') {
+          const entryPath = fileURLToPath(matches[0].options.name)
+          assert.equal(await realpath(entryPath), join(bundleRoot, 'oauth/index.js'))
+        } else {
+          assert.equal(matches[0].options.name, bundleName)
+          assert.equal(
+            profileRequire.resolve(bundleName),
+            profileRequire.resolve(`${bundleName}/fast`),
+          )
+        }
         assert.equal(
           profileRequire.resolve(`${bundleName}/${component}`),
           join(bundleRoot, 'dist', 'src', component, 'index.js'),
-        )
-        assert.equal(
-          profileRequire.resolve(loaderName),
-          profileRequire.resolve(`${bundleName}/${component}`),
         )
         assert.equal(matches[0].fiber.state, 2, `${component} export must activate through Loader`)
       }

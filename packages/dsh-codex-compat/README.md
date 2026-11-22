@@ -8,17 +8,17 @@ The bundle is opt-in and is not included in `personal-web`. Source review, build
 
 | Component                       | Cordis row          | Responsibility                                                               |
 | ------------------------------- | ------------------- | ---------------------------------------------------------------------------- |
-| `@local/dsh-codex-compat/oauth` | `local-codex-oauth` | Connect Codex from the Models page or a terminal using native authorization. |
+| `./oauth/index.js` (exports `/oauth`) | `local-codex-oauth` | Connect Codex from the Models page or a terminal using native authorization. |
 | `@local/dsh-codex-compat/fast`  | `local-codex-fast`  | Own the optional request-tier bridge, persisted choices and Fast controls.   |
 
-DSH RC2 discovers a Client half only from a bare package Loader name. The bundle therefore mounts Fast through the package root, which exports the same Host component as `/fast`. This keeps two components and one Client module without a dummy bootstrap plugin.
+The OAuth row loads its own browser module for **Reconnect Codex**. The Fast row owns the composer and integration settings controls. Both ship in this bundle.
 
 The components have separate native enable/disable controls. The Fast component also has its own **Fast integration** switch, so you can remove its request modifications without unloading its recovery controls. Neither component depends on the other.
 
 - **Composer → two-bolt Fast button:** Click to cycle **Off → Everything Fast → Main thread only → Off**. The left bolt represents the main thread; the right represents eligible Codex subagents, including nested subagents. Filled bolts indicate Fast. The tooltip names the current and next state and notes higher usage. New sessions start Off; the first click enables everything. There is no subagents-only mode.
 - **Plugins → `@local/dsh-codex-compat` → `local-codex-fast` → Configure → Fast integration:** Turn the Fast integration off. Codex login and Standard inference remain available.
 - **OAuth component Off:** Close this helper’s interaction, request cancellation of its attempt, and stop future automatic terminal login. An already-queued native credential write can still complete, as explained below. Reconnect Codex requires this component. Native refresh and inference remain available.
-- **Fast component Off:** Unloads the request bridge and the shared browser controls, including Reconnect Codex. To turn off Fast and keep Reconnect Codex available, use the **Fast integration** switch.
+- **Fast component Off:** Unloads the request bridge and Fast controls. Reconnect Codex remains available while OAuth is running.
 
 ## Sign-in helper
 
