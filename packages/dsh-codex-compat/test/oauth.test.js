@@ -284,7 +284,6 @@ test(
   { timeout: 10000 },
   async (t) => {
     const f = await fixture(t)
-    await f.ctx.credentials.modifyRecord(nativeKey, async () => previousGrant)
     const nextGrant = {
       kind: 'grant',
       payload: { access: 'synthetic-new', refresh: 'synthetic-new' },
@@ -335,6 +334,9 @@ test(
     f.ctx.provide('webServer', {})
     const helper = f.ctx.plugin(oauth)
     await helper.await()
+    await new Promise(setImmediate)
+    assert.equal(sequence, 0, 'a fresh non-interactive host waits for the browser to start login')
+    await f.ctx.credentials.modifyRecord(nativeKey, async () => previousGrant)
 
     const call = (endpoint, payload = {}, peer = browserPeer) =>
       handler(endpoint, payload, t.signal, peer)
